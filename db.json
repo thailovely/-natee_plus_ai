@@ -1,0 +1,705 @@
+{
+  "members": [
+    {
+      "sellerStatus": "Active",
+      "firstLogin": false,
+      "bankAccount": "",
+      "balanceMCoupon": 5025,
+      "username": "nateeplus",
+      "statusKyc": "Active",
+      "kycBookUrl": "",
+      "phone": "0635161734",
+      "password": "@Tt12345678",
+      "passwordReset": false,
+      "bankName": "",
+      "sellerRating": 100,
+      "pin": "123456",
+      "bankAccountName": "บริษัท นที พลัส จำกัด",
+      "balanceMCash": 226.875,
+      "kycBeneficiary": "",
+      "name": "บริษัท นที พลัส",
+      "kycImgUrl": "",
+      "idCard": "1233445566778",
+      "createdAt": "2026-07-08T13:44:08.918Z",
+      "balanceAllShare": 53.75,
+      "role": "Manager",
+      "planBPoints": 39.375,
+      "sponsorId": "SYSTEM",
+      "kycRelation": "",
+      "sellerCode": "A260001",
+      "eligibleRights": 999999999,
+      "sellerProducts": 0,
+      "side": "Left",
+      "parentId": "SYSTEM",
+      "rank": "XXL",
+      "surname": "จำกัด",
+      "email": "nateeplus@gmail.com",
+      "userId": "A260600001"
+    }
+  ],
+  "products": [
+    {
+      "description": "สิทธิ์เปิดร้านค้าออนไลน์ นทีพลัส พร้อมรับสิทธิ์แนะนำสมาชิกและโบนัสเบื้องต้น",
+      "cost": 0,
+      "id": "pack_s",
+      "price": 100,
+      "image": "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&q=80&w=300",
+      "category": "Package",
+      "pv": 0,
+      "name": "S - สมัครเปิดร้านค้าออนไลน์"
+    },
+    {
+      "cost": 150,
+      "id": "pack_m",
+      "description": "สินค้าอุปโภคบริโภคระดับพรีเมียม สบู่สมุนไพรและยาสีฟันนทีพลัส 1 ชุด",
+      "category": "Package",
+      "price": 500,
+      "image": "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=300",
+      "pv": 250,
+      "name": "M - ชุดสินค้าทดลองครอบครัวประหยัด"
+    },
+    {
+      "pv": 500,
+      "name": "L - ชุดดูแลสุขภาพแบบองค์รวม",
+      "description": "อาหารเสริมสกัดจากนวัตกรรมธรรมชาติ ช่วยฟื้นฟูระบบภูมิคุ้มกัน",
+      "id": "pack_l",
+      "cost": 300,
+      "price": 1000,
+      "image": "https://images.unsplash.com/photo-1512290923902-8a9f81dc236c?auto=format&fit=crop&q=80&w=300",
+      "category": "Package"
+    },
+    {
+      "description": "แพ็กเกจสินค้าอุปโภคบริโภคขนาดใหญ่ เหมาะสำหรับการเริ่มขยายสาขา",
+      "cost": 900,
+      "id": "pack_xl",
+      "image": "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&q=80&w=300",
+      "price": 3000,
+      "category": "Package",
+      "pv": 1500,
+      "name": "XL - ชุดนักขยายธุรกิจ นทีพลัส มั่งคั่ง"
+    },
+    {
+      "pv": 2500,
+      "name": "XXL - ชุดผู้ประกอบการ นที ปันสุข ไร้ขีดจำกัด",
+      "cost": 1500,
+      "id": "pack_xxl",
+      "description": "สิทธิ์รับรายได้สูงสุด 20 ชั้น และสินค้าครบวงจรสำหรับเปิดจุดกระจายสินค้า",
+      "category": "Package",
+      "price": 5000,
+      "image": "https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=300"
+    }
+  ],
+  "sellerProducts": [],
+  "orders": [
+    {
+      "price": 100,
+      "userId": "A260600001",
+      "selectedChoiceName": null,
+      "status": "Completed",
+      "totalPrice": 100,
+      "selectedChoiceId": null,
+      "quantity": 1,
+      "createdAt": "2026-07-12T13:56:38.726Z",
+      "productName": "S - สมัครเปิดร้านค้าออนไลน์",
+      "totalPv": 0,
+      "id": "ORD_VA4S0VPN4",
+      "productId": "pack_s",
+      "shippingAddress": "123 123 6545646546 "
+    },
+    {
+      "totalPv": 0,
+      "createdAt": "2026-07-12T14:05:05.941Z",
+      "productName": "S - สมัครเปิดร้านค้าออนไลน์",
+      "productId": "pack_s",
+      "shippingAddress": "456 456 4554645464 ",
+      "id": "ORD_YMTK7CO9U",
+      "selectedChoiceName": null,
+      "status": "Completed",
+      "price": 100,
+      "userId": "A260600001",
+      "quantity": 1,
+      "totalPrice": 100,
+      "selectedChoiceId": null
+    },
+    {
+      "price": 100,
+      "userId": "A260600001",
+      "selectedChoiceName": null,
+      "status": "Completed",
+      "selectedChoiceId": null,
+      "totalPrice": 100,
+      "quantity": 1,
+      "createdAt": "2026-07-12T14:41:29.161Z",
+      "productName": "S - สมัครเปิดร้านค้าออนไลน์",
+      "totalPv": 0,
+      "id": "ORD_WRG9E60DQ",
+      "shippingAddress": "465 8645 5465454545 ",
+      "productId": "pack_s"
+    },
+    {
+      "id": "ORD_WHI5JN8BE",
+      "productId": "pack_s",
+      "shippingAddress": "456 456 5454545454 ",
+      "productName": "S - สมัครเปิดร้านค้าออนไลน์",
+      "createdAt": "2026-07-12T14:54:05.232Z",
+      "totalPv": 0,
+      "totalPrice": 100,
+      "selectedChoiceId": null,
+      "quantity": 1,
+      "userId": "A260600001",
+      "price": 100,
+      "status": "Completed",
+      "selectedChoiceName": null
+    },
+    {
+      "createdAt": "2026-07-12T14:55:57.141Z",
+      "productName": "S - สมัครเปิดร้านค้าออนไลน์",
+      "totalPv": 0,
+      "id": "ORD_FW0SYJJQM",
+      "productId": "pack_s",
+      "shippingAddress": "456 456 5454545454 ",
+      "price": 100,
+      "userId": "A260600001",
+      "selectedChoiceName": null,
+      "status": "Completed",
+      "totalPrice": 100,
+      "selectedChoiceId": null,
+      "quantity": 1
+    }
+  ],
+  "transactions": [
+    {
+      "type": "Deposit",
+      "currency": "M-Cash",
+      "transferAmount": 1100.01,
+      "userId": "A260600001",
+      "status": "Approved",
+      "amount": 1100,
+      "id": "DEP_ZFBR5K35X",
+      "transferDate": "2026-07-12 20:41",
+      "slipImgUrl": "/uploads/slip_topup_A260600001_1783864174552.jpeg",
+      "details": "อนุมัติเติมเงิน M-Cash เข้าบัญชี ฿1,100.01",
+      "createdAt": "2026-07-12T13:49:34.569Z",
+      "username": "p123",
+      "name": "123 123"
+    },
+    {
+      "type": "Deposit_System",
+      "currency": "M-Cash",
+      "id": "DEP_APR_896HEBBJ3",
+      "createdAt": "2026-07-12T13:50:17.930Z",
+      "userId": "A260600001",
+      "details": "ได้รับเครดิต M-Cash จากการอนุมัติสลิปโอนเงิน (รหัสธุรกรรมอ้างอิง: DEP_ZFBR5K35X)",
+      "status": "Approved",
+      "amount": 1100.01
+    },
+    {
+      "status": "Approved",
+      "amount": 100,
+      "id": "BUY_TTH6M87RA",
+      "currency": "M-Cash",
+      "type": "Withdraw",
+      "details": "ชำระเงินซื้อแพ็กเกจ S - สมัครเปิดร้านค้าออนไลน์",
+      "userId": "A260600001",
+      "createdAt": "2026-07-12T13:56:38.726Z"
+    },
+    {
+      "amount": 0.375,
+      "createdAt": "2026-07-12T13:56:38.726Z",
+      "userId": "A260600001",
+      "type": "AllShare",
+      "description": "โบนัส All-Share จากรหัส A260600001 (+0.3750 M-Cash / +0.3750 คะแนน Plan B)",
+      "id": "ALL_ZRGGBOLSK"
+    },
+    {
+      "amount": 0.375,
+      "type": "AllShare",
+      "description": "โบนัส All-Share จากรหัส A260600001 (+0.3750 M-Cash / +0.3750 คะแนน Plan B)",
+      "id": "ALL_HHL70NTA6",
+      "createdAt": "2026-07-12T13:56:38.727Z",
+      "userId": "A260600001"
+    },
+    {
+      "id": "BON_DED_ESPNGQEP3",
+      "currency": "M-Cash",
+      "type": "Bonus",
+      "details": "ค่าแนะนำตรงตำแหน่ง S ของรหัส A260600001 (ได้รับสุทธิหลังหัก 20% ตามเงื่อนไข)",
+      "userId": "A260600001",
+      "createdAt": "2026-07-12T13:56:38.727Z",
+      "status": "Approved",
+      "amount": 40
+    },
+    {
+      "type": "Deposit",
+      "currency": "M-Coupon",
+      "id": "COUP_ULSRAGN7E",
+      "createdAt": "2026-07-12T13:56:38.727Z",
+      "details": "โบนัส M-Coupon จากการสมัครตำแหน่ง S",
+      "userId": "A260600001",
+      "status": "Approved",
+      "amount": 10
+    },
+    {
+      "amount": 5,
+      "id": "ALL_E3K0VIUDN",
+      "description": "โบนัส All-Share จากรหัส A260600001 (+5.0000 M-Cash / +5.0000 คะแนน Plan B)",
+      "type": "AllShare",
+      "userId": "A260600001",
+      "createdAt": "2026-07-12T13:56:38.727Z"
+    },
+    {
+      "userId": "A260600001",
+      "details": "คะแนนสะสม Plan B จากการสมัครตำแหน่ง S",
+      "createdAt": "2026-07-12T13:56:38.727Z",
+      "id": "PLAN_OKV5EQ9DP",
+      "currency": "PlanBPoints",
+      "type": "Bonus",
+      "amount": 5,
+      "status": "Approved"
+    },
+    {
+      "createdAt": "2026-07-12T14:03:36.809Z",
+      "details": "อนุมัติเติมเงิน M-Cash เข้าบัญชี ฿2,100.06",
+      "name": "456 456",
+      "username": "p123",
+      "transferDate": "2026-07-12 21:00",
+      "id": "DEP_7AKWLCB2Z",
+      "slipImgUrl": "/uploads/slip_topup_A260600001_1783865016790.jpeg",
+      "userId": "A260600001",
+      "transferAmount": 2100.06,
+      "currency": "M-Cash",
+      "amount": 2100,
+      "status": "Approved",
+      "type": "Deposit"
+    },
+    {
+      "amount": 2100.06,
+      "status": "Approved",
+      "userId": "A260600001",
+      "details": "ได้รับเครดิต M-Cash จากการอนุมัติสลิปโอนเงิน (รหัสธุรกรรมอ้างอิง: DEP_7AKWLCB2Z)",
+      "createdAt": "2026-07-12T14:04:40.801Z",
+      "id": "DEP_APR_PMD1CR08C",
+      "currency": "M-Cash",
+      "type": "Deposit_System"
+    },
+    {
+      "createdAt": "2026-07-12T14:05:05.942Z",
+      "userId": "A260600001",
+      "details": "ชำระเงินซื้อแพ็กเกจ S - สมัครเปิดร้านค้าออนไลน์",
+      "type": "Withdraw",
+      "id": "BUY_ATNRZJVP3",
+      "currency": "M-Cash",
+      "amount": 100,
+      "status": "Approved"
+    },
+    {
+      "amount": 0.375,
+      "id": "ALL_6VOKGRHFK",
+      "description": "โบนัส All-Share จากรหัส A260600001 (+0.3750 M-Cash / +0.3750 คะแนน Plan B)",
+      "type": "AllShare",
+      "userId": "A260600001",
+      "createdAt": "2026-07-12T14:05:05.942Z"
+    },
+    {
+      "createdAt": "2026-07-12T14:05:05.942Z",
+      "userId": "A260600001",
+      "description": "โบนัส All-Share จากรหัส A260600001 (+0.3750 M-Cash / +0.3750 คะแนน Plan B)",
+      "type": "AllShare",
+      "id": "ALL_YHWT2B48G",
+      "amount": 0.375
+    },
+    {
+      "status": "Approved",
+      "amount": 40,
+      "type": "Bonus",
+      "id": "BON_DED_8XJCSNWFU",
+      "currency": "M-Cash",
+      "createdAt": "2026-07-12T14:05:05.942Z",
+      "userId": "A260600001",
+      "details": "ค่าแนะนำตรงตำแหน่ง S ของรหัส A260600001 (ได้รับสุทธิหลังหัก 20% ตามเงื่อนไข)"
+    },
+    {
+      "details": "โบนัส M-Coupon จากการสมัครตำแหน่ง S",
+      "userId": "A260600001",
+      "createdAt": "2026-07-12T14:05:05.942Z",
+      "currency": "M-Coupon",
+      "id": "COUP_U1I030RJA",
+      "type": "Deposit",
+      "amount": 10,
+      "status": "Approved"
+    },
+    {
+      "createdAt": "2026-07-12T14:05:05.942Z",
+      "userId": "A260600001",
+      "description": "โบนัส All-Share จากรหัส A260600001 (+5.0000 M-Cash / +5.0000 คะแนน Plan B)",
+      "type": "AllShare",
+      "id": "ALL_IUDEHEIW4",
+      "amount": 5
+    },
+    {
+      "status": "Approved",
+      "amount": 5,
+      "currency": "PlanBPoints",
+      "id": "PLAN_2VUV3ZHJ6",
+      "type": "Bonus",
+      "details": "คะแนนสะสม Plan B จากการสมัครตำแหน่ง S",
+      "userId": "A260600001",
+      "createdAt": "2026-07-12T14:05:05.942Z"
+    },
+    {
+      "id": "DEP_H09F3ZHGE",
+      "transferDate": "2026-07-12 21:18",
+      "slipImgUrl": "/uploads/slip_topup_A260600001_1783867239157.jpeg",
+      "details": "อนุมัติเติมเงิน M-Cash เข้าบัญชี ฿10,000.77",
+      "createdAt": "2026-07-12T14:40:39.176Z",
+      "name": "465 8645",
+      "username": "p123",
+      "type": "Deposit",
+      "userId": "A260600001",
+      "currency": "M-Cash",
+      "transferAmount": 10000.77,
+      "amount": 10000,
+      "status": "Approved"
+    },
+    {
+      "amount": 10000.77,
+      "status": "Approved",
+      "createdAt": "2026-07-12T14:41:10.902Z",
+      "details": "ได้รับเครดิต M-Cash จากการอนุมัติสลิปโอนเงิน (รหัสธุรกรรมอ้างอิง: DEP_H09F3ZHGE)",
+      "userId": "A260600001",
+      "type": "Deposit_System",
+      "currency": "M-Cash",
+      "id": "DEP_APR_C8IK0VLT1"
+    },
+    {
+      "amount": 100,
+      "status": "Approved",
+      "createdAt": "2026-07-12T14:41:29.161Z",
+      "userId": "A260600001",
+      "details": "ชำระเงินซื้อแพ็กเกจ S - สมัครเปิดร้านค้าออนไลน์",
+      "type": "Withdraw",
+      "id": "BUY_3NY9T2OCZ",
+      "currency": "M-Cash"
+    },
+    {
+      "createdAt": "2026-07-12T14:41:29.161Z",
+      "userId": "A260600001",
+      "type": "AllShare",
+      "description": "โบนัส All-Share จากรหัส A260600001 (+0.3750 M-Cash / +0.3750 คะแนน Plan B)",
+      "id": "ALL_3136NRLLB",
+      "amount": 0.375
+    },
+    {
+      "amount": 0.375,
+      "userId": "A260600001",
+      "createdAt": "2026-07-12T14:41:29.162Z",
+      "id": "ALL_1T1YWQLSD",
+      "type": "AllShare",
+      "description": "โบนัส All-Share จากรหัส A260600001 (+0.3750 M-Cash / +0.3750 คะแนน Plan B)"
+    },
+    {
+      "userId": "A260600001",
+      "details": "ค่าแนะนำตรงตำแหน่ง S ของรหัส A260600001 (ได้รับสุทธิหลังหัก 20% ตามเงื่อนไข)",
+      "createdAt": "2026-07-12T14:41:29.162Z",
+      "currency": "M-Cash",
+      "id": "BON_DED_E9KK759Z9",
+      "type": "Bonus",
+      "amount": 40,
+      "status": "Approved"
+    },
+    {
+      "currency": "M-Coupon",
+      "id": "COUP_G7N8JVMQ4",
+      "type": "Deposit",
+      "userId": "A260600001",
+      "details": "โบนัส M-Coupon จากการสมัครตำแหน่ง S",
+      "createdAt": "2026-07-12T14:41:29.162Z",
+      "status": "Approved",
+      "amount": 10
+    },
+    {
+      "amount": 5,
+      "createdAt": "2026-07-12T14:41:29.162Z",
+      "userId": "A260600001",
+      "description": "โบนัส All-Share จากรหัส A260600001 (+5.0000 M-Cash / +5.0000 คะแนน Plan B)",
+      "type": "AllShare",
+      "id": "ALL_X1TTSY0FT"
+    },
+    {
+      "amount": 5,
+      "status": "Approved",
+      "createdAt": "2026-07-12T14:41:29.162Z",
+      "details": "คะแนนสะสม Plan B จากการสมัครตำแหน่ง S",
+      "userId": "A260600001",
+      "type": "Bonus",
+      "currency": "PlanBPoints",
+      "id": "PLAN_X6D3GNQ9U"
+    },
+    {
+      "transferAmount": 10000.91,
+      "currency": "M-Cash",
+      "userId": "A260600001",
+      "status": "Approved",
+      "amount": 10000,
+      "type": "Deposit",
+      "createdAt": "2026-07-12T14:53:10.974Z",
+      "details": "อนุมัติเติมเงิน M-Cash เข้าบัญชี ฿10,000.91",
+      "name": "456 456",
+      "username": "p123",
+      "transferDate": "2026-07-12 21:50",
+      "id": "DEP_2M0Q5D0CK",
+      "slipImgUrl": "/uploads/slip_topup_A260600001_1783867990956.jpeg"
+    },
+    {
+      "details": "ได้รับเครดิต M-Cash จากการอนุมัติสลิปโอนเงิน (รหัสธุรกรรมอ้างอิง: DEP_2M0Q5D0CK)",
+      "userId": "A260600001",
+      "createdAt": "2026-07-12T14:53:50.865Z",
+      "currency": "M-Cash",
+      "id": "DEP_APR_S54A3S4OJ",
+      "type": "Deposit_System",
+      "amount": 10000.91,
+      "status": "Approved"
+    },
+    {
+      "status": "Approved",
+      "amount": 100,
+      "type": "Withdraw",
+      "currency": "M-Cash",
+      "id": "BUY_OF1RFL3RC",
+      "createdAt": "2026-07-12T14:54:05.232Z",
+      "details": "ชำระเงินซื้อแพ็กเกจ S - สมัครเปิดร้านค้าออนไลน์",
+      "userId": "A260600001"
+    },
+    {
+      "amount": 0.375,
+      "createdAt": "2026-07-12T14:54:05.233Z",
+      "userId": "A260600001",
+      "description": "โบนัส All-Share จากรหัส A260600001 (+0.3750 M-Cash / +0.3750 คะแนน Plan B)",
+      "type": "AllShare",
+      "id": "ALL_06ZP5LH9R"
+    },
+    {
+      "amount": 0.375,
+      "id": "ALL_HWT6MYDYC",
+      "type": "AllShare",
+      "description": "โบนัส All-Share จากรหัส A260600001 (+0.3750 M-Cash / +0.3750 คะแนน Plan B)",
+      "userId": "A260600001",
+      "createdAt": "2026-07-12T14:54:05.233Z"
+    },
+    {
+      "id": "BON_DED_UUKIVPVWY",
+      "currency": "M-Cash",
+      "type": "Bonus",
+      "userId": "A260600001",
+      "details": "ค่าแนะนำตรงตำแหน่ง S ของรหัส A260600001 (ได้รับสุทธิหลังหัก 20% ตามเงื่อนไข)",
+      "createdAt": "2026-07-12T14:54:05.233Z",
+      "status": "Approved",
+      "amount": 40
+    },
+    {
+      "createdAt": "2026-07-12T14:54:05.233Z",
+      "details": "โบนัส M-Coupon จากการสมัครตำแหน่ง S",
+      "userId": "A260600001",
+      "type": "Deposit",
+      "id": "COUP_GV385YROZ",
+      "currency": "M-Coupon",
+      "amount": 10,
+      "status": "Approved"
+    },
+    {
+      "id": "ALL_QTM932TW3",
+      "description": "โบนัส All-Share จากรหัส A260600001 (+5.0000 M-Cash / +5.0000 คะแนน Plan B)",
+      "type": "AllShare",
+      "userId": "A260600001",
+      "createdAt": "2026-07-12T14:54:05.233Z",
+      "amount": 5
+    },
+    {
+      "amount": 5,
+      "status": "Approved",
+      "createdAt": "2026-07-12T14:54:05.233Z",
+      "userId": "A260600001",
+      "details": "คะแนนสะสม Plan B จากการสมัครตำแหน่ง S",
+      "type": "Bonus",
+      "id": "PLAN_36M6B1WBF",
+      "currency": "PlanBPoints"
+    },
+    {
+      "status": "Approved",
+      "amount": 100,
+      "type": "Withdraw",
+      "currency": "M-Cash",
+      "id": "BUY_A5EA5AKP3",
+      "createdAt": "2026-07-12T14:55:57.141Z",
+      "details": "ชำระเงินซื้อแพ็กเกจ S - สมัครเปิดร้านค้าออนไลน์",
+      "userId": "A260600001"
+    },
+    {
+      "id": "ALL_MKYWVSI2G",
+      "description": "โบนัส All-Share จากรหัส A260600001 (+0.3750 M-Cash / +0.3750 คะแนน Plan B)",
+      "type": "AllShare",
+      "userId": "A260600001",
+      "createdAt": "2026-07-12T14:55:57.141Z",
+      "amount": 0.375
+    },
+    {
+      "amount": 0.375,
+      "userId": "A260600001",
+      "createdAt": "2026-07-12T14:55:57.141Z",
+      "id": "ALL_G4JIB1A6F",
+      "type": "AllShare",
+      "description": "โบนัส All-Share จากรหัส A260600001 (+0.3750 M-Cash / +0.3750 คะแนน Plan B)"
+    },
+    {
+      "details": "ค่าแนะนำตรงตำแหน่ง S ของรหัส A260600001 (ได้รับสุทธิหลังหัก 20% ตามเงื่อนไข)",
+      "userId": "A260600001",
+      "createdAt": "2026-07-12T14:55:57.141Z",
+      "currency": "M-Cash",
+      "id": "BON_DED_YC4G3U737",
+      "type": "Bonus",
+      "amount": 40,
+      "status": "Approved"
+    },
+    {
+      "amount": 10,
+      "status": "Approved",
+      "userId": "A260600001",
+      "details": "โบนัส M-Coupon จากการสมัครตำแหน่ง S",
+      "createdAt": "2026-07-12T14:55:57.141Z",
+      "currency": "M-Coupon",
+      "id": "COUP_11UH0TJQW",
+      "type": "Deposit"
+    },
+    {
+      "amount": 5,
+      "createdAt": "2026-07-12T14:55:57.141Z",
+      "userId": "A260600001",
+      "description": "โบนัส All-Share จากรหัส A260600001 (+5.0000 M-Cash / +5.0000 คะแนน Plan B)",
+      "type": "AllShare",
+      "id": "ALL_0FKBQLOKU"
+    },
+    {
+      "status": "Approved",
+      "amount": 5,
+      "currency": "PlanBPoints",
+      "id": "PLAN_CD73JGLPL",
+      "type": "Bonus",
+      "userId": "A260600001",
+      "details": "คะแนนสะสม Plan B จากการสมัครตำแหน่ง S",
+      "createdAt": "2026-07-12T14:55:57.141Z"
+    }
+  ],
+  "planB_Tree": {
+    "b4": [],
+    "b3": [],
+    "b2": [],
+    "b9": [],
+    "b1": [],
+    "b7": [],
+    "b6": [],
+    "b5": [],
+    "b8": [],
+    "b10": []
+  },
+  "csrFund": {
+    "balance": 27.5,
+    "history": [
+      {
+        "amount": 0.5,
+        "username": "บริษัท นที พลัส จำกัด",
+        "id": "CSR_TXN_06LJPD589",
+        "type": "Donation",
+        "userId": "A260600001",
+        "details": "หักกองทุนปันสุข 1% จากค่าแนะนำตรงตำแหน่ง S ของรหัส A260600001",
+        "createdAt": "2026-07-12T14:54:05.233Z"
+      },
+      {
+        "details": "เงินกองทุนปันสุข จ่ายในนามสมาชิกใหม่รหัส A260600001 จากการสมัครแพ็กเกจ S",
+        "userId": "A260600001",
+        "createdAt": "2026-07-12T14:54:05.233Z",
+        "id": "CSR_TXN_FWBQ4MWD2",
+        "type": "Donation",
+        "amount": 5,
+        "username": "456 456"
+      },
+      {
+        "username": "465 8645",
+        "amount": 5,
+        "type": "Donation",
+        "id": "CSR_TXN_4SNCB6KD0",
+        "createdAt": "2026-07-12T14:41:29.162Z",
+        "details": "เงินกองทุนปันสุข จ่ายในนามสมาชิกใหม่รหัส A260600001 จากการสมัครแพ็กเกจ S",
+        "userId": "A260600001"
+      },
+      {
+        "amount": 0.5,
+        "username": "บริษัท นที พลัส จำกัด",
+        "id": "CSR_TXN_1SBF0GQMS",
+        "type": "Donation",
+        "details": "หักกองทุนปันสุข 1% จากค่าแนะนำตรงตำแหน่ง S ของรหัส A260600001",
+        "userId": "A260600001",
+        "createdAt": "2026-07-12T14:41:29.161Z"
+      },
+      {
+        "username": "บริษัท นที พลัส จำกัด",
+        "amount": 0.5,
+        "createdAt": "2026-07-12T14:05:05.942Z",
+        "userId": "A260600001",
+        "details": "หักกองทุนปันสุข 1% จากค่าแนะนำตรงตำแหน่ง S ของรหัส A260600001",
+        "type": "Donation",
+        "id": "CSR_TXN_EHOK4PO5O"
+      },
+      {
+        "amount": 5,
+        "username": "456 456",
+        "type": "Donation",
+        "id": "CSR_TXN_XHMS215GM",
+        "createdAt": "2026-07-12T14:05:05.942Z",
+        "details": "เงินกองทุนปันสุข จ่ายในนามสมาชิกใหม่รหัส A260600001 จากการสมัครแพ็กเกจ S",
+        "userId": "A260600001"
+      },
+      {
+        "createdAt": "2026-07-12T13:56:38.727Z",
+        "userId": "A260600001",
+        "details": "เงินกองทุนปันสุข จ่ายในนามสมาชิกใหม่รหัส A260600001 จากการสมัครแพ็กเกจ S",
+        "type": "Donation",
+        "id": "CSR_TXN_63IJ6SO8Z",
+        "username": "123 123",
+        "amount": 5
+      },
+      {
+        "amount": 0.5,
+        "username": "บริษัท นที พลัส จำกัด",
+        "createdAt": "2026-07-12T13:56:38.726Z",
+        "details": "หักกองทุนปันสุข 1% จากค่าแนะนำตรงตำแหน่ง S ของรหัส A260600001",
+        "userId": "A260600001",
+        "type": "Donation",
+        "id": "CSR_TXN_58JJ19461"
+      },
+      {
+        "id": "CSR_TXN_D553304VC",
+        "type": "Donation",
+        "details": "หักกองทุนปันสุข 1% จากค่าแนะนำตรงตำแหน่ง S ของรหัส A260600001",
+        "userId": "A260600001",
+        "createdAt": "2026-07-12T14:55:57.141Z",
+        "amount": 0.5,
+        "username": "บริษัท นที พลัส จำกัด"
+      },
+      {
+        "amount": 5,
+        "username": "456 456",
+        "createdAt": "2026-07-12T14:55:57.141Z",
+        "details": "เงินกองทุนปันสุข จ่ายในนามสมาชิกใหม่รหัส A260600001 จากการสมัครแพ็กเกจ S",
+        "userId": "A260600001",
+        "type": "Donation",
+        "id": "CSR_TXN_QRYREFY3R"
+      }
+    ]
+  },
+  "systemStats": {
+    "totalPlanBReserves": 12.5,
+    "totalTaxReserves": 32.7,
+    "totalCompanyProfits": 69.8
+  },
+  "otps": {}
+}
