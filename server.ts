@@ -8,17 +8,7 @@ import { initializeFirestore, memoryLocalCache, doc, getDoc, writeBatch } from '
 
 // Define path resolution supporting both ES Modules (dev) and CommonJS (compiled)
 const getAppDir = () => {
-  try {
-    if (typeof __dirname !== 'undefined' && __dirname) {
-      return __dirname;
-    }
-    if (typeof import.meta !== 'undefined' && import.meta && import.meta.url) {
-      return path.dirname(fileURLToPath(import.meta.url));
-    }
-    return process.cwd();
-  } catch (e) {
-    return process.cwd();
-  }
+  return process.cwd();
 };
 const appDir = getAppDir();
 
