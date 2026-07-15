@@ -9,5 +9,5 @@ env:
     value: "indigo-brand-j6rpq.firebaseapp.com"
   - variable: FIREBASE_STORAGE_BUCKET
     value: "indigo-brand-j6rpq.firebasestorage.app"
-- variable: FIREBASE_API_KEY
+  - variable: FIREBASE_API_KEY
     value: "AIzaSyBWdkOphH9pzJQuL1vZ3ujo_GxO5D-ViMs"
