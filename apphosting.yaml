@@ -9,3 +9,5 @@ env:
     value: "indigo-brand-j6rpq.firebaseapp.com"
   - variable: FIREBASE_STORAGE_BUCKET
     value: "indigo-brand-j6rpq.firebasestorage.app"
+- variable: FIREBASE_API_KEY
+    value: "ค่า_API_KEY_ของท่าน" # เช่น AIzaSyxxxxxxxxxxxxxxxxx
