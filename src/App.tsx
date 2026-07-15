@@ -83,7 +83,6 @@ export default function App() {
 
 
 
-  const [isUsingPollingFallback, setIsUsingPollingFallback] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>('dash');
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   const [notif, setNotif] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -859,109 +858,9 @@ export default function App() {
   // Handle real-time Firestore synchronization for all application data
   useEffect(() => {
     if (!currentUser) return;
-    setIsUsingPollingFallback(false);
 
     let activeUnsubscribes: (() => void)[] = [];
     let fallbackInterval: NodeJS.Timeout | null = null;
-    let usingPollingFallback = false;
-
-    const activateFallbackPolling = (reason: string) => {
-      if (usingPollingFallback) return;
-      usingPollingFallback = true;
-      setIsUsingPollingFallback(true);
-      console.warn(`⚠️ Firestore Real-time listener failed (${reason}). Activating fallback HTTP polling...`);
-      
-      // Clear any current Firestore subscriptions to save network/resources
-      activeUnsubscribes.forEach(unsub => {
-        try { unsub(); } catch (e) {}
-      });
-      activeUnsubscribes = [];
-
-      // Start Polling Fallback immediately and then periodically
-      let prevBalance = 0;
-      if (profile) {
-        prevBalance = profile.balanceECash;
-      }
-
-      const runPoll = () => {
-        fetch('/api/sync-state')
-          .then(res => res.json())
-          .then(resData => {
-            if (resData.success && resData.data) {
-              const data = resData.data;
-              if (resData.isSandboxActive !== undefined) {
-                setIsSandboxActive(resData.isSandboxActive);
-              }
-
-              // 1. Sync Members
-              const members = data.members || [];
-              setAdminMembersList(members);
-              const currentMember = members.find((m: any) => m.userId === currentUser.userId);
-              if (currentMember) {
-                setProfile((prevProfile: any) => {
-                  if (prevProfile) {
-                    const prevB = prevProfile.balanceECash;
-                    const newBalance = currentMember.balanceECash;
-                    if (newBalance > prevB && prevB > 0) {
-                      const diff = parseFloat((newBalance - prevB).toFixed(4));
-                      showNotif(`ยอดเงิน E-Cash ของคุณเพิ่มขึ้น +${diff.toLocaleString()} บาท`, 'success');
-                      playMoneySound(diff, 'general');
-                    }
-                  }
-                  return currentMember;
-                });
-                if (currentMember.firstLogin) {
-                  setIsFirstLoginModal(true);
-                }
-              }
-              if (currentUser.role === 'Admin' || currentUser.role === 'Manager') {
-                setKycQueue(members.filter((m: any) => m.statusKyc === 'Pending'));
-              }
-
-              // 2. Sync Transactions & Queues
-              const transactions = data.transactions || [];
-              setTransactions(transactions.filter((t: any) => t.userId === currentUser.userId));
-              setWithQueue(transactions.filter((t: any) => t.type === 'WithdrawalRequest' && t.status === 'Pending'));
-              setDepositQueue(transactions.filter((t: any) => t.type === 'Deposit' && t.status === 'Pending'));
-
-              // 3. Sync Orders
-              const orders = data.orders || [];
-              setMemberOrders(orders.filter((o: any) => o.userId === currentUser.userId));
-              setAdminOrders(orders);
-              setSellerOrders(orders.filter((o: any) => o.sellerId === currentUser.userId));
-
-              // 4. Sync Products
-              setProducts(data.products || []);
-
-              // 5. Sync Seller Products
-              const sellerProducts = data.sellerProducts || [];
-              setSellerProducts(sellerProducts.filter((p: any) => p.sellerId === currentUser.userId));
-              setAllSellerProducts(sellerProducts);
-              setProdQueue(sellerProducts.filter((p: any) => p.status === 'Pending'));
-
-              // 6. Sync CSR Fund
-              const csrFund = data.csrFund || { balance: 0, history: [] };
-              setCsrFeed(csrFund.history || []);
-              setCsrBalance(csrFund.balance || 0);
-
-              // 7. Sync System Stats
-              setAdminStats(data.systemStats || null);
-
-              // 8. Sync Package Choices
-              setPackageChoices(data.packageProductChoices || []);
-
-              // 9. Sync Bank Settings
-              if (data.bankSettings) {
-                setBankSettings(data.bankSettings);
-              }
-            }
-          })
-          .catch(e => console.error("Poll sync-state error:", e));
-      };
-
-      runPoll();
-      fallbackInterval = setInterval(runPoll, 7000);
-    };
 
     const setupRealTimeSync = async () => {
       try {
@@ -969,13 +868,6 @@ export default function App() {
         const dConfig = await resConfig.json();
         if (!dConfig.success || !dConfig.config) {
           throw new Error("No Firebase config returned from server");
-        }
-
-        if (dConfig.isFirestoreQuotaExceeded) {
-          console.warn("⚠️ Firestore daily write quota is exceeded on the server. Activating local polling fallback directly!");
-          setIsUsingPollingFallback(true);
-          activateFallbackPolling("Firestore write quota exceeded on server");
-          return;
         }
 
         const config = dConfig.config;
@@ -1050,7 +942,6 @@ export default function App() {
           }
         }, (error) => {
           console.error("onSnapshot members error:", error);
-          activateFallbackPolling("members failed: " + error.message);
         });
         activeUnsubscribes.push(unsubMembers);
 
@@ -1064,7 +955,6 @@ export default function App() {
           }
         }, (error) => {
           console.error("onSnapshot transactions error:", error);
-          activateFallbackPolling("transactions failed: " + error.message);
         });
         activeUnsubscribes.push(unsubTx);
 
@@ -1078,7 +968,6 @@ export default function App() {
           }
         }, (error) => {
           console.error("onSnapshot orders error:", error);
-          activateFallbackPolling("orders failed: " + error.message);
         });
         activeUnsubscribes.push(unsubOrders);
 
@@ -1090,7 +979,6 @@ export default function App() {
           }
         }, (error) => {
           console.error("onSnapshot products error:", error);
-          activateFallbackPolling("products failed: " + error.message);
         });
         activeUnsubscribes.push(unsubProds);
 
@@ -1104,7 +992,6 @@ export default function App() {
           }
         }, (error) => {
           console.error("onSnapshot sellerProducts error:", error);
-          activateFallbackPolling("sellerProducts failed: " + error.message);
         });
         activeUnsubscribes.push(unsubSellerProds);
 
@@ -1117,7 +1004,6 @@ export default function App() {
           }
         }, (error) => {
           console.error("onSnapshot csrFund error:", error);
-          activateFallbackPolling("csrFund failed: " + error.message);
         });
         activeUnsubscribes.push(unsubCsr);
 
@@ -1129,7 +1015,6 @@ export default function App() {
           }
         }, (error) => {
           console.error("onSnapshot systemStats error:", error);
-          activateFallbackPolling("systemStats failed: " + error.message);
         });
         activeUnsubscribes.push(unsubStats);
 
@@ -1141,7 +1026,6 @@ export default function App() {
           }
         }, (error) => {
           console.error("onSnapshot packageProductChoices error:", error);
-          activateFallbackPolling("packageProductChoices failed: " + error.message);
         });
         activeUnsubscribes.push(unsubChoices);
 
@@ -1155,12 +1039,37 @@ export default function App() {
           }
         }, (error) => {
           console.error("onSnapshot bankSettings error:", error);
-          activateFallbackPolling("bankSettings failed: " + error.message);
         });
         activeUnsubscribes.push(unsubBank);
 
-      } catch (err: any) {
-        activateFallbackPolling(err?.message || "initial setup failed");
+      } catch (err) {
+        console.warn("⚠️ Firebase Client real-time listener failed. Falling back to polling...", err);
+        
+        // Polling fallback
+        let prevBalance = 0;
+        if (profile) {
+          prevBalance = profile.balanceECash;
+        }
+        fallbackInterval = setInterval(() => {
+          fetch('/api/member/profile/' + currentUser.userId)
+            .then(res => res.json())
+            .then(data => {
+              if (data.success && data.profile) {
+                const newBalance = data.profile.balanceECash;
+                if (newBalance > prevBalance && prevBalance > 0) {
+                  const diff = parseFloat((newBalance - prevBalance).toFixed(4));
+                  showNotif(`ยอดเงิน E-Cash ของคุณเพิ่มขึ้น +${diff.toLocaleString()} บาท`, 'success');
+                  playMoneySound(diff, 'general');
+                }
+                prevBalance = newBalance;
+                if (data.isSandboxActive !== undefined) {
+                  setIsSandboxActive(data.isSandboxActive);
+                }
+                setProfile(data.profile);
+              }
+            })
+            .catch(() => {});
+        }, 10000);
       }
     };
 
@@ -1168,9 +1077,7 @@ export default function App() {
 
     return () => {
       console.log("🧹 Tearing down real-time active listeners / timers");
-      activeUnsubscribes.forEach(unsub => {
-        try { unsub(); } catch (e) {}
-      });
+      activeUnsubscribes.forEach(unsub => unsub());
       if (fallbackInterval) {
         clearInterval(fallbackInterval);
       }
@@ -4322,24 +4229,6 @@ export default function App() {
         {/* Dynamic Content Views */}
         <div className="p-6 md:p-8 flex-1">
           
-          {/* Firestore Quota Exceeded Local Backup Mode Warning */}
-          {isUsingPollingFallback && (
-            <div className="mb-6 bg-amber-50 border border-amber-200/80 rounded-2xl p-4 shadow-sm text-left flex gap-3.5 items-start">
-              <span className="text-amber-500 text-xl leading-none mt-0.5">⚠️</span>
-              <div>
-                <h4 className="text-sm font-semibold text-amber-900 leading-tight">
-                  ระบบกำลังเชื่อมต่อโหมดสำรองข้อมูลท้องถิ่น (Local Failover Mode)
-                </h4>
-                <p className="text-xs text-amber-700/95 mt-1 leading-relaxed">
-                  เนื่องจากปริมาณการเขียนข้อมูลของ Cloud Database ประจำวันของโควตาฟรี (Firebase Spark Plan) เต็มพิกัดแล้ว 
-                  ระบบได้เปิดใช้งานระบบรักษาเสถียรภาพและเปลี่ยนมาจัดเก็บข้อมูลบนเซิร์ฟเวอร์สำรองในทันที 
-                  <strong> สมาชิกทุกท่านยังสามารถเข้าใช้งาน ทำธุรกรรม สมัครสมาชิก ฝากถอน แนะนำตำแหน่ง และซื้อขายได้เต็มประสิทธิภาพ 100% ตามปกติ </strong> 
-                  โดยข้อมูลทั้งหมดจะได้รับการจัดเก็บบันทึกอย่างปลอดภัยบนเซิร์ฟเวอร์ นที พลัส และจะทำการซิงก์กลับขึ้นสู่ระบบคลาวด์โดยอัตโนมัติเมื่อพ้นกำหนดรีเซ็ตโควตาประจำวันค่ะ
-                </p>
-              </div>
-            </div>
-          )}
-
           {/* DASHBOARD TAB */}
           {activeTab === 'dash' && (
             <div className="space-y-8 animate-fadeIn">
@@ -4350,7 +4239,33 @@ export default function App() {
                 </div>
               </div>
 
-
+              {/* Sound Notification Test Section (Only for Admin & Manager) */}
+              {(currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
+                <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-left">
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                      🔊 ทดสอบระบบเสียงเอฟเฟกต์ & เสียงพูดแจ้งเตือน (E-Cash)
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      เฉพาะแอดมินและผู้จัดการเท่านั้นที่เห็นส่วนนี้ค่ะ คุณสามารถกดทดสอบเพื่อฟังตัวอย่างเสียงพูดภาษาไทย (เสียงผู้หญิง) และเสียงเอฟเฟกต์เงินเข้าจริงได้ทันทีค่ะ
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <button 
+                      onClick={() => playMoneySound(1000, 'deposit')}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-2xl text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/10 active:scale-95 transition duration-150 cursor-pointer"
+                    >
+                      🪙 ทดสอบเสียงเติมเงิน (฿1,000)
+                    </button>
+                    <button 
+                      onClick={() => playMoneySound(999.99, 'bonus')}
+                      className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-2xl text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/10 active:scale-95 transition duration-150 cursor-pointer"
+                    >
+                      🎁 ทดสอบเสียงโบนัสเข้า (฿999.99)
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Activation Package Reminder for new Member rank */}
               {profile?.rank === 'Member' && (

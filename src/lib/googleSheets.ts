@@ -1,24 +1,10 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, type User, type Auth } from 'firebase/auth';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, type User } from 'firebase/auth';
+import firebaseConfig from '../../firebase-applet-config.json';
 
-let _auth: Auth | null = null;
-
-const getFirebaseAuth = async (): Promise<Auth> => {
-  if (_auth) return _auth;
-  try {
-    const res = await fetch('/api/firebase-config');
-    const data = await res.json();
-    if (data.success && data.config) {
-      const app = getApps().length > 0 ? getApp() : initializeApp(data.config);
-      _auth = getAuth(app);
-      return _auth;
-    }
-    throw new Error("Unable to retrieve firebase-config");
-  } catch (err) {
-    console.error("Failed to dynamically fetch Firebase config for auth:", err);
-    throw err;
-  }
-};
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
 
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/spreadsheets');
@@ -34,38 +20,24 @@ export const initGoogleSheetsAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
   onAuthFailure?: () => void
 ) => {
-  let unsubscribe: (() => void) | null = null;
-  
-  getFirebaseAuth().then((auth) => {
-    unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        if (cachedAccessToken) {
-          if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-        } else if (!isSigningIn) {
-          cachedAccessToken = null;
-          if (onAuthFailure) onAuthFailure();
-        }
-      } else {
+  return onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      if (cachedAccessToken) {
+        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
+      } else if (!isSigningIn) {
         cachedAccessToken = null;
         if (onAuthFailure) onAuthFailure();
       }
-    });
-  }).catch((err) => {
-    console.error("Failed to init auth listener:", err);
-    if (onAuthFailure) onAuthFailure();
-  });
-
-  return () => {
-    if (unsubscribe) {
-      unsubscribe();
+    } else {
+      cachedAccessToken = null;
+      if (onAuthFailure) onAuthFailure();
     }
-  };
+  });
 };
 
 export const signInWithGoogleSheets = async (): Promise<{ user: User; accessToken: string } | null> => {
   try {
     isSigningIn = true;
-    const auth = await getFirebaseAuth();
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
@@ -86,12 +58,7 @@ export const getCachedToken = (): string | null => {
 };
 
 export const logoutGoogleSheets = async () => {
-  try {
-    const auth = await getFirebaseAuth();
-    await auth.signOut();
-  } catch (err) {
-    console.error("Error signing out:", err);
-  }
+  await auth.signOut();
   cachedAccessToken = null;
 };
 
