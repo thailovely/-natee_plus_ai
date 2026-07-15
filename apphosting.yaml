@@ -1,3 +1,13 @@
+# Firebase App Hosting configuration file
+# See https://firebase.google.com/docs/app-hosting/configure
+
+# Node.js settings
+runConfig:
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 1024
+
+# Environment variables
 env:
   - variable: FIREBASE_PROJECT_ID
     value: "indigo-brand-j6rpq"

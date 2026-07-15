@@ -4,10 +4,63 @@ import {
   UserCheck, ShieldCheck, Settings, LogOut, Copy, Check, 
   TrendingUp, HelpCircle, ArrowRight, Upload, Search, 
   Trash2, Plus, Star, AlertCircle, RefreshCw, Layers, MapPin,
-  Eye, EyeOff, X, ClipboardList, Printer, Lock
+  Eye, EyeOff, X, ClipboardList, Printer, Lock, FileSpreadsheet,
+  Coins
 } from 'lucide-react';
 import { thaiAddressData } from './thaiAddressData';
 import { NateeWarehouseMap } from './components/NateeWarehouseMap';
+import {
+  initGoogleSheetsAuth,
+  signInWithGoogleSheets,
+  exportMembersToGoogleSheets,
+  logoutGoogleSheets
+} from './lib/googleSheets';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
+
+interface PaginationProps {
+  currentPage: number;
+  totalItems: number;
+  itemsPerPage: number;
+  onPageChange: (page: number) => void;
+}
+
+const TablePagination: React.FC<PaginationProps> = ({ currentPage, totalItems, itemsPerPage, onPageChange }) => {
+  const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+
+  if (totalItems === 0) return null;
+
+  return (
+    <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-3 text-xs text-slate-500 border-t border-slate-100">
+      <div>
+        แสดงผล <b>{totalItems === 0 ? 0 : startIndex + 1}-{endIndex}</b> จากทั้งหมด <b>{totalItems}</b> รายการ
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+          disabled={currentPage === 1}
+          className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:hover:bg-transparent font-medium cursor-pointer"
+        >
+          ก่อนหน้า
+        </button>
+        <span className="font-semibold text-slate-800">
+          หน้า {currentPage} จาก {totalPages}
+        </span>
+        <button
+          type="button"
+          onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+          disabled={currentPage === totalPages}
+          className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:hover:bg-transparent font-medium cursor-pointer"
+        >
+          ถัดไป
+        </button>
+      </div>
+    </div>
+  );
+};
 
 export default function App() {
   // Global States
@@ -28,6 +81,9 @@ export default function App() {
     }
   }, [currentUser]);
 
+
+
+  const [isUsingPollingFallback, setIsUsingPollingFallback] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>('dash');
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   const [notif, setNotif] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -167,10 +223,61 @@ export default function App() {
 
   // Member Profile States
   const [profile, setProfile] = useState<any>(null);
+  const [isSandboxActive, setIsSandboxActive] = useState(false);
+  const [togglingSandbox, setTogglingSandbox] = useState(false);
+
+  const handleToggleSandbox = async (active: boolean, resetFromProduction: boolean = false) => {
+    setTogglingSandbox(true);
+    try {
+      const res = await fetch('/api/admin/sandbox-toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active, resetFromProduction })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsSandboxActive(data.isSandboxActive);
+        showNotif(data.message, 'success');
+        
+        // Refresh all states
+        if (currentUser) {
+          fetchProfile(true);
+          fetchAdminQueues();
+        }
+      } else {
+        showNotif(data.message, 'error');
+      }
+    } catch (e: any) {
+      showNotif("เกิดข้อผิดพลาดในการปรับสถานะโหมดทดสอบ", "error");
+    } finally {
+      setTogglingSandbox(false);
+    }
+  };
+
   const [copied, setCopied] = useState(false);
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [txnPerPage, setTxnPerPage] = useState<number>(10);
+  const [txnPerPage, setTxnPerPage] = useState<number>(20);
   const [txnCurrentPage, setTxnCurrentPage] = useState<number>(1);
+
+  // Pagination states for reports
+  const [eCashPage, setECashPage] = useState<number>(1);
+  const [eMoneyPage, setEMoneyPage] = useState<number>(1);
+  const [allSharePage, setESharePage] = useState<number>(1);
+  const [referralsPage, setReferralsPage] = useState<number>(1);
+  const [binaryPage, setBinaryPage] = useState<number>(1);
+
+  // Pagination states for admin subtabs
+  const [adminWithQueuePage, setAdminWithQueuePage] = useState<number>(1);
+  const [adminMembersPage, setAdminMembersPage] = useState<number>(1);
+  const [adminKycPage, setAdminKycPage] = useState<number>(1);
+  const [adminKycQueuePage, setAdminKycQueuePage] = useState<number>(1);
+  const [adminDepositQueuePage, setAdminDepositQueuePage] = useState<number>(1);
+  const [adminOrdersProcessingPage, setAdminOrdersProcessingPage] = useState<number>(1);
+  const [adminProductQueuePage, setAdminProductQueuePage] = useState<number>(1);
+  const [adminActiveProductsPage, setAdminActiveProductsPage] = useState<number>(1);
+  const [adminOrdersSearchPage, setAdminOrdersSearchPage] = useState<number>(1);
+  const [adminPendingCouponPvPage, setAdminPendingCouponPvPage] = useState<number>(1);
+  const [adminCouponPvHistoryPage, setAdminCouponPvHistoryPage] = useState<number>(1);
   const [kycForm, setKycForm] = useState({
     idCardFile: '',
     bankBookFile: '',
@@ -269,7 +376,7 @@ export default function App() {
   const [kycRejectReason, setKycRejectReason] = useState<string>('');
   
   // Transactions States
-  const [topupAmount, setTopupAmount] = useState<string>('500');
+  const [topupAmount, setTopupAmount] = useState<string>('');
   const [topupDecimal, setTopupDecimal] = useState<string>('');
   const [topupSlip, setTopupSlip] = useState<string>('');
   const [topupSlipBase64, setTopupSlipBase64] = useState<string>('');
@@ -311,12 +418,25 @@ export default function App() {
   const [withdrawPin, setWithdrawPin] = useState('');
   const [exchangeAmount, setExchangeAmount] = useState('');
   const [exchangePin, setExchangePin] = useState('');
+
+  // E-Money transaction form states
+  const [ecashToEmoneyAmount, setEcashToEmoneyAmount] = useState('');
+  const [ecashToEmoneyPin, setEcashToEmoneyPin] = useState('');
+  const [emoneyToEcashAmount, setEmoneyToEcashAmount] = useState('');
+  const [emoneyToEcashPin, setEmoneyToEcashPin] = useState('');
+  const [emoneyToEcouponAmount, setEmoneyToEcouponAmount] = useState('');
+  const [emoneyToEcouponPin, setEmoneyToEcouponPin] = useState('');
+  const [withdrawEmoneyAmount, setWithdrawEmoneyAmount] = useState('');
+  const [withdrawEmoneyPin, setWithdrawEmoneyPin] = useState('');
   
   // MLM Trees States
   const [binaryTree, setBinaryTree] = useState<any>(null);
+  const [binaryTreeParentId, setBinaryTreeParentId] = useState<string | null>(null);
   const [referralTree, setReferralTree] = useState<any>(null);
   const [planBData, setPlanBData] = useState<any>(null);
   const [mlmSearchId, setMlmSearchId] = useState('');
+  const [treeScale, setTreeScale] = useState<number>(0.85);
+  const [maxTreeDepth, setMaxTreeDepth] = useState<number>(3);
   const [planBSubTab, setPlanBSubTab] = useState<'b1' | 'b2'>('b1');
   const [adminSubTab, setAdminSubTab] = useState<'queues' | 'members' | 'couponPv' | 'systemReset' | 'memberApprovals' | 'shippingApprove' | 'manageShops' | 'orderStatus' | 'bankSettings' | 'depositApprove'>('queues');
   const [allSellerProducts, setAllSellerProducts] = useState<any[]>([]);
@@ -346,6 +466,9 @@ export default function App() {
   });
   const [shopSubTab, setShopSubTab] = useState<'packages' | 'shop'>('packages');
   const [sellerProducts, setSellerProducts] = useState<any[]>([]);
+  const [sellerOrders, setSellerOrders] = useState<any[]>([]);
+  const [sellerPortalTab, setSellerPortalTab] = useState<'products' | 'orders'>('products');
+  const [sellerShippingTracking, setSellerShippingTracking] = useState<{[key: string]: { company: string, trackingNo: string, note: string }}>({});
   
   // CSR scrolling text state
   const [csrFeed, setCsrFeed] = useState<any[]>([]);
@@ -399,6 +522,8 @@ export default function App() {
   // System Reset States
   const [resetConfirmationInput, setResetConfirmationInput] = useState<string>('');
   const [resettingSystem, setResettingSystem] = useState<boolean>(false);
+  const [syncingFirestore, setSyncingFirestore] = useState<boolean>(false);
+  const [rebuildingTree, setRebuildingTree] = useState<boolean>(false);
 
   // Admin Member Management
   const [adminMembersList, setAdminMembersList] = useState<any[]>([]);
@@ -409,6 +534,93 @@ export default function App() {
   const [adminNewChoiceName, setAdminNewChoiceName] = useState('');
   const [adminNewChoiceCost, setAdminNewChoiceCost] = useState('');
   const [withDeductions, setWithDeductions] = useState<{[key: string]: string}>({});
+
+  // Google Sheets Export States
+  const [googleSheetsToken, setGoogleSheetsToken] = useState<string | null>(null);
+  const [googleSheetsUser, setGoogleSheetsUser] = useState<any | null>(null);
+  const [isExportingToSheets, setIsExportingToSheets] = useState(false);
+  const [exportedSheetUrl, setExportedSheetUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = initGoogleSheetsAuth(
+      (user, token) => {
+        setGoogleSheetsUser(user);
+        setGoogleSheetsToken(token);
+      },
+      () => {
+        setGoogleSheetsUser(null);
+        setGoogleSheetsToken(null);
+      }
+    );
+    return () => {
+      if (unsubscribe && typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, []);
+
+  const handleExportToGoogleSheets = async () => {
+    let token = googleSheetsToken;
+    let user = googleSheetsUser;
+
+    try {
+      if (!token) {
+        const result = await signInWithGoogleSheets();
+        if (result) {
+          token = result.accessToken;
+          user = result.user;
+          setGoogleSheetsToken(token);
+          setGoogleSheetsUser(user);
+          showNotif('เชื่อมต่อบัญชี Google สำเร็จ!', 'success');
+        } else {
+          showNotif('ไม่สามารถเชื่อมต่อบัญชี Google ได้', 'error');
+          return;
+        }
+      }
+
+      setIsExportingToSheets(true);
+      setExportedSheetUrl(null);
+
+      // Prepare member data
+      const dataToExport = adminMembersList.map((m: any) => ({
+        userId: m.userId || '',
+        username: m.username || '',
+        name: m.name || '',
+        surname: m.surname || '',
+        phone: m.phone || '',
+        email: m.email || '',
+        rank: m.rank || 'S',
+        role: m.role || 'Member',
+        balanceECash: m.balanceECash || 0,
+        balanceECoupon: m.balanceECoupon || 0,
+        totalEarnings: m.totalEarnings || 0,
+        totalCouponsEarned: m.totalCouponsEarned || 0,
+        sponsorId: m.sponsorId || '',
+        createdAt: m.createdAt || ''
+      }));
+
+      const result = await exportMembersToGoogleSheets(dataToExport, token);
+      setExportedSheetUrl(result.spreadsheetUrl);
+      showNotif('แชร์รายชื่อสมาชิกลง Google Sheet สำเร็จแล้วค่ะ!', 'success');
+    } catch (err: any) {
+      console.error('Export Google Sheets Error:', err);
+      showNotif(err.message || 'เกิดข้อผิดพลาดในการส่งออกข้อมูล', 'error');
+    } finally {
+      setIsExportingToSheets(false);
+    }
+  };
+
+  const handleDisconnectGoogleSheets = async () => {
+    try {
+      await logoutGoogleSheets();
+      setGoogleSheetsToken(null);
+      setGoogleSheetsUser(null);
+      setExportedSheetUrl(null);
+      showNotif('ยกเลิกการเชื่อมต่อบัญชี Google สำเร็จ', 'info');
+    } catch (err: any) {
+      showNotif('เกิดข้อผิดพลาดในการยกเลิกการเชื่อมต่อ', 'error');
+    }
+  };
   
   // Order Search States
   const [orderSearchId, setOrderSearchId] = useState('');
@@ -417,45 +629,139 @@ export default function App() {
   const [orderSearchStatus, setOrderSearchStatus] = useState('');
   
   // Report States
-  const [reportSubTab, setReportSubTab] = useState<'mcash' | 'mcoupon' | 'allshare' | 'referrals' | 'binary'>('mcash');
+  const [reportSubTab, setReportSubTab] = useState<'ecash' | 'emoney' | 'ecoupon' | 'eshare' | 'referrals' | 'binary'>('ecash');
   const [memberOrders, setMemberOrders] = useState<any[]>([]);
   const [directReferrals, setDirectReferrals] = useState<any[]>([]);
   const [binaryDescendants, setBinaryDescendants] = useState<any[]>([]);
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<any | null>(null);
 
-  // Sound on cash addition simulation
-  const playCashSound = (amount?: number) => {
+  // Financial Transaction Confirmation Modal state
+  const [txnConfirm, setTxnConfirm] = useState<{
+    type: 'transfer_ecash_member' | 'transfer_ecash_emoney' | 'transfer_emoney_ecash' | 'transfer_emoney_ecoupon' | 'withdraw_emoney' | 'buy_coupon';
+    amount: number;
+    pin: string;
+    recipientIdOrPhone?: string;
+    recipientName?: string;
+    feeAmount?: number;
+    netAmount?: number;
+  } | null>(null);
+  const [isVerifyingRecipient, setIsVerifyingRecipient] = useState(false);
+
+  // Reset pagination pages to 1 when search queries or tabs change
+  useEffect(() => {
+    setECashPage(1);
+    setEMoneyPage(1);
+    setESharePage(1);
+    setReferralsPage(1);
+    setBinaryPage(1);
+    setAdminWithQueuePage(1);
+    setAdminMembersPage(1);
+    setAdminKycQueuePage(1);
+    setAdminDepositQueuePage(1);
+    setAdminOrdersProcessingPage(1);
+    setAdminProductQueuePage(1);
+    setAdminActiveProductsPage(1);
+    setAdminOrdersSearchPage(1);
+    setAdminPendingCouponPvPage(1);
+    setAdminCouponPvHistoryPage(1);
+  }, [searchMemberQuery, prodSearchQuery, orderSearchId, orderSearchUserId, orderSearchDate, orderSearchStatus, activeTab, reportSubTab, adminSubTab]);
+
+  // Sound on money (E-Cash) deposit addition (cha-ching money sound effect + actual net amount)
+  const playMoneySound = (amount?: number, messageType: 'deposit' | 'bonus' | 'general' = 'general') => {
     try {
       const AudioCtxClass = typeof window !== 'undefined' ? (window.AudioContext || (window as any).webkitAudioContext) : null;
       if (AudioCtxClass && typeof AudioCtxClass === 'function') {
         try {
           const audioCtx = new AudioCtxClass();
-          const osc = audioCtx.createOscillator();
-          const gain = audioCtx.createGain();
-          osc.connect(gain);
-          gain.connect(audioCtx.destination);
-          osc.frequency.setValueAtTime(880, audioCtx.currentTime); // High pitch coin sound
-          gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-          osc.start();
-          osc.stop(audioCtx.currentTime + 0.15);
+          const now = audioCtx.currentTime;
+
+          // Double high-pitch coin clink (cha-ching effect)
+          const osc1 = audioCtx.createOscillator();
+          const gain1 = audioCtx.createGain();
+          osc1.type = 'triangle';
+          osc1.frequency.setValueAtTime(1500, now);
+          osc1.frequency.exponentialRampToValueAtTime(2000, now + 0.05);
+          gain1.gain.setValueAtTime(0.15, now);
+          gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+          osc1.connect(gain1);
+          gain1.connect(audioCtx.destination);
+          osc1.start(now);
+          osc1.stop(now + 0.08);
+
+          const osc2 = audioCtx.createOscillator();
+          const gain2 = audioCtx.createGain();
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(1800, now + 0.08);
+          osc2.frequency.exponentialRampToValueAtTime(2500, now + 0.15);
+          gain2.gain.setValueAtTime(0.15, now + 0.08);
+          gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+          osc2.connect(gain2);
+          gain2.connect(audioCtx.destination);
+          osc2.start(now + 0.08);
+          osc2.stop(now + 0.22);
+
+          const osc3 = audioCtx.createOscillator();
+          const gain3 = audioCtx.createGain();
+          osc3.type = 'sine';
+          osc3.frequency.setValueAtTime(1200, now + 0.12);
+          gain3.gain.setValueAtTime(0.08, now + 0.12);
+          gain3.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+          osc3.connect(gain3);
+          gain3.connect(audioCtx.destination);
+          osc3.start(now + 0.12);
+          osc3.stop(now + 0.6);
         } catch (err) {
-          console.log("AudioContext creation failed:", err);
+          console.log("AudioContext failed:", err);
         }
       }
 
+      // Voice synthesis after a short delay (0.6s) so the sound effect finishes first
       if (typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance === 'function') {
-        try {
-          const text = amount ? `เงินเข้าแล้วค่ะ ${amount} บาท` : "เงินเข้าแล้วค่ะ";
-          const utterance = new SpeechSynthesisUtterance(text);
-          utterance.lang = 'th-TH';
-          utterance.rate = 1.05;
-          window.speechSynthesis.speak(utterance);
-        } catch (err) {
-          console.log("Speech synthesis failed:", err);
-        }
+        setTimeout(() => {
+          try {
+            // Cancel any currently speaking voices to prevent overlapping
+            window.speechSynthesis.cancel();
+
+            let text = "";
+            if (messageType === 'deposit') {
+              text = amount ? `เติมเงินสำเร็จแล้ว ยอดเงินเข้า ${amount} บาทค่ะ` : "เติมเงินสำเร็จแล้วค่ะ";
+            } else if (messageType === 'bonus') {
+              text = amount ? `มีโบนัสเข้า ยอดเงิน ${amount} บาทค่ะ` : "มีโบนัสเข้าค่ะ";
+            } else {
+              text = amount ? `มีโบนัสเข้า ยอดเงิน ${amount} บาทค่ะ` : "มีโบนัสเข้าค่ะ";
+            }
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'th-TH';
+            utterance.rate = 1.0; // Standard natural rate
+            utterance.pitch = 1.05; // Slightly pleasant pitch
+            utterance.volume = 1.0;
+            
+            // Explicitly look for a Thai female voice
+            const voices = window.speechSynthesis.getVoices();
+            const thVoices = voices.filter(v => v.lang.startsWith('th') || v.lang === 'th-TH' || v.lang === 'th_TH');
+            if (thVoices.length > 0) {
+              // Standard names for iOS/macOS/Windows/Android female voices: 'kanya', 'narisa', 'google', 'online', 'female', etc.
+              const femaleVoice = thVoices.find(v => 
+                v.name.toLowerCase().includes('kanya') || 
+                v.name.toLowerCase().includes('narisa') ||
+                v.name.toLowerCase().includes('female') ||
+                v.name.toLowerCase().includes('google') ||
+                v.name.toLowerCase().includes('siri') ||
+                v.name.toLowerCase().includes('pattara') ||
+                v.name.toLowerCase().includes('online') ||
+                v.name.toLowerCase().includes('premium')
+              );
+              utterance.voice = femaleVoice || thVoices[0];
+            }
+
+            window.speechSynthesis.speak(utterance);
+          } catch (err) {
+            console.log("Speech synthesis failed:", err);
+          }
+        }, 600);
       }
     } catch (e) {
-      console.log("Audio not allowed yet", e);
+      console.log("Audio play failed:", e);
     }
   };
 
@@ -467,6 +773,34 @@ export default function App() {
 
   // Handle URL sponsor parameter on mount
   useEffect(() => {
+    // Warm up/preload speechSynthesis voices
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.getVoices();
+        const handleVoicesChanged = () => {
+          window.speechSynthesis.getVoices();
+        };
+        window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
+        return () => {
+          window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
+        };
+      } catch (err) {
+        console.log("Failed to initialize speechSynthesis listener:", err);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    // Check initial sandbox status
+    fetch('/api/admin/sandbox-status')
+      .then(res => res.json())
+      .then(d => {
+        if (d.success && d.isSandboxActive !== undefined) {
+          setIsSandboxActive(d.isSandboxActive);
+        }
+      })
+      .catch(() => {});
+
     const params = new URLSearchParams(window.location.search);
     const sponsor = params.get('sponsor');
     
@@ -515,31 +849,326 @@ export default function App() {
     }
   }, [activeTab, currentUser]);
 
-  // Handle polling for sound trigger on new commission/transaction
+  // Fetch seller data when seller tab is active
   useEffect(() => {
-    let prevBalance = 0;
-    if (profile) {
-      prevBalance = profile.balanceMCash;
+    if (currentUser && activeTab === 'seller') {
+      fetchSellerData();
     }
-    const interval = setInterval(() => {
-      if (currentUser) {
-        fetch('/api/member/profile/' + currentUser.userId)
-          .then(res => res.json())
-          .then(data => {
-            if (data.success && data.profile) {
-              if (data.profile.balanceMCash > prevBalance && prevBalance > 0) {
-                const diff = parseFloat((data.profile.balanceMCash - prevBalance).toFixed(4));
-                showNotif(`เงินเข้าแล้ว! +${diff.toLocaleString()} บาท จาก Bonus/All-Share`, 'success');
-                playCashSound(diff);
-              }
-              prevBalance = data.profile.balanceMCash;
-              setProfile(data.profile);
-            }
-          });
+  }, [activeTab, currentUser]);
+
+  // Handle real-time Firestore synchronization for all application data
+  useEffect(() => {
+    if (!currentUser) return;
+    setIsUsingPollingFallback(false);
+
+    let activeUnsubscribes: (() => void)[] = [];
+    let fallbackInterval: NodeJS.Timeout | null = null;
+    let usingPollingFallback = false;
+
+    const activateFallbackPolling = (reason: string) => {
+      if (usingPollingFallback) return;
+      usingPollingFallback = true;
+      setIsUsingPollingFallback(true);
+      console.warn(`⚠️ Firestore Real-time listener failed (${reason}). Activating fallback HTTP polling...`);
+      
+      // Clear any current Firestore subscriptions to save network/resources
+      activeUnsubscribes.forEach(unsub => {
+        try { unsub(); } catch (e) {}
+      });
+      activeUnsubscribes = [];
+
+      // Start Polling Fallback immediately and then periodically
+      let prevBalance = 0;
+      if (profile) {
+        prevBalance = profile.balanceECash;
       }
-    }, 10000); // Check every 10 seconds
-    return () => clearInterval(interval);
-  }, [currentUser, profile]);
+
+      const runPoll = () => {
+        fetch('/api/sync-state')
+          .then(res => res.json())
+          .then(resData => {
+            if (resData.success && resData.data) {
+              const data = resData.data;
+              if (resData.isSandboxActive !== undefined) {
+                setIsSandboxActive(resData.isSandboxActive);
+              }
+
+              // 1. Sync Members
+              const members = data.members || [];
+              setAdminMembersList(members);
+              const currentMember = members.find((m: any) => m.userId === currentUser.userId);
+              if (currentMember) {
+                setProfile((prevProfile: any) => {
+                  if (prevProfile) {
+                    const prevB = prevProfile.balanceECash;
+                    const newBalance = currentMember.balanceECash;
+                    if (newBalance > prevB && prevB > 0) {
+                      const diff = parseFloat((newBalance - prevB).toFixed(4));
+                      showNotif(`ยอดเงิน E-Cash ของคุณเพิ่มขึ้น +${diff.toLocaleString()} บาท`, 'success');
+                      playMoneySound(diff, 'general');
+                    }
+                  }
+                  return currentMember;
+                });
+                if (currentMember.firstLogin) {
+                  setIsFirstLoginModal(true);
+                }
+              }
+              if (currentUser.role === 'Admin' || currentUser.role === 'Manager') {
+                setKycQueue(members.filter((m: any) => m.statusKyc === 'Pending'));
+              }
+
+              // 2. Sync Transactions & Queues
+              const transactions = data.transactions || [];
+              setTransactions(transactions.filter((t: any) => t.userId === currentUser.userId));
+              setWithQueue(transactions.filter((t: any) => t.type === 'WithdrawalRequest' && t.status === 'Pending'));
+              setDepositQueue(transactions.filter((t: any) => t.type === 'Deposit' && t.status === 'Pending'));
+
+              // 3. Sync Orders
+              const orders = data.orders || [];
+              setMemberOrders(orders.filter((o: any) => o.userId === currentUser.userId));
+              setAdminOrders(orders);
+              setSellerOrders(orders.filter((o: any) => o.sellerId === currentUser.userId));
+
+              // 4. Sync Products
+              setProducts(data.products || []);
+
+              // 5. Sync Seller Products
+              const sellerProducts = data.sellerProducts || [];
+              setSellerProducts(sellerProducts.filter((p: any) => p.sellerId === currentUser.userId));
+              setAllSellerProducts(sellerProducts);
+              setProdQueue(sellerProducts.filter((p: any) => p.status === 'Pending'));
+
+              // 6. Sync CSR Fund
+              const csrFund = data.csrFund || { balance: 0, history: [] };
+              setCsrFeed(csrFund.history || []);
+              setCsrBalance(csrFund.balance || 0);
+
+              // 7. Sync System Stats
+              setAdminStats(data.systemStats || null);
+
+              // 8. Sync Package Choices
+              setPackageChoices(data.packageProductChoices || []);
+
+              // 9. Sync Bank Settings
+              if (data.bankSettings) {
+                setBankSettings(data.bankSettings);
+              }
+            }
+          })
+          .catch(e => console.error("Poll sync-state error:", e));
+      };
+
+      runPoll();
+      fallbackInterval = setInterval(runPoll, 7000);
+    };
+
+    const setupRealTimeSync = async () => {
+      try {
+        const resConfig = await fetch('/api/firebase-config');
+        const dConfig = await resConfig.json();
+        if (!dConfig.success || !dConfig.config) {
+          throw new Error("No Firebase config returned from server");
+        }
+
+        const config = dConfig.config;
+        const firebaseApp = initializeApp(config);
+        const dbFirestore = getFirestore(firebaseApp, config.firestoreDatabaseId);
+
+        const collectionName = isSandboxActive ? 'app_sections_sandbox' : 'app_sections';
+        console.log(`🔥 [Client] Initializing Firestore onSnapshot real-time listener on collection: ${collectionName}`);
+
+        // 1. Members document listener
+        const unsubMembers = onSnapshot(doc(dbFirestore, collectionName, 'members'), (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || [];
+            setAdminMembersList(data);
+            
+            const currentMember = data.find((m: any) => m.userId === currentUser.userId);
+            if (currentMember) {
+              setProfile((prevProfile: any) => {
+                if (prevProfile) {
+                  const prevBalance = prevProfile.balanceECash;
+                  const newBalance = currentMember.balanceECash;
+                  if (newBalance > prevBalance && prevBalance > 0) {
+                    const diff = parseFloat((newBalance - prevBalance).toFixed(4));
+                    
+                    // Look up transactions for recent approved deposit vs bonus
+                    fetch(`/api/member/transactions/${currentUser.userId}`)
+                      .then(tRes => tRes.json())
+                      .then(tData => {
+                        let isDeposit = false;
+                        let depositAmount = diff;
+
+                        if (tData.success && tData.transactions) {
+                          const recentDeposit = tData.transactions.find((t: any) => {
+                            const isDepType = t.type === "Deposit" || t.type === "Deposit_System";
+                            const isApproved = t.status === "Approved";
+                            const isRecent = (new Date().getTime() - new Date(t.createdAt).getTime()) < 60000;
+                            return isDepType && isApproved && isRecent;
+                          });
+
+                          if (recentDeposit) {
+                            isDeposit = true;
+                            depositAmount = recentDeposit.transferAmount || recentDeposit.amount || diff;
+                          }
+                        }
+
+                        if (isDeposit) {
+                          showNotif(`เติมเงิน E-Cash สำเร็จแล้ว! +${depositAmount.toLocaleString()} บาท (ได้รับยอดจริงครบถ้วนแล้วค่ะ)`, 'success');
+                          playMoneySound(depositAmount, 'deposit');
+                        } else {
+                          showNotif(`ได้รับปันผลสำเร็จ! +${diff.toLocaleString()} บาท จาก Bonus/E-Share`, 'success');
+                          playMoneySound(diff, 'bonus');
+                        }
+                      })
+                      .catch(() => {
+                        showNotif(`ยอดเงิน E-Cash ของคุณเพิ่มขึ้น +${diff.toLocaleString()} บาท`, 'success');
+                        playMoneySound(diff, 'general');
+                      });
+                  }
+                }
+                return currentMember;
+              });
+              
+              if (currentMember.firstLogin) {
+                setIsFirstLoginModal(true);
+              }
+            }
+
+            // Update kycQueue for admins
+            if (currentUser.role === 'Admin' || currentUser.role === 'Manager') {
+              setKycQueue(data.filter((m: any) => m.statusKyc === 'Pending'));
+            }
+          }
+        }, (error) => {
+          console.error("onSnapshot members error:", error);
+          activateFallbackPolling("members failed: " + error.message);
+        });
+        activeUnsubscribes.push(unsubMembers);
+
+        // 2. Transactions document listener
+        const unsubTx = onSnapshot(doc(dbFirestore, collectionName, 'transactions'), (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || [];
+            setTransactions(data.filter((t: any) => t.userId === currentUser.userId));
+            setWithQueue(data.filter((t: any) => t.type === 'WithdrawalRequest' && t.status === 'Pending'));
+            setDepositQueue(data.filter((t: any) => t.type === 'Deposit' && t.status === 'Pending'));
+          }
+        }, (error) => {
+          console.error("onSnapshot transactions error:", error);
+          activateFallbackPolling("transactions failed: " + error.message);
+        });
+        activeUnsubscribes.push(unsubTx);
+
+        // 3. Orders document listener
+        const unsubOrders = onSnapshot(doc(dbFirestore, collectionName, 'orders'), (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || [];
+            setMemberOrders(data.filter((o: any) => o.userId === currentUser.userId));
+            setAdminOrders(data);
+            setSellerOrders(data.filter((o: any) => o.sellerId === currentUser.userId));
+          }
+        }, (error) => {
+          console.error("onSnapshot orders error:", error);
+          activateFallbackPolling("orders failed: " + error.message);
+        });
+        activeUnsubscribes.push(unsubOrders);
+
+        // 4. Products document listener
+        const unsubProds = onSnapshot(doc(dbFirestore, collectionName, 'products'), (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || [];
+            setProducts(data);
+          }
+        }, (error) => {
+          console.error("onSnapshot products error:", error);
+          activateFallbackPolling("products failed: " + error.message);
+        });
+        activeUnsubscribes.push(unsubProds);
+
+        // 5. Seller Products document listener
+        const unsubSellerProds = onSnapshot(doc(dbFirestore, collectionName, 'sellerProducts'), (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || [];
+            setSellerProducts(data.filter((p: any) => p.sellerId === currentUser.userId));
+            setAllSellerProducts(data);
+            setProdQueue(data.filter((p: any) => p.status === 'Pending'));
+          }
+        }, (error) => {
+          console.error("onSnapshot sellerProducts error:", error);
+          activateFallbackPolling("sellerProducts failed: " + error.message);
+        });
+        activeUnsubscribes.push(unsubSellerProds);
+
+        // 6. CSR Fund document listener
+        const unsubCsr = onSnapshot(doc(dbFirestore, collectionName, 'csrFund'), (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || { balance: 0, history: [] };
+            setCsrFeed(data.history || []);
+            setCsrBalance(data.balance || 0);
+          }
+        }, (error) => {
+          console.error("onSnapshot csrFund error:", error);
+          activateFallbackPolling("csrFund failed: " + error.message);
+        });
+        activeUnsubscribes.push(unsubCsr);
+
+        // 7. System Stats document listener
+        const unsubStats = onSnapshot(doc(dbFirestore, collectionName, 'systemStats'), (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || null;
+            setAdminStats(data);
+          }
+        }, (error) => {
+          console.error("onSnapshot systemStats error:", error);
+          activateFallbackPolling("systemStats failed: " + error.message);
+        });
+        activeUnsubscribes.push(unsubStats);
+
+        // 8. Package product choices document listener
+        const unsubChoices = onSnapshot(doc(dbFirestore, collectionName, 'packageProductChoices'), (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || [];
+            setPackageChoices(data);
+          }
+        }, (error) => {
+          console.error("onSnapshot packageProductChoices error:", error);
+          activateFallbackPolling("packageProductChoices failed: " + error.message);
+        });
+        activeUnsubscribes.push(unsubChoices);
+
+        // 9. Bank settings document listener
+        const unsubBank = onSnapshot(doc(dbFirestore, collectionName, 'bankSettings'), (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || null;
+            if (data) {
+              setBankSettings(data);
+            }
+          }
+        }, (error) => {
+          console.error("onSnapshot bankSettings error:", error);
+          activateFallbackPolling("bankSettings failed: " + error.message);
+        });
+        activeUnsubscribes.push(unsubBank);
+
+      } catch (err: any) {
+        activateFallbackPolling(err?.message || "initial setup failed");
+      }
+    };
+
+    setupRealTimeSync();
+
+    return () => {
+      console.log("🧹 Tearing down real-time active listeners / timers");
+      activeUnsubscribes.forEach(unsub => {
+        try { unsub(); } catch (e) {}
+      });
+      if (fallbackInterval) {
+        clearInterval(fallbackInterval);
+      }
+    };
+  }, [currentUser, isSandboxActive]);
 
   const getRemainingRights = () => {
     if (profile?.role === 'Manager' || profile?.role === 'Admin') return 999999999;
@@ -576,6 +1205,9 @@ export default function App() {
       const res = await fetch(`/api/member/profile/${currentUser.userId}`);
       const data = await res.json();
       if (data.success) {
+        if (data.isSandboxActive !== undefined) {
+          setIsSandboxActive(data.isSandboxActive);
+        }
         setProfile(data.profile);
         setShippingAddress(data.profile.kycAddress || '');
         if (data.profile.firstLogin) {
@@ -928,6 +1560,24 @@ export default function App() {
     } catch (err) {}
   };
 
+  const fetchSellerData = async () => {
+    if (!currentUser) return;
+    try {
+      const resProds = await fetch(`/api/seller/products/${currentUser.userId}`);
+      const dataProds = await resProds.json();
+      if (dataProds.success) {
+        setSellerProducts(dataProds.products || []);
+      }
+      const resOrders = await fetch(`/api/seller/orders/${currentUser.userId}`);
+      const dataOrders = await resOrders.json();
+      if (dataOrders.success) {
+        setSellerOrders(dataOrders.orders || []);
+      }
+    } catch (err) {
+      console.error("Error fetching seller data:", err);
+    }
+  };
+
   const fetchProducts = async () => {
     try {
       const res = await fetch('/api/shop/products');
@@ -955,14 +1605,25 @@ export default function App() {
     const targetId = overrideId || mlmSearchId || currentUser.userId;
     try {
       // Plan A Binary Tree
-      const res1 = await fetch(`/api/mlm/binary-tree/${targetId}`);
+      const res1 = await fetch(`/api/mlm/binary-tree/${targetId}?callerId=${currentUser.userId}`);
       const d1 = await res1.json();
-      if (d1.success) setBinaryTree(d1.tree);
+      if (d1.success) {
+        setBinaryTree(d1.tree);
+        setBinaryTreeParentId(d1.parentId || null);
+      } else {
+        showNotif(d1.message || "เกิดข้อผิดพลาดในการดึงข้อมูลผังไบนารี", "error");
+      }
 
       // Sponsor Tree
-      const res2 = await fetch(`/api/mlm/referral-tree/${targetId}`);
+      const res2 = await fetch(`/api/mlm/referral-tree/${targetId}?callerId=${currentUser.userId}`);
       const d2 = await res2.json();
-      if (d2.success) setReferralTree(d2.tree);
+      if (d2.success) {
+        setReferralTree(d2.tree);
+      } else {
+        if (mlmSearchId) {
+          showNotif(d2.message || "เกิดข้อผิดพลาดในการดึงข้อมูลผังแนะนำตรง", "error");
+        }
+      }
 
       // Plan B progression
       const res3 = await fetch(`/api/mlm/plan-b/${currentUser.userId}`);
@@ -1081,6 +1742,51 @@ export default function App() {
       showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์เพื่อรีเซ็ตระบบ", "error");
     } finally {
       setResettingSystem(false);
+    }
+  };
+
+  const handleFirestoreSync = async () => {
+    setSyncingFirestore(true);
+    try {
+      const res = await fetch('/api/admin/sync-firestore', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(data.message, 'success');
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      } else {
+        showNotif(data.message, 'error');
+      }
+    } catch (e) {
+      showNotif("เกิดข้อผิดพลาดในการดึงข้อมูลล่าสุดจาก Cloud Firestore", "error");
+    } finally {
+      setSyncingFirestore(false);
+    }
+  };
+
+  const handleRebuildBinaryTree = async () => {
+    if (!currentUser?.userId) return;
+    setRebuildingTree(true);
+    try {
+      const res = await fetch('/api/admin/rebuild-binary-tree', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ managerId: currentUser.userId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(data.message, 'success');
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      } else {
+        showNotif(data.message || 'เกิดข้อผิดพลาดในการจัดเรียงผังสายงาน', 'error');
+      }
+    } catch (e) {
+      showNotif("เกิดข้อผิดพลาดในการจัดเรียงและซ่อมแซมผังสายงาน", "error");
+    } finally {
+      setRebuildingTree(false);
     }
   };
 
@@ -1623,7 +2329,7 @@ export default function App() {
     } catch (err) {}
   };
 
-  // Top up Wallet simulation (adds real M-Cash on approval)
+  // Top up Wallet simulation (adds real E-Cash on approval)
   const handleTopupRequest = (e: React.FormEvent) => {
     e.preventDefault();
     if (!topupAmount || parseFloat(topupAmount) <= 0) {
@@ -1750,7 +2456,7 @@ export default function App() {
       });
       const d = await res.json();
       if (d.success) {
-        showNotif('ส่งหลักฐานสลิปเรียบร้อยแล้วค่ะ รอการตรวจสอบและอนุมัติยอด M-Cash จากแอดมินหลังบ้าน!', 'success');
+        showNotif('ส่งหลักฐานสลิปเรียบร้อยแล้วค่ะ รอการตรวจสอบและอนุมัติยอด E-Cash จากแอดมินหลังบ้าน!', 'success');
         setTopupSlip('');
         setTopupSlipBase64('');
         setTopupDecimal('');
@@ -1768,44 +2474,108 @@ export default function App() {
     }
   };
 
-  // Convert M-Cash to M-Coupon
-  const handleBuyCoupon = async (e: React.FormEvent) => {
+  // Convert E-Cash to E-Coupon (Initiate confirmation)
+  const initiateBuyCoupon = (e: React.FormEvent) => {
     e.preventDefault();
+    const amt = parseFloat(exchangeAmount);
+    if (!exchangeAmount || amt <= 0) {
+      showNotif('กรุณาระบุจำนวนยอดที่ต้องการแลกเปลี่ยน', 'error');
+      return;
+    }
+    if (!exchangePin || exchangePin.length !== 6) {
+      showNotif('กรุณากรอกรหัส PIN 6 หลัก', 'error');
+      return;
+    }
+    setTxnConfirm({
+      type: 'buy_coupon',
+      amount: amt,
+      pin: exchangePin,
+      recipientIdOrPhone: currentUser.userId,
+      recipientName: 'คูปองช้อปปิ้งพอร์ทัล E-Coupon (แลกแล้วไม่สามารถแลกคืนได้)',
+      feeAmount: 0,
+      netAmount: amt
+    });
+  };
+
+  const executeBuyCoupon = async () => {
+    if (!txnConfirm) return;
     try {
       const res = await fetch('/api/member/buy-coupon', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: currentUser.userId,
-          amount: exchangeAmount,
-          pin: exchangePin
+          amount: txnConfirm.amount,
+          pin: txnConfirm.pin
         })
       });
       const d = await res.json();
       if (d.success) {
-        showNotif(`แลกคูปองช้อปปิ้งสำเร็จ! รับสิทธิ์คงเหลือ ${d.newMCoupon} คูปอง`, 'success');
+        showNotif(`แลกคูปองช้อปปิ้งสำเร็จ! รับสิทธิ์คงเหลือ ${d.newECoupon} คูปอง`, 'success');
         setExchangeAmount('');
         setExchangePin('');
+        setTxnConfirm(null);
         fetchProfile();
         fetchTransactions();
       } else {
         showNotif(d.message, 'error');
       }
-    } catch (err) {}
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการทำรายการ', 'error');
+    }
   };
 
-  // Transfer M-Cash
-  const handleTransferMCash = async (e: React.FormEvent) => {
+  // Transfer E-Cash to another member (Initiate confirmation)
+  const initiateTransferECashMember = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!transferUser || !transferAmount || parseFloat(transferAmount) <= 0) {
+      showNotif('กรุณากรอกข้อมูลรหัสผู้รับและจำนวนเงินให้ถูกต้อง', 'error');
+      return;
+    }
+    if (!transferPin || transferPin.length !== 6) {
+      showNotif('กรุณากรอกรหัส PIN 6 หลักให้ครบถ้วน', 'error');
+      return;
+    }
+
+    setIsVerifyingRecipient(true);
     try {
-      const res = await fetch('/api/member/transfer-m-cash', {
+      const res = await fetch('/api/member/verify-recipient', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: transferUser })
+      });
+      const d = await res.json();
+      if (d.success && d.member) {
+        setTxnConfirm({
+          type: 'transfer_ecash_member',
+          amount: parseFloat(transferAmount),
+          pin: transferPin,
+          recipientIdOrPhone: d.member.userId,
+          recipientName: `${d.member.name} ${d.member.surname}`,
+          feeAmount: 0,
+          netAmount: parseFloat(transferAmount)
+        });
+      } else {
+        showNotif(d.message || 'ไม่พบสมาชิกปลายทาง กรุณาตรวจสอบรหัสผู้ใช้หรือเบอร์โทรศัพท์อีกครั้ง', 'error');
+      }
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการตรวจสอบผู้รับ', 'error');
+    } finally {
+      setIsVerifyingRecipient(false);
+    }
+  };
+
+  const executeTransferECashMember = async () => {
+    if (!txnConfirm) return;
+    try {
+      const res = await fetch('/api/member/transfer-e-cash', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           senderId: currentUser.userId,
-          receiverPhoneOrUser: transferUser,
-          amount: transferAmount,
-          pin: transferPin
+          receiverPhoneOrUser: txnConfirm.recipientIdOrPhone,
+          amount: txnConfirm.amount,
+          pin: txnConfirm.pin
         })
       });
       const d = await res.json();
@@ -1814,25 +2584,52 @@ export default function App() {
         setTransferUser('');
         setTransferAmount('');
         setTransferPin('');
+        setTxnConfirm(null);
         fetchProfile();
         fetchTransactions();
       } else {
         showNotif(d.message, 'error');
       }
-    } catch (err) {}
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการทำรายการ', 'error');
+    }
   };
 
-  // Withdraw M-Cash
-  const handleWithdrawMCash = async (e: React.FormEvent) => {
+  // Withdraw E-Money / E-Cash to Bank (Initiate confirmation)
+  const initiateWithdrawECash = (e: React.FormEvent) => {
     e.preventDefault();
+    const amt = parseFloat(withdrawAmount);
+    if (!withdrawAmount || amt <= 0) {
+      showNotif('กรุณาระบุจำนวนเงินต้องการถอน', 'error');
+      return;
+    }
+    if (!withdrawPin || withdrawPin.length !== 6) {
+      showNotif('กรุณากรอกรหัส PIN 6 หลัก', 'error');
+      return;
+    }
+    const fee = amt * 0.20;
+    const net = amt - fee;
+    setTxnConfirm({
+      type: 'withdraw_emoney',
+      amount: amt,
+      pin: withdrawPin,
+      recipientIdOrPhone: currentUser.userId,
+      recipientName: `บัญชีธนาคารของคุณ: ${profile?.bankName} (เลขที่: ${profile?.bankAccount})`,
+      feeAmount: fee,
+      netAmount: net
+    });
+  };
+
+  const executeWithdrawEMoney = async () => {
+    if (!txnConfirm) return;
     try {
       const res = await fetch('/api/member/withdraw', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: currentUser.userId,
-          amount: withdrawAmount,
-          pin: withdrawPin
+          amount: txnConfirm.amount,
+          pin: txnConfirm.pin
         })
       });
       const d = await res.json();
@@ -1840,12 +2637,170 @@ export default function App() {
         showNotif(d.message, 'success');
         setWithdrawAmount('');
         setWithdrawPin('');
+        setTxnConfirm(null);
         fetchProfile();
         fetchTransactions();
       } else {
         showNotif(d.message, 'error');
       }
-    } catch (err) {}
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการทำรายการ', 'error');
+    }
+  };
+
+  // Self E-Cash to E-Money Transfer
+  const initiateTransferECashToEMoney = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(ecashToEmoneyAmount);
+    if (!ecashToEmoneyAmount || amt <= 0) {
+      showNotif('กรุณาระบุจำนวนเงินที่ต้องการโอน', 'error');
+      return;
+    }
+    if (!ecashToEmoneyPin || ecashToEmoneyPin.length !== 6) {
+      showNotif('กรุณากรอกรหัส PIN 6 หลัก', 'error');
+      return;
+    }
+    const fee = amt * 0.10;
+    const net = amt - fee;
+    setTxnConfirm({
+      type: 'transfer_ecash_emoney',
+      amount: amt,
+      pin: ecashToEmoneyPin,
+      recipientIdOrPhone: currentUser.userId,
+      recipientName: 'บัญชีกระเป๋า E-Money ของคุณ (หักค่าธรรมเนียมจัดสรร All-Share 10%)',
+      feeAmount: fee,
+      netAmount: net
+    });
+  };
+
+  const executeTransferECashToEMoney = async () => {
+    if (!txnConfirm) return;
+    try {
+      const res = await fetch('/api/member/transfer-ecash-to-emoney', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser.userId,
+          amount: txnConfirm.amount,
+          pin: txnConfirm.pin
+        })
+      });
+      const d = await res.json();
+      if (d.success) {
+        showNotif(d.message, 'success');
+        setEcashToEmoneyAmount('');
+        setEcashToEmoneyPin('');
+        setTxnConfirm(null);
+        fetchProfile();
+        fetchTransactions();
+      } else {
+        showNotif(d.message, 'error');
+      }
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการทำรายการ', 'error');
+    }
+  };
+
+  // Self E-Money to E-Cash Transfer
+  const initiateTransferEMoneyToECash = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(emoneyToEcashAmount);
+    if (!emoneyToEcashAmount || amt <= 0) {
+      showNotif('กรุณาระบุจำนวนเงินที่ต้องการโอน', 'error');
+      return;
+    }
+    if (!emoneyToEcashPin || emoneyToEcashPin.length !== 6) {
+      showNotif('กรุณากรอกรหัส PIN 6 หลัก', 'error');
+      return;
+    }
+    setTxnConfirm({
+      type: 'transfer_emoney_ecash',
+      amount: amt,
+      pin: emoneyToEcashPin,
+      recipientIdOrPhone: currentUser.userId,
+      recipientName: 'บัญชีกระเป๋า E-Cash ของคุณ (อัตรา 1:1 ไม่มีค่าธรรมเนียม)',
+      feeAmount: 0,
+      netAmount: amt
+    });
+  };
+
+  const executeTransferEMoneyToECash = async () => {
+    if (!txnConfirm) return;
+    try {
+      const res = await fetch('/api/member/transfer-emoney-to-ecash', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser.userId,
+          amount: txnConfirm.amount,
+          pin: txnConfirm.pin
+        })
+      });
+      const d = await res.json();
+      if (d.success) {
+        showNotif(d.message, 'success');
+        setEmoneyToEcashAmount('');
+        setEmoneyToEcashPin('');
+        setTxnConfirm(null);
+        fetchProfile();
+        fetchTransactions();
+      } else {
+        showNotif(d.message, 'error');
+      }
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการทำรายการ', 'error');
+    }
+  };
+
+  // Self E-Money to E-Coupon Transfer
+  const initiateTransferEMoneyToECoupon = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(emoneyToEcouponAmount);
+    if (!emoneyToEcouponAmount || amt <= 0) {
+      showNotif('กรุณาระบุจำนวนเงินที่ต้องการโอน', 'error');
+      return;
+    }
+    if (!emoneyToEcouponPin || emoneyToEcouponPin.length !== 6) {
+      showNotif('กรุณากรอกรหัส PIN 6 หลัก', 'error');
+      return;
+    }
+    setTxnConfirm({
+      type: 'transfer_emoney_ecoupon',
+      amount: amt,
+      pin: emoneyToEcouponPin,
+      recipientIdOrPhone: currentUser.userId,
+      recipientName: 'บัญชีกระเป๋า E-Coupon ของคุณ (อัตรา 1:1 ไม่มีค่าธรรมเนียม)',
+      feeAmount: 0,
+      netAmount: amt
+    });
+  };
+
+  const executeTransferEMoneyToECoupon = async () => {
+    if (!txnConfirm) return;
+    try {
+      const res = await fetch('/api/member/transfer-emoney-to-ecoupon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser.userId,
+          amount: txnConfirm.amount,
+          pin: txnConfirm.pin
+        })
+      });
+      const d = await res.json();
+      if (d.success) {
+        showNotif(d.message, 'success');
+        setEmoneyToEcouponAmount('');
+        setEmoneyToEcouponPin('');
+        setTxnConfirm(null);
+        fetchProfile();
+        fetchTransactions();
+      } else {
+        showNotif(d.message, 'error');
+      }
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการทำรายการ', 'error');
+    }
   };
 
   // Purchase Package or General Product
@@ -1865,18 +2820,18 @@ export default function App() {
     let cashToUse = product.price;
 
     if (!isPkg) {
-      couponToUse = Math.min(profile?.balanceMCoupon || 0, product.price);
+      couponToUse = Math.min(profile?.balanceECoupon || 0, product.price);
       cashToUse = product.price - couponToUse;
     }
 
     if (isPkg) {
-      if (profile?.balanceMCash < product.price) {
-        showNotif('ยอดเงินคงเหลือในกระเป๋า M-Cash ไม่เพียงพอสำหรับชำระเงินค่าแพ็กเกจ กรุณาเติมเงินก่อนทำรายการค่ะ', 'error');
+      if (profile?.balanceECash < product.price) {
+        showNotif('ยอดเงินคงเหลือในกระเป๋า E-Cash ไม่เพียงพอสำหรับชำระเงินค่าแพ็กเกจ กรุณาเติมเงินก่อนทำรายการค่ะ', 'error');
         return;
       }
     } else {
-      if (profile?.balanceMCash < cashToUse) {
-        showNotif(`ยอดเงินคงเหลือไม่พอสำหรับชำระเงิน (ราคารวม ฿${product.price?.toLocaleString()} • หักจ่ายด้วย M-Coupon ฿${couponToUse?.toLocaleString()} • ต้องใช้ M-Cash ชำระส่วนต่าง ฿${cashToUse?.toLocaleString()} แต่ท่านมี M-Cash เพียง ฿${profile?.balanceMCash?.toLocaleString()})`, 'error');
+      if (profile?.balanceECash < cashToUse) {
+        showNotif(`ยอดเงินคงเหลือไม่พอสำหรับชำระเงิน (ราคารวม ฿${product.price?.toLocaleString()} • หักจ่ายด้วย E-Coupon ฿${couponToUse?.toLocaleString()} • ต้องใช้ E-Cash ชำระส่วนต่าง ฿${cashToUse?.toLocaleString()} แต่ท่านมี E-Cash เพียง ฿${profile?.balanceECash?.toLocaleString()})`, 'error');
         return;
       }
     }
@@ -2324,6 +3279,41 @@ export default function App() {
     } catch (err) {}
   };
 
+  const handleSellerShipOrder = async (orderId: string) => {
+    try {
+      const tracking = sellerShippingTracking[orderId] || { company: 'Flash Express', trackingNo: '', note: '' };
+      if (!tracking.trackingNo) {
+        showNotif("กรุณากรอกเลขพัสดุ (Tracking Number) ก่อนทำการยืนยันการจัดส่งค่ะ", "error");
+        return;
+      }
+      const res = await fetch('/api/seller/order-ship', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId,
+          sellerId: currentUser.userId,
+          trackingCompany: tracking.company,
+          trackingNo: tracking.trackingNo,
+          shippingNote: tracking.note
+        })
+      });
+      const d = await res.json();
+      if (d.success) {
+        showNotif(d.message, 'success');
+        setSellerShippingTracking(prev => {
+          const updated = { ...prev };
+          delete updated[orderId];
+          return updated;
+        });
+        fetchSellerData();
+      } else {
+        showNotif(d.message, 'error');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleCsrWithdraw = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -2351,68 +3341,81 @@ export default function App() {
   };
 
   // Render Binary Tree Nodes Recursively
-  const renderBinaryNode = (node: any) => {
+  const renderBinaryNode = (node: any, depth = 1) => {
     if (!node) return (
       <div className="flex flex-col items-center justify-center p-3 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 w-28 text-xs text-slate-400">
         ว่าง
       </div>
     );
     
-    const rankColors: any = {
-      S: 'from-blue-50 to-sky-50 border-sky-300 text-sky-800',
-      M: 'from-emerald-50 to-teal-50 border-teal-300 text-teal-800',
-      L: 'from-amber-50 to-yellow-50 border-yellow-300 text-yellow-800',
-      XL: 'from-purple-50 to-indigo-50 border-indigo-300 text-indigo-800',
-      XXL: 'from-rose-50 to-pink-50 border-rose-300 text-rose-800'
-    };
+    const isTerminated = node.status === 'Terminated' || node.status === 'Suspended' || node.status === 'Inactive';
+    const isPendingKyc = node.statusKyc === 'Pending';
+    const isNoRank = node.rank === 'Member' || !node.rank;
+    const isComplete = !isNoRank && node.statusKyc === 'Active';
+
+    let cardBg = "from-slate-50 to-slate-100 border-slate-300 text-slate-700 hover:from-slate-100 hover:to-slate-200"; // Grey default
+    let statusText = "สมัครยังไม่ซื้อ";
+    let badgeColor = "bg-slate-400";
+
+    if (isTerminated) {
+      cardBg = "from-slate-800 to-slate-900 border-slate-950 text-slate-100 hover:from-slate-900 hover:to-slate-950";
+      statusText = "สิ้นสภาพ";
+      badgeColor = "bg-slate-900";
+    } else if (isPendingKyc) {
+      cardBg = "from-amber-50 to-amber-100 border-amber-300 text-amber-800 hover:from-amber-100 hover:to-amber-200";
+      statusText = "รออนุมัติ KYC";
+      badgeColor = "bg-amber-500";
+    } else if (isComplete) {
+      cardBg = "from-blue-50 to-indigo-50 border-blue-300 text-blue-800 hover:from-blue-100 hover:to-indigo-100";
+      statusText = "สมบูรณ์";
+      badgeColor = "bg-blue-500";
+    } else if (!isNoRank) {
+      cardBg = "from-indigo-50/50 to-slate-50 border-indigo-200 text-indigo-800 hover:from-indigo-100/50 hover:to-slate-100";
+      statusText = "รออนุมัติ KYC";
+      badgeColor = "bg-indigo-400";
+    }
 
     const isOwnNode = node.userId === profile?.userId;
+    const hasChildren = node.left || node.right;
 
     return (
       <div className="flex flex-col items-center">
         <div 
           onClick={() => {
-            if (isOwnNode) {
-              handleLogout();
-              clearRegisterForm(node.userId);
-              setAuthMode('register');
-              showNotif(`ตั้งค่าผู้แนะนำสปอนเซอร์เป็น: ${node.name} (${node.userId}) และไปหน้าลงทะเบียนใหม่`, 'success');
-            }
+            fetchMlmTrees(node.userId);
+            showNotif(`โฟกัสไปที่รหัส: ${node.userId} เพื่อดูองค์กรสายงานใต้ล่างค่ะ`, 'success');
           }}
-          className={`p-3 bg-gradient-to-b ${rankColors[node.rank || 'S']} border rounded-xl shadow-sm w-36 text-center relative ${isOwnNode ? 'cursor-pointer hover:scale-[1.03] hover:shadow-md' : 'cursor-default'} transition-all`}
+          className={`p-2 bg-gradient-to-b ${cardBg} border rounded-xl shadow-sm w-32 text-center relative cursor-pointer hover:scale-[1.05] hover:shadow-md transition-all duration-250`}
         >
-          <div className="absolute -top-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white font-mono text-[9px] px-1.5 py-0.5 rounded">
+          <div className={`absolute -top-2.5 left-1/2 -translate-x-1/2 text-white font-mono text-[8px] px-1.5 py-0.5 rounded font-bold shadow-sm ${badgeColor}`}>
             {node.userId}
           </div>
-          <div className="text-xs font-semibold mt-1 truncate">{node.username || node.name}</div>
-          <div className="text-[10px] text-slate-500 mt-0.5">ตำแหน่ง: {node.rank}</div>
-          <div className="text-[9px] mt-1 flex justify-between items-center gap-1 bg-white px-1.5 py-0.5 rounded text-slate-600 border border-slate-100">
-            <span>{node.side === 'Left' ? 'สายซ้าย' : 'สายขวา'}</span>
-            {isOwnNode && (
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleLogout();
-                  clearRegisterForm(node.userId);
-                  setAuthMode('register');
-                  showNotif(`ตั้งค่าผู้แนะนำสปอนเซอร์เป็น: ${node.name} (${node.userId}) และไปหน้าลงทะเบียนใหม่`, 'success');
-                }}
-                className="ml-1 px-1 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded transition text-[10px] font-bold cursor-pointer"
-                title="แนะนำสมาชิกใหม่ภายใต้รหัสนี้"
-              >
-                + สมัคร
-              </button>
-            )}
+          <div className="text-xs font-bold mt-1.5 truncate">
+            @{node.username}
           </div>
+          <div className="text-[10px] font-medium opacity-90 truncate">
+            {node.name}
+          </div>
+          <div className="text-[9px] mt-1 bg-white/70 px-1 py-0.5 rounded font-bold inline-block border border-slate-200/50">
+            ตำแหน่ง: {node.rank || 'Member'}
+          </div>
+          <div className="text-[9px] mt-1.5 flex justify-center items-center gap-1 bg-white/90 px-1.5 py-0.5 rounded text-slate-600 border border-slate-100">
+            <span className="font-bold text-[8px]">{node.side === 'Left' ? 'ฝั่งซ้าย' : node.side === 'Right' ? 'ฝั่งขวา' : '-'}</span>
+          </div>
+          {depth === maxTreeDepth && hasChildren && (
+            <div className="text-[8px] text-indigo-600 font-bold mt-1 animate-pulse">
+              🔍 คลิกเพื่อดูสายใต้ล่าง
+            </div>
+          )}
         </div>
 
-        {(node.left || node.right) && (
-          <div className="flex gap-4 mt-6 relative before:absolute before:-top-3 before:left-1/2 before:-translate-x-1/2 before:w-[80%] before:h-0.5 before:bg-slate-300">
+        {depth < maxTreeDepth && hasChildren && (
+          <div className="flex gap-2 mt-5 relative before:absolute before:-top-3 before:left-1/2 before:-translate-x-1/2 before:w-[85%] before:h-0.5 before:bg-slate-300">
             <div className="flex flex-col items-center relative before:absolute before:-top-3 before:left-1/2 before:w-0.5 before:h-3 before:bg-slate-300">
-              {renderBinaryNode(node.left)}
+              {renderBinaryNode(node.left, depth + 1)}
             </div>
             <div className="flex flex-col items-center relative before:absolute before:-top-3 before:left-1/2 before:w-0.5 before:h-3 before:bg-slate-300">
-              {renderBinaryNode(node.right)}
+              {renderBinaryNode(node.right, depth + 1)}
             </div>
           </div>
         )}
@@ -3220,7 +4223,7 @@ export default function App() {
                 }`}
               >
                 <span className="flex items-center gap-3">
-                  <span className="text-base">💰</span> อนุมัติเติมเงิน M-Cash
+                  <span className="text-base">💰</span> อนุมัติเติมเงิน E-Cash
                 </span>
                 {depositQueue.length > 0 && (
                   <span className="bg-red-500 text-white font-extrabold px-2 py-0.5 rounded-full text-[10px] animate-pulse">
@@ -3312,6 +4315,24 @@ export default function App() {
         {/* Dynamic Content Views */}
         <div className="p-6 md:p-8 flex-1">
           
+          {/* Firestore Quota Exceeded Local Backup Mode Warning */}
+          {isUsingPollingFallback && (
+            <div className="mb-6 bg-amber-50 border border-amber-200/80 rounded-2xl p-4 shadow-sm text-left flex gap-3.5 items-start">
+              <span className="text-amber-500 text-xl leading-none mt-0.5">⚠️</span>
+              <div>
+                <h4 className="text-sm font-semibold text-amber-900 leading-tight">
+                  ระบบกำลังเชื่อมต่อโหมดสำรองข้อมูลท้องถิ่น (Local Failover Mode)
+                </h4>
+                <p className="text-xs text-amber-700/95 mt-1 leading-relaxed">
+                  เนื่องจากปริมาณการเขียนข้อมูลของ Cloud Database ประจำวันของโควตาฟรี (Firebase Spark Plan) เต็มพิกัดแล้ว 
+                  ระบบได้เปิดใช้งานระบบรักษาเสถียรภาพและเปลี่ยนมาจัดเก็บข้อมูลบนเซิร์ฟเวอร์สำรองในทันที 
+                  <strong> สมาชิกทุกท่านยังสามารถเข้าใช้งาน ทำธุรกรรม สมัครสมาชิก ฝากถอน แนะนำตำแหน่ง และซื้อขายได้เต็มประสิทธิภาพ 100% ตามปกติ </strong> 
+                  โดยข้อมูลทั้งหมดจะได้รับการจัดเก็บบันทึกอย่างปลอดภัยบนเซิร์ฟเวอร์ นที พลัส และจะทำการซิงก์กลับขึ้นสู่ระบบคลาวด์โดยอัตโนมัติเมื่อพ้นกำหนดรีเซ็ตโควตาประจำวันค่ะ
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* DASHBOARD TAB */}
           {activeTab === 'dash' && (
             <div className="space-y-8 animate-fadeIn">
@@ -3321,6 +4342,34 @@ export default function App() {
                   <p className="text-xs text-slate-500 mt-1">ภาพรวมความสุขของกระเป๋าร้านค้าออนไลน์ นทีพลัส ของคุณวันนี้</p>
                 </div>
               </div>
+
+              {/* Sound Notification Test Section (Only for Admin & Manager) */}
+              {(currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
+                <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-left">
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                      🔊 ทดสอบระบบเสียงเอฟเฟกต์ & เสียงพูดแจ้งเตือน (E-Cash)
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      เฉพาะแอดมินและผู้จัดการเท่านั้นที่เห็นส่วนนี้ค่ะ คุณสามารถกดทดสอบเพื่อฟังตัวอย่างเสียงพูดภาษาไทย (เสียงผู้หญิง) และเสียงเอฟเฟกต์เงินเข้าจริงได้ทันทีค่ะ
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <button 
+                      onClick={() => playMoneySound(1000, 'deposit')}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-2xl text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/10 active:scale-95 transition duration-150 cursor-pointer"
+                    >
+                      🪙 ทดสอบเสียงเติมเงิน (฿1,000)
+                    </button>
+                    <button 
+                      onClick={() => playMoneySound(999.99, 'bonus')}
+                      className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-2xl text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/10 active:scale-95 transition duration-150 cursor-pointer"
+                    >
+                      🎁 ทดสอบเสียงโบนัสเข้า (฿999.99)
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Activation Package Reminder for new Member rank */}
               {profile?.rank === 'Member' && (
@@ -3343,7 +4392,7 @@ export default function App() {
                       </p>
                     )}
                     <p className="text-[10px] text-slate-400">
-                      *กรุณาเติมเงิน M-Cash ในกระเป๋าให้เพียงพอ จากนั้นกดปุ่มชำระเงินเพื่อเริ่มต้นสิทธิ์แนะนำสมาชิกและขยายสายงานทันทีค่ะ
+                      *กรุณาเติมเงิน E-Cash ในกระเป๋าให้เพียงพอ จากนั้นกดปุ่มชำระเงินเพื่อเริ่มต้นสิทธิ์แนะนำสมาชิกและขยายสายงานทันทีค่ะ
                     </p>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
@@ -3351,7 +4400,7 @@ export default function App() {
                       onClick={() => setActiveTab('txn')}
                       className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-2xl text-xs transition text-center shrink-0 cursor-pointer"
                     >
-                      เติมเงิน M-Cash
+                      เติมเงิน E-Cash
                     </button>
                     <button 
                       onClick={() => handlePurchaseProduct(profile?.selectedPackageId || 'pack_s')}
@@ -3364,39 +4413,86 @@ export default function App() {
               )}
 
               {/* Bento Grid Balance Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
                 <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden">
                   <div className="absolute right-4 top-4 bg-white/10 p-2.5 rounded-2xl">
                     <Wallet size={24} />
                   </div>
-                  <span className="text-xs text-indigo-100 font-medium">M-Cash (บาท)</span>
-                  <h3 className="text-3xl font-extrabold tracking-tight mt-3">{profile?.balanceMCash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
-                  <p className="text-[10px] text-indigo-200 mt-4">กระเป๋าหลักสำหรับทำธุรกรรมสั่งซื้อสินค้าและถอนเงิน</p>
+                  <span className="text-xs text-indigo-100 font-medium">E-Cash (บาท)</span>
+                  <h3 className="text-3xl font-extrabold tracking-tight mt-3">{profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+                  <p className="text-[10px] text-indigo-200 mt-4">กระเป๋าเงินฝากเข้าจากภายนอก สำหรับซื้อแพ็กเกจหรือโอนเปลี่ยน</p>
+                  <button 
+                    onClick={() => { setActiveTab('report'); setReportSubTab('ecash'); }}
+                    className="mt-4 text-[9px] bg-white text-indigo-700 font-bold px-3 py-1 rounded-lg hover:bg-indigo-50 transition"
+                  >
+                    ดูรายงาน E-Cash
+                  </button>
+                </div>
+
+                <div className="bg-gradient-to-br from-purple-600 to-indigo-800 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                  <div className="absolute right-4 top-4 bg-white/10 p-2.5 rounded-2xl">
+                    <Coins size={24} />
+                  </div>
+                  <span className="text-xs text-purple-100 font-medium font-semibold">E-Money (บาท)</span>
+                  <h3 className="text-3xl font-extrabold tracking-tight mt-3">{profile?.balanceEMoney?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+                  
+                  <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-purple-200">
+                    <span className="font-medium">ยอดรายได้สะสมทั้งหมด:</span>
+                    <span className="font-extrabold text-yellow-300 bg-white/10 px-2 py-0.5 rounded-md">฿{(profile?.totalEarnings || profile?.balanceEMoney || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+
+                  <p className="text-[10px] text-purple-200 mt-3">กระเป๋าเงินรายได้ระบบทั้งหมด สำหรับถอนเงินหรือโอนเปลี่ยน</p>
+                  <button 
+                    onClick={() => { setActiveTab('report'); setReportSubTab('emoney'); }}
+                    className="mt-4 text-[9px] bg-white text-purple-700 font-bold px-3 py-1 rounded-lg hover:bg-purple-50 transition"
+                  >
+                    ดูรายงาน E-Money
+                  </button>
                 </div>
 
                 <div className="bg-gradient-to-br from-teal-500 to-emerald-600 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden">
                   <div className="absolute right-4 top-4 bg-white/10 p-2.5 rounded-2xl">
                     <ShoppingBag size={24} />
                   </div>
-                  <span className="text-xs text-emerald-100 font-medium">M-Coupon (บาท)</span>
-                  <h3 className="text-3xl font-extrabold tracking-tight mt-3">{profile?.balanceMCoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
-                  <p className="text-[10px] text-emerald-200 mt-4">ใช้เป็นส่วนลดหรือชำระค่าสินค้าหลักบนเว็ปนทีช็อป</p>
+                  <span className="text-xs text-emerald-100 font-medium">E-Coupon (บาท)</span>
+                  <h3 className="text-3xl font-extrabold tracking-tight mt-3">{profile?.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
+
+                  <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-teal-100">
+                    <span className="font-medium">ยอดคูปองสะสมทั้งหมด:</span>
+                    <span className="font-extrabold text-yellow-300 bg-white/10 px-2 py-0.5 rounded-md">฿{(profile?.totalCouponsEarned || profile?.balanceECoupon || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+
+                  <p className="text-[10px] text-emerald-200 mt-3">ใช้เป็นส่วนลดหรือชำระค่าสินค้าหลักบนเว็ปนทีช็อป</p>
+                  <button 
+                    onClick={() => { setActiveTab('report'); setReportSubTab('ecoupon'); }}
+                    className="mt-4 text-[9px] bg-white text-emerald-700 font-bold px-3 py-1 rounded-lg hover:bg-emerald-50 transition"
+                  >
+                    ดูรายงาน E-Coupon
+                  </button>
                 </div>
 
                 <div className="bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden">
                   <div className="absolute right-4 top-4 bg-white/10 p-2.5 rounded-2xl">
                     <TrendingUp size={24} />
                   </div>
-                  <span className="text-xs text-amber-100 font-medium">โบนัสส่วนแบ่ง All-Share</span>
-                  <h3 className="text-2xl font-extrabold tracking-tight mt-3">{profile?.balanceAllShare?.toFixed(7)}</h3>
-                  <p className="text-[10px] text-amber-100/90 mt-5">รับส่วนแบ่งกำไรแบบวินาทีสูงสุด 7 ตำแหน่งทศนิยม</p>
+                  <span className="text-xs text-amber-100 font-medium font-semibold">โบนัส All-Share สะสม (สุทธิหักแล้ว 50%)</span>
+                  <h3 className="text-2xl font-extrabold tracking-tight mt-3">
+                    {((profile?.balanceEShare || 0) * 0.50).toFixed(7)}
+                  </h3>
+                  <p className="text-[10px] text-amber-100/90 mt-5">ยอดสิทธิ์การเป็นเจ้าของส่วนแบ่งบริษัทหลังจัดสรร Plan B</p>
+                  <button 
+                    onClick={() => { setActiveTab('report'); setReportSubTab('eshare'); }}
+                    className="mt-4 text-[9px] bg-white text-amber-700 font-bold px-3 py-1 rounded-lg hover:bg-amber-50 transition"
+                  >
+                    ดูรายงาน All-Share
+                  </button>
                 </div>
 
-                <div className="bg-gradient-to-br from-slate-800 to-slate-950 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                <div className="bg-gradient-to-br from-slate-800 to-slate-950 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden col-span-1 sm:col-span-2 lg:col-span-1">
                   <div className="absolute right-4 top-4 bg-white/10 p-2.5 rounded-2xl">
                     <ShieldCheck size={24} />
                   </div>
-                  <span className="text-xs text-slate-300 font-medium font-semibold">สิทธิ์รับรายได้คงเหลือ (10 เท่า)</span>
+                  <span className="text-xs text-slate-300 font-semibold">สิทธิ์รับรายได้คงเหลือ (10 เท่า)</span>
                   <h3 className="text-xl font-extrabold tracking-tight mt-3 text-emerald-400">
                     {profile?.role === 'Manager' || profile?.role === 'Admin' 
                       ? 'ไร้ขีดจำกัด (Unlimited)' 
@@ -3507,7 +4603,7 @@ export default function App() {
                     </div>
                     <div>
                       <h5 className="text-xs font-bold text-slate-800">คู่มือแนะนำธุรกิจเบื้องต้น</h5>
-                      <p className="text-[10px] text-slate-500 mt-1">เริ่มจากการเติมเงินเข้ากระเป๋า M-Cash ของท่าน แล้วทำการซื้อแพ็กเกจตำแหน่ง S เพื่อเปิดร้านออนไลน์!</p>
+                      <p className="text-[10px] text-slate-500 mt-1">เริ่มจากการเติมเงินเข้ากระเป๋า E-Cash ของท่าน แล้วทำการซื้อแพ็กเกจตำแหน่ง S เพื่อเปิดร้านออนไลน์!</p>
                     </div>
                   </div>
                 </div>
@@ -3559,7 +4655,7 @@ export default function App() {
                   </div>
 
                   <p className="text-[10px] text-slate-400 mt-6 leading-relaxed">
-                    *หากเอกสารยังไม่ได้รับการอนุมัติ ท่านจะไม่สามารถทำการโอน M-Cash หรือเบิกเงินถอนคอมมิชชันออกจากระบบนทีพลัสได้
+                    *หากเอกสารยังไม่ได้รับการอนุมัติ ท่านจะไม่สามารถทำการโอน E-Cash หรือเบิกเงินถอนคอมมิชชันออกจากระบบนทีพลัสได้
                   </p>
                 </div>
 
@@ -3631,16 +4727,7 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-slate-700 text-xs font-bold mb-1.5">ที่อยู่จัดส่งสินค้าหลัก</label>
-                        <textarea 
-                          rows={2}
-                          value={kycForm.address}
-                          onChange={(e) => setKycForm(prev => ({ ...prev, address: e.target.value }))}
-                          placeholder="กรอกบ้านเลขที่ ถนน แขวง เขต จังหวัด รหัสไปรษณีย์"
-                          className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:outline-none"
-                        />
-                      </div>
+
 
                       <div className="grid grid-cols-2 gap-2">
                         <div>
@@ -4247,7 +5334,7 @@ export default function App() {
                 <div>
                   <h2 className="text-2xl font-bold text-indigo-950">ระบบสั่งซื้อ นที พลัส ช็อป 🛍️</h2>
                   <p className="text-xs text-slate-500 mt-1">
-                    เลือกซื้อแพ็กเกจขยายตำแหน่งด้วย <span className="font-bold text-indigo-600">M-Cash</span> หรือเลือกซื้อสินค้าทั่วไปจากร้านค้า <span className="font-bold text-amber-600">Natee Plus Shop</span> โดยหักจ่ายผ่าน <span className="font-bold text-amber-600">M-Coupon</span> เป็นอันดับแรก
+                    เลือกซื้อแพ็กเกจขยายตำแหน่งด้วย <span className="font-bold text-indigo-600">E-Cash</span> หรือเลือกซื้อสินค้าทั่วไปจากร้านค้า <span className="font-bold text-amber-600">Natee Plus Shop</span> โดยหักจ่ายผ่าน <span className="font-bold text-amber-600">E-Coupon</span> เป็นอันดับแรก
                   </p>
                 </div>
 
@@ -4343,11 +5430,11 @@ export default function App() {
                         </p>
                         <div className="flex flex-wrap items-center gap-3 pt-2 text-[11px] text-amber-900/95 font-bold border-t border-amber-200/40 mt-1">
                           <span className="flex items-center gap-1">
-                            💳 ชำระด้วย: <span className="underline decoration-amber-500 font-extrabold">M-Coupon เป็นอันดับแรก</span>
+                            💳 ชำระด้วย: <span className="underline decoration-amber-500 font-extrabold">E-Coupon เป็นอันดับแรก</span>
                           </span>
                           <span>•</span>
                           <span className="flex items-center gap-1">
-                            หากไม่พอ: <span className="underline decoration-indigo-500 font-extrabold">หักส่วนต่างอัตโนมัติจาก M-Cash</span>
+                            หากไม่พอ: <span className="underline decoration-indigo-500 font-extrabold">หักส่วนต่างอัตโนมัติจาก E-Cash</span>
                           </span>
                         </div>
                       </div>
@@ -4470,7 +5557,7 @@ export default function App() {
                       mlmSubTab === 'binary' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    🕸️ ผังไบนารี แผน A
+                    🕸️ ผังไบนารี Plan A
                   </button>
                   <button 
                     onClick={() => setMlmSubTab('referral')}
@@ -4516,7 +5603,7 @@ export default function App() {
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4">
                       <div>
                         <h3 className="text-base font-bold text-slate-900">🕸️ แผนผังไบนารีสองสายงาน (Binary Plan A)</h3>
-                        <p className="text-xs text-slate-400 mt-0.5">ค้นหาหรือคลิกปุ่ม <b>+ สมัคร</b> เพื่อแนะนำผู้สมัครเข้าต่อสายงานทันที</p>
+                        <p className="text-xs text-slate-400 mt-0.5">แสดงแผนผังโครงสร้างสายงานระบบสองสายงาน (Binary Plan A) ใต้องค์กรของท่าน</p>
                       </div>
 
                       <div className="flex gap-2 w-full md:w-auto">
@@ -4544,10 +5631,120 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="overflow-x-auto py-8 flex justify-center bg-slate-50 border border-slate-100 rounded-2xl min-h-[400px]">
-                      {binaryTree ? renderBinaryNode(binaryTree) : (
-                        <p className="text-xs text-slate-400 text-center my-auto">ไม่พบผังสายงาน หรือไม่ได้อยู่ในสายงานของคุณ</p>
-                      )}
+                    {/* Navigation controls & Legend */}
+                    <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                      {/* Back/Up navigation */}
+                      <div className="flex gap-2">
+                        {binaryTree && binaryTree.userId !== currentUser.userId && (
+                          <button 
+                            onClick={() => {
+                              setMlmSearchId('');
+                              fetchMlmTrees(currentUser.userId);
+                            }}
+                            className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                          >
+                            ⬅️ กลับสู่รหัสของฉัน
+                          </button>
+                        )}
+                        {binaryTree && binaryTree.userId !== currentUser.userId && binaryTreeParentId && binaryTreeParentId !== "SYSTEM" && (
+                          <button 
+                            onClick={() => {
+                              setMlmSearchId(binaryTreeParentId);
+                              fetchMlmTrees(binaryTreeParentId);
+                            }}
+                            className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                          >
+                            ⬆️ ขึ้นไป 1 ชั้น ({binaryTreeParentId})
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Zoom & Depth controls */}
+                      <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm text-xs text-slate-600 justify-between lg:justify-start">
+                        {/* Zoom */}
+                        <div className="flex items-center gap-1.5 border-r border-slate-100 pr-3 mr-1">
+                          <span className="font-bold flex items-center gap-1 text-[11px]"><Search size={12} className="text-slate-400" /> ย่อ-ขยายผัง:</span>
+                          <button 
+                            type="button"
+                            onClick={() => setTreeScale(prev => Math.max(0.4, parseFloat((prev - 0.1).toFixed(2))))}
+                            className="w-6 h-6 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-extrabold transition-all cursor-pointer"
+                            title="ย่อออก"
+                          >
+                            ➖
+                          </button>
+                          <input 
+                            type="range" 
+                            min="0.4" 
+                            max="1.5" 
+                            step="0.05" 
+                            value={treeScale} 
+                            onChange={(e) => setTreeScale(parseFloat(e.target.value))}
+                            className="w-20 lg:w-24 h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                          />
+                          <button 
+                            type="button"
+                            onClick={() => setTreeScale(prev => Math.min(1.5, parseFloat((prev + 0.1).toFixed(2))))}
+                            className="w-6 h-6 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-extrabold transition-all cursor-pointer"
+                            title="ขยายเข้า"
+                          >
+                            ➕
+                          </button>
+                          <span className="font-mono font-bold min-w-[36px] text-center text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 hidden">
+                            {Math.round(treeScale * 100)}%
+                          </span>
+                          <button 
+                            type="button"
+                            onClick={() => setTreeScale(0.85)}
+                            className="text-[10px] px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 hover:text-indigo-700 rounded-lg transition-all cursor-pointer font-bold border border-indigo-100"
+                          >
+                            รีเซ็ต
+                          </button>
+                        </div>
+
+                        {/* Depth Selector */}
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-[11px] text-slate-500">แสดงลึก:</span>
+                          <div className="flex gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200/50">
+                            {[2, 3, 4].map((d) => (
+                              <button
+                                key={d}
+                                type="button"
+                                onClick={() => setMaxTreeDepth(d)}
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                                  maxTreeDepth === d
+                                    ? 'bg-indigo-600 text-white shadow-sm'
+                                    : 'text-slate-600 hover:bg-slate-200'
+                                }`}
+                              >
+                                {d} ชั้น
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Color-coding status legend */}
+                      <div className="flex flex-wrap gap-2.5 text-[10px] text-slate-500 lg:justify-end">
+                        <span className="font-bold text-slate-400">คำอธิบาย:</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-400 inline-block"></span> สมัครยังไม่ซื้อ</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span> รออนุมัติ KYC</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span> สมบูรณ์</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-900 inline-block"></span> สิ้นสภาพ</span>
+                      </div>
+                    </div>
+
+                    <div className="overflow-auto py-8 bg-slate-50 border border-slate-100 rounded-2xl min-h-[420px] flex justify-center items-start">
+                      <div 
+                        style={{ 
+                          zoom: treeScale,
+                          display: 'inline-block'
+                        }}
+                        className="transition-all duration-150 ease-out p-4 min-w-max flex justify-center"
+                      >
+                        {binaryTree ? renderBinaryNode(binaryTree) : (
+                          <p className="text-xs text-slate-400 text-center my-auto">ไม่พบผังสายงาน หรือไม่ได้อยู่ในสายงานของคุณ</p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )
@@ -4558,7 +5755,7 @@ export default function App() {
                 <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6 animate-fadeIn">
                   <div>
                     <h3 className="text-base font-bold text-slate-900">👥 แผนสายงานโครงสร้างแนะนำตรง (Direct Sponsor)</h3>
-                    <p className="text-xs text-slate-400 mt-0.5">คลิกเครื่องหมายบวกสีน้ำเงินหลังข้อมูลผู้ใด เพื่อทำการสมัครสมาชิกสัญญากับผู้นั้นเป็นผู้แนะนำโดยตรง</p>
+                    <p className="text-xs text-slate-400 mt-0.5">แสดงแผนผังโครงสร้างสายงานความสัมพันธ์แนะนำตรงใต้องค์กรของท่าน</p>
                   </div>
 
                   <div className="border border-slate-100 p-6 rounded-2xl bg-slate-50">
@@ -4643,7 +5840,7 @@ export default function App() {
 
                       <p className="text-xs text-slate-500 leading-relaxed">
                         {planBSelectedTier === 1 
-                          ? 'กองทุนรันระบบขั้นต้นสำหรับผู้สมัครสมาชิกทุกระดับ มอบสิทธิ์ในการปันผลเมื่อคิวสายงาน Global ขยายถึง 100% ระบบจ่ายรับคอมมิชชั่น M-Cash สุทธิ = 850.00 บาท ต่อรอบปันผล +คูปอง + All-Share + สิทธิ์ระดับถัดไป จะโอนโดยอัตโนมัติ'
+                          ? 'กองทุนรันระบบขั้นต้นสำหรับผู้สมัครสมาชิกทุกระดับ มอบสิทธิ์ในการปันผลเมื่อคิวสายงาน Global ขยายถึง 100% ระบบจ่ายรับคอมมิชชั่น E-Cash สุทธิ = 850.00 บาท ต่อรอบปันผล +คูปอง + E-Share + สิทธิ์ระดับถัดไป จะโอนโดยอัตโนมัติ'
                           : `กองทุนอัปเกรดออโต้รันระดับสูง ผู้ร่วมสายงานจะได้รับสิทธิ์ปันผลเมื่อสายงาน Global ขยายตัวครบตามรอบระบบ และจะโอนสิทธิ์ไปสู่ระดับถัดไปโดยอัตโนมัติเมื่อปันผลครบถ้วน`
                         }
                       </p>
@@ -4663,7 +5860,7 @@ export default function App() {
                             />
                           </div>
                           <p className="text-[9px] text-slate-400 leading-normal">
-                            *สะสมพอยท์จาก 5% ของคอมมิชชัน Plan A และ 50% ของ All-Share ครบทุกๆ 100 Point ระบบจะปั่นรหัสอัตโนมัติขึ้นสายงานกองทุน Plan B1
+                            *สะสมพอยท์จาก 5% ของคอมมิชชัน Plan A และ 50% ของ E-Share ครบทุกๆ 100 Point ระบบจะปั่นรหัสอัตโนมัติขึ้นสายงานกองทุน Plan B1
                           </p>
                         </div>
                       )}
@@ -4712,16 +5909,16 @@ export default function App() {
                             }
                           }
 
-                          const mCashGross = partValue;
-                          const mCashNet = mCashGross * 0.80;
+                          const eCashGross = partValue;
+                          const eCashNet = eCashGross * 0.80;
                           
                           return {
                             nodeValue,
                             totalPayout,
                             partsCount,
                             partValue,
-                            mCashGross,
-                            mCashNet,
+                            eCashGross,
+                            eCashNet,
                             coupon: partValue,
                             spawnReserve: tier === 15 ? 0 : partValue,
                             allShare: partValue,
@@ -4734,7 +5931,7 @@ export default function App() {
                         const currentTierNodes = planBData?.[`b${planBSelectedTier}Nodes`] || [];
 
                         const accumulatedIncome = currentTierNodes.reduce((sum: number, node: any) => {
-                          const basePayout = details.mCashNet;
+                          const basePayout = details.eCashNet;
                           if (node.status === "Success" || (node.progress || 0) >= 100) {
                             return sum + basePayout;
                           } else {
@@ -4783,16 +5980,16 @@ export default function App() {
                             }
                           }
 
-                          const mCashGross = partValue;
-                          const mCashNet = mCashGross * 0.80;
+                          const eCashGross = partValue;
+                          const eCashNet = eCashGross * 0.80;
                           
                           return {
                             nodeValue,
                             totalPayout,
                             partsCount,
                             partValue,
-                            mCashGross,
-                            mCashNet,
+                            eCashGross,
+                            eCashNet,
                             coupon: partValue,
                             spawnReserve: tier === 15 ? 0 : partValue,
                             allShare: partValue,
@@ -4812,13 +6009,13 @@ export default function App() {
                                 </span>
                               </div>
                               <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-50">
-                                <span className="text-slate-500 font-medium">ยอดสุทธิเข้า M-Cash (หลังหัก 20%)</span>
+                                <span className="text-slate-500 font-medium">ยอดสุทธิเข้า E-Cash (หลังหัก 20%)</span>
                                 <span className="font-extrabold text-emerald-600 text-sm">
-                                  ฿ {details.mCashNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / รอบ
+                                  ฿ {details.eCashNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / รอบ
                                 </span>
                               </div>
                               <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-50">
-                                <span className="text-slate-500">ส่วนที่ไป คูปอง ของสมาชิก (M-Coupon)</span>
+                                <span className="text-slate-500">ส่วนที่ไป คูปอง ของสมาชิก (E-Coupon)</span>
                                 <span className="font-bold text-slate-800">
                                   ฿ {details.coupon.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
@@ -4970,215 +6167,218 @@ export default function App() {
             <div className="space-y-6 animate-fadeIn max-w-5xl">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900">ธุรกรรมการเงินกระเป๋า นที พลัส 💳</h2>
-                <p className="text-xs text-slate-400 mt-1">บริหารจัดการยอดเงิน M-Cash โอน ย้ายกระเป๋า และ ส่งคำสั่งถอนยอดรายได้</p>
+                <p className="text-xs text-slate-400 mt-1">บริหารจัดการยอดเงิน E-Cash โอน ย้ายกระเป๋า และ ส่งคำสั่งถอนยอดรายได้</p>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 
-                {/* Deposit M-Cash Mock */}
-                <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
-                  <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
-                    <Wallet size={16} /> แจ้งฝากเงินหลักฐานโอนเงิน M-Cash 💸
-                  </h4>
-                  
-                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-3xl text-center space-y-4 shadow-sm">
+                {/* Column 1: Deposit E-Cash */}
+                <div className="space-y-6">
+                  {/* Deposit E-Cash Mock */}
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                      <Wallet size={16} /> แจ้งฝากเงินหลักฐานโอนเงิน E-Cash 💸
+                    </h4>
                     
-                    {/* Step 1: ยอดเงินต้องการเติม */}
-                    <div className="space-y-3 text-left">
-                      <div>
-                        <label className="block text-slate-700 font-bold text-xs mb-1.5">💵 1. ยอดเงินต้องการเติม (บาท) *</label>
-                        <div className="flex gap-2">
+                    <div className="p-4 bg-slate-50 border border-slate-100 rounded-3xl text-center space-y-4 shadow-sm">
+                      
+                      {/* Step 1: ยอดเงินต้องการเติม */}
+                      <div className="space-y-3 text-left">
+                        <div>
+                          <label className="block text-slate-700 font-bold text-xs mb-1.5">💵 1. ยอดเงินต้องการเติม (บาท) *</label>
+                          <div className="flex gap-2">
+                            <input 
+                              type="number"
+                              value={topupAmount}
+                              onChange={(e) => {
+                                setTopupAmount(e.target.value);
+                                // Clear confirmed decimal/actual amount on edit to force re-confirm
+                                setTopupDecimal('');
+                                setTopupActualAmount('');
+                              }}
+                              className="flex-1 border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white"
+                              placeholder="ระบุจำนวนเงินที่ต้องการเติม"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleTopupRequest}
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl cursor-pointer transition shadow-sm"
+                            >
+                              ยืนยันยอดที่จะโอน
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Step 1.5: Big randomized transfer amount shown once confirmed */}
+                      {topupDecimal ? (
+                        <div className="space-y-4 animate-fadeIn">
+                          
+                          {/* BIG TEXT TOTAL AMOUNT */}
+                          <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl text-center shadow-inner">
+                            <span className="text-[10px] text-slate-500 font-bold block mb-1">ยอดเงินที่ท่านต้องโอนจริง (รวมเศษทศนิยมสุ่ม)</span>
+                            <span className="text-3xl font-black text-indigo-700 font-mono block">
+                              {topupActualAmount} บาท
+                            </span>
+                            <span className="text-[10px] text-rose-600 font-extrabold block mt-1.5 leading-normal">
+                              ⚠️ กรุณาโอนยอดเงินตรงตามทศนิยมด้านบนนี้ เพื่อความถูกต้องรวดเร็วในการอนุมัติค่ะ
+                            </span>
+                          </div>
+
+                          {/* SHOW QR Code and Bank info configured by Manager */}
+                          <div className="bg-white border border-slate-150 p-4 rounded-2xl space-y-3 shadow-sm text-left">
+                            <div className="text-center font-bold text-xs text-slate-700 border-b border-slate-100 pb-2">
+                              รายละเอียดช่องทางชำระเงิน
+                            </div>
+
+                            <div className="flex flex-col items-center gap-3">
+                              {bankSettings.qrCodeUrl ? (
+                                <div className="w-36 h-36 border border-slate-100 rounded-xl p-1 bg-white shadow-inner flex items-center justify-center">
+                                  <img 
+                                    src={bankSettings.qrCodeUrl} 
+                                    alt="Bank QR Code" 
+                                    className="max-w-full max-h-full object-contain rounded-lg"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="mx-auto w-36 h-36 bg-indigo-50 rounded-2xl flex items-center justify-center border border-indigo-100 shadow-inner">
+                                  <span className="text-[9px] text-slate-400 font-bold tracking-wider uppercase text-center p-2">QR CODE SIMULATED</span>
+                                </div>
+                              )}
+                              <p className="text-[10px] text-slate-500 font-bold leading-normal text-center">
+                                สแกน QR Code ด้านบนเพื่อสแกนจ่ายเงินผ่านแอปธนาคารของท่าน
+                              </p>
+                            </div>
+
+                            <div className="pt-2 border-t border-slate-100 text-xs space-y-1">
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">🏦 ธนาคาร:</span>
+                                <strong className="text-slate-800">{bankSettings.bankName}</strong>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">💳 เลขที่บัญชี:</span>
+                                <strong className="text-indigo-600 font-mono">{bankSettings.bankAccount}</strong>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">👤 ชื่อบัญชี:</span>
+                                <strong className="text-slate-800">{bankSettings.bankAccountName}</strong>
+                              </div>
+                            </div>
+                          </div>
+
+                        </div>
+                      ) : (
+                        <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl text-center text-xs text-amber-800 font-semibold leading-relaxed">
+                          💡 กรุณากรอกยอดเงินต้องการเติม และกดปุ่ม <strong className="text-indigo-600">"ยืนยันยอดที่จะโอน"</strong> เพื่อให้ระบบสุ่มตัวเลขจุดทศนิยมและแสดง QR Code / บัญชีธนาคารสำหรับโอนเงินค่ะ
+                        </div>
+                      )}
+
+                      {/* Step 2, 3, 4 Inputs */}
+                      <div className="space-y-4 border-t border-slate-200/60 pt-4 text-left">
+                        <div>
+                          <label className="block text-slate-700 font-bold text-xs mb-1.5">💰 2. ยอดโอนเงินจริง (บาท) *</label>
                           <input 
                             type="number"
-                            value={topupAmount}
-                            onChange={(e) => {
-                              setTopupAmount(e.target.value);
-                              // Clear confirmed decimal/actual amount on edit to force re-confirm
-                              setTopupDecimal('');
-                              setTopupActualAmount('');
-                            }}
-                            className="flex-1 border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white"
-                            placeholder="ระบุจำนวนเงินที่ต้องการเติม"
+                            step="0.01"
+                            disabled={!topupDecimal}
+                            value={topupActualAmount}
+                            onChange={(e) => setTopupActualAmount(e.target.value)}
+                            className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-indigo-700 bg-indigo-50/50 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-55"
+                            placeholder="จะแสดงอัตโนมัติเมื่อกดยืนยันยอดด้านบน"
                           />
-                          <button
-                            type="button"
-                            onClick={handleTopupRequest}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl cursor-pointer transition shadow-sm"
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-700 font-bold text-xs mb-1.5">📅 3. วันที่ทำรายการโอนเงิน *</label>
+                          <input 
+                            type="date"
+                            disabled={!topupDecimal}
+                            value={topupTransferDate}
+                            onChange={(e) => setTopupTransferDate(e.target.value)}
+                            className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white disabled:opacity-55"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-700 font-bold text-xs mb-1.5">🕒 4. เวลาที่โอนเงิน *</label>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <span className="block text-slate-400 text-[10px] mb-1">ชั่วโมง *</span>
+                              <select
+                                disabled={!topupDecimal}
+                                value={topupTransferHour}
+                                onChange={(e) => setTopupTransferHour(e.target.value)}
+                                className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white disabled:opacity-55 cursor-pointer"
+                              >
+                                {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map((h) => (
+                                  <option key={h} value={h}>{h}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <span className="block text-slate-400 text-[10px] mb-1">นาที *</span>
+                              <select
+                                disabled={!topupDecimal}
+                                value={topupTransferMinute}
+                                onChange={(e) => setTopupTransferMinute(e.target.value)}
+                                className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white disabled:opacity-55 cursor-pointer"
+                              >
+                                {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map((m) => (
+                                  <option key={m} value={m}>{m}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-1.5 border-t border-slate-200/60 pt-4 text-left">
+                        <label className="block text-slate-700 font-bold text-xs mb-1">📷 5. อัปโหลดรูปสลิปทำรายการโอน *</label>
+                        <div className="relative">
+                          <input 
+                            type="file" 
+                            accept="image/*"
+                            disabled={!topupDecimal}
+                            id="custom-slip-upload"
+                            onChange={handleSlipFileChange}
+                            className="hidden"
+                          />
+                          <label 
+                            htmlFor="custom-slip-upload"
+                            className={`flex flex-col items-center justify-center border border-dashed border-indigo-300 bg-indigo-50/10 hover:bg-indigo-50/40 rounded-2xl p-4 cursor-pointer transition text-center space-y-1.5 ${!topupDecimal ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
                           >
-                            ยืนยันยอดที่จะโอน
-                          </button>
+                            <Upload size={24} className="text-indigo-500 animate-pulse" />
+                            <span className="text-xs font-bold text-rose-600 leading-relaxed max-w-[240px]">
+                              {topupSlip ? `✓ เลือกไฟล์สำเร็จ: ${topupSlip}` : "กรุณาใส่สลิปจริง หากพบการทุจริต อาจถูกดำเนินคดีตามกฎหมาย"}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              (คลิกเพื่ออัปโหลดไฟล์รูปภาพ)
+                            </span>
+                          </label>
                         </div>
                       </div>
+                      
+                      <button 
+                        onClick={handleTopupSubmit}
+                        disabled={isSubmittingTopup || !topupSlip || !topupAmount || parseFloat(topupAmount) <= 0 || !topupActualAmount || parseFloat(topupActualAmount) <= 0 || !topupTransferDate}
+                        className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 text-white font-bold py-3 rounded-xl text-xs disabled:text-slate-500 cursor-pointer shadow-sm transition"
+                      >
+                        {isSubmittingTopup ? 'กำลังส่งข้อมูล...' : 'ยืนยันส่งหลักฐานโอนเงินเพื่อตรวจสอบ'}
+                      </button>
                     </div>
-
-                    {/* Step 1.5: Big randomized transfer amount shown once confirmed */}
-                    {topupDecimal ? (
-                      <div className="space-y-4 animate-fadeIn">
-                        
-                        {/* BIG TEXT TOTAL AMOUNT */}
-                        <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl text-center shadow-inner">
-                          <span className="text-[10px] text-slate-500 font-bold block mb-1">ยอดเงินที่ท่านต้องโอนจริง (รวมเศษทศนิยมสุ่ม)</span>
-                          <span className="text-3xl font-black text-indigo-700 font-mono block">
-                            {topupActualAmount} บาท
-                          </span>
-                          <span className="text-[10px] text-rose-600 font-extrabold block mt-1.5 leading-normal">
-                            ⚠️ กรุณาโอนยอดเงินตรงตามทศนิยมด้านบนนี้ เพื่อความถูกต้องรวดเร็วในการอนุมัติค่ะ
-                          </span>
-                        </div>
-
-                        {/* SHOW QR Code and Bank info configured by Manager */}
-                        <div className="bg-white border border-slate-150 p-4 rounded-2xl space-y-3 shadow-sm text-left">
-                          <div className="text-center font-bold text-xs text-slate-700 border-b border-slate-100 pb-2">
-                            รายละเอียดช่องทางชำระเงิน
-                          </div>
-
-                          <div className="flex flex-col items-center gap-3">
-                            {bankSettings.qrCodeUrl ? (
-                              <div className="w-36 h-36 border border-slate-100 rounded-xl p-1 bg-white shadow-inner flex items-center justify-center">
-                                <img 
-                                  src={bankSettings.qrCodeUrl} 
-                                  alt="Bank QR Code" 
-                                  className="max-w-full max-h-full object-contain rounded-lg"
-                                  referrerPolicy="no-referrer"
-                                />
-                              </div>
-                            ) : (
-                              <div className="mx-auto w-36 h-36 bg-indigo-50 rounded-2xl flex items-center justify-center border border-indigo-100 shadow-inner">
-                                <span className="text-[9px] text-slate-400 font-bold tracking-wider uppercase text-center p-2">QR CODE SIMULATED</span>
-                              </div>
-                            )}
-                            <p className="text-[10px] text-slate-500 font-bold leading-normal text-center">
-                              สแกน QR Code ด้านบนเพื่อสแกนจ่ายเงินผ่านแอปธนาคารของท่าน
-                            </p>
-                          </div>
-
-                          <div className="pt-2 border-t border-slate-100 text-xs space-y-1">
-                            <div className="flex justify-between">
-                              <span className="text-slate-500">🏦 ธนาคาร:</span>
-                              <strong className="text-slate-800">{bankSettings.bankName}</strong>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-500">💳 เลขที่บัญชี:</span>
-                              <strong className="text-indigo-600 font-mono">{bankSettings.bankAccount}</strong>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-500">👤 ชื่อบัญชี:</span>
-                              <strong className="text-slate-800">{bankSettings.bankAccountName}</strong>
-                            </div>
-                          </div>
-                        </div>
-
-                      </div>
-                    ) : (
-                      <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl text-center text-xs text-amber-800 font-semibold leading-relaxed">
-                        💡 กรุณากรอกยอดเงินต้องการเติม และกดปุ่ม <strong className="text-indigo-600">"ยืนยันยอดที่จะโอน"</strong> เพื่อให้ระบบสุ่มตัวเลขจุดทศนิยมและแสดง QR Code / บัญชีธนาคารสำหรับโอนเงินค่ะ
-                      </div>
-                    )}
-
-                    {/* Step 2, 3, 4 Inputs */}
-                    <div className="space-y-4 border-t border-slate-200/60 pt-4 text-left">
-                      <div>
-                        <label className="block text-slate-700 font-bold text-xs mb-1.5">💰 2. ยอดโอนเงินจริง (บาท) *</label>
-                        <input 
-                          type="number"
-                          step="0.01"
-                          disabled={!topupDecimal}
-                          value={topupActualAmount}
-                          onChange={(e) => setTopupActualAmount(e.target.value)}
-                          className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-indigo-700 bg-indigo-50/50 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-55"
-                          placeholder="จะแสดงอัตโนมัติเมื่อกดยืนยันยอดด้านบน"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 font-bold text-xs mb-1.5">📅 3. วันที่ทำรายการโอนเงิน *</label>
-                        <input 
-                          type="date"
-                          disabled={!topupDecimal}
-                          value={topupTransferDate}
-                          onChange={(e) => setTopupTransferDate(e.target.value)}
-                          className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white disabled:opacity-55"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 font-bold text-xs mb-1.5">🕒 4. เวลาที่โอนเงิน *</label>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <span className="block text-slate-400 text-[10px] mb-1">ชั่วโมง *</span>
-                            <select
-                              disabled={!topupDecimal}
-                              value={topupTransferHour}
-                              onChange={(e) => setTopupTransferHour(e.target.value)}
-                              className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white disabled:opacity-55 cursor-pointer"
-                            >
-                              {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map((h) => (
-                                <option key={h} value={h}>{h}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <span className="block text-slate-400 text-[10px] mb-1">นาที *</span>
-                            <select
-                              disabled={!topupDecimal}
-                              value={topupTransferMinute}
-                              onChange={(e) => setTopupTransferMinute(e.target.value)}
-                              className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white disabled:opacity-55 cursor-pointer"
-                            >
-                              {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map((m) => (
-                                <option key={m} value={m}>{m}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-1.5 border-t border-slate-200/60 pt-4 text-left">
-                      <label className="block text-slate-700 font-bold text-xs mb-1">📷 5. อัปโหลดรูปสลิปทำรายการโอน *</label>
-                      <div className="relative">
-                        <input 
-                          type="file" 
-                          accept="image/*"
-                          disabled={!topupDecimal}
-                          id="custom-slip-upload"
-                          onChange={handleSlipFileChange}
-                          className="hidden"
-                        />
-                        <label 
-                          htmlFor="custom-slip-upload"
-                          className={`flex flex-col items-center justify-center border border-dashed border-indigo-300 bg-indigo-50/10 hover:bg-indigo-50/40 rounded-2xl p-4 cursor-pointer transition text-center space-y-1.5 ${!topupDecimal ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
-                        >
-                          <Upload size={24} className="text-indigo-500 animate-pulse" />
-                          <span className="text-xs font-bold text-rose-600 leading-relaxed max-w-[240px]">
-                            {topupSlip ? `✓ เลือกไฟล์สำเร็จ: ${topupSlip}` : "กรุณาใส่สลิปจริง หากพบการทุจริต อาจถูกดำเนินคดีตามกฎหมาย"}
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-medium">
-                            (คลิกเพื่ออัปโหลดไฟล์รูปภาพ)
-                          </span>
-                        </label>
-                      </div>
-                    </div>
-                    
-                    <button 
-                      onClick={handleTopupSubmit}
-                      disabled={isSubmittingTopup || !topupSlip || !topupAmount || parseFloat(topupAmount) <= 0 || !topupActualAmount || parseFloat(topupActualAmount) <= 0 || !topupTransferDate}
-                      className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 text-white font-bold py-3 rounded-xl text-xs disabled:text-slate-500 cursor-pointer shadow-sm transition"
-                    >
-                      {isSubmittingTopup ? 'กำลังส่งข้อมูล...' : 'ยืนยันส่งหลักฐานโอนเงินเพื่อตรวจสอบ'}
-                    </button>
                   </div>
                 </div>
 
-                {/* Transfer to Member & Exchange to Coupon */}
-                <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6 lg:col-span-2">
+                {/* Column 2: Separate Frames for Transfer, Exchange, Withdrawal */}
+                <div className="space-y-6">
                   
-                  {/* MCash Transfer to User */}
-                  <div className="border-b border-slate-100 pb-5 space-y-3">
-                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                      <UserCheck size={16} /> โอนเงิน M-Cash ระหว่างสมาชิก
+                  {/* Frame 1: โอนเงิน E-Cash ระหว่างสมาชิก */}
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                      <UserCheck size={16} className="text-indigo-600" /> โอนเงิน E-Cash ระหว่างสมาชิก 💸
                     </h4>
-                    <form onSubmit={handleTransferMCash} className="grid grid-cols-2 gap-3 text-xs">
+                    <form onSubmit={initiateTransferECashMember} className="grid grid-cols-2 gap-3 text-xs">
                       <div>
                         <label className="block text-slate-700 font-semibold mb-1">รหัสผู้ใช้ / เบอร์โทรศัพท์ปลายทาง</label>
                         <input 
@@ -5187,18 +6387,18 @@ export default function App() {
                           value={transferUser}
                           onChange={(e) => setTransferUser(e.target.value)}
                           placeholder="ไอดีผู้รับปลายทาง"
-                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                         />
                       </div>
                       <div>
-                        <label className="block text-slate-700 font-semibold mb-1">จำนวนยอดเงิน (M-Cash)</label>
+                        <label className="block text-slate-700 font-semibold mb-1">จำนวนยอดเงิน (E-Cash)</label>
                         <input 
                           type="number" 
                           required
                           value={transferAmount}
                           onChange={(e) => setTransferAmount(e.target.value)}
                           placeholder="จำนวนเงิน"
-                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                         />
                       </div>
                       <div className="col-span-2 flex gap-2">
@@ -5209,23 +6409,118 @@ export default function App() {
                           value={transferPin}
                           onChange={(e) => setTransferPin(e.target.value.replace(/\D/g, ''))}
                           placeholder="ใส่รหัสธุรกรรม PIN 6 หลัก"
-                          className="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs text-center font-mono tracking-widest"
+                          className="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs text-center font-mono tracking-widest focus:border-indigo-500"
                         />
-                        <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 rounded-xl text-xs font-bold">
-                          ยืนยันการโอนเงิน
+                        <button type="submit" disabled={isVerifyingRecipient} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 rounded-xl text-xs font-bold disabled:bg-slate-300 cursor-pointer">
+                          {isVerifyingRecipient ? 'กำลังตรวจสอบ...' : 'ยืนยันการโอนเงิน'}
                         </button>
                       </div>
                     </form>
                   </div>
 
-                  {/* MCash to MCoupon exchange */}
-                  <div className="border-b border-slate-100 pb-5 space-y-3">
-                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                      <CreditCard size={16} /> แลกเปลี่ยนยอด M-Cash ซื้อคูปอง M-Coupon
+                  {/* Frame 2: โอนย้ายสลับกระเป๋าเงินภายในระบบ */}
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                      <Coins size={16} className="text-purple-600" /> โอนย้ายสลับกระเป๋าเงินภายในระบบ 🔁
                     </h4>
-                    <form onSubmit={handleBuyCoupon} className="grid grid-cols-2 gap-3 text-xs">
+                    
+                    <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl space-y-4 text-xs shadow-inner">
+                      
+                      {/* Option A: E-Cash to E-Money (10% fee) */}
+                      <div className="border-b border-slate-200 pb-4">
+                        <span className="font-bold text-slate-800 block mb-1">1. โอน E-Cash ไปกระเป๋า E-Money (มีค่าบริการ 10%)</span>
+                        <p className="text-[10px] text-slate-400 mb-2">หักค่าบริการจัดสรร All-Share 5% และสิทธิบริษัท 5% รวม 10%</p>
+                        <form onSubmit={initiateTransferECashToEMoney} className="grid grid-cols-3 gap-2">
+                          <input 
+                            type="number" 
+                            required
+                            value={ecashToEmoneyAmount}
+                            onChange={(e) => setEcashToEmoneyAmount(e.target.value)}
+                            placeholder="จำนวนเงิน"
+                            className="border border-slate-300 rounded-xl px-2 py-1.5 text-[11px] bg-white"
+                          />
+                          <input 
+                            type="password" 
+                            required
+                            maxLength={6}
+                            value={ecashToEmoneyPin}
+                            onChange={(e) => setEcashToEmoneyPin(e.target.value.replace(/\D/g, ''))}
+                            placeholder="PIN 6 หลัก"
+                            className="border border-slate-300 rounded-xl px-2 py-1.5 text-[11px] text-center font-mono tracking-widest bg-white"
+                          />
+                          <button type="submit" className="bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-[10px] transition cursor-pointer">
+                            โอนเข้า E-Money
+                          </button>
+                        </form>
+                      </div>
+
+                      {/* Option B: E-Money to E-Cash (1:1 no fee) */}
+                      <div className="border-b border-slate-200 pb-4">
+                        <span className="font-bold text-slate-800 block mb-1">2. โอน E-Money ไปกระเป๋า E-Cash (อัตรา 1:1)</span>
+                        <p className="text-[10px] text-slate-400 mb-2">ย้ายรายได้เข้ากระเป๋าหลัก เพื่อชำระค่าสิทธิ์แพ็กเกจหรือส่งต่อสมาชิก</p>
+                        <form onSubmit={initiateTransferEMoneyToECash} className="grid grid-cols-3 gap-2">
+                          <input 
+                            type="number" 
+                            required
+                            value={emoneyToEcashAmount}
+                            onChange={(e) => setEmoneyToEcashAmount(e.target.value)}
+                            placeholder="จำนวนเงิน"
+                            className="border border-slate-300 rounded-xl px-2 py-1.5 text-[11px] bg-white"
+                          />
+                          <input 
+                            type="password" 
+                            required
+                            maxLength={6}
+                            value={emoneyToEcashPin}
+                            onChange={(e) => setEmoneyToEcashPin(e.target.value.replace(/\D/g, ''))}
+                            placeholder="PIN 6 หลัก"
+                            className="border border-slate-300 rounded-xl px-2 py-1.5 text-[11px] text-center font-mono tracking-widest bg-white"
+                          />
+                          <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-[10px] transition cursor-pointer">
+                            ย้ายเข้า E-Cash
+                          </button>
+                        </form>
+                      </div>
+
+                      {/* Option C: E-Money to E-Coupon (1:1 no fee) */}
                       <div>
-                        <label className="block text-slate-700 font-semibold mb-1">ยอดเงินที่ต้องการแลกเปลี่ยน (M-Cash)</label>
+                        <span className="font-bold text-slate-800 block mb-1">3. โอน E-Money ไปกระเป๋า E-Coupon (อัตรา 1:1)</span>
+                        <p className="text-[10px] text-slate-400 mb-2">แลกรับเป็นแต้มคูปองซื้อสินค้าและสิทธิประโยชน์ในการช้อปปิ้ง</p>
+                        <form onSubmit={initiateTransferEMoneyToECoupon} className="grid grid-cols-3 gap-2">
+                          <input 
+                            type="number" 
+                            required
+                            value={emoneyToEcouponAmount}
+                            onChange={(e) => setEmoneyToEcouponAmount(e.target.value)}
+                            placeholder="จำนวนเงิน"
+                            className="border border-slate-300 rounded-xl px-2 py-1.5 text-[11px] bg-white"
+                          />
+                          <input 
+                            type="password" 
+                            required
+                            maxLength={6}
+                            value={emoneyToEcouponPin}
+                            onChange={(e) => setEmoneyToEcouponPin(e.target.value.replace(/\D/g, ''))}
+                            placeholder="PIN 6 หลัก"
+                            className="border border-slate-300 rounded-xl px-2 py-1.5 text-[11px] text-center font-mono tracking-widest bg-white"
+                          />
+                          <button type="submit" className="bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-[10px] transition cursor-pointer">
+                            ย้ายเข้า E-Coupon
+                          </button>
+                        </form>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* Frame 3: แลกเปลี่ยนคูปอง */}
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                      <CreditCard size={16} /> แลกเปลี่ยนยอด E-Cash ซื้อคูปอง E-Coupon 🛍️
+                    </h4>
+                    <form onSubmit={initiateBuyCoupon} className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <label className="block text-slate-700 font-semibold mb-1">ยอดเงินที่ต้องการแลกเปลี่ยน (E-Cash)</label>
                         <input 
                           type="number" 
                           required
@@ -5249,29 +6544,29 @@ export default function App() {
                       </div>
                       <div className="col-span-2">
                         <p className="text-[9px] text-rose-500 bg-rose-50 p-2 rounded-lg border border-rose-100 mb-2">
-                          ⚠️ เมื่อแลกยอด M-Cash ไปเป็น M-Coupon ช้อปปิ้งแล้ว จะไม่สามารถแลกกลับคืนมาเป็นยอดเงินเงินสดได้
+                          ⚠️ เมื่อแลกยอด E-Cash ไปเป็น E-Coupon ช้อปปิ้งแล้ว จะไม่สามารถแลกกลับคืนมาเป็นยอดเงินเงินสดได้
                         </p>
-                        <button type="submit" className="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 rounded-xl">
-                          แลกสิทธิ์ M-Coupon คูปองช้อปปิ้งพอร์ทัล
+                        <button type="submit" className="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 rounded-xl cursor-pointer">
+                          แลกสิทธิ์ E-Coupon คูปองช้อปปิ้งพอร์ทัล
                         </button>
                       </div>
                     </form>
                   </div>
 
-                  {/* MCash Withdrawal to bank */}
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                      <Star size={16} className="text-rose-500" /> ถอนยอดรายได้เข้าบัญชีธนาคาร (มีหักภาษี ณ ที่จ่าย)
+                  {/* Frame 4: ถอนรายได้เข้าบัญชีธนาคารจากกระเป๋า E-Money */}
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                      <Star size={16} className="text-rose-500" /> ถอนยอดรายได้เข้าบัญชีธนาคาร (จากกระเป๋า E-Money) 🏦
                     </h4>
-                    <form onSubmit={handleWithdrawMCash} className="grid grid-cols-2 gap-3 text-xs">
+                    <form onSubmit={initiateWithdrawECash} className="grid grid-cols-2 gap-3 text-xs">
                       <div>
-                        <label className="block text-slate-700 font-semibold mb-1">ยอดเงินคอมมิชชันที่ต้องการถอน</label>
+                        <label className="block text-slate-700 font-semibold mb-1">ยอดเงินต้องการถอน (E-Money)</label>
                         <input 
                           type="number" 
                           required
                           value={withdrawAmount}
                           onChange={(e) => setWithdrawAmount(e.target.value)}
-                          placeholder="ยอดถอน M-Cash"
+                          placeholder="ยอดถอน E-Money"
                           className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
                         />
                       </div>
@@ -5290,7 +6585,7 @@ export default function App() {
                       <div className="col-span-2 bg-slate-50 border border-slate-200 p-3.5 rounded-2xl text-[10px] space-y-1 text-slate-500">
                         <p>ชื่อผู้รับโอนเงินปลายทาง: <b>{profile?.name} {profile?.surname}</b></p>
                         <p>ธนาคาร: <b>{profile?.bankName} (เลขที่: {profile?.bankAccount})</b></p>
-                        <p className="text-rose-500 font-bold">✓ หักค่าบริการระบบหลังบ้าน 15% และหักภาษี ณ ที่จ่าย 5% รวมหักทั้งสิ้น 20%</p>
+                        <p className="text-rose-500 font-bold">✓ หักค่าบริการระบบหลังบ้าน 15% และหักภาษี ณ ที่จ่าย 5% รวมหักทั้งสิ้น 20% เพื่อรักษาเสถียรภาพ</p>
                         {withdrawAmount && (
                           <div className="mt-2 pt-2 border-t border-slate-200 text-xs font-bold text-slate-800 flex justify-between">
                             <span>ยอดเงินที่จะเข้าบัญชีจริง:</span>
@@ -5299,7 +6594,7 @@ export default function App() {
                         )}
                       </div>
                       <button type="submit" className="col-span-2 w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-2 rounded-xl shadow-lg cursor-pointer">
-                        ส่งคำขอถอนเงินรายได้
+                        ส่งคำขอถอนเงินรายได้ E-Money
                       </button>
                     </form>
                   </div>
@@ -5365,7 +6660,7 @@ export default function App() {
                                   t.type === 'Exchange' ? 'bg-sky-50 text-sky-700 border border-sky-100' :
                                   'bg-rose-50 text-rose-700 border border-rose-100'
                                 }`}>
-                                  {t.type === 'Deposit' ? 'เงินเข้า (M-Cash)' :
+                                  {t.type === 'Deposit' ? 'เงินเข้า (E-Cash)' :
                                    t.type === 'Bonus' ? 'โบนัส MLM / คอมมิชชัน' :
                                    t.type === 'Exchange' ? 'แลกเปลี่ยนคูปอง' :
                                    t.type === 'WithdrawalRequest' ? 'ขอถอนเงินสด' : t.type}
@@ -5440,7 +6735,7 @@ export default function App() {
                   </h5>
                   <p>1. <b>สิทธิ์การรับรายได้โบนัสสูงสุด (Quota Rights Limit):</b> จำกัดการรับโบนัสสะสมรวมสูงสุดไม่เกิน 10 เท่าของมูลค่าแพ็กเกจที่คุณสั่งซื้อ (เช่น แพ็กเกจ S (100 บ.) รับสิทธิ์ได้สูงสุด 1,000 บาท | M: 5,000 บาท | L: 10,000 บาท | XL: 30,000 บาท | XXL: 50,000 บาท) เมื่อสิทธิ์โบนัสครบกำหนด ระบบจะตัดยอดและโอนสิทธิ์ระดับถัดไปโดยอัตโนมัติ</p>
                   <p>2. <b>ความลึกชั้นสายงานแผน A (ไบนารี่):</b> สมาชิกจะได้รับผลประโยชน์คำนวณตามจำนวนชั้นลึกสูงสุดตามแพ็กเกจปัจจุบันของคุณ ได้แก่ S รับลึก 1 ชั้น | M ลึก 5 ชั้น | L ลึก 10 ชั้น | XL ลึก 15 ชั้น | XXL ลึก 20 ชั้นลึก</p>
-                  <p>3. <b>ค่าบริหารจัดการและภาษีหัก ณ ที่จ่าย:</b> การขอถอนเงินปันผลจากยอดเงินสด (M-Cash) จะถูกหักค่าบริการบำรุงรักษาระบบหลังบ้าน 15% และภาษีเงินได้หัก ณ ที่จ่าย 5% รวมหักทั้งสิ้น 20% เพื่อประโยชน์สูงสุดในการรักษาเสถียรภาพระบบ</p>
+                  <p>3. <b>ค่าบริหารจัดการและภาษีหัก ณ ที่จ่าย:</b> การขอถอนเงินปันผลจากยอดเงินสด (E-Cash) จะถูกหักค่าบริการบำรุงรักษาระบบหลังบ้าน 15% และภาษีเงินได้หัก ณ ที่จ่าย 5% รวมหักทั้งสิ้น 20% เพื่อประโยชน์สูงสุดในการรักษาเสถียรภาพระบบ</p>
                 </div>
               </div>
 
@@ -5459,25 +6754,33 @@ export default function App() {
                 {/* Report Sub-tabs Selector */}
                 <div className="flex flex-wrap gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200">
                   <button 
-                    onClick={() => setReportSubTab('mcash')}
+                    onClick={() => setReportSubTab('ecash')}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                      reportSubTab === 'mcash' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                      reportSubTab === 'ecash' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    💳 รายงาน M-Cash
+                    💳 รายงาน E-Cash
                   </button>
                   <button 
-                    onClick={() => setReportSubTab('mcoupon')}
+                    onClick={() => setReportSubTab('emoney')}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                      reportSubTab === 'mcoupon' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                      reportSubTab === 'emoney' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    🎟️ รายงาน M-Coupon
+                    🪙 รายงาน E-Money
                   </button>
                   <button 
-                    onClick={() => setReportSubTab('allshare')}
+                    onClick={() => setReportSubTab('ecoupon')}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                      reportSubTab === 'allshare' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                      reportSubTab === 'ecoupon' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    🎟️ รายงาน E-Coupon
+                  </button>
+                  <button 
+                    onClick={() => setReportSubTab('eshare')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      reportSubTab === 'eshare' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     🌐 รายงาน All-Share
@@ -5501,17 +6804,17 @@ export default function App() {
                 </div>
               </div>
 
-              {/* REPORT M-CASH SUB-VIEW */}
-              {reportSubTab === 'mcash' && (
+              {/* REPORT E-CASH SUB-VIEW */}
+              {reportSubTab === 'ecash' && (
                 <div className="space-y-6">
                   {/* Ledger Balance Card */}
                   <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-3xl p-6 text-white shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="space-y-1">
-                      <span className="text-xs text-emerald-100 font-medium">ยอดคงเหลือ M-Cash ปัจจุบัน</span>
-                      <h3 className="text-3xl font-extrabold tracking-tight">฿ {profile?.balanceMCash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+                      <span className="text-xs text-emerald-100 font-medium">ยอดคงเหลือ E-Cash ปัจจุบัน</span>
+                      <h3 className="text-3xl font-extrabold tracking-tight">฿ {profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
                     </div>
                     <div className="text-[11px] bg-white/10 px-3 py-2 rounded-xl backdrop-blur-sm space-y-1">
-                      <div>• ยอดรวมเงินหมุนเวียน M-Cash ทั้งระบบประมวลผลเรียลไทม์</div>
+                      <div>• ยอดรวมเงินหมุนเวียน E-Cash ทั้งระบบประมวลผลเรียลไทม์</div>
                       <div>• ปลอดภัยด้วยรหัส PIN และระบบยืนยันตนสองชั้น</div>
                     </div>
                   </div>
@@ -5520,209 +6823,270 @@ export default function App() {
                   <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
                     <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                       <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                        <CreditCard size={16} className="text-emerald-500" /> สมุดบันทึกรายการบัญชี M-Cash Ledger
+                        <CreditCard size={16} className="text-emerald-500" /> สมุดบันทึกรายการบัญชี E-Cash Ledger
                       </h4>
                       <span className="text-[10px] text-slate-400 font-medium">อัปเดตข้อมูลล่าสุดเมื่อ: {new Date().toLocaleTimeString()}</span>
                     </div>
 
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-100">
-                            <th className="px-4 py-3">รหัสรายการ</th>
-                            <th className="px-4 py-3">วัน-เวลาทำรายการ</th>
-                            <th className="px-4 py-3">ประเภทรายการ</th>
-                            <th className="px-4 py-3">จำนวนเงิน (บาท)</th>
-                            <th className="px-4 py-3">รายละเอียดบัญชี</th>
-                            <th className="px-4 py-3">สถานะรายการ</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-slate-700">
-                          {(() => {
-                            const mCashTxns = transactions.filter((t) => {
-                              if (t.type === 'Deposit_System') return false;
-                              if (t.currency && t.currency !== 'M-Cash') return false;
-                              
-                              // ซ่อนรายการที่เป็นโบนัสหรือค่าแนะนำที่มาจากตนเอง (userId === senderId)
-                              const detailsText = t.details || t.description || t.remarks || '';
-                              const senderIdMatch = detailsText.match(/(A26\d{6,})/);
-                              const senderId = senderIdMatch ? senderIdMatch[1] : null;
-                              if (senderId && senderId === t.userId && (t.type === 'Bonus' || t.type === 'AllShare' || t.type === 'Commission')) {
-                                return false;
-                              }
-                              return true;
-                            });
+                    {(() => {
+                      const eCashTxns = transactions.filter((t) => {
+                        if (t.type === 'Deposit_System') return false;
+                        if (t.currency && t.currency !== 'E-Cash') return false;
+                        
+                        // ซ่อนรายการที่เป็นโบนัสหรือค่าแนะนำที่มาจากตนเอง (userId === senderId)
+                        const detailsText = t.details || t.description || t.remarks || '';
+                        const senderIdMatch = detailsText.match(/(A26\d{6,})/);
+                        const senderId = senderIdMatch ? senderIdMatch[1] : null;
+                        if (senderId && senderId === t.userId && (t.type === 'Bonus' || t.type === 'EShare' || t.type === 'Commission')) {
+                          return false;
+                        }
+                        return true;
+                      });
 
-                            if (mCashTxns.length === 0) {
-                              return (
-                                <tr>
-                                  <td colSpan={6} className="p-6 text-center text-slate-400">ยังไม่มีรายงานประวัติทำธุรกรรมในขณะนี้</td>
+                      const itemsPerPage = 20;
+                      const startIndex = (eCashPage - 1) * itemsPerPage;
+                      const paginatedTxns = eCashTxns.slice(startIndex, startIndex + itemsPerPage);
+
+                      return (
+                        <>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-100">
+                                  <th className="px-4 py-3">รหัสรายการ</th>
+                                  <th className="px-4 py-3">วัน-เวลาทำรายการ</th>
+                                  <th className="px-4 py-3">ประเภทรายการ</th>
+                                  <th className="px-4 py-3">จำนวนเงิน (บาท)</th>
+                                  <th className="px-4 py-3">รายละเอียดบัญชี</th>
+                                  <th className="px-4 py-3">สถานะรายการ</th>
                                 </tr>
-                              );
-                            }
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-slate-700">
+                                {paginatedTxns.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={6} className="p-6 text-center text-slate-400">ยังไม่มีรายงานประวัติทำธุรกรรมในขณะนี้</td>
+                                  </tr>
+                                ) : (
+                                  paginatedTxns.map((t) => {
+                                    const isCredit = t.type === 'Deposit' || t.type === 'EShare' || t.type === 'Commission' || t.type === 'Receive' || t.type === 'Bonus' || t.type === 'Deposit_System';
+                                    const detailsText = t.details || t.description || t.remarks || '';
+                                    const senderIdMatch = detailsText.match(/(A26\d{6,})/);
+                                    const senderId = senderIdMatch ? senderIdMatch[1] : null;
 
-                            return mCashTxns.map((t) => {
-                              const isCredit = t.type === 'Deposit' || t.type === 'AllShare' || t.type === 'Commission' || t.type === 'Receive' || t.type === 'Bonus' || t.type === 'Deposit_System';
-                              const detailsText = t.details || t.description || t.remarks || '';
-                              const senderIdMatch = detailsText.match(/(A26\d{6,})/);
-                              const senderId = senderIdMatch ? senderIdMatch[1] : null;
-
-                              return (
-                                <tr key={t.id} className="hover:bg-slate-50/50">
-                                  <td className="px-4 py-3 font-mono text-[10px] font-bold text-indigo-600">{t.id}</td>
-                                  <td className="px-4 py-3 text-slate-500">{new Date(t.createdAt).toLocaleString()}</td>
-                                  <td className="px-4 py-3">
-                                    <div className="flex flex-col gap-1 items-start">
-                                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                                        t.type === 'Deposit' ? 'bg-emerald-50 text-emerald-600' :
-                                        t.type === 'Withdraw' ? 'bg-rose-50 text-rose-600' :
-                                        t.type === 'Transfer' ? 'bg-amber-50 text-amber-600' :
-                                        t.type === 'Commission' || t.type === 'Bonus' ? 'bg-blue-50 text-blue-600' :
-                                        t.type === 'AllShare' ? 'bg-indigo-50 text-indigo-600' :
-                                        t.type === 'Exchange' ? 'bg-purple-50 text-purple-600' :
-                                        'bg-slate-50 text-slate-600'
-                                      }`}>
-                                        {t.type === 'Deposit' ? '💵 เงินฝากเข้า' :
-                                         t.type === 'Withdraw' ? '💸 ถอนเงินสด' :
-                                         t.type === 'Transfer' ? '🔁 โอนไปสมาชิก' :
-                                         t.type === 'Commission' || t.type === 'Bonus' ? `💰 โบนัสค่าแนะนำ${senderId ? ` (จากรหัส ${senderId})` : ''}` :
-                                         t.type === 'AllShare' ? `🌐 ออลแชร์โบนัส${senderId ? ` (จากรหัส ${senderId})` : ''}` :
-                                         t.type === 'Exchange' ? '🎟️ แลกคูปอง' : t.type}
-                                      </span>
-                                      {senderId && (
-                                        <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded-md mt-1">
-                                          {t.type === 'Withdraw' || t.type === 'Transfer' || detailsText.includes('โอนเงินออก') ? 'ส่งให้รหัส: ' : 'จากรหัส: '}
-                                          {senderId}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-                                  <td className={`px-4 py-3 font-bold ${isCredit ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                    {isCredit ? '+' : '-'}{(t.transferAmount || t.amount)?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บ.
-                                  </td>
-                                  <td className="px-4 py-3 text-slate-500 text-[11px] max-w-xs truncate" title={detailsText || '-'}>
-                                    {detailsText || '-'}
-                                  </td>
-                                  <td className="px-4 py-3">
-                                    <span className="flex items-center gap-1.5">
-                                      <span className={`w-2 h-2 rounded-full ${t.status === 'Approved' || t.status === 'Completed' || !t.status ? 'bg-emerald-500' : t.status === 'Pending' ? 'bg-amber-400' : 'bg-rose-500'}`} />
-                                      <span className="text-[11px]">
-                                        {t.status === 'Approved' || t.status === 'Completed' || !t.status ? 'เสร็จสมบูรณ์' : t.status === 'Pending' ? 'รอดำเนินการ' : 'ปฏิเสธ/ยกเลิก'}
-                                      </span>
-                                    </span>
-                                  </td>
-                                </tr>
-                              );
-                            });
-                          })()}
-                        </tbody>
-                      </table>
-                    </div>
+                                    return (
+                                      <tr key={t.id} className="hover:bg-slate-50/50">
+                                        <td className="px-4 py-3 font-mono text-[10px] font-bold text-indigo-600">{t.id}</td>
+                                        <td className="px-4 py-3 text-slate-500">{new Date(t.createdAt).toLocaleString()}</td>
+                                        <td className="px-4 py-3">
+                                          <div className="flex flex-col gap-1 items-start">
+                                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                              t.type === 'Deposit' ? 'bg-emerald-50 text-emerald-600' :
+                                              t.type === 'Withdraw' ? 'bg-rose-50 text-rose-600' :
+                                              t.type === 'Transfer' ? 'bg-amber-50 text-amber-600' :
+                                              t.type === 'Commission' || t.type === 'Bonus' ? 'bg-blue-50 text-blue-600' :
+                                              t.type === 'EShare' ? 'bg-indigo-50 text-indigo-600' :
+                                              t.type === 'Exchange' ? 'bg-purple-50 text-purple-600' :
+                                              'bg-slate-50 text-slate-600'
+                                            }`}>
+                                              {t.type === 'Deposit' ? '💵 เงินฝากเข้า' :
+                                               t.type === 'Withdraw' ? '💸 ถอนเงินสด' :
+                                               t.type === 'Transfer' ? '🔁 โอนไปสมาชิก' :
+                                               t.type === 'Commission' || t.type === 'Bonus' ? '💰 โบนัสค่าแนะนำ' + (senderId ? ' (จากรหัส ' + senderId + ')' : '') :
+                                               t.type === 'EShare' ? '🌐 ออลแชร์โบนัส' + (senderId ? ' (จากรหัส ' + senderId + ')' : '') :
+                                               t.type === 'Exchange' ? '🎟️ แลกคูปอง' : t.type}
+                                            </span>
+                                            {senderId && (
+                                              <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded-md mt-1">
+                                                {t.type === 'Withdraw' || t.type === 'Transfer' || detailsText.includes('โอนเงินออก') ? 'ส่งให้รหัส: ' : 'จากรหัส: '}
+                                                {senderId}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className={`px-4 py-3 font-bold ${isCredit ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                          {isCredit ? '+' : '-'}{(t.transferAmount || t.amount)?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บ.
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-500 text-[11px] max-w-xs truncate" title={detailsText || '-'}>
+                                          {detailsText || '-'}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span className="flex items-center gap-1.5">
+                                            <span className={`w-2 h-2 rounded-full ${t.status === 'Approved' || t.status === 'Completed' || !t.status ? 'bg-emerald-500' : t.status === 'Pending' ? 'bg-amber-400' : 'bg-rose-500'}`} />
+                                            <span className="text-[11px]">
+                                              {t.status === 'Approved' || t.status === 'Completed' || !t.status ? 'เสร็จสมบูรณ์' : t.status === 'Pending' ? 'รอดำเนินการ' : 'ปฏิเสธ/ยกเลิก'}
+                                            </span>
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                          <TablePagination currentPage={eCashPage} totalItems={eCashTxns.length} itemsPerPage={itemsPerPage} onPageChange={setECashPage} />
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
 
-              {/* REPORT M-COUPON SUB-VIEW */}
-              {reportSubTab === 'mcoupon' && (
+              {/* REPORT E-MONEY SUB-VIEW */}
+              {reportSubTab === 'emoney' && (
+                <div className="space-y-6">
+                  {/* Ledger Balance Card */}
+                  <div className="bg-gradient-to-br from-purple-500 to-indigo-600 rounded-3xl p-6 text-white shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div className="space-y-1">
+                      <span className="text-xs text-purple-100 font-medium">ยอดคงเหลือ E-Money ปัจจุบัน</span>
+                      <h3 className="text-3xl font-extrabold tracking-tight">฿ {profile?.balanceEMoney?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+                    </div>
+                    <div className="text-[11px] bg-white/10 px-3 py-2 rounded-xl backdrop-blur-sm space-y-1">
+                      <div>• แหล่งสะสมรายได้ระบบภายในทั้งหมด เช่น ค่าแนะนำ ปันสุข และส่วนแบ่งออลแชร์</div>
+                      <div>• ใช้ทำธุรกรรมโอนเงินออกบัญชีธนาคาร หรือเปลี่ยนเป็น E-Cash, E-Coupon 1:1 ได้โดยไม่มีค่าธรรมเนียม</div>
+                    </div>
+                  </div>
+
+                  {/* Transaction Ledger Table */}
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                      <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                        <Coins size={16} className="text-purple-500" /> สมุดบันทึกรายการบัญชี E-Money Ledger
+                      </h4>
+                      <span className="text-[10px] text-slate-400 font-medium">อัปเดตข้อมูลล่าสุดเมื่อ: {new Date().toLocaleTimeString()}</span>
+                    </div>
+
+                    {(() => {
+                      const eMoneyTxns = transactions.filter((t) => {
+                        if (t.type === 'Deposit_System') return false;
+                        return (
+                          t.currency === 'E-Money' ||
+                          t.type === 'Bonus' ||
+                          t.type === 'AllShare' ||
+                          t.type === 'EShare' ||
+                          t.type === 'Commission'
+                        );
+                      });
+
+                      const itemsPerPage = 20;
+                      const startIndex = (eMoneyPage - 1) * itemsPerPage;
+                      const paginatedTxns = eMoneyTxns.slice(startIndex, startIndex + itemsPerPage);
+
+                      return (
+                        <>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-100">
+                                  <th className="px-4 py-3">รหัสรายการ</th>
+                                  <th className="px-4 py-3">วัน-เวลาทำรายการ</th>
+                                  <th className="px-4 py-3">ประเภทรายการ</th>
+                                  <th className="px-4 py-3">จำนวนเงิน (บาท)</th>
+                                  <th className="px-4 py-3">รายละเอียดบัญชี</th>
+                                  <th className="px-4 py-3">สถานะรายการ</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-slate-700">
+                                {paginatedTxns.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={6} className="p-6 text-center text-slate-400">ยังไม่มีรายงานประวัติทำธุรกรรม E-Money ในขณะนี้</td>
+                                  </tr>
+                                ) : (
+                                  paginatedTxns.map((t) => {
+                                    const isCredit = t.type === 'Deposit' || t.type === 'EShare' || t.type === 'Commission' || t.type === 'Receive' || t.type === 'Bonus' || t.type === 'Deposit_System';
+                                    const detailsText = t.details || t.description || t.remarks || '';
+                                    const senderIdMatch = detailsText.match(/(A26\d{6,})/);
+                                    const senderId = senderIdMatch ? senderIdMatch[1] : null;
+
+                                    return (
+                                      <tr key={t.id} className="hover:bg-slate-50/50">
+                                        <td className="px-4 py-3 font-mono text-[10px] font-bold text-indigo-600">{t.id}</td>
+                                        <td className="px-4 py-3 text-slate-500">{new Date(t.createdAt).toLocaleString()}</td>
+                                        <td className="px-4 py-3">
+                                          <div className="flex flex-col gap-1 items-start">
+                                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                              t.type === 'Deposit' ? 'bg-emerald-50 text-emerald-600' :
+                                              t.type === 'Withdraw' ? 'bg-rose-50 text-rose-600' :
+                                              t.type === 'Transfer' ? 'bg-amber-50 text-amber-600' :
+                                              t.type === 'Commission' || t.type === 'Bonus' ? 'bg-purple-50 text-purple-600' :
+                                              t.type === 'EShare' ? 'bg-indigo-50 text-indigo-600' :
+                                              t.type === 'WithdrawalRequest' ? 'bg-red-50 text-red-600' :
+                                              'bg-slate-50 text-slate-600'
+                                            }`}>
+                                              {t.type === 'Deposit' ? '💵 รับเงินโอนเข้า' :
+                                               t.type === 'Withdraw' ? '💸 ถอน/จ่ายเงิน' :
+                                               t.type === 'Transfer' ? '🔁 สลับเปลี่ยนกระเป๋า' :
+                                               t.type === 'Commission' || t.type === 'Bonus' ? '🎁 โบนัสรายได้ระบบ' :
+                                               t.type === 'EShare' ? '🌐 ออลแชร์รายได้' : 
+                                               t.type === 'WithdrawalRequest' ? '🏦 คำขอถอนเงินสดเข้าธนาคาร' : t.type}
+                                            </span>
+                                            {senderId && (
+                                              <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded-md mt-1">
+                                                จากรหัส: {senderId}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className={`px-4 py-3 font-bold ${isCredit ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                          {isCredit ? '+' : '-'}{(t.transferAmount || t.amount)?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บ.
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-500 text-[11px] max-w-xs truncate" title={detailsText || '-'}>
+                                          {detailsText || '-'}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span className="flex items-center gap-1.5">
+                                            <span className={`w-2 h-2 rounded-full ${t.status === 'Approved' || t.status === 'Completed' || !t.status ? 'bg-emerald-500' : t.status === 'Pending' ? 'bg-amber-400' : 'bg-rose-500'}`} />
+                                            <span className="text-[11px]">
+                                              {t.status === 'Approved' || t.status === 'Completed' || !t.status ? 'เสร็จสมบูรณ์' : t.status === 'Pending' ? 'รอดำเนินการอนุมัติ' : 'ปฏิเสธ/ยกเลิก'}
+                                            </span>
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                          <TablePagination currentPage={eMoneyPage} totalItems={eMoneyTxns.length} itemsPerPage={itemsPerPage} onPageChange={setEMoneyPage} />
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* REPORT E-COUPON SUB-VIEW */}
+              {reportSubTab === 'ecoupon' && (
                 <div className="space-y-6">
                   {/* Coupon Balance Card */}
                   <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-6 text-white shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="space-y-1">
-                      <span className="text-xs text-indigo-100 font-medium">ยอดคงเหลือ M-Coupon (บาท)</span>
-                      <h3 className="text-3xl font-extrabold tracking-tight">฿ {profile?.balanceMCoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
+                      <span className="text-xs text-indigo-100 font-medium">ยอดคงเหลือ Point (E-Coupon)</span>
+                      <h3 className="text-3xl font-extrabold tracking-tight">฿ {profile?.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
                     </div>
                     <div className="text-[11px] bg-white/10 px-3 py-2 rounded-xl backdrop-blur-sm space-y-1">
-                      <div>• แลกจาก M-Cash ได้ที่แถบธุรกรรมการเงิน (โอนกลับเป็นเงินสดไม่ได้)</div>
+                      <div>• แลกจาก E-Cash ได้ที่แถบธุรกรรมการเงิน (โอนกลับเป็นเงินสดไม่ได้)</div>
                       <div>• ใช้เสมือนเงินสดสำหรับการแลกซื้อสินค้าและตำแหน่งภายในร้านค้าพอร์ทัล</div>
-                    </div>
-                  </div>
-
-                  {/* Orders & Bills Ledger */}
-                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
-                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                      <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                        <ClipboardList size={16} className="text-indigo-500" /> ประวัติการสั่งซื้อและสลิปใบเสร็จรับเงิน M-Coupon
-                      </h4>
-                      <span className="text-[10px] text-slate-400">สั่งปริ๊นใบเสร็จอย่างย่อได้ทันที</span>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-100">
-                            <th className="px-4 py-3">เลขบิล/Bill No</th>
-                            <th className="px-4 py-3">วันเวลาสั่งซื้อ</th>
-                            <th className="px-4 py-3">รายการสินค้า</th>
-                            <th className="px-4 py-3">จำนวนสินค้า</th>
-                            <th className="px-4 py-3">มูลค่า (บาท)</th>
-                            <th className="px-4 py-3">คะแนน PV</th>
-                            <th className="px-4 py-3">สถานะการจัดส่ง</th>
-                            <th className="px-4 py-3 text-center">สิทธิ์ใบเสร็จ</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-slate-700">
-                          {memberOrders.length === 0 ? (
-                            <tr>
-                              <td colSpan={8} className="p-6 text-center text-slate-400">ยังไม่มีรายงานคำสั่งซื้อสินค้าและคูปองช้อปปิ้งในขณะนี้</td>
-                            </tr>
-                          ) : (
-                            memberOrders.map((ord) => (
-                              <tr key={ord.id} className="hover:bg-slate-50/50">
-                                <td className="px-4 py-3 font-mono text-[10px] font-bold text-slate-800">{ord.id}</td>
-                                <td className="px-4 py-3 text-slate-500">{new Date(ord.createdAt).toLocaleString()}</td>
-                                <td className="px-4 py-3 font-bold text-slate-900">
-                                  {ord.productName}
-                                  {ord.selectedChoiceName && <span className="block text-[10px] font-medium text-indigo-500">ตัวเลือก: {ord.selectedChoiceName}</span>}
-                                </td>
-                                <td className="px-4 py-3">{ord.quantity || 1} ชิ้น</td>
-                                <td className="px-4 py-3 font-bold">฿ {ord.totalPrice?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                                <td className="px-4 py-3 text-purple-600 font-bold">{(ord.totalPv || 0).toLocaleString()} PV</td>
-                                <td className="px-4 py-3">
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                    ord.status === 'Completed' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
-                                  }`}>
-                                    {ord.status === 'Completed' ? 'จัดส่งแล้ว' : 'กำลังเตรียมจัดส่ง'}
-                                  </span>
-                                  {ord.status === 'Completed' && (ord.trackingNo || ord.trackingCompany) && (
-                                    <div className="mt-1.5 text-[10px] text-slate-500 leading-tight bg-slate-50 border border-slate-100 p-1.5 rounded-lg space-y-0.5">
-                                      <div>🚚 ขนส่ง: <span className="font-bold text-slate-700">{ord.trackingCompany || "ทั่วไป"}</span></div>
-                                      <div>📦 เลขพัสดุ: <span className="font-mono font-bold text-indigo-600">{ord.trackingNo}</span></div>
-                                      {ord.shippingNote && <div className="text-[9px] text-slate-400">หมายเหตุ: {ord.shippingNote}</div>}
-                                    </div>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  <button 
-                                    onClick={() => setSelectedReceiptOrder(ord)}
-                                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-xl font-bold text-[10px] transition flex items-center gap-1 mx-auto cursor-pointer"
-                                  >
-                                    <Printer size={12} /> พิมพ์ใบเสร็จ
-                                  </button>
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* REPORT ALL-SHARE SUB-VIEW */}
-              {reportSubTab === 'allshare' && (
+              {/* REPORT E-SHARE SUB-VIEW */}
+              {reportSubTab === 'eshare' && (
                 <div className="space-y-6">
                   {/* All share Stats cards */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="bg-gradient-to-br from-amber-500 to-amber-700 rounded-3xl p-6 text-white shadow-sm space-y-1">
-                      <span className="text-xs text-amber-100 font-medium">ยอดรายรับสะสม All-Share (฿)</span>
-                      <h3 className="text-3xl font-extrabold tracking-tight">฿ {profile?.balanceAllShare?.toFixed(6) || "0.000000"}</h3>
-                      <p className="text-[10px] text-amber-200 pt-2">• สะสมเรียลไทม์จากการสั่งซื้อแพ็กเกจทุกรายการในโครงสร้างระบบ</p>
+                      <span className="text-xs text-amber-100 font-medium">ยอดรายรับสะสม E-Share สุทธิ (฿) (หักแล้ว 50%)</span>
+                      <h3 className="text-3xl font-extrabold tracking-tight">฿ {((profile?.balanceEShare || 0) * 0.50).toFixed(6)}</h3>
+                      <p className="text-[10px] text-amber-200 pt-2">• ยอดสุทธิหลังจากหักแบ่งจัดสรรเข้าระบบ Plan B แล้ว 50% และโอนเข้ากระเป๋า E-Cash ของคุณ</p>
                     </div>
 
                     <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
                       <div>
-                        <span className="text-xs text-slate-400 font-medium block">ตำแหน่งเกียรติยศและคุณสมบัติรับ All-Share</span>
+                        <span className="text-xs text-slate-400 font-medium block">ตำแหน่งเกียรติยศและคุณสมบัติรับ E-Share</span>
                         <div className="flex items-center gap-2 mt-1">
                           <span className={`px-3 py-1 rounded-full text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600`}>
                             {profile?.rank || "Member"}
@@ -5733,7 +7097,7 @@ export default function App() {
                         </div>
                       </div>
                       <div className="text-[11px] text-slate-400 leading-tight pt-3 border-t border-slate-100 mt-3">
-                        * All-Share คำนวณจากยอดขายออพชั่นกลางระบบ และกระจายทันทีให้สมาชิกผู้มีส่วนร่วมในโครงการ
+                        * E-Share คำนวณจากยอดขายออพชั่นกลางระบบ และกระจายทันทีให้สมาชิกผู้มีส่วนร่วมในโครงการ
                       </div>
                     </div>
                   </div>
@@ -5741,43 +7105,51 @@ export default function App() {
                   {/* All Share History Table */}
                   <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
                     <h4 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 flex items-center gap-1.5">
-                      <TrendingUp size={16} className="text-amber-500" /> ประวัติการรับโบนัส All-Share โครงสร้างกองทุนรวม
+                      <TrendingUp size={16} className="text-amber-500" /> ประวัติการรับโบนัส E-Share โครงสร้างกองทุนรวม
                     </h4>
 
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-100">
-                            <th className="px-4 py-3">เลขอ้างอิงรายการ</th>
-                            <th className="px-4 py-3">วันเวลาประมวลผล</th>
-                            <th className="px-4 py-3">คำอธิบายโบนัสออลแชร์</th>
-                            <th className="px-4 py-3">ยอดได้รับเข้ารายได้ M-Cash (50%)</th>
-                            <th className="px-4 py-3">ยอดสะสมคะแนนรันระบบ Plan B (50%)</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-slate-700">
-                          {(() => {
-                            const allShareTxns = transactions.filter(t => t.type === 'AllShare');
-                            if (allShareTxns.length === 0) {
-                              return (
-                                <tr>
-                                  <td colSpan={5} className="p-6 text-center text-slate-400">ยังไม่มีรายงานประวัติ All-Share โบนัสปันผลเข้าบัญชีในขณะนี้</td>
+                    {(() => {
+                      const allShareTxns = transactions.filter(t => t.type === 'EShare');
+                      const itemsPerPage = 20;
+                      const startIndex = (allSharePage - 1) * itemsPerPage;
+                      const paginatedTxns = allShareTxns.slice(startIndex, startIndex + itemsPerPage);
+
+                      return (
+                        <>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-100">
+                                  <th className="px-4 py-3">เลขอ้างอิงรายการ</th>
+                                  <th className="px-4 py-3">วันเวลาประมวลผล</th>
+                                  <th className="px-4 py-3">คำอธิบายโบนัสออลแชร์</th>
+                                  <th className="px-4 py-3">ยอดได้รับเข้ารายได้ E-Cash (50%)</th>
+                                  <th className="px-4 py-3">ยอดสะสมคะแนนรันระบบ Plan B (50%)</th>
                                 </tr>
-                              );
-                            }
-                            return allShareTxns.map((t) => (
-                              <tr key={t.id} className="hover:bg-slate-50/50">
-                                <td className="px-4 py-3 font-mono text-[10px] font-bold text-amber-700">{t.id}</td>
-                                <td className="px-4 py-3 text-slate-500">{new Date(t.createdAt).toLocaleString()}</td>
-                                <td className="px-4 py-3 font-medium text-slate-800">{t.description || "รับปันผลร่วมออลแชร์กองกลาง"}</td>
-                                <td className="px-4 py-3 text-emerald-600 font-bold">+{t.amount?.toFixed(4)} บ.</td>
-                                <td className="px-4 py-3 text-purple-600 font-bold">+{t.amount?.toFixed(4)} คะแนน</td>
-                              </tr>
-                            ));
-                          })()}
-                        </tbody>
-                      </table>
-                    </div>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-slate-700">
+                                {paginatedTxns.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={5} className="p-6 text-center text-slate-400">ยังไม่มีรายงานประวัติ E-Share โบนัสปันผลเข้าบัญชีในขณะนี้</td>
+                                  </tr>
+                                ) : (
+                                  paginatedTxns.map((t) => (
+                                    <tr key={t.id} className="hover:bg-slate-50/50">
+                                      <td className="px-4 py-3 font-mono text-[10px] font-bold text-amber-700">{t.id}</td>
+                                      <td className="px-4 py-3 text-slate-500">{new Date(t.createdAt).toLocaleString()}</td>
+                                      <td className="px-4 py-3 font-medium text-slate-800">{t.description || "รับปันผลร่วมออลแชร์กองกลาง"}</td>
+                                      <td className="px-4 py-3 text-emerald-600 font-bold">+{t.amount?.toFixed(4)} บ.</td>
+                                      <td className="px-4 py-3 text-purple-600 font-bold">+{t.amount?.toFixed(4)} คะแนน</td>
+                                    </tr>
+                                  ))
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                          <TablePagination currentPage={allSharePage} totalItems={allShareTxns.length} itemsPerPage={itemsPerPage} onPageChange={setESharePage} />
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -5818,91 +7190,104 @@ export default function App() {
                       <Users size={16} className="text-indigo-500" /> ตารางสายงานตรงและประวัติการแนะนำของท่าน
                     </h4>
 
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-100">
-                            <th className="px-4 py-3">รหัสสมาชิก/ID</th>
-                            <th className="px-4 py-3">ชื่อผู้ใช้งาน/Username</th>
-                            <th className="px-4 py-3">ชื่อ-นามสกุลจริง</th>
-                            <th className="px-4 py-3">ตำแหน่งแพ็กเกจ</th>
-                            <th className="px-4 py-3">วันที่เข้าร่วมระบบ</th>
-                            <th className="px-4 py-3">สถานะบัญชี</th>
-                            <th className="px-4 py-3 text-center">ดูตำแหน่งผัง</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-slate-700">
-                          {directReferrals.length === 0 ? (
-                            <tr>
-                              <td colSpan={7} className="p-6 text-center text-slate-400">ยังไม่พบข้อมูลผู้แนะนำตรงในประวัติของท่านในขณะนี้</td>
-                            </tr>
-                          ) : (
-                            directReferrals.map((member) => {
-                              // Define status conditions
-                              const isTerminated = member.status === 'Terminated' || member.status === 'Suspended' || member.status === 'Inactive';
-                              const isPending = member.statusKyc === 'Pending' || member.status === 'Pending';
-                              const isNoRank = member.rank === 'Member' || !member.rank;
-                              const isComplete = !isNoRank && member.statusKyc === 'Active';
+                    {(() => {
+                      const itemsPerPage = 20;
+                      const startIndex = (referralsPage - 1) * itemsPerPage;
+                      const paginatedReferrals = directReferrals.slice(startIndex, startIndex + itemsPerPage);
 
-                              let statusColor = 'bg-slate-400';
-                              let statusText = 'สมัครยังไม่ซื้อสินค้า';
-                              if (isTerminated) {
-                                statusColor = 'bg-slate-900';
-                                statusText = 'สิ้นสภาพการสมัคร';
-                              } else if (isPending) {
-                                statusColor = 'bg-amber-400';
-                                statusText = 'รอตรวจสอบอนุมัติ';
-                              } else if (isComplete) {
-                                statusColor = 'bg-blue-500';
-                                statusText = 'สมาชิกสมบูรณ์';
-                              }
-
-                              return (
-                                <tr key={member.userId} className="hover:bg-slate-50/50">
-                                  <td className="px-4 py-3">
-                                    <button 
-                                      onClick={() => viewMemberInTree(member.userId, 'referral')}
-                                      className="font-mono text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer"
-                                    >
-                                      {member.userId}
-                                    </button>
-                                  </td>
-                                  <td className="px-4 py-3 font-semibold text-slate-800">{member.username}</td>
-                                  <td className="px-4 py-3">{member.name}</td>
-                                  <td className="px-4 py-3 font-bold">
-                                    <span className={`px-2.5 py-0.5 rounded text-[10px] ${
-                                      member.rank === 'XXL' ? 'bg-purple-100 text-purple-700' :
-                                      member.rank === 'XL' ? 'bg-indigo-100 text-indigo-700' :
-                                      member.rank === 'L' ? 'bg-blue-100 text-blue-700' :
-                                      member.rank === 'M' ? 'bg-emerald-100 text-emerald-700' :
-                                      member.rank === 'S' ? 'bg-amber-100 text-amber-700' :
-                                      'bg-slate-100 text-slate-500'
-                                    }`}>
-                                      {member.rank || "Member"}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3 text-slate-500">{new Date(member.createdAt).toLocaleDateString()}</td>
-                                  <td className="px-4 py-3">
-                                    <span className="flex items-center gap-1.5">
-                                      <span className={`w-3 h-3 rounded-full ${statusColor}`} />
-                                      <span className="text-[11px] font-medium">{statusText}</span>
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3 text-center">
-                                    <button 
-                                      onClick={() => viewMemberInTree(member.userId, 'referral')}
-                                      className="bg-sky-50 hover:bg-sky-100 text-sky-600 px-2.5 py-1 rounded-xl text-[10px] font-bold transition cursor-pointer"
-                                    >
-                                      ลิงก์ไปผัง
-                                    </button>
-                                  </td>
+                      return (
+                        <>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-100">
+                                  <th className="px-4 py-3">รหัสสมาชิก/ID</th>
+                                  <th className="px-4 py-3">รหัสผู้แนะนำ</th>
+                                  <th className="px-4 py-3">ชื่อผู้ใช้งาน/Username</th>
+                                  <th className="px-4 py-3">ชื่อ-นามสกุลจริง</th>
+                                  <th className="px-4 py-3">ตำแหน่งแพ็กเกจ</th>
+                                  <th className="px-4 py-3">วันที่เข้าร่วมระบบ</th>
+                                  <th className="px-4 py-3">สถานะบัญชี</th>
+                                  <th className="px-4 py-3 text-center">ดูตำแหน่งผัง</th>
                                 </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-slate-700">
+                                {paginatedReferrals.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={8} className="p-6 text-center text-slate-400">ยังไม่พบข้อมูลผู้แนะนำตรงในประวัติของท่านในขณะนี้</td>
+                                  </tr>
+                                ) : (
+                                  paginatedReferrals.map((member) => {
+                                    // Define status conditions
+                                    const isTerminated = member.status === 'Terminated' || member.status === 'Suspended' || member.status === 'Inactive';
+                                    const isPending = member.statusKyc === 'Pending' || member.status === 'Pending';
+                                    const isNoRank = member.rank === 'Member' || !member.rank;
+                                    const isComplete = !isNoRank && member.statusKyc === 'Active';
+
+                                    let statusColor = 'bg-slate-400';
+                                    let statusText = 'สมัครยังไม่ซื้อสินค้า';
+                                    if (isTerminated) {
+                                      statusColor = 'bg-slate-900';
+                                      statusText = 'สิ้นสภาพการสมัคร';
+                                    } else if (isPending) {
+                                      statusColor = 'bg-amber-400';
+                                      statusText = 'รอตรวจสอบอนุมัติ';
+                                    } else if (isComplete) {
+                                      statusColor = 'bg-blue-500';
+                                      statusText = 'สมาชิกสมบูรณ์';
+                                    }
+
+                                    return (
+                                      <tr key={member.userId} className="hover:bg-slate-50/50">
+                                        <td className="px-4 py-3">
+                                          <button 
+                                            onClick={() => viewMemberInTree(member.userId, 'referral')}
+                                            className="font-mono text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                                          >
+                                            {member.userId}
+                                          </button>
+                                        </td>
+                                        <td className="px-4 py-3 font-mono text-[11px] text-slate-500">{member.sponsorId || '-'}</td>
+                                        <td className="px-4 py-3 font-semibold text-slate-800">{member.username}</td>
+                                        <td className="px-4 py-3">{member.name}</td>
+                                        <td className="px-4 py-3 font-bold">
+                                          <span className={`px-2.5 py-0.5 rounded text-[10px] ${
+                                            member.rank === 'XXL' ? 'bg-purple-100 text-purple-700' :
+                                            member.rank === 'XL' ? 'bg-indigo-100 text-indigo-700' :
+                                            member.rank === 'L' ? 'bg-blue-100 text-blue-700' :
+                                            member.rank === 'M' ? 'bg-emerald-100 text-emerald-700' :
+                                            member.rank === 'S' ? 'bg-amber-100 text-amber-700' :
+                                            'bg-slate-100 text-slate-500'
+                                          }`}>
+                                            {member.rank || "Member"}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-500">{new Date(member.createdAt).toLocaleDateString()}</td>
+                                        <td className="px-4 py-3">
+                                          <span className="flex items-center gap-1.5">
+                                            <span className={`w-3 h-3 rounded-full ${statusColor}`} />
+                                            <span className="text-[11px] font-medium">{statusText}</span>
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                          <button 
+                                            onClick={() => viewMemberInTree(member.userId, 'referral')}
+                                            className="bg-sky-50 hover:bg-sky-100 text-sky-600 px-2.5 py-1 rounded-xl text-[10px] font-bold transition cursor-pointer"
+                                          >
+                                            ลิงก์ไปผัง
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                          <TablePagination currentPage={referralsPage} totalItems={directReferrals.length} itemsPerPage={itemsPerPage} onPageChange={setReferralsPage} />
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -5943,98 +7328,111 @@ export default function App() {
                       <Layers size={16} className="text-indigo-500" /> สมาชิกโครงข่ายภายใต้รหัสของท่าน (ไบนารีแผน A)
                     </h4>
 
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-100">
-                            <th className="px-4 py-3">รหัสสมาชิก/ID</th>
-                            <th className="px-4 py-3">ชื่อผู้ใช้งาน/Username</th>
-                            <th className="px-4 py-3">ชื่อ-นามสกุลจริง</th>
-                            <th className="px-4 py-3">ฝั่งสายงาน</th>
-                            <th className="px-4 py-3">ตำแหน่งแพ็กเกจ</th>
-                            <th className="px-4 py-3">วันที่เริ่มลงผัง</th>
-                            <th className="px-4 py-3">สถานะสี</th>
-                            <th className="px-4 py-3 text-center">ดูตำแหน่งผัง</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-slate-700">
-                          {binaryDescendants.length === 0 ? (
-                            <tr>
-                              <td colSpan={8} className="p-6 text-center text-slate-400">ยังไม่พบสายงานองค์กรไบนารีใต้สายงานของท่านในขณะนี้</td>
-                            </tr>
-                          ) : (
-                            binaryDescendants.map((member) => {
-                              const isTerminated = member.status === 'Terminated' || member.status === 'Suspended' || member.status === 'Inactive';
-                              const isPending = member.statusKyc === 'Pending' || member.status === 'Pending';
-                              const isNoRank = member.rank === 'Member' || !member.rank;
-                              const isComplete = !isNoRank && member.statusKyc === 'Active';
+                    {(() => {
+                      const itemsPerPage = 20;
+                      const startIndex = (binaryPage - 1) * itemsPerPage;
+                      const paginatedBinary = binaryDescendants.slice(startIndex, startIndex + itemsPerPage);
 
-                              let statusColor = 'bg-slate-400';
-                              let statusText = 'สมัครยังไม่ซื้อสินค้า';
-                              if (isTerminated) {
-                                statusColor = 'bg-slate-900';
-                                statusText = 'สิ้นสภาพการสมัคร';
-                              } else if (isPending) {
-                                statusColor = 'bg-amber-400';
-                                statusText = 'รอตรวจสอบอนุมัติ';
-                              } else if (isComplete) {
-                                statusColor = 'bg-blue-500';
-                                statusText = 'สมบูรณ์';
-                              }
-
-                              return (
-                                <tr key={member.userId} className="hover:bg-slate-50/50">
-                                  <td className="px-4 py-3">
-                                    <button 
-                                      onClick={() => viewMemberInTree(member.userId, 'binary')}
-                                      className="font-mono text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer"
-                                    >
-                                      {member.userId}
-                                    </button>
-                                  </td>
-                                  <td className="px-4 py-3 font-semibold text-slate-800">{member.username}</td>
-                                  <td className="px-4 py-3">{member.name}</td>
-                                  <td className="px-4 py-3">
-                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                      member.side === 'Left' ? 'bg-sky-50 text-sky-700' : 'bg-pink-50 text-pink-700'
-                                    }`}>
-                                      {member.side === 'Left' ? 'ฝั่งซ้าย (Left)' : 'ฝั่งขวา (Right)'}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3 font-bold">
-                                    <span className={`px-2.5 py-0.5 rounded text-[10px] ${
-                                      member.rank === 'XXL' ? 'bg-purple-100 text-purple-700' :
-                                      member.rank === 'XL' ? 'bg-indigo-100 text-indigo-700' :
-                                      member.rank === 'L' ? 'bg-blue-100 text-blue-700' :
-                                      member.rank === 'M' ? 'bg-emerald-100 text-emerald-700' :
-                                      member.rank === 'S' ? 'bg-amber-100 text-amber-700' :
-                                      'bg-slate-100 text-slate-500'
-                                    }`}>
-                                      {member.rank || "Member"}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3 text-slate-500">{new Date(member.createdAt).toLocaleDateString()}</td>
-                                  <td className="px-4 py-3">
-                                    <span className="flex items-center gap-1.5">
-                                      <span className={`w-3 h-3 rounded-full ${statusColor}`} />
-                                      <span className="text-[11px] font-medium">{statusText}</span>
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3 text-center">
-                                    <button 
-                                      onClick={() => viewMemberInTree(member.userId, 'binary')}
-                                      className="bg-sky-50 hover:bg-sky-100 text-sky-600 px-2.5 py-1 rounded-xl text-[10px] font-bold transition cursor-pointer"
-                                    >
-                                      ลิงก์ไปผัง
-                                    </button>
-                                  </td>
+                      return (
+                        <>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-100">
+                                  <th className="px-4 py-3">รหัสสมาชิก/ID</th>
+                                  <th className="px-4 py-3">รหัสผู้แนะนำ</th>
+                                  <th className="px-4 py-3">ชื่อผู้ใช้งาน/Username</th>
+                                  <th className="px-4 py-3">ชื่อ-นามสกุลจริง</th>
+                                  <th className="px-4 py-3">ฝั่งสายงาน</th>
+                                  <th className="px-4 py-3">ตำแหน่งแพ็กเกจ</th>
+                                  <th className="px-4 py-3">วันที่เริ่มลงผัง</th>
+                                  <th className="px-4 py-3">สถานะสี</th>
+                                  <th className="px-4 py-3 text-center">ดูตำแหน่งผัง</th>
                                 </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-slate-700">
+                                {paginatedBinary.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={9} className="p-6 text-center text-slate-400">ยังไม่พบสายงานองค์กรไบนารีใต้สายงานของท่านในขณะนี้</td>
+                                  </tr>
+                                ) : (
+                                  paginatedBinary.map((member) => {
+                                    const isTerminated = member.status === 'Terminated' || member.status === 'Suspended' || member.status === 'Inactive';
+                                    const isPending = member.statusKyc === 'Pending' || member.status === 'Pending';
+                                    const isNoRank = member.rank === 'Member' || !member.rank;
+                                    const isComplete = !isNoRank && member.statusKyc === 'Active';
+
+                                    let statusColor = 'bg-slate-400';
+                                    let statusText = 'สมัครยังไม่ซื้อสินค้า';
+                                    if (isTerminated) {
+                                      statusColor = 'bg-slate-900';
+                                      statusText = 'สิ้นสภาพการสมัคร';
+                                    } else if (isPending) {
+                                      statusColor = 'bg-amber-400';
+                                      statusText = 'รอตรวจสอบอนุมัติ';
+                                    } else if (isComplete) {
+                                      statusColor = 'bg-blue-500';
+                                      statusText = 'สมบูรณ์';
+                                    }
+
+                                    return (
+                                      <tr key={member.userId} className="hover:bg-slate-50/50">
+                                        <td className="px-4 py-3">
+                                          <button 
+                                            onClick={() => viewMemberInTree(member.userId, 'binary')}
+                                            className="font-mono text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                                          >
+                                            {member.userId}
+                                          </button>
+                                        </td>
+                                        <td className="px-4 py-3 font-mono text-[11px] text-slate-500">{member.sponsorId || '-'}</td>
+                                        <td className="px-4 py-3 font-semibold text-slate-800">{member.username}</td>
+                                        <td className="px-4 py-3">{member.name}</td>
+                                        <td className="px-4 py-3">
+                                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                            member.side === 'Left' ? 'bg-sky-50 text-sky-700' : 'bg-pink-50 text-pink-700'
+                                          }`}>
+                                            {member.side === 'Left' ? 'ฝั่งซ้าย (Left)' : 'ฝั่งขวา (Right)'}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-3 font-bold">
+                                          <span className={`px-2.5 py-0.5 rounded text-[10px] ${
+                                            member.rank === 'XXL' ? 'bg-purple-100 text-purple-700' :
+                                            member.rank === 'XL' ? 'bg-indigo-100 text-indigo-700' :
+                                            member.rank === 'L' ? 'bg-blue-100 text-blue-700' :
+                                            member.rank === 'M' ? 'bg-emerald-100 text-emerald-700' :
+                                            member.rank === 'S' ? 'bg-amber-100 text-amber-700' :
+                                            'bg-slate-100 text-slate-500'
+                                          }`}>
+                                            {member.rank || "Member"}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-500">{new Date(member.createdAt).toLocaleDateString()}</td>
+                                        <td className="px-4 py-3">
+                                          <span className="flex items-center gap-1.5">
+                                            <span className={`w-3 h-3 rounded-full ${statusColor}`} />
+                                            <span className="text-[11px] font-medium">{statusText}</span>
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                          <button 
+                                            onClick={() => viewMemberInTree(member.userId, 'binary')}
+                                            className="bg-sky-50 hover:bg-sky-100 text-sky-600 px-2.5 py-1 rounded-xl text-[10px] font-bold transition cursor-pointer"
+                                          >
+                                            ลิงก์ไปผัง
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                          <TablePagination currentPage={binaryPage} totalItems={binaryDescendants.length} itemsPerPage={itemsPerPage} onPageChange={setBinaryPage} />
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -6158,162 +7556,379 @@ export default function App() {
                   </form>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  
-                  {/* Left Column: Seller Store Stats & Warehouse Map */}
-                  <div className="space-y-6">
-                    <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
-                          <Star size={20} />
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-slate-400 block">ร้านค้าออนไลน์ระดับแชมป์</span>
-                          <h4 className="text-sm font-bold text-slate-900">{profile?.sellerStoreName}</h4>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 text-center">
-                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                          <span className="text-[10px] text-slate-400 block">รหัสร้านผู้ขาย</span>
-                          <strong className="text-xs font-bold text-indigo-600">{profile?.sellerCode}</strong>
-                        </div>
-                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                          <span className="text-[10px] text-slate-400 block">คะแนนดาวร้าน</span>
-                          <strong className="text-xs font-bold text-amber-500">100.00 %</strong>
-                        </div>
-                      </div>
-
-                      <p className="text-[10px] text-slate-400 leading-normal">
-                        *คะแนนร้านร่วมของคุณจะปรับลดลงตามระบบคะแนนรีวิวหากผู้ซื้อกดคะแนนให้ร้านต่ำกว่า 5 ดาว!
-                      </p>
-                    </div>
-
-                    {/* Active Warehouse Map Box */}
-                    <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-3">
-                      <h4 className="text-xs font-extrabold text-slate-800 uppercase flex items-center gap-1.5">
-                        🗺️ แผนที่พิกัดคลังสินค้าที่ปักหมุด
-                      </h4>
-                      <p className="text-[10px] text-slate-500 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100/50">
-                        {profile?.sellerAddress}
-                      </p>
-                      <NateeWarehouseMap 
-                        lat={profile?.warehouseLat || 13.7563} 
-                        lng={profile?.warehouseLng || 100.5018} 
-                        readOnly={true}
-                      />
-                    </div>
+                <div className="space-y-6">
+                  {/* Navigation Tabs inside Seller Center */}
+                  <div className="flex border-b border-slate-200 gap-4 mb-4">
+                    <button
+                      id="seller_tab_products_btn"
+                      onClick={() => setSellerPortalTab('products')}
+                      className={`pb-3 px-6 text-sm font-bold transition-all relative cursor-pointer ${
+                        sellerPortalTab === 'products'
+                          ? 'text-indigo-600 border-b-2 border-indigo-600 font-extrabold'
+                          : 'text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      🛍️ สินค้าและจัดส่งอนุมัติ
+                    </button>
+                    <button
+                      id="seller_tab_orders_btn"
+                      onClick={() => setSellerPortalTab('orders')}
+                      className={`pb-3 px-6 text-sm font-bold transition-all relative flex items-center gap-2 cursor-pointer ${
+                        sellerPortalTab === 'orders'
+                          ? 'text-indigo-600 border-b-2 border-indigo-600 font-extrabold'
+                          : 'text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      📦 ออเดอร์และส่งสินค้าของร้าน
+                      {sellerOrders.filter((o: any) => o.status === 'Processing').length > 0 && (
+                        <span className="bg-rose-500 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full animate-pulse">
+                          {sellerOrders.filter((o: any) => o.status === 'Processing').length}
+                        </span>
+                      )}
+                    </button>
                   </div>
 
-                  {/* Add Product Board */}
-                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm lg:col-span-2">
-                    <h4 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-1.5">
-                      <Plus size={16} /> ส่งสินค้าใหม่เข้าพิจารณาจัดขึ้นนทีช็อป (Shop Listing)
-                    </h4>
+                  {sellerPortalTab === 'products' ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      
+                      {/* Left Column: Seller Store Stats & Warehouse Map */}
+                      <div className="space-y-6">
+                        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+                              <Star size={20} />
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-400 block">ร้านค้าออนไลน์ระดับแชมป์</span>
+                              <h4 className="text-sm font-bold text-slate-900">{profile?.sellerStoreName}</h4>
+                            </div>
+                          </div>
 
-                    <form onSubmit={handleSellerProdSubmit} className="space-y-4 text-xs">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">ชื่อผลิตภัณฑ์ใหม่</label>
-                          <input 
-                            type="text" 
-                            required
-                            value={newProd.name}
-                            onChange={(e) => setNewProd(prev => ({ ...prev, name: e.target.value }))}
-                            placeholder="เช่น ยาสีฟันนทีปันสุขสูตรชาเขียว"
-                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                          <div className="grid grid-cols-2 gap-2 text-center">
+                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                              <span className="text-[10px] text-slate-400 block">รหัสร้านผู้ขาย</span>
+                              <strong className="text-xs font-bold text-indigo-600">{profile?.sellerCode}</strong>
+                            </div>
+                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                              <span className="text-[10px] text-slate-400 block">คะแนนดาวร้าน</span>
+                              <strong className="text-xs font-bold text-amber-500">100.00 %</strong>
+                            </div>
+                          </div>
+
+                          <p className="text-[10px] text-slate-400 leading-normal">
+                            *คะแนนร้านร่วมของคุณจะปรับลดลงตามระบบคะแนนรีวิวหากผู้ซื้อกดคะแนนให้ร้านต่ำกว่า 5 ดาว!
+                          </p>
+                        </div>
+
+                        {/* Active Warehouse Map Box */}
+                        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-3">
+                          <h4 className="text-xs font-extrabold text-slate-800 uppercase flex items-center gap-1.5">
+                            🗺️ แผนที่พิกัดคลังสินค้าที่ปักหมุด
+                          </h4>
+                          <p className="text-[10px] text-slate-500 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100/50">
+                            {profile?.sellerAddress}
+                          </p>
+                          <NateeWarehouseMap 
+                            lat={profile?.warehouseLat || 13.7563} 
+                            lng={profile?.warehouseLng || 100.5018} 
+                            readOnly={true}
                           />
                         </div>
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">ราคาตั้งขาย (บาท)</label>
-                          <input 
-                            type="number" 
-                            required
-                            value={newProd.price}
-                            onChange={(e) => setNewProd(prev => ({ ...prev, price: e.target.value }))}
-                            placeholder="ราคาขายสินค้า"
-                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                          />
+                      </div>
+
+                      {/* Right Column: Add Product Board & My Products List */}
+                      <div className="space-y-6 lg:col-span-2">
+                        {/* Add Product Board */}
+                        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
+                          <h4 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-1.5">
+                            <Plus size={16} /> ส่งสินค้าใหม่เข้าพิจารณาจัดขึ้นนทีช็อป (Shop Listing)
+                          </h4>
+
+                          <form onSubmit={handleSellerProdSubmit} className="space-y-4 text-xs">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-slate-700 font-semibold mb-1">ชื่อผลิตภัณฑ์ใหม่</label>
+                                <input 
+                                  type="text" 
+                                  required
+                                  value={newProd.name}
+                                  onChange={(e) => setNewProd(prev => ({ ...prev, name: e.target.value }))}
+                                  placeholder="เช่น ยาสีฟันนทีปันสุขสูตรชาเขียว"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-slate-700 font-semibold mb-1">ราคาตั้งขาย (บาท)</label>
+                                <input 
+                                  type="number" 
+                                  required
+                                  value={newProd.price}
+                                  onChange={(e) => setNewProd(prev => ({ ...prev, price: e.target.value }))}
+                                  placeholder="ราคาขายสินค้า"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-slate-700 font-semibold mb-1">คะแนน PV สินค้า (ใช้จ่ายคอมมิชชัน)</label>
+                                <input 
+                                  type="number" 
+                                  required
+                                  value={newProd.pv}
+                                  onChange={(e) => setNewProd(prev => ({ ...prev, pv: e.target.value }))}
+                                  placeholder="คะแนน PV"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-slate-700 font-semibold mb-1">ต้นทุนสินค้า (บาท)</label>
+                                <input 
+                                  type="number" 
+                                  required
+                                  value={newProd.cost}
+                                  onChange={(e) => setNewProd(prev => ({ ...prev, cost: e.target.value }))}
+                                  placeholder="ต้นทุนสินค้า เช่น 150"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-slate-700 font-semibold mb-1">หมวดหมู่ผลิตภัณฑ์</label>
+                                <select 
+                                  value={newProd.category}
+                                  onChange={(e) => setNewProd(prev => ({ ...prev, category: e.target.value }))}
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                                >
+                                  <option value="General">ทั่วไป (General)</option>
+                                  <option value="Supplement">อาหารเสริมฟื้นฟูสุขภาพ</option>
+                                  <option value="Household">สินค้าอุปโภคครัวเรือน</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-slate-700 font-semibold mb-1">คำอธิบายรายละเอียดสรรพคุณ</label>
+                              <textarea 
+                                rows={2}
+                                value={newProd.description}
+                                onChange={(e) => setNewProd(prev => ({ ...prev, description: e.target.value }))}
+                                placeholder="อธิบายสรรพคุณสินค้าสั้นๆ"
+                                className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:outline-none"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-slate-700 font-semibold mb-1">📷 รูปภาพสินค้า</label>
+                              <input 
+                                type="file" 
+                                accept="image/*"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) {
+                                    const r = new FileReader();
+                                    r.onloadend = () => setNewProd(prev => ({ ...prev, imageFile: r.result as string }));
+                                    r.readAsDataURL(f);
+                                  }
+                                }}
+                                className="w-full text-xs"
+                              />
+                            </div>
+
+                            <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-[10px] space-y-1 text-slate-500">
+                              <p>✓ หักค่าบริการพอร์ทัล GP 20% เผื่อย้อนกลับมาจ่ายโบนัส MLM ในองค์กรสมาชิก</p>
+                              {newProd.price && (
+                                <p className="font-bold text-slate-800">ยอดเงินโอนเข้าบัญชีผู้จัดส่งสุทธิ: ฿ {(parseFloat(newProd.price) * 0.80).toFixed(2)} บาทต่อชิ้น</p>
+                              )}
+                            </div>
+
+                            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs shadow-lg cursor-pointer">
+                              เพิ่มรายการและส่งแอดมินอนุมัติผลิตภัณฑ์
+                            </button>
+                          </form>
+                        </div>
+
+                        {/* Seller's Submitted Products List */}
+                        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
+                          <h4 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-1.5">
+                            🛍️ รายการสินค้าของคุณทั้งหมด ({sellerProducts.length} รายการ)
+                          </h4>
+                          {sellerProducts.length === 0 ? (
+                            <p className="text-xs text-slate-400 italic text-center py-6">คุณยังไม่ได้ส่งผลิตภัณฑ์เข้าพิจารณาค่ะ</p>
+                          ) : (
+                            <div className="space-y-4">
+                              {sellerProducts.map((p) => {
+                                let badgeColor = "bg-amber-100 text-amber-800";
+                                let statusTxt = "รอแอดมินอนุมัติ";
+                                if (p.status === "Approved") {
+                                  badgeColor = "bg-emerald-100 text-emerald-800";
+                                  statusTxt = "เปิดจำหน่ายแล้ว";
+                                } else if (p.status === "Rejected") {
+                                  badgeColor = "bg-rose-100 text-rose-800";
+                                  statusTxt = "ปฏิเสธ";
+                                }
+
+                                return (
+                                  <div key={p.id} className="flex gap-4 p-4 border border-slate-100 rounded-2xl hover:bg-slate-50/50 transition">
+                                    <img src={p.image} alt={p.name} className="w-16 h-16 rounded-xl object-cover border border-slate-100 shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-start justify-between gap-2">
+                                        <h5 className="text-xs font-bold text-slate-900 truncate">{p.name}</h5>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badgeColor}`}>
+                                          {statusTxt}
+                                        </span>
+                                      </div>
+                                      <p className="text-[10px] text-slate-400 mt-1 truncate">{p.description || "ไม่มีคำอธิบาย"}</p>
+                                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[10px]">
+                                        <span className="text-slate-600 font-medium">ราคา: <strong className="text-indigo-600">฿{p.price.toLocaleString()}</strong></span>
+                                        <span className="text-slate-600 font-medium">คะแนน: <strong className="text-teal-600">{p.pv} PV</strong></span>
+                                        <span className="text-slate-600 font-medium">ส่วนแบ่งร้านค้า (80%): <strong className="text-emerald-600">฿{(p.price * 0.8).toFixed(2)}</strong></span>
+                                      </div>
+                                      {p.status === "Rejected" && p.rejectReason && (
+                                        <div className="mt-2 text-[10px] text-rose-600 bg-rose-50 border border-rose-100 rounded-lg p-2 leading-relaxed">
+                                          <strong>เหตุผลที่ไม่อนุมัติ:</strong> {p.rejectReason}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-3">
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">คะแนน PV สินค้า (ใช้จ่ายคอมมิชชัน)</label>
-                          <input 
-                            type="number" 
-                            required
-                            value={newProd.pv}
-                            onChange={(e) => setNewProd(prev => ({ ...prev, pv: e.target.value }))}
-                            placeholder="คะแนน PV"
-                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                          />
+                    </div>
+                  ) : (
+                    /* My Store Orders Tab */
+                    <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
+                      <div className="flex justify-between items-center mb-4">
+                        <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                          📦 รายการสั่งซื้อสินค้าแบรนด์คุณ ({sellerOrders.length} รายการ)
+                        </h4>
+                        <button
+                          onClick={fetchSellerData}
+                          className="text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <RefreshCw size={12} /> รีเฟรชข้อมูลออเดอร์
+                        </button>
+                      </div>
+
+                      {sellerOrders.length === 0 ? (
+                        <div className="text-center py-12 text-slate-400 italic">
+                          <p className="text-xs">ยังไม่มีสมาชิกสั่งซื้อสินค้าจากแบรนด์ของคุณในขณะนี้ค่ะ 🛒</p>
+                          <p className="text-[10px] text-slate-400 mt-1">เมื่อมีบิลสั่งซื้อเข้ามา รายชื่อและที่อยู่สำหรับจัดส่งพัสดุจะแสดงขึ้นที่นี่!</p>
                         </div>
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">ต้นทุนสินค้า (บาท)</label>
-                          <input 
-                            type="number" 
-                            required
-                            value={newProd.cost}
-                            onChange={(e) => setNewProd(prev => ({ ...prev, cost: e.target.value }))}
-                            placeholder="ต้นทุนสินค้า เช่น 150"
-                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                          />
+                      ) : (
+                        <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                          <table className="w-full text-left text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold text-[11px]">
+                                <th className="p-3">ข้อมูลบิลสั่งซื้อ</th>
+                                <th className="p-3">สินค้าที่สั่ง</th>
+                                <th className="p-3 text-center">จำนวน</th>
+                                <th className="p-3 text-right">ยอดรับสุทธิ (80%)</th>
+                                <th className="p-3">ที่อยู่จัดส่งพัสดุ</th>
+                                <th className="p-3">สถานะจัดส่ง</th>
+                                <th className="p-3">ข้อมูลขนส่ง & นำส่ง</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-slate-700 text-[11px]">
+                              {sellerOrders.map((order) => {
+                                const tracking = sellerShippingTracking[order.id] || { company: 'Flash Express', trackingNo: '', note: '' };
+                                const netEarning = order.totalPrice * 0.8;
+                                
+                                return (
+                                  <tr key={order.id} className="hover:bg-slate-50/40 align-top">
+                                    <td className="p-3 font-mono space-y-1">
+                                      <div className="font-bold text-slate-900">{order.id}</div>
+                                      <div className="text-[10px] text-slate-400">{new Date(order.createdAt).toLocaleString('th-TH')}</div>
+                                      <div className="text-[10px] text-slate-500">ผู้สั่ง: {order.userId}</div>
+                                    </td>
+                                    <td className="p-3 font-medium text-slate-800">
+                                      {order.productName}
+                                    </td>
+                                    <td className="p-3 text-center font-bold">
+                                      {order.quantity} ชิ้น
+                                    </td>
+                                    <td className="p-3 text-right font-bold text-emerald-600">
+                                      ฿{netEarning.toLocaleString()}
+                                    </td>
+                                    <td className="p-3 text-[11px] text-slate-500 leading-relaxed max-w-[200px]">
+                                      {order.shippingAddress}
+                                    </td>
+                                    <td className="p-3">
+                                      {order.status === 'Completed' ? (
+                                        <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-200">
+                                          ✓ จัดส่งเรียบร้อย
+                                        </span>
+                                      ) : (
+                                        <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-amber-200 animate-pulse">
+                                          รอส่งสินค้า
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="p-3 space-y-2">
+                                      {order.status === 'Completed' ? (
+                                        <div className="bg-slate-50 border border-slate-100 p-2 rounded-xl text-[10px] space-y-0.5 text-slate-600 max-w-[180px]">
+                                          <div>🚚 ขนส่ง: <strong className="text-slate-800">{order.trackingCompany}</strong></div>
+                                          <div className="truncate">เลขพัสดุ: <strong className="text-indigo-600 select-all">{order.trackingNo}</strong></div>
+                                          {order.shippingNote && <div className="text-slate-400 truncate">โน้ต: {order.shippingNote}</div>}
+                                        </div>
+                                      ) : (
+                                        <div className="space-y-1.5 max-w-[180px]">
+                                          <select
+                                            value={tracking.company}
+                                            onChange={(e) => setSellerShippingTracking(prev => ({
+                                              ...prev,
+                                              [order.id]: { ...(prev[order.id] || { company: 'Flash Express', trackingNo: '', note: '' }), company: e.target.value }
+                                            }))}
+                                            className="w-full border border-slate-200 rounded-lg px-2 py-1 text-[11px]"
+                                          >
+                                            <option value="Flash Express">Flash Express</option>
+                                            <option value="Kerry Express">Kerry Express</option>
+                                            <option value="J&T Express">J&T Express</option>
+                                            <option value="ไปรษณีย์ไทย (EMS)">ไปรษณีย์ไทย (EMS)</option>
+                                          </select>
+                                          <input
+                                            type="text"
+                                            required
+                                            value={tracking.trackingNo}
+                                            onChange={(e) => setSellerShippingTracking(prev => ({
+                                              ...prev,
+                                              [order.id]: { ...(prev[order.id] || { company: 'Flash Express', trackingNo: '', note: '' }), trackingNo: e.target.value }
+                                            }))}
+                                            placeholder="กรอกเลขพัสดุ (Tracking No)"
+                                            className="w-full border border-slate-200 rounded-lg px-2 py-1 text-[11px]"
+                                          />
+                                          <input
+                                            type="text"
+                                            value={tracking.note}
+                                            onChange={(e) => setSellerShippingTracking(prev => ({
+                                              ...prev,
+                                              [order.id]: { ...(prev[order.id] || { company: 'Flash Express', trackingNo: '', note: '' }), note: e.target.value }
+                                            }))}
+                                            placeholder="บันทึกข้อความเพิ่มเติม"
+                                            className="w-full border border-slate-200 rounded-lg px-2 py-1 text-[11px]"
+                                          />
+                                          <button
+                                            onClick={() => handleSellerShipOrder(order.id)}
+                                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-1 px-2.5 rounded-lg text-[10px] transition cursor-pointer"
+                                          >
+                                            ยืนยันการจัดส่งพัสดุ
+                                          </button>
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">หมวดหมู่ผลิตภัณฑ์</label>
-                          <select 
-                            value={newProd.category}
-                            onChange={(e) => setNewProd(prev => ({ ...prev, category: e.target.value }))}
-                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                          >
-                            <option value="General">ทั่วไป (General)</option>
-                            <option value="Supplement">อาหารเสริมฟื้นฟูสุขภาพ</option>
-                            <option value="Household">สินค้าอุปโภคครัวเรือน</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 font-semibold mb-1">คำอธิบายรายละเอียดสรรพคุณ</label>
-                        <textarea 
-                          rows={2}
-                          value={newProd.description}
-                          onChange={(e) => setNewProd(prev => ({ ...prev, description: e.target.value }))}
-                          placeholder="อธิบายสรรพคุณสินค้าสั้นๆ"
-                          className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 font-semibold mb-1">📷 รูปภาพสินค้า</label>
-                        <input 
-                          type="file" 
-                          accept="image/*"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) {
-                              const r = new FileReader();
-                              r.onloadend = () => setNewProd(prev => ({ ...prev, imageFile: r.result as string }));
-                              r.readAsDataURL(f);
-                            }
-                          }}
-                          className="w-full text-xs"
-                        />
-                      </div>
-
-                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-[10px] space-y-1 text-slate-500">
-                        <p>✓ หักค่าบริการพอร์ทัล GP 20% เผื่อย้อนกลับมาจ่ายโบนัส MLM ในองค์กรสมาชิก</p>
-                        {newProd.price && (
-                          <p className="font-bold text-slate-800">ยอดเงินโอนเข้าบัญชีผู้จัดส่งสุทธิ: ฿ {(parseFloat(newProd.price) * 0.80).toFixed(2)} บาทต่อชิ้น</p>
-                        )}
-                      </div>
-
-                      <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs shadow-lg cursor-pointer">
-                        เพิ่มรายการและส่งแอดมินอนุมัติผลิตภัณฑ์
-                      </button>
-                    </form>
-                  </div>
+                      )}
+                    </div>
+                  )}
 
                 </div>
               )}
@@ -6341,9 +7956,43 @@ export default function App() {
 
               {/* Admin Submenu */}
               <div className="flex flex-wrap gap-2 mb-4">
-                  <button onClick={() => setAdminSubTab('queues')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${adminSubTab === 'queues' ? 'bg-rose-600 text-white shadow-md' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>📊 สรุปสถิติ & ถอนเงิน</button>
-                  <button onClick={() => setAdminSubTab('members')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${adminSubTab === 'members' ? 'bg-rose-600 text-white shadow-md' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>👥 ข้อมูลสมาชิก</button>
-                  <button onClick={() => setAdminSubTab('memberApprovals')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${adminSubTab === 'memberApprovals' ? 'bg-rose-600 text-white shadow-md' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>📋 ตรวจสอบอนุมัติสมัครใหม่</button>
+                  <button 
+                    onClick={() => setAdminSubTab('queues')} 
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 relative ${
+                      adminSubTab === 'queues' ? 'bg-rose-600 text-white shadow-md' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    📊 สรุปสถิติ & ถอนเงิน
+                    {withQueue.length > 0 && (
+                      <span className="bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse">
+                        {withQueue.length}
+                      </span>
+                    )}
+                  </button>
+
+                  <button 
+                    onClick={() => setAdminSubTab('members')} 
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 ${
+                      adminSubTab === 'members' ? 'bg-rose-600 text-white shadow-md' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    👥 ข้อมูลสมาชิก
+                  </button>
+
+                  <button 
+                    onClick={() => setAdminSubTab('memberApprovals')} 
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 relative ${
+                      adminSubTab === 'memberApprovals' ? 'bg-rose-600 text-white shadow-md' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    📋 ตรวจสอบอนุมัติสมัครใหม่
+                    {kycQueue.length > 0 && (
+                      <span className="bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse">
+                        {kycQueue.length}
+                      </span>
+                    )}
+                  </button>
+
                   <button 
                     onClick={() => setAdminSubTab('depositApprove')} 
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 relative ${
@@ -6352,15 +8001,42 @@ export default function App() {
                         : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/50'
                     }`}
                   >
-                    💰 อนุมัติเติมเงิน M-Cash
+                    💰 อนุมัติเติมเงิน E-Cash
                     {depositQueue.length > 0 && (
-                      <span className="bg-red-500 text-white font-extrabold px-2 py-0.5 rounded-full text-[10px] animate-pulse">
+                      <span className="bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse">
                         {depositQueue.length}
                       </span>
                     )}
                   </button>
-                  <button onClick={() => setAdminSubTab('shippingApprove')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${adminSubTab === 'shippingApprove' ? 'bg-rose-600 text-white shadow-md' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>🚚 อนุมัติ การจัดส่งสินค้า A</button>
-                  <button onClick={() => setAdminSubTab('manageShops')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${adminSubTab === 'manageShops' ? 'bg-rose-600 text-white shadow-md' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>🏪 จัดการร้านค้า</button>
+
+                  <button 
+                    onClick={() => setAdminSubTab('shippingApprove')} 
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 relative ${
+                      adminSubTab === 'shippingApprove' ? 'bg-rose-600 text-white shadow-md' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    🚚 อนุมัติ การจัดส่งสินค้า A
+                    {adminOrders.filter((o: any) => o.status === "Processing").length > 0 && (
+                      <span className="bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse">
+                        {adminOrders.filter((o: any) => o.status === "Processing").length}
+                      </span>
+                    )}
+                  </button>
+
+                  <button 
+                    onClick={() => setAdminSubTab('manageShops')} 
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 relative ${
+                      adminSubTab === 'manageShops' ? 'bg-rose-600 text-white shadow-md' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    🏪 จัดการร้านค้า
+                    {prodQueue && prodQueue.length > 0 && (
+                      <span className="bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse">
+                        {prodQueue.length}
+                      </span>
+                    )}
+                  </button>
+
                   <button onClick={() => setAdminSubTab('orderStatus')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${adminSubTab === 'orderStatus' ? 'bg-rose-600 text-white shadow-md' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>📦 จัดสถานะสินค้า</button>
                   <button onClick={() => setAdminSubTab('couponPv')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${adminSubTab === 'couponPv' ? 'bg-rose-600 text-white shadow-md' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>
                     🎟️ ยอด PV คูปอง ({pendingCouponPv.length})
@@ -6396,8 +8072,8 @@ export default function App() {
                   <strong className="text-base text-slate-900">฿ {adminStats?.companyProfits?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                 </div>
                 <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 shadow-sm text-center">
-                  <span className="text-[10px] text-emerald-800 block mb-1">เงินหมุนเวียน M-Cash ทั้งระบบ</span>
-                  <strong className="text-base text-emerald-600 font-extrabold">฿ {adminStats?.memberMCash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                  <span className="text-[10px] text-emerald-800 block mb-1">เงินหมุนเวียน E-Cash ทั้งระบบ</span>
+                  <strong className="text-base text-emerald-600 font-extrabold">฿ {adminStats?.memberECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                 </div>
               </div>
 
@@ -6508,77 +8184,177 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="overflow-x-auto border border-slate-100 rounded-2xl">
-                  <table className="min-w-full divide-y divide-slate-100 text-xs text-left text-slate-700">
-                    <thead className="bg-slate-50 font-bold text-slate-500 text-[10px] uppercase">
-                      <tr>
-                        <th className="px-4 py-3">รหัสสมาชิก / Username</th>
-                        <th className="px-4 py-3">ชื่อ - นามสกุล</th>
-                        <th className="px-4 py-3">เบอร์โทร / อีเมล</th>
-                        <th className="px-4 py-3">ระดับ / สิทธิ์</th>
-                        <th className="px-4 py-3 text-right">M-Cash / M-Coupon</th>
-                        <th className="px-4 py-3 text-center">จัดการ</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {adminMembersList.filter(m => {
-                        const q = searchMemberQuery.toLowerCase().trim();
-                        if (!q) return true;
-                        return (
-                          m.userId?.toLowerCase().includes(q) ||
-                          m.username?.toLowerCase().includes(q) ||
-                          m.name?.toLowerCase().includes(q) ||
-                          m.surname?.toLowerCase().includes(q) ||
-                          m.phone?.includes(q) ||
-                          m.idCard?.includes(q) ||
-                          m.email?.toLowerCase().includes(q)
-                        );
-                      }).map(member => (
-                        <tr key={member.userId} className="hover:bg-slate-50 transition">
-                          <td className="px-4 py-3 font-semibold">
-                            <span className="text-rose-600 block font-mono font-bold text-[10px]">{member.userId}</span>
-                            <span className="text-slate-500 font-mono text-[11px]">@{member.username}</span>
-                          </td>
-                          <td className="px-4 py-3 font-medium text-slate-900">
-                            {member.name} {member.surname}
-                            <span className="block text-[10px] text-slate-400">เลขบัตร: {member.idCard || "-"}</span>
-                          </td>
-                          <td className="px-4 py-3 text-slate-500">
-                            <span className="block">{member.phone}</span>
-                            <span className="block text-[10px] text-slate-400">{member.email || "-"}</span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-50 text-amber-700 border border-amber-100 block mb-1 w-max">
-                              {member.rank || "S"}
-                            </span>
-                            <span className="block text-[10px] text-slate-400 font-bold">สิทธิ์: {member.role || "Member"}</span>
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold">
-                            <span className="block text-emerald-600 font-bold">฿ {member.balanceMCash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                            <span className="block text-[10px] text-indigo-500 font-bold">฿ {member.balanceMCoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <button 
-                              onClick={() => {
-                                setEditingMember({ ...member });
-                                setShowEditMemberModal(true);
-                              }}
-                              className="bg-slate-800 hover:bg-rose-600 text-white hover:text-white px-3 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer"
-                            >
-                              แก้ไขข้อมูล
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                      {adminMembersList.length === 0 && (
-                        <tr>
-                          <td colSpan={6} className="text-center py-8 text-slate-400">
-                            ไม่พบข้อมูลสมาชิกในระบบ
-                          </td>
-                        </tr>
+                {/* Google Sheets Sync/Export Banner */}
+                <div className="p-4 bg-emerald-50/70 border border-emerald-100 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 bg-emerald-500 text-white rounded-xl shadow-sm shrink-0">
+                      <FileSpreadsheet size={20} />
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                        📊 ส่งออกและแชร์ข้อมูลสมาชิกไปยัง Google Sheet
+                      </h5>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {googleSheetsUser ? (
+                          <span>เชื่อมต่อกับบัญชี Google: <strong className="text-slate-700 font-semibold">{googleSheetsUser.email}</strong> แล้วค่ะ</span>
+                        ) : (
+                          <span>เชื่อมต่อกับ Google เพื่อสร้าง Google Sheet บันทึกและแชร์รายชื่อสมาชิก (พร้อมข้อมูลสมัคร, ตำแหน่ง, ยอดสะสม) แบบอัตโนมัติ</span>
+                        )}
+                      </p>
+                      {exportedSheetUrl && (
+                        <a 
+                          href={exportedSheetUrl} 
+                          target="_blank" 
+                          rel="noreferrer noopener" 
+                          className="mt-2 inline-flex items-center gap-1 text-[11px] text-emerald-600 hover:text-emerald-500 font-bold underline"
+                        >
+                          🟢 เปิดลิงก์ Google Sheet ที่แชร์สำเร็จล่าสุด ↗
+                        </a>
                       )}
-                    </tbody>
-                  </table>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                    <button
+                      type="button"
+                      disabled={isExportingToSheets}
+                      onClick={handleExportToGoogleSheets}
+                      className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-300 text-white font-bold text-[11px] px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-600/10"
+                    >
+                      {isExportingToSheets ? (
+                        <>
+                          <RefreshCw size={12} className="animate-spin" />
+                          <span>กำลังส่งออก...</span>
+                        </>
+                      ) : (
+                        <>
+                          <FileSpreadsheet size={13} />
+                          <span>{googleSheetsUser ? 'บันทึก/อัปเดตไป Google Sheet' : 'เชื่อมต่อ & บันทึก Google Sheet'}</span>
+                        </>
+                      )}
+                    </button>
+                    {googleSheetsUser && (
+                      <button
+                        type="button"
+                        onClick={handleDisconnectGoogleSheets}
+                        className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 font-bold text-[11px] px-3 py-2 rounded-xl transition cursor-pointer"
+                      >
+                        ยกเลิกเชื่อมต่อ
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                  {(() => {
+                    const filteredMembers = adminMembersList.filter(m => {
+                      const q = searchMemberQuery.toLowerCase().trim();
+                      if (!q) return true;
+                      return (
+                        m.userId?.toLowerCase().includes(q) ||
+                        m.username?.toLowerCase().includes(q) ||
+                        m.sponsorId?.toLowerCase().includes(q) ||
+                        m.name?.toLowerCase().includes(q) ||
+                        m.surname?.toLowerCase().includes(q) ||
+                        m.phone?.includes(q) ||
+                        m.idCard?.includes(q) ||
+                        m.email?.toLowerCase().includes(q)
+                      );
+                    });
+                    const itemsPerPage = 20;
+                    const startIndex = (adminMembersPage - 1) * itemsPerPage;
+                    const paginatedMembers = filteredMembers.slice(startIndex, startIndex + itemsPerPage);
+
+                    return (
+                      <>
+                        <table className="min-w-full divide-y divide-slate-100 text-xs text-left text-slate-700">
+                          <thead className="bg-slate-50 font-bold text-slate-500 text-[10px] uppercase">
+                            <tr>
+                              <th className="px-4 py-3">รหัสสมาชิก / Username</th>
+                              <th className="px-4 py-3">ผู้แนะนำ (Sponsor)</th>
+                              <th className="px-4 py-3">ชื่อ - นามสกุล</th>
+                              <th className="px-4 py-3">เบอร์โทร / อีเมล</th>
+                              <th className="px-4 py-3">ระดับ / สิทธิ์</th>
+                              <th className="px-4 py-3 text-right">กระเป๋าคงเหลือ / ยอดสะสมทั้งหมด</th>
+                              <th className="px-4 py-3 text-center">จัดการ</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {paginatedMembers.length === 0 ? (
+                              <tr>
+                                <td colSpan={7} className="text-center py-8 text-slate-400">
+                                  ไม่พบข้อมูลสมาชิกในระบบ
+                                </td>
+                              </tr>
+                            ) : (
+                              paginatedMembers.map(member => (
+                                <tr key={member.userId} className="hover:bg-slate-50 transition">
+                                  <td className="px-4 py-3 font-semibold">
+                                    <span className="text-rose-600 block font-mono font-bold text-[10px]">{member.userId}</span>
+                                    <span className="text-slate-500 font-mono text-[11px]">@{member.username}</span>
+                                    <span className="text-[9px] text-slate-400 block font-medium mt-1" title="วันที่สมัคร">
+                                      📅 {member.createdAt ? new Date(member.createdAt).toLocaleDateString('th-TH', {day: 'numeric', month: 'short', year: 'numeric'}) : '-'}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className="text-indigo-600 block font-mono font-bold text-[11px]">{member.sponsorId || '-'}</span>
+                                    {member.sponsorId && member.sponsorId !== 'SYSTEM' && (
+                                      <span className="text-[10px] text-slate-400 block font-medium">
+                                        {(() => {
+                                          const s = adminMembersList.find(x => x.userId === member.sponsorId);
+                                          return s ? `@${s.username}` : '';
+                                        })()}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 font-medium text-slate-900">
+                                    {member.name} {member.surname}
+                                    <span className="block text-[10px] text-slate-400">เลขบัตร: {member.idCard || "-"}</span>
+                                  </td>
+                                  <td className="px-4 py-3 text-slate-500">
+                                    <span className="block">{member.phone}</span>
+                                    <span className="block text-[10px] text-slate-400">{member.email || "-"}</span>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-50 text-amber-700 border border-amber-100 block mb-1 w-max">
+                                      {member.rank || "S"}
+                                    </span>
+                                    <span className="block text-[10px] text-slate-400 font-bold">สิทธิ์: {member.role || "Member"}</span>
+                                  </td>
+                                  <td className="px-4 py-3 text-right font-semibold">
+                                    <div className="mb-1.5">
+                                      <span className="text-[9px] text-slate-400 block font-bold uppercase leading-none mb-0.5">คงเหลือ</span>
+                                      <span className="block text-emerald-600 font-bold text-xs">E-Cash: ฿{member.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                      <span className="block text-purple-600 font-bold text-[10px]">E-Money: ฿{(member.balanceEMoney || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                      <span className="block text-indigo-500 font-bold text-[10px]">Coupon: ฿{member.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                    <div className="pt-1 border-t border-slate-100">
+                                      <span className="text-[9px] text-slate-400 block font-bold uppercase leading-none mb-0.5">สะสมทั้งหมด</span>
+                                      <span className="block text-emerald-700 font-bold text-[11px]">รายได้สะสม: ฿{(member.totalEarnings || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                      <span className="block text-indigo-600 font-bold text-[10px]">คูปองสะสม: ฿{(member.totalCouponsEarned || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <button 
+                                      onClick={() => {
+                                        setEditingMember({ ...member });
+                                        setShowEditMemberModal(true);
+                                      }}
+                                      className="bg-slate-800 hover:bg-rose-600 text-white hover:text-white px-3 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer"
+                                    >
+                                      แก้ไขข้อมูล
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                        <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+                          <TablePagination currentPage={adminMembersPage} totalItems={filteredMembers.length} itemsPerPage={itemsPerPage} onPageChange={setAdminMembersPage} />
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -6730,84 +8506,95 @@ export default function App() {
                 </div>
 
                 <div className="overflow-x-auto border border-slate-100 rounded-2xl">
-                  <table className="min-w-full divide-y divide-slate-100 text-xs text-left text-slate-700">
-                    <thead className="bg-slate-50 font-bold text-slate-500 text-[10px] uppercase">
-                      <tr>
-                        <th className="px-4 py-3">รหัสบิล / วันที่สั่งซื้อ</th>
-                        <th className="px-4 py-3">ผู้สั่งซื้อ (User ID)</th>
-                        <th className="px-4 py-3">รายการสินค้า / ชุดสินค้าเลือก</th>
-                        <th className="px-4 py-3 text-right">ยอดชำระ / PV</th>
-                        <th className="px-4 py-3">ที่อยู่จัดส่งสินค้า</th>
-                        <th className="px-4 py-3 text-center">สถานะ</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white text-[11px]">
-                      {adminOrders.filter(order => {
-                        const matchesId = !orderSearchId || order.id.toLowerCase().includes(orderSearchId.toLowerCase());
-                        const matchesUserId = !orderSearchUserId || order.userId.toLowerCase().includes(orderSearchUserId.toLowerCase());
-                        const matchesDate = !orderSearchDate || order.createdAt.includes(orderSearchDate) || new Date(order.createdAt).toLocaleString('th-TH').includes(orderSearchDate);
-                        const matchesStatus = !orderSearchStatus || order.status === orderSearchStatus;
-                        return matchesId && matchesUserId && matchesDate && matchesStatus;
-                      }).map(order => (
-                        <tr key={order.id} className="hover:bg-slate-50/50 transition">
-                          <td className="px-4 py-3">
-                            <span className="font-mono font-bold text-indigo-600 block">{order.id}</span>
-                            <span className="text-[9px] text-slate-400 block">{new Date(order.createdAt).toLocaleString('th-TH')}</span>
-                          </td>
-                          <td className="px-4 py-3 font-semibold text-slate-800">
-                            {order.userId}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="font-bold block text-slate-900">{order.productName}</span>
-                            {order.selectedChoiceName && (
-                              <span className="inline-block mt-1 bg-amber-50 text-amber-800 border border-amber-100 text-[9px] px-2 py-0.5 rounded font-bold">
-                                🎁 เซ็ตที่เลือก: {order.selectedChoiceName}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right font-bold">
-                            <span className="text-emerald-600 block">฿ {order.totalPrice?.toLocaleString()}</span>
-                            <span className="text-[10px] text-slate-400 font-mono block">+{order.totalPv} PV</span>
-                          </td>
-                          <td className="px-4 py-3 text-slate-500 leading-normal max-w-xs truncate" title={order.shippingAddress}>
-                            {order.shippingAddress || "ไม่มีข้อมูลที่อยู่"}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            {order.status === "Processing" ? (
-                              <div className="flex flex-col items-center gap-1">
-                                <span className="bg-amber-100 text-amber-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-amber-200">
-                                  รอดำเนินการ
-                                </span>
-                                <button 
-                                  onClick={() => handleCompleteOrder(order.id)}
-                                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-2 py-1 rounded text-[9px] cursor-pointer mt-1"
-                                >
-                                  ยืนยันการจัดส่งแล้ว
-                                </button>
-                              </div>
+                  {(() => {
+                    const filteredOrders = adminOrders.filter(order => {
+                      const matchesId = !orderSearchId || order.id.toLowerCase().includes(orderSearchId.toLowerCase());
+                      const matchesUserId = !orderSearchUserId || order.userId.toLowerCase().includes(orderSearchUserId.toLowerCase());
+                      const matchesDate = !orderSearchDate || order.createdAt.includes(orderSearchDate) || new Date(order.createdAt).toLocaleString('th-TH').includes(orderSearchDate);
+                      const matchesStatus = !orderSearchStatus || order.status === orderSearchStatus;
+                      return matchesId && matchesUserId && matchesDate && matchesStatus;
+                    });
+                    const itemsPerPage = 20;
+                    const startIndex = (adminOrdersSearchPage - 1) * itemsPerPage;
+                    const paginatedOrders = filteredOrders.slice(startIndex, startIndex + itemsPerPage);
+
+                    return (
+                      <>
+                        <table className="min-w-full divide-y divide-slate-100 text-xs text-left text-slate-700">
+                          <thead className="bg-slate-50 font-bold text-slate-500 text-[10px] uppercase">
+                            <tr>
+                              <th className="px-4 py-3">รหัสบิล / วันที่สั่งซื้อ</th>
+                              <th className="px-4 py-3">ผู้สั่งซื้อ (User ID)</th>
+                              <th className="px-4 py-3">รายการสินค้า / ชุดสินค้าเลือก</th>
+                              <th className="px-4 py-3 text-right">ยอดชำระ / PV</th>
+                              <th className="px-4 py-3">ที่อยู่จัดส่งสินค้า</th>
+                              <th className="px-4 py-3 text-center">สถานะ</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white text-[11px]">
+                            {paginatedOrders.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="text-center py-8 text-slate-400">
+                                  ไม่มีประวัติการสั่งซื้อสินค้าใดๆ ในขณะนี้
+                                </td>
+                              </tr>
                             ) : (
-                              <span className="bg-emerald-100 text-emerald-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-200">
-                                จัดส่งเรียบร้อย
-                              </span>
+                              paginatedOrders.map(order => (
+                                <tr key={order.id} className="hover:bg-slate-50/50 transition">
+                                  <td className="px-4 py-3">
+                                    <span className="font-mono font-bold text-indigo-600 block">{order.id}</span>
+                                    <span className="text-[9px] text-slate-400 block">{new Date(order.createdAt).toLocaleString('th-TH')}</span>
+                                  </td>
+                                  <td className="px-4 py-3 font-semibold text-slate-800">
+                                    {order.userId}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className="font-bold block text-slate-900">{order.productName}</span>
+                                    {order.selectedChoiceName && (
+                                      <span className="inline-block mt-1 bg-amber-50 text-amber-800 border border-amber-100 text-[9px] px-2 py-0.5 rounded font-bold">
+                                        🎁 เซ็ตที่เลือก: {order.selectedChoiceName}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 text-right font-bold">
+                                    <span className="text-emerald-600 block">฿ {order.totalPrice?.toLocaleString()}</span>
+                                    <span className="text-[10px] text-slate-400 font-mono block">+{order.totalPv} PV</span>
+                                  </td>
+                                  <td className="px-4 py-3 text-slate-500 leading-normal max-w-xs truncate" title={order.shippingAddress}>
+                                    {order.shippingAddress || "ไม่มีข้อมูลที่อยู่"}
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    {order.status === "Processing" ? (
+                                      <div className="flex flex-col items-center gap-1">
+                                        <span className="bg-amber-100 text-amber-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-amber-200">
+                                          รอดำเนินการ
+                                        </span>
+                                        <button 
+                                          onClick={() => handleCompleteOrder(order.id)}
+                                          className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-2 py-1 rounded text-[9px] cursor-pointer mt-1"
+                                        >
+                                          ยืนยันการจัดส่งแล้ว
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span className="bg-emerald-100 text-emerald-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-200">
+                                        จัดส่งเรียบร้อย
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))
                             )}
-                          </td>
-                        </tr>
-                      ))}
-                      {adminOrders.filter(order => {
-                        const matchesId = !orderSearchId || order.id.toLowerCase().includes(orderSearchId.toLowerCase());
-                        const matchesUserId = !orderSearchUserId || order.userId.toLowerCase().includes(orderSearchUserId.toLowerCase());
-                        const matchesDate = !orderSearchDate || order.createdAt.includes(orderSearchDate) || new Date(order.createdAt).toLocaleString('th-TH').includes(orderSearchDate);
-                        const matchesStatus = !orderSearchStatus || order.status === orderSearchStatus;
-                        return matchesId && matchesUserId && matchesDate && matchesStatus;
-                      }).length === 0 && (
-                        <tr>
-                          <td colSpan={6} className="text-center py-8 text-slate-400">
-                            ไม่มีประวัติการสั่งซื้อสินค้าใดๆ ในขณะนี้
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                          </tbody>
+                        </table>
+                        {filteredOrders.length > itemsPerPage && (
+                          <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+                            <TablePagination currentPage={adminOrdersSearchPage} totalItems={filteredOrders.length} itemsPerPage={itemsPerPage} onPageChange={setAdminOrdersSearchPage} />
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
                 </>
@@ -6819,6 +8606,7 @@ export default function App() {
                     <h4 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                       👥 ระบบค้นหาและจัดการแก้ไขข้อมูลสมาชิกทั้งหมด
                     </h4>
+                    {/* Button removed */}
                     <div className="relative max-w-md w-full">
                       <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 pointer-events-none">
                         <Search size={14} />
@@ -6838,10 +8626,11 @@ export default function App() {
                       <thead className="bg-slate-50 font-bold text-slate-500 text-[10px] uppercase">
                         <tr>
                           <th className="px-4 py-3">รหัสสมาชิก / Username</th>
+                          <th className="px-4 py-3">ผู้แนะนำ (Sponsor)</th>
                           <th className="px-4 py-3">ชื่อ - นามสกุล</th>
                           <th className="px-4 py-3">เบอร์โทร / อีเมล</th>
                           <th className="px-4 py-3">ระดับ / สิทธิ์</th>
-                          <th className="px-4 py-3 text-right">M-Cash / M-Coupon</th>
+                          <th className="px-4 py-3 text-right">E-Cash / E-Coupon</th>
                           <th className="px-4 py-3 text-center">จัดการ</th>
                         </tr>
                       </thead>
@@ -6852,6 +8641,7 @@ export default function App() {
                           return (
                             m.userId?.toLowerCase().includes(q) ||
                             m.username?.toLowerCase().includes(q) ||
+                            m.sponsorId?.toLowerCase().includes(q) ||
                             m.name?.toLowerCase().includes(q) ||
                             m.surname?.toLowerCase().includes(q) ||
                             m.phone?.includes(q) ||
@@ -6863,6 +8653,17 @@ export default function App() {
                             <td className="px-4 py-3 font-semibold">
                               <span className="text-rose-600 block font-mono font-bold text-[10px]">{member.userId}</span>
                               <span className="text-slate-500 font-mono text-[11px]">@{member.username}</span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="text-indigo-600 block font-mono font-bold text-[11px]">{member.sponsorId || '-'}</span>
+                              {member.sponsorId && member.sponsorId !== 'SYSTEM' && (
+                                <span className="text-[10px] text-slate-400 block font-medium">
+                                  {(() => {
+                                    const s = adminMembersList.find(x => x.userId === member.sponsorId);
+                                    return s ? `@${s.username}` : '';
+                                  })()}
+                                </span>
+                              )}
                             </td>
                             <td className="px-4 py-3 font-medium text-slate-900">
                               {member.name} {member.surname}
@@ -6879,8 +8680,8 @@ export default function App() {
                               <span className="block text-[10px] text-slate-400 font-bold">สิทธิ์: {member.role || "Member"}</span>
                             </td>
                             <td className="px-4 py-3 text-right font-semibold">
-                              <span className="block text-emerald-600 font-bold">฿ {member.balanceMCash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                              <span className="block text-[10px] text-indigo-500 font-bold">฿ {member.balanceMCoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                              <span className="block text-emerald-600 font-bold">฿ {member.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                              <span className="block text-[10px] text-indigo-500 font-bold">฿ {member.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </td>
                             <td className="px-4 py-3 text-center">
                               <button 
@@ -6897,7 +8698,7 @@ export default function App() {
                         ))}
                         {adminMembersList.length === 0 && (
                           <tr>
-                            <td colSpan={6} className="text-center py-8 text-slate-400">
+                            <td colSpan={7} className="text-center py-8 text-slate-400">
                               ไม่พบข้อมูลสมาชิกในระบบ
                             </td>
                           </tr>
@@ -6916,45 +8717,101 @@ export default function App() {
                       📋 ตารางอนุมัติเอกสารสมัครสมาชิก (KYC Pending Queue)
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2 text-xs text-slate-700">
-                      {kycQueue.length > 0 ? (
-                        kycQueue.map(item => (
-                          <div key={item.userId} className="border border-slate-100 p-4 rounded-2xl bg-slate-50 flex flex-col justify-between gap-3">
-                            <div>
-                              <span className="font-mono font-bold text-indigo-600 text-[10px] bg-indigo-50 px-1.5 py-0.5 rounded">{item.userId}</span>
-                              <h5 className="font-bold text-slate-800 mt-1">{item.name} {item.surname}</h5>
-                              <div className="mt-2 space-y-1 text-slate-500 text-[11px]">
-                                <p>บัตรประชาชน: {item.idCard}</p>
-                                <p>ธนาคาร: {item.bankName} (เลขที่ {item.bankAccount})</p>
-                              </div>
-                              {item.kycImgUrl && (
-                                <div className="flex gap-2 mt-3">
-                                  <a href={item.kycImgUrl} target="_blank" rel="noreferrer" className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2 py-1 rounded text-[10px] font-bold transition flex items-center gap-1 shrink-0">🔍 รูปบัตร ปชช.</a>
-                                  <a href={item.kycBookUrl} target="_blank" rel="noreferrer" className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2 py-1 rounded text-[10px] font-bold transition flex items-center gap-1 shrink-0">🔍 หน้าสมุดบัญชี</a>
+                      {(() => {
+                        const itemsPerPage = 20;
+                        const startIndex = (adminKycPage - 1) * itemsPerPage;
+                        const paginatedKycQueue = kycQueue.slice(startIndex, startIndex + itemsPerPage);
+
+                        return (
+                          <>
+                            {paginatedKycQueue.length > 0 ? (
+                              paginatedKycQueue.map(item => (
+                                <div key={item.userId} className="border border-slate-100 p-4 rounded-2xl bg-slate-50 flex flex-col justify-between gap-3">
+                                  <div>
+                                    <span className="font-mono font-bold text-indigo-600 text-[10px] bg-indigo-50 px-1.5 py-0.5 rounded">{item.userId}</span>
+                                    <h5 className="font-bold text-slate-800 mt-1">{item.name} {item.surname}</h5>
+                                    <div className="mt-2 space-y-1 text-slate-500 text-[11px]">
+                                      <p>บัตรประชาชน: {item.idCard}</p>
+                                      <p>ธนาคาร: {item.bankName} (เลขที่ {item.bankAccount})</p>
+                                    </div>
+                                    {item.kycImgUrl && (
+                                      <div className="flex gap-2 mt-3">
+                                        <div className="relative group">
+                                          <a 
+                                            href={item.kycImgUrl} 
+                                            target="_blank" 
+                                            rel="noreferrer" 
+                                            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2 py-1 rounded text-[10px] font-bold transition flex items-center gap-1 shrink-0"
+                                          >
+                                            🔍 รูปบัตร ปชช.
+                                          </a>
+                                          <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 bg-white p-2 rounded-2xl shadow-2xl border border-slate-200 w-64 pointer-events-none animate-fadeIn">
+                                            <p className="text-[9px] text-slate-400 font-bold mb-1 text-center">พรีวิวรูปบัตรประชาชน (ชี้เพื่อพรีวิว / คลิกเพื่อดูรูปใหญ่)</p>
+                                            <div className="overflow-hidden rounded-xl border border-slate-100 bg-slate-50 flex items-center justify-center max-h-48">
+                                              <img 
+                                                src={item.kycImgUrl} 
+                                                alt="KYC ID Card Preview" 
+                                                referrerPolicy="no-referrer"
+                                                className="w-full h-auto object-contain"
+                                              />
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        <div className="relative group">
+                                          <a 
+                                            href={item.kycBookUrl} 
+                                            target="_blank" 
+                                            rel="noreferrer" 
+                                            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2 py-1 rounded text-[10px] font-bold transition flex items-center gap-1 shrink-0"
+                                          >
+                                            🔍 หน้าสมุดบัญชี
+                                          </a>
+                                          <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 bg-white p-2 rounded-2xl shadow-2xl border border-slate-200 w-64 pointer-events-none animate-fadeIn">
+                                            <p className="text-[9px] text-slate-400 font-bold mb-1 text-center">พรีวิวหน้าสมุดบัญชีธนาคาร (ชี้เพื่อพรีวิว / คลิกเพื่อดูรูปใหญ่)</p>
+                                            <div className="overflow-hidden rounded-xl border border-slate-100 bg-slate-50 flex items-center justify-center max-h-48">
+                                              <img 
+                                                src={item.kycBookUrl} 
+                                                alt="KYC Bank Book Preview" 
+                                                referrerPolicy="no-referrer"
+                                                className="w-full h-auto object-contain"
+                                              />
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex gap-2 border-t border-slate-200/60 pt-2">
+                                    <button 
+                                      onClick={() => {
+                                        setKycRejectId(item.userId);
+                                        setKycRejectReason('ข้อมูลเอกสารภาพถ่ายหรือบัญชีธนาคารไม่ถูกต้องชัดเจน');
+                                      }}
+                                      className="flex-1 bg-rose-50 hover:bg-rose-100 text-rose-700 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer"
+                                    >
+                                      ปฏิเสธเอกสาร
+                                    </button>
+                                    <button 
+                                      onClick={() => handleKycApprove(item.userId)}
+                                      className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-white py-1.5 rounded-xl text-[10px] font-bold transition shadow-sm cursor-pointer"
+                                    >
+                                      อนุมัติสมาชิก
+                                    </button>
+                                  </div>
                                 </div>
-                              )}
-                            </div>
-                            <div className="flex gap-2 border-t border-slate-200/60 pt-2">
-                              <button 
-                                onClick={() => {
-                                  setKycRejectId(item.userId);
-                                  setKycRejectReason('ข้อมูลเอกสารภาพถ่ายหรือบัญชีธนาคารไม่ถูกต้องชัดเจน');
-                                }}
-                                className="flex-1 bg-rose-50 hover:bg-rose-100 text-rose-700 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer"
-                              >
-                                ปฏิเสธเอกสาร
-                              </button>
-                              <button 
-                                onClick={() => handleKycApprove(item.userId)}
-                                className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-white py-1.5 rounded-xl text-[10px] font-bold transition shadow-sm cursor-pointer"
-                              >
-                                อนุมัติสมาชิก
-                              </button>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="col-span-2 text-slate-400 text-center py-8">ไม่มีคำขอเอกสาร KYC รอพิจารณาในขณะนี้</div>
-                      )}
+                              ))
+                            ) : (
+                              <div className="col-span-2 text-slate-400 text-center py-8">ไม่มีคำขอเอกสาร KYC รอพิจารณาในขณะนี้</div>
+                            )}
+                            {kycQueue.length > itemsPerPage && (
+                              <div className="col-span-full mt-4 pt-4 border-t border-slate-100">
+                                <TablePagination currentPage={adminKycPage} totalItems={kycQueue.length} itemsPerPage={itemsPerPage} onPageChange={setAdminKycPage} />
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -6986,7 +8843,7 @@ export default function App() {
                             <th className="px-4 py-3">ชื่อ - นามสกุล</th>
                             <th className="px-4 py-3">เบอร์โทร / อีเมล</th>
                             <th className="px-4 py-3">ระดับ / สิทธิ์</th>
-                            <th className="px-4 py-3 text-right">M-Cash / M-Coupon</th>
+                            <th className="px-4 py-3 text-right">E-Cash / E-Coupon</th>
                             <th className="px-4 py-3 text-center">จัดการ</th>
                           </tr>
                         </thead>
@@ -7024,8 +8881,8 @@ export default function App() {
                                 <span className="block text-[10px] text-slate-400 font-bold">สิทธิ์: {member.role || "Member"}</span>
                               </td>
                               <td className="px-4 py-3 text-right font-semibold">
-                                <span className="block text-emerald-600 font-bold">฿ {member.balanceMCash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                <span className="block text-[10px] text-indigo-500 font-bold">฿ {member.balanceMCoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                <span className="block text-emerald-600 font-bold">฿ {member.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                <span className="block text-[10px] text-indigo-500 font-bold">฿ {member.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                               </td>
                               <td className="px-4 py-3 text-center">
                                 <button 
@@ -7061,7 +8918,7 @@ export default function App() {
                     <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                       <div>
                         <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                          💰 รายการตรวจสอบและอนุมัติเติมเงิน M-Cash
+                          💰 รายการตรวจสอบและอนุมัติเติมเงิน E-Cash
                         </h4>
                         <p className="text-xs text-slate-400 mt-0.5">กรุณาตรวจสอบความถูกต้องของยอดโอนและภาพหลักฐานสลิป ก่อนกดปุ่มอนุมัติ</p>
                       </div>
@@ -7072,91 +8929,106 @@ export default function App() {
                       )}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs text-slate-700">
-                      {depositQueue.length > 0 ? (
-                        depositQueue.map(item => (
-                          <div key={item.id} className="border border-slate-200/80 p-4 rounded-2xl bg-slate-50/50 space-y-3 flex flex-col justify-between hover:shadow-md transition duration-200">
-                            <div>
-                              <div className="flex justify-between items-start">
-                                <div>
-                                  <span className="font-mono font-bold text-indigo-600 text-[10px] bg-indigo-50 px-1.5 py-0.5 rounded">{item.id}</span>
-                                  <h5 className="font-bold text-slate-800 mt-1">{item.name || item.userId} (รหัส {item.userId})</h5>
-                                  <p className="text-[10px] text-slate-400 font-mono">เมื่อ: {new Date(item.createdAt).toLocaleString('th-TH')}</p>
-                                </div>
-                                <span className="bg-amber-100 text-amber-800 text-[9px] px-1.5 py-0.5 rounded-full font-bold">รอแอดมินตรวจสลิป</span>
-                              </div>
-                              
-                              <div className="border-t border-slate-200/60 pt-2 space-y-1">
-                                <p className="text-xs flex justify-between">
-                                  <span className="text-slate-500">ยอดแจ้งเติมเงิน:</span>
-                                  <span className="font-bold text-slate-700">฿ {item.amount?.toLocaleString()} บาท</span>
-                                </p>
-                                <p className="text-xs flex justify-between">
-                                  <span className="text-slate-500">ยอดโอนเงินจริง:</span>
-                                  <span className="font-bold text-emerald-600">฿ {item.transferAmount?.toLocaleString()} บาท</span>
-                                </p>
-                                <p className="text-[11px] text-slate-400 flex justify-between">
-                                  <span>วันที่โอนเงินจริง:</span>
-                                  <span className="font-semibold text-slate-600">{item.transferDate || '-'}</span>
-                                </p>
-                              </div>
+                    {(() => {
+                      const itemsPerPage = 20;
+                      const startIndex = (adminDepositQueuePage - 1) * itemsPerPage;
+                      const paginatedDepositQueue = depositQueue.slice(startIndex, startIndex + itemsPerPage);
 
-                              {item.slipImgUrl && (
-                                <div className="bg-white border border-slate-100 p-2 rounded-xl flex items-center justify-between mt-2 relative">
-                                  <span className="text-[10px] text-slate-400 font-medium">📷 ไฟล์สลิปโอนเงิน</span>
-                                  <div className="relative group">
-                                    <button 
-                                      type="button"
-                                      onClick={() => setActiveSlipModal(item.slipImgUrl)}
-                                      className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition flex items-center gap-1 shrink-0 cursor-pointer relative"
-                                    >
-                                      🔍 ดูภาพสลิปจริง
-                                    </button>
-                                    
-                                    {/* Hover Preview Tooltip */}
-                                    <div className="hidden group-hover:block absolute bottom-full right-0 mb-2 z-50 bg-white p-2 rounded-2xl shadow-2xl border border-slate-200 w-64 pointer-events-none animate-fade-in">
-                                      <p className="text-[9px] text-slate-400 font-bold mb-1 text-center">ตัวอย่างสลิปโอนเงิน (ชี้เพื่อพรีวิว / คลิกเพื่อขยาย)</p>
-                                      <div className="overflow-hidden rounded-xl border border-slate-100 bg-slate-50 flex items-center justify-center max-h-72">
-                                        <img 
-                                          src={item.slipImgUrl} 
-                                          alt="Hover Slip Preview" 
-                                          referrerPolicy="no-referrer"
-                                          className="w-full h-auto object-contain"
-                                        />
+                      return (
+                        <>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs text-slate-700">
+                            {paginatedDepositQueue.length > 0 ? (
+                              paginatedDepositQueue.map(item => (
+                                <div key={item.id} className="border border-slate-200/80 p-4 rounded-2xl bg-slate-50/50 space-y-3 flex flex-col justify-between hover:shadow-md transition duration-200">
+                                  <div>
+                                    <div className="flex justify-between items-start">
+                                      <div>
+                                        <span className="font-mono font-bold text-indigo-600 text-[10px] bg-indigo-50 px-1.5 py-0.5 rounded">{item.id}</span>
+                                        <h5 className="font-bold text-slate-800 mt-1">{item.name || item.userId} (รหัส {item.userId})</h5>
+                                        <p className="text-[10px] text-slate-400 font-mono">เมื่อ: {new Date(item.createdAt).toLocaleString('th-TH')}</p>
                                       </div>
+                                      <span className="bg-amber-100 text-amber-800 text-[9px] px-1.5 py-0.5 rounded-full font-bold">รอแอดมินตรวจสลิป</span>
                                     </div>
+                                    
+                                    <div className="border-t border-slate-200/60 pt-2 space-y-1">
+                                      <p className="text-xs flex justify-between">
+                                        <span className="text-slate-500">ยอดแจ้งเติมเงิน:</span>
+                                        <span className="font-bold text-slate-700">฿ {item.amount?.toLocaleString()} บาท</span>
+                                      </p>
+                                      <p className="text-xs flex justify-between">
+                                        <span className="text-slate-500">ยอดโอนเงินจริง:</span>
+                                        <span className="font-bold text-emerald-600">฿ {item.transferAmount?.toLocaleString()} บาท</span>
+                                      </p>
+                                      <p className="text-[11px] text-slate-400 flex justify-between">
+                                        <span>วันที่โอนเงินจริง:</span>
+                                        <span className="font-semibold text-slate-600">{item.transferDate || '-'}</span>
+                                      </p>
+                                    </div>
+
+                                    {item.slipImgUrl && (
+                                      <div className="bg-white border border-slate-100 p-2 rounded-xl flex items-center justify-between mt-2 relative">
+                                        <span className="text-[10px] text-slate-400 font-medium">📷 ไฟล์สลิปโอนเงิน</span>
+                                        <div className="relative group">
+                                          <button 
+                                            type="button"
+                                            onClick={() => setActiveSlipModal(item.slipImgUrl)}
+                                            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition flex items-center gap-1 shrink-0 cursor-pointer relative"
+                                          >
+                                            🔍 ดูภาพสลิปจริง
+                                          </button>
+                                          
+                                          {/* Hover Preview Tooltip */}
+                                          <div className="hidden group-hover:block absolute bottom-full right-0 mb-2 z-50 bg-white p-2 rounded-2xl shadow-2xl border border-slate-200 w-64 pointer-events-none animate-fade-in">
+                                            <p className="text-[9px] text-slate-400 font-bold mb-1 text-center">ตัวอย่างสลิปโอนเงิน (ชี้เพื่อพรีวิว / คลิกเพื่อขยาย)</p>
+                                            <div className="overflow-hidden rounded-xl border border-slate-100 bg-slate-50 flex items-center justify-center max-h-72">
+                                              <img 
+                                                src={item.slipImgUrl} 
+                                                alt="Hover Slip Preview" 
+                                                referrerPolicy="no-referrer"
+                                                className="w-full h-auto object-contain"
+                                              />
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="flex gap-2 border-t border-slate-200/60 pt-2">
+                                    <button 
+                                      onClick={() => {
+                                        setDepositRejectId(item.id);
+                                        setDepositRejectReason('ข้อมูลโอนเงินไม่ตรง หรือสลิปซ้ำ/ไม่ถูกต้อง');
+                                      }}
+                                      className="flex-1 bg-rose-50 hover:bg-rose-100 text-rose-700 py-2 rounded-xl text-[11px] font-bold transition cursor-pointer text-center"
+                                    >
+                                      ปฏิเสธ
+                                    </button>
+                                    <button 
+                                      onClick={() => setDepositApproveId(item.id)}
+                                      className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-white py-2 rounded-xl text-[11px] font-bold transition shadow-sm cursor-pointer text-center"
+                                    >
+                                      อนุมัติเติมเงิน
+                                    </button>
                                   </div>
                                 </div>
-                              )}
-                            </div>
-
-                            <div className="flex gap-2 border-t border-slate-200/60 pt-2">
-                              <button 
-                                onClick={() => {
-                                  setDepositRejectId(item.id);
-                                  setDepositRejectReason('ข้อมูลโอนเงินไม่ตรง หรือสลิปซ้ำ/ไม่ถูกต้อง');
-                                }}
-                                className="flex-1 bg-rose-50 hover:bg-rose-100 text-rose-700 py-2 rounded-xl text-[11px] font-bold transition cursor-pointer text-center"
-                              >
-                                ปฏิเสธ
-                              </button>
-                              <button 
-                                onClick={() => setDepositApproveId(item.id)}
-                                className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-white py-2 rounded-xl text-[11px] font-bold transition shadow-sm cursor-pointer text-center"
-                              >
-                                อนุมัติเติมเงิน
-                              </button>
-                            </div>
+                              ))
+                            ) : (
+                              <div className="col-span-full bg-slate-50 border border-dashed border-slate-200 rounded-3xl p-12 text-center text-slate-400">
+                                <p className="text-3xl mb-2">🎉</p>
+                                <p className="text-xs font-bold text-slate-600">ไม่มีรายการแจ้งโอนเงินรออนุมัติในขณะนี้</p>
+                                <p className="text-[10px] text-slate-400 mt-1">ยอดสลิปเติมเงินทั้งหมดในระบบได้รับการตรวจสอบและทำรายการเรียบร้อยแล้วค่ะ</p>
+                              </div>
+                            )}
                           </div>
-                        ))
-                      ) : (
-                        <div className="col-span-full bg-slate-50 border border-dashed border-slate-200 rounded-3xl p-12 text-center text-slate-400">
-                          <p className="text-3xl mb-2">🎉</p>
-                          <p className="text-xs font-bold text-slate-600">ไม่มีรายการแจ้งโอนเงินรออนุมัติในขณะนี้</p>
-                          <p className="text-[10px] text-slate-400 mt-1">ยอดสลิปเติมเงินทั้งหมดในระบบได้รับการตรวจสอบและทำรายการเรียบร้อยแล้วค่ะ</p>
-                        </div>
-                      )}
-                    </div>
+                          {depositQueue.length > itemsPerPage && (
+                            <div className="mt-4 pt-4 border-t border-slate-100">
+                              <TablePagination currentPage={adminDepositQueuePage} totalItems={depositQueue.length} itemsPerPage={itemsPerPage} onPageChange={setAdminDepositQueuePage} />
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -7271,117 +9143,133 @@ export default function App() {
                     </div>
 
                     <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-100 text-[10px]">
-                            <th className="px-4 py-3">รหัสบิล/Bill No</th>
-                            <th className="px-4 py-3">วันเวลาสั่งซื้อ</th>
-                            <th className="px-4 py-3">ผู้สั่งซื้อ (User ID)</th>
-                            <th className="px-4 py-3">รายการสินค้า / ชุดเซ็ต</th>
-                            <th className="px-4 py-3">จำนวน / มูลค่า / PV</th>
-                            <th className="px-4 py-3">ที่อยู่จัดส่งพัสดุ</th>
-                            <th className="px-4 py-3">ข้อมูลขนส่ง & การอนุมัติ</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-slate-700">
-                          {adminOrders.filter((o: any) => o.status === "Processing").length === 0 ? (
-                            <tr>
-                              <td colSpan={7} className="p-8 text-center text-slate-400 italic">ไม่มีรายการสั่งซื้อรอจัดส่งในระบบขณะนี้ค่ะ 🎉</td>
-                            </tr>
-                          ) : (
-                            adminOrders.filter((o: any) => o.status === "Processing").map((order: any) => {
-                              const tracking = shippingTracking[order.id] || { company: 'Flash Express', trackingNo: '', note: '' };
-                              return (
-                                <tr key={order.id} className="hover:bg-slate-50/40 align-top">
-                                  <td className="px-4 py-3 font-mono text-[10px] font-bold text-indigo-900">{order.id}</td>
-                                  <td className="px-4 py-3 text-[10px] text-slate-500 leading-tight">
-                                    {new Date(order.createdAt).toLocaleString()}
-                                  </td>
-                                  <td className="px-4 py-3">
-                                    <span className="font-bold text-slate-800">{order.userId}</span>
-                                  </td>
-                                  <td className="px-4 py-3 leading-tight">
-                                    <div className="font-semibold text-slate-900">{order.productName}</div>
-                                    {order.selectedChoiceName && (
-                                      <span className="inline-block bg-indigo-50 text-indigo-700 text-[10px] font-extrabold px-1.5 py-0.5 rounded border border-indigo-100 mt-1">
-                                        ชุด: {order.selectedChoiceName}
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-3 leading-tight font-mono text-[11px]">
-                                    <div className="font-bold text-slate-800">฿ {order.totalPrice?.toLocaleString()}</div>
-                                    <div className="text-purple-600 font-semibold">{order.totalPv || 0} PV</div>
-                                    <div className="text-[10px] text-slate-400">จำนวน: {order.quantity || 1} ชิ้น</div>
-                                  </td>
-                                  <td className="px-4 py-3 text-[10px] text-slate-600 leading-relaxed max-w-[200px] break-words">
-                                    {order.shippingAddress || "ไม่ระบุที่อยู่จัดส่ง"}
-                                  </td>
-                                  <td className="px-4 py-3 space-y-2 bg-indigo-50/10 border-l border-indigo-50/50">
-                                    <div className="grid grid-cols-2 gap-1.5">
-                                      <div>
-                                        <label className="text-[9px] font-bold text-slate-500 uppercase">บริษัทขนส่ง</label>
-                                        <select
-                                          value={tracking.company}
-                                          onChange={(e) => setShippingTracking(prev => ({
-                                            ...prev,
-                                            [order.id]: { ...tracking, company: e.target.value }
-                                          }))}
-                                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px] font-semibold"
-                                        >
-                                          <option value="Flash Express">Flash Express</option>
-                                          <option value="Kerry Express">Kerry Express</option>
-                                          <option value="J&T Express">J&T Express</option>
-                                          <option value="EMS ไปรษณีย์ไทย">EMS ไปรษณีย์ไทย</option>
-                                          <option value="DHL Express">DHL Express</option>
-                                          <option value="Best Express">Best Express</option>
-                                          <option value="อื่นๆ">อื่นๆ</option>
-                                        </select>
-                                      </div>
-                                      <div>
-                                        <label className="text-[9px] font-bold text-slate-500 uppercase">เลขพัสดุ (Tracking)</label>
-                                        <input
-                                          type="text"
-                                          placeholder="กรอกเลขพัสดุ..."
-                                          value={tracking.trackingNo}
-                                          onChange={(e) => setShippingTracking(prev => ({
-                                            ...prev,
-                                            [order.id]: { ...tracking, trackingNo: e.target.value }
-                                          }))}
-                                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px] font-mono text-indigo-700 font-bold"
-                                        />
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <label className="text-[9px] font-bold text-slate-500 uppercase">หมายเหตุการจัดส่ง</label>
-                                      <input
-                                        type="text"
-                                        placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)"
-                                        value={tracking.note}
-                                        onChange={(e) => setShippingTracking(prev => ({
-                                          ...prev,
-                                          [order.id]: { ...tracking, note: e.target.value }
-                                        }))}
-                                        className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px]"
-                                      />
-                                    </div>
-                                    <button
-                                      onClick={() => handleCompleteOrder(order.id, tracking.company, tracking.trackingNo, tracking.note)}
-                                      disabled={!tracking.trackingNo}
-                                      className={`w-full text-white font-extrabold py-1.5 rounded-xl text-[10px] transition shadow-sm flex items-center justify-center gap-1 cursor-pointer ${
-                                        tracking.trackingNo 
-                                          ? 'bg-rose-600 hover:bg-rose-500 hover:shadow' 
-                                          : 'bg-slate-300 cursor-not-allowed'
-                                      }`}
-                                    >
-                                      🚀 อนุมัติจัดส่งสินค้า
-                                    </button>
-                                  </td>
+                      {(() => {
+                        const processingOrders = adminOrders.filter((o: any) => o.status === "Processing");
+                        const itemsPerPage = 20;
+                        const startIndex = (adminOrdersProcessingPage - 1) * itemsPerPage;
+                        const paginatedProcessingOrders = processingOrders.slice(startIndex, startIndex + itemsPerPage);
+
+                        return (
+                          <>
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-100 text-[10px]">
+                                  <th className="px-4 py-3">รหัสบิล/Bill No</th>
+                                  <th className="px-4 py-3">วันเวลาสั่งซื้อ</th>
+                                  <th className="px-4 py-3">ผู้สั่งซื้อ (User ID)</th>
+                                  <th className="px-4 py-3">รายการสินค้า / ชุดเซ็ต</th>
+                                  <th className="px-4 py-3">จำนวน / มูลค่า / PV</th>
+                                  <th className="px-4 py-3">ที่อยู่จัดส่งพัสดุ</th>
+                                  <th className="px-4 py-3">ข้อมูลขนส่ง & การอนุมัติ</th>
                                 </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-slate-700">
+                                {paginatedProcessingOrders.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={7} className="p-8 text-center text-slate-400 italic">ไม่มีรายการสั่งซื้อรอจัดส่งในระบบขณะนี้ค่ะ 🎉</td>
+                                  </tr>
+                                ) : (
+                                  paginatedProcessingOrders.map((order: any) => {
+                                    const tracking = shippingTracking[order.id] || { company: 'Flash Express', trackingNo: '', note: '' };
+                                    return (
+                                      <tr key={order.id} className="hover:bg-slate-50/40 align-top">
+                                        <td className="px-4 py-3 font-mono text-[10px] font-bold text-indigo-900">{order.id}</td>
+                                        <td className="px-4 py-3 text-[10px] text-slate-500 leading-tight">
+                                          {new Date(order.createdAt).toLocaleString()}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span className="font-bold text-slate-800">{order.userId}</span>
+                                        </td>
+                                        <td className="px-4 py-3 leading-tight">
+                                          <div className="font-semibold text-slate-900">{order.productName}</div>
+                                          {order.selectedChoiceName && (
+                                            <span className="inline-block bg-indigo-50 text-indigo-700 text-[10px] font-extrabold px-1.5 py-0.5 rounded border border-indigo-100 mt-1">
+                                              ชุด: {order.selectedChoiceName}
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="px-4 py-3 leading-tight font-mono text-[11px]">
+                                          <div className="font-bold text-slate-800">฿ {order.totalPrice?.toLocaleString()}</div>
+                                          <div className="text-purple-600 font-semibold">{order.totalPv || 0} PV</div>
+                                          <div className="text-[10px] text-slate-400">จำนวน: {order.quantity || 1} ชิ้น</div>
+                                        </td>
+                                        <td className="px-4 py-3 text-[10px] text-slate-600 leading-relaxed max-w-[200px] break-words">
+                                          {order.shippingAddress || "ไม่ระบุที่อยู่จัดส่ง"}
+                                        </td>
+                                        <td className="px-4 py-3 space-y-2 bg-indigo-50/10 border-l border-indigo-50/50">
+                                          <div className="grid grid-cols-2 gap-1.5">
+                                            <div>
+                                              <label className="text-[9px] font-bold text-slate-500 uppercase">บริษัทขนส่ง</label>
+                                              <select
+                                                value={tracking.company}
+                                                onChange={(e) => setShippingTracking(prev => ({
+                                                  ...prev,
+                                                  [order.id]: { ...tracking, company: e.target.value }
+                                                }))}
+                                                className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px] font-semibold"
+                                              >
+                                                <option value="Flash Express">Flash Express</option>
+                                                <option value="Kerry Express">Kerry Express</option>
+                                                <option value="J&T Express">J&T Express</option>
+                                                <option value="EMS ไปรษณีย์ไทย">EMS ไปรษณีย์ไทย</option>
+                                                <option value="DHL Express">DHL Express</option>
+                                                <option value="Best Express">Best Express</option>
+                                                <option value="อื่นๆ">อื่นๆ</option>
+                                              </select>
+                                            </div>
+                                            <div>
+                                              <label className="text-[9px] font-bold text-slate-500 uppercase">เลขพัสดุ (Tracking)</label>
+                                              <input
+                                                type="text"
+                                                placeholder="กรอกเลขพัสดุ..."
+                                                value={tracking.trackingNo}
+                                                onChange={(e) => setShippingTracking(prev => ({
+                                                  ...prev,
+                                                  [order.id]: { ...tracking, trackingNo: e.target.value }
+                                                }))}
+                                                className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px] font-mono text-indigo-700 font-bold"
+                                              />
+                                            </div>
+                                          </div>
+                                          <div>
+                                            <label className="text-[9px] font-bold text-slate-500 uppercase">หมายเหตุการจัดส่ง</label>
+                                            <input
+                                              type="text"
+                                              placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)"
+                                              value={tracking.note}
+                                              onChange={(e) => setShippingTracking(prev => ({
+                                                ...prev,
+                                                [order.id]: { ...tracking, note: e.target.value }
+                                              }))}
+                                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px]"
+                                            />
+                                          </div>
+                                          <button
+                                            onClick={() => handleCompleteOrder(order.id, tracking.company, tracking.trackingNo, tracking.note)}
+                                            disabled={!tracking.trackingNo}
+                                            className={`w-full text-white font-extrabold py-1.5 rounded-xl text-[10px] transition shadow-sm flex items-center justify-center gap-1 cursor-pointer ${
+                                              tracking.trackingNo 
+                                                ? 'bg-rose-600 hover:bg-rose-500 hover:shadow' 
+                                                : 'bg-slate-300 cursor-not-allowed'
+                                            }`}
+                                          >
+                                            🚀 อนุมัติจัดส่งสินค้า
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                            {processingOrders.length > itemsPerPage && (
+                              <div className="mt-4 pt-4 border-t border-slate-100">
+                                <TablePagination currentPage={adminOrdersProcessingPage} totalItems={processingOrders.length} itemsPerPage={itemsPerPage} onPageChange={setAdminOrdersProcessingPage} />
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -7395,55 +9283,72 @@ export default function App() {
                       📦 ตารางอนุมัติเปิดจำหน่ายผลิตภัณฑ์จากร้านค้าร่วม (Product Approval Queue)
                     </h4>
                     <div className="overflow-x-auto text-xs text-slate-700">
-                      {prodQueue && prodQueue.length > 0 ? (
-                        <table className="w-full text-left border-collapse">
-                          <thead>
-                            <tr className="border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">
-                              <th className="py-2.5">รูปสินค้า</th>
-                              <th className="py-2.5">ชื่อสินค้า / ร้านค้า</th>
-                              <th className="py-2.5 text-center">ราคาขาย</th>
-                              <th className="py-2.5 text-center">คะแนน PV</th>
-                              <th className="py-2.5 text-center">ต้นทุนสินค้า</th>
-                              <th className="py-2.5 text-center text-rose-500">ส่วนต่างบริษัท (กำไร)</th>
-                              <th className="py-2.5 text-right">ดำเนินการ</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-50">
-                            {prodQueue.map((item) => {
-                              const cost = item.cost !== undefined ? item.cost : Math.floor(item.price * 0.30);
-                              const companyProfit = parseFloat((item.price - (item.pv || 0) - (item.price * 7 / 107) - cost).toFixed(2));
-                              return (
-                                <tr key={item.id} className="hover:bg-slate-50/50">
-                                  <td className="py-3">
-                                    <img src={item.image} alt={item.name} className="w-10 h-10 object-cover rounded-lg border border-slate-100" referrerPolicy="no-referrer" />
-                                  </td>
-                                  <td className="py-3">
-                                    <h5 className="font-bold text-slate-800">{item.name}</h5>
-                                    <p className="text-[10px] text-slate-400">ร้านค้า: {item.sellerStoreName || 'ไม่ระบุ'} ({item.sellerCode || item.sellerId})</p>
-                                  </td>
-                                  <td className="py-3 text-center font-bold">฿{item.price?.toLocaleString()}</td>
-                                  <td className="py-3 text-center font-semibold text-indigo-600">{item.pv} PV</td>
-                                  <td className="py-3 text-center font-semibold text-amber-600">฿{cost?.toLocaleString()}</td>
-                                  <td className="py-3 text-center font-extrabold text-emerald-600">
-                                    ฿{companyProfit?.toLocaleString()}
-                                    <span className="block text-[8px] text-slate-400 font-normal">หักแวต 7% (~฿{parseFloat((item.price * 7 / 107).toFixed(2))}) แล้ว</span>
-                                  </td>
-                                  <td className="py-3 text-right">
-                                    <button
-                                      onClick={() => handleProductApprove(item.id)}
-                                      className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg text-[10px] font-bold cursor-pointer transition shadow-sm hover:shadow"
-                                    >
-                                      อนุมัติจำหน่าย
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      ) : (
-                        <p className="text-slate-400 text-center py-8">ไม่มีรายการผลิตภัณฑ์ใหม่รอแอดมินอนุมัติในขณะนี้</p>
-                      )}
+                      {(() => {
+                        const itemsPerPage = 20;
+                        const startIndex = (adminProductQueuePage - 1) * itemsPerPage;
+                        const paginatedProdQueue = (prodQueue || []).slice(startIndex, startIndex + itemsPerPage);
+
+                        return (
+                          <>
+                            {prodQueue && prodQueue.length > 0 ? (
+                              <>
+                                <table className="w-full text-left border-collapse">
+                                  <thead>
+                                    <tr className="border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">
+                                      <th className="py-2.5">รูปสินค้า</th>
+                                      <th className="py-2.5">ชื่อสินค้า / ร้านค้า</th>
+                                      <th className="py-2.5 text-center">ราคาขาย</th>
+                                      <th className="py-2.5 text-center">คะแนน PV</th>
+                                      <th className="py-2.5 text-center">ต้นทุนสินค้า</th>
+                                      <th className="py-2.5 text-center text-rose-500">ส่วนต่างบริษัท (กำไร)</th>
+                                      <th className="py-2.5 text-right">ดำเนินการ</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-50">
+                                    {paginatedProdQueue.map((item) => {
+                                      const cost = item.cost !== undefined ? item.cost : Math.floor(item.price * 0.30);
+                                      const companyProfit = parseFloat((item.price - (item.pv || 0) - (item.price * 7 / 107) - cost).toFixed(2));
+                                      return (
+                                        <tr key={item.id} className="hover:bg-slate-50/50">
+                                          <td className="py-3">
+                                            <img src={item.image} alt={item.name} className="w-10 h-10 object-cover rounded-lg border border-slate-100" referrerPolicy="no-referrer" />
+                                          </td>
+                                          <td className="py-3">
+                                            <h5 className="font-bold text-slate-800">{item.name}</h5>
+                                            <p className="text-[10px] text-slate-400">ร้านค้า: {item.sellerStoreName || 'ไม่ระบุ'} ({item.sellerCode || item.sellerId})</p>
+                                          </td>
+                                          <td className="py-3 text-center font-bold">฿{item.price?.toLocaleString()}</td>
+                                          <td className="py-3 text-center font-semibold text-indigo-600">{item.pv} PV</td>
+                                          <td className="py-3 text-center font-semibold text-amber-600">฿{cost?.toLocaleString()}</td>
+                                          <td className="py-3 text-center font-extrabold text-emerald-600">
+                                            ฿{companyProfit?.toLocaleString()}
+                                            <span className="block text-[8px] text-slate-400 font-normal">หักแวต 7% (~฿{parseFloat((item.price * 7 / 107).toFixed(2))}) แล้ว</span>
+                                          </td>
+                                          <td className="py-3 text-right">
+                                            <button
+                                              onClick={() => handleProductApprove(item.id)}
+                                              className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg text-[10px] font-bold cursor-pointer transition shadow-sm hover:shadow"
+                                            >
+                                              อนุมัติจำหน่าย
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                                {prodQueue.length > itemsPerPage && (
+                                  <div className="mt-4 pt-4 border-t border-slate-100">
+                                    <TablePagination currentPage={adminProductQueuePage} totalItems={prodQueue.length} itemsPerPage={itemsPerPage} onPageChange={setAdminProductQueuePage} />
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <p className="text-slate-400 text-center py-8">ไม่มีรายการผลิตภัณฑ์ใหม่รอแอดมินอนุมัติในขณะนี้</p>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -7473,72 +9378,89 @@ export default function App() {
                     </div>
 
                     <div className="overflow-x-auto border border-slate-100 rounded-2xl">
-                      <table className="min-w-full divide-y divide-slate-100 text-xs text-left text-slate-700">
-                        <thead className="bg-slate-50 font-bold text-slate-500 text-[10px] uppercase">
-                          <tr>
-                            <th className="px-4 py-3">รูปสินค้า</th>
-                            <th className="px-4 py-3">รหัส / ชื่อสินค้า</th>
-                            <th className="px-4 py-3 text-center">ราคาขายปัจจุบัน</th>
-                            <th className="px-4 py-3 text-center">คะแนน PV</th>
-                            <th className="px-4 py-3 text-center">ต้นทุน (Cost)</th>
-                            <th className="px-4 py-3 text-center">รูปหลัก</th>
-                            <th className="px-4 py-3 text-center">การจัดการแอดมิน</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 bg-white">
-                          {allSellerProducts.filter(p => {
-                            const q = prodSearchQuery.toLowerCase().trim();
-                            if (!q) return true;
-                            return p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q);
-                          }).map(prod => (
-                            <tr key={prod.id} className="hover:bg-slate-50/50 transition">
-                              <td className="px-4 py-3">
-                                {prod.image ? (
-                                  <img src={prod.image} alt={prod.name} className="w-12 h-12 object-cover rounded-lg border border-slate-200" referrerPolicy="no-referrer" />
+                      {(() => {
+                        const filteredSellerProducts = allSellerProducts.filter(p => {
+                          const q = prodSearchQuery.toLowerCase().trim();
+                          if (!q) return true;
+                          return p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q);
+                        });
+                        const itemsPerPage = 20;
+                        const startIndex = (adminActiveProductsPage - 1) * itemsPerPage;
+                        const paginatedSellerProducts = filteredSellerProducts.slice(startIndex, startIndex + itemsPerPage);
+
+                        return (
+                          <>
+                            <table className="min-w-full divide-y divide-slate-100 text-xs text-left text-slate-700">
+                              <thead className="bg-slate-50 font-bold text-slate-500 text-[10px] uppercase">
+                                <tr>
+                                  <th className="px-4 py-3">รูปสินค้า</th>
+                                  <th className="px-4 py-3">รหัส / ชื่อสินค้า</th>
+                                  <th className="px-4 py-3 text-center">ราคาขายปัจจุบัน</th>
+                                  <th className="px-4 py-3 text-center">คะแนน PV</th>
+                                  <th className="px-4 py-3 text-center">ต้นทุน (Cost)</th>
+                                  <th className="px-4 py-3 text-center">รูปหลัก</th>
+                                  <th className="px-4 py-3 text-center">การจัดการแอดมิน</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 bg-white">
+                                {paginatedSellerProducts.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={7} className="text-center py-12 text-slate-400">
+                                      ไม่มีรายการผลิตภัณฑ์ร้านค้าร่วมที่ได้รับอนุมัติแล้วในระบบขณะนี้
+                                    </td>
+                                  </tr>
                                 ) : (
-                                  <div className="w-12 h-12 rounded-lg border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-[10px] text-slate-400">ไม่มีรูป</div>
+                                  paginatedSellerProducts.map(prod => (
+                                    <tr key={prod.id} className="hover:bg-slate-50/50 transition">
+                                      <td className="px-4 py-3">
+                                        {prod.image ? (
+                                          <img src={prod.image} alt={prod.name} className="w-12 h-12 object-cover rounded-lg border border-slate-200" referrerPolicy="no-referrer" />
+                                        ) : (
+                                          <div className="w-12 h-12 rounded-lg border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-[10px] text-slate-400">ไม่มีรูป</div>
+                                        )}
+                                      </td>
+                                      <td className="px-4 py-3 font-semibold">
+                                        <span className="text-slate-400 block font-mono text-[9px]">{prod.id}</span>
+                                        <span className="text-slate-900 font-bold">{prod.name}</span>
+                                        <span className="block text-[10px] text-indigo-500">ร้านค้า: {prod.sellerStoreName || 'ไม่ระบุ'}</span>
+                                      </td>
+                                      <td className="px-4 py-3 text-center font-bold text-slate-800">฿ {prod.price?.toLocaleString()}</td>
+                                      <td className="px-4 py-3 text-center font-semibold text-indigo-600">{prod.pv} PV</td>
+                                      <td className="px-4 py-3 text-center font-mono text-slate-500">฿{prod.cost || 0}</td>
+                                      <td className="px-4 py-3 text-center">
+                                        {prod.image && (
+                                          <button
+                                            onClick={() => handleProductDeleteImage(prod.id)}
+                                            className="text-rose-600 hover:text-rose-800 font-bold text-[10px] bg-rose-50 px-2 py-1 rounded border border-rose-100 cursor-pointer transition hover:bg-rose-100"
+                                          >
+                                            🗑️ ลบรูปภาพหลัก
+                                          </button>
+                                        )}
+                                      </td>
+                                      <td className="px-4 py-3 text-center">
+                                        <button
+                                          onClick={() => {
+                                            setEditingProduct({ ...prod });
+                                            setShowEditProductModal(true);
+                                          }}
+                                          className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-xl text-[10px] cursor-pointer transition"
+                                        >
+                                          แก้ไขราคา / รายละเอียด
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))
                                 )}
-                              </td>
-                              <td className="px-4 py-3 font-semibold">
-                                <span className="text-slate-400 block font-mono text-[9px]">{prod.id}</span>
-                                <span className="text-slate-900 font-bold">{prod.name}</span>
-                                <span className="block text-[10px] text-indigo-500">ร้านค้า: {prod.sellerStoreName || 'ไม่ระบุ'}</span>
-                              </td>
-                              <td className="px-4 py-3 text-center font-bold text-slate-800">฿ {prod.price?.toLocaleString()}</td>
-                              <td className="px-4 py-3 text-center font-semibold text-indigo-600">{prod.pv} PV</td>
-                              <td className="px-4 py-3 text-center font-mono text-slate-500">฿{prod.cost || 0}</td>
-                              <td className="px-4 py-3 text-center">
-                                {prod.image && (
-                                  <button
-                                    onClick={() => handleProductDeleteImage(prod.id)}
-                                    className="text-rose-600 hover:text-rose-800 font-bold text-[10px] bg-rose-50 px-2 py-1 rounded border border-rose-100 cursor-pointer transition hover:bg-rose-100"
-                                  >
-                                    🗑️ ลบรูปภาพหลัก
-                                  </button>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-center">
-                                <button
-                                  onClick={() => {
-                                    setEditingProduct({ ...prod });
-                                    setShowEditProductModal(true);
-                                  }}
-                                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-xl text-[10px] cursor-pointer transition"
-                                >
-                                  แก้ไขราคา / รายละเอียด
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                          {allSellerProducts.length === 0 && (
-                            <tr>
-                              <td colSpan={7} className="text-center py-12 text-slate-400">
-                                ไม่มีรายการผลิตภัณฑ์ร้านค้าร่วมที่ได้รับอนุมัติแล้วในระบบขณะนี้
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                              </tbody>
+                            </table>
+                            {filteredSellerProducts.length > itemsPerPage && (
+                              <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+                                <TablePagination currentPage={adminActiveProductsPage} totalItems={filteredSellerProducts.length} itemsPerPage={itemsPerPage} onPageChange={setAdminActiveProductsPage} />
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -7695,7 +9617,7 @@ export default function App() {
                           🎟️ ยอดสะสมคะแนน PV จากส่วนที่ซื้อด้วยคูปองค้างคำนวณ (Pending Coupon PV Queue)
                         </h4>
                         <p className="text-xs text-slate-400 mt-0.5">
-                          เมื่อสมาชิกสั่งซื้อสินค้าด้วย M-Coupon ยอด PV จะยังไม่จ่ายเข้าสู่แผนไบนารี่ทันที แต่จะพักสะสมไว้ที่นี่เพื่อคำนวณตัดยอด (ทุกวันที่ 10 ของเดือน หรือตัดจ่ายด้วยตนเอง)
+                          เมื่อสมาชิกสั่งซื้อสินค้าด้วย E-Coupon ยอด PV จะยังไม่จ่ายเข้าสู่แผนไบนารี่ทันที แต่จะพักสะสมไว้ที่นี่เพื่อคำนวณตัดยอด (ทุกวันที่ 10 ของเดือน หรือตัดจ่ายด้วยตนเอง)
                         </p>
                       </div>
                       
@@ -7721,42 +9643,57 @@ export default function App() {
                     </div>
 
                     <div className="overflow-x-auto border border-slate-100 rounded-2xl">
-                      <table className="min-w-full divide-y divide-slate-100 text-xs text-left text-slate-700">
-                        <thead className="bg-slate-50 font-bold text-slate-500 text-[10px] uppercase">
-                          <tr>
-                            <th className="px-4 py-3">รหัสธุรกรรม</th>
-                            <th className="px-4 py-3">รหัสผู้ซื้อ / สมาชิก</th>
-                            <th className="px-4 py-3 text-center">รหัสสั่งซื้อ (Order ID)</th>
-                            <th className="px-4 py-3 text-center">จำนวนคะแนน (PV)</th>
-                            <th className="px-4 py-3 text-center">วันที่บันทึกพักยอด</th>
-                            <th className="px-4 py-3 text-right">สถานะ</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {pendingCouponPv.length > 0 ? (
-                            pendingCouponPv.map(item => (
-                              <tr key={item.id} className="hover:bg-slate-50/50">
-                                <td className="px-4 py-3 font-mono text-[10px] text-slate-500">{item.id}</td>
-                                <td className="px-4 py-3 font-semibold text-slate-800">{item.buyerId}</td>
-                                <td className="px-4 py-3 text-center font-mono text-slate-600">{item.orderId}</td>
-                                <td className="px-4 py-3 text-center font-bold text-indigo-600 font-mono">{item.pvAmount.toFixed(2)} PV</td>
-                                <td className="px-4 py-3 text-center text-slate-400 text-[11px]">{new Date(item.createdAt).toLocaleString('th-TH')}</td>
-                                <td className="px-4 py-3 text-right">
-                                  <span className="bg-amber-100 text-amber-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-amber-200">
-                                    รอนำส่งคำนวณ (Pending)
-                                  </span>
-                                </td>
-                              </tr>
-                            ))
-                          ) : (
-                            <tr>
-                              <td colSpan={6} className="text-center py-8 text-slate-400">
-                                ไม่มีคะแนน PV คูปองสะสมค้างคำนวณในขณะนี้ ยอดสะสมเป็น 0.00 PV
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                      {(() => {
+                        const itemsPerPage = 20;
+                        const startIndex = (adminPendingCouponPvPage - 1) * itemsPerPage;
+                        const paginatedPending = pendingCouponPv.slice(startIndex, startIndex + itemsPerPage);
+
+                        return (
+                          <>
+                            <table className="min-w-full divide-y divide-slate-100 text-xs text-left text-slate-700">
+                              <thead className="bg-slate-50 font-bold text-slate-500 text-[10px] uppercase">
+                                <tr>
+                                  <th className="px-4 py-3">รหัสธุรกรรม</th>
+                                  <th className="px-4 py-3">รหัสผู้ซื้อ / สมาชิก</th>
+                                  <th className="px-4 py-3 text-center">รหัสสั่งซื้อ (Order ID)</th>
+                                  <th className="px-4 py-3 text-center">จำนวนคะแนน (PV)</th>
+                                  <th className="px-4 py-3 text-center">วันที่บันทึกพักยอด</th>
+                                  <th className="px-4 py-3 text-right">สถานะ</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {paginatedPending.length > 0 ? (
+                                  paginatedPending.map(item => (
+                                    <tr key={item.id} className="hover:bg-slate-50/50">
+                                      <td className="px-4 py-3 font-mono text-[10px] text-slate-500">{item.id}</td>
+                                      <td className="px-4 py-3 font-semibold text-slate-800">{item.buyerId}</td>
+                                      <td className="px-4 py-3 text-center font-mono text-slate-600">{item.orderId}</td>
+                                      <td className="px-4 py-3 text-center font-bold text-indigo-600 font-mono">{item.pvAmount.toFixed(2)} PV</td>
+                                      <td className="px-4 py-3 text-center text-slate-400 text-[11px]">{new Date(item.createdAt).toLocaleString('th-TH')}</td>
+                                      <td className="px-4 py-3 text-right">
+                                        <span className="bg-amber-100 text-amber-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-amber-200">
+                                          รอนำส่งคำนวณ (Pending)
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan={6} className="text-center py-8 text-slate-400">
+                                      ไม่มีคะแนน PV คูปองสะสมค้างคำนวณในขณะนี้ ยอดสะสมเป็น 0.00 PV
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                            {pendingCouponPv.length > itemsPerPage && (
+                              <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+                                <TablePagination currentPage={adminPendingCouponPvPage} totalItems={pendingCouponPv.length} itemsPerPage={itemsPerPage} onPageChange={setAdminPendingCouponPvPage} />
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -7764,107 +9701,187 @@ export default function App() {
                     <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                       📜 ประวัติการประมวลผลตัดจ่ายคะแนน PV จากคูปอง (Processed History)
                     </h4>
-                    <div className="overflow-x-auto border border-slate-100 rounded-2xl max-h-[300px] overflow-y-auto">
-                      <table className="min-w-full divide-y divide-slate-100 text-xs text-left text-slate-700">
-                        <thead className="bg-slate-50 font-bold text-slate-500 text-[10px] uppercase">
-                          <tr>
-                            <th className="px-4 py-3">รหัสธุรกรรม</th>
-                            <th className="px-4 py-3">ผู้ซื้อ / สมาชิก</th>
-                            <th className="px-4 py-3 text-center">รหัสบิลสั่งซื้อ (Order ID)</th>
-                            <th className="px-4 py-3 text-center">จำนวนคะแนน (PV)</th>
-                            <th className="px-4 py-3 text-center">วันที่บันทึกพักยอด</th>
-                            <th className="px-4 py-3 text-right">สถานะประมวลผล</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {couponPvHistory.length > 0 ? (
-                            couponPvHistory.map(item => (
-                              <tr key={item.id} className="hover:bg-slate-50/50 bg-slate-50/20">
-                                <td className="px-4 py-3 font-mono text-[10px] text-slate-400">{item.id}</td>
-                                <td className="px-4 py-3 text-slate-600">{item.buyerId}</td>
-                                <td className="px-4 py-3 text-center font-mono text-slate-500">{item.orderId}</td>
-                                <td className="px-4 py-3 text-center font-bold text-emerald-600 font-mono">{item.pvAmount.toFixed(2)} PV</td>
-                                <td className="px-4 py-3 text-center text-slate-400 text-[11px]">{new Date(item.createdAt).toLocaleString('th-TH')}</td>
-                                <td className="px-4 py-3 text-right">
-                                  <span className="bg-emerald-100 text-emerald-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-200">
-                                    คำนวณและตัดจ่ายแล้ว (Success)
-                                  </span>
-                                </td>
-                              </tr>
-                            ))
-                          ) : (
-                            <tr>
-                              <td colSpan={6} className="text-center py-8 text-slate-400">
-                                ยังไม่มีข้อมูลประวัติการตัดยอด PV จากคูปองในระบบ
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                    <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                      {(() => {
+                        const itemsPerPage = 20;
+                        const startIndex = (adminCouponPvHistoryPage - 1) * itemsPerPage;
+                        const paginatedHistory = couponPvHistory.slice(startIndex, startIndex + itemsPerPage);
+
+                        return (
+                          <>
+                            <table className="min-w-full divide-y divide-slate-100 text-xs text-left text-slate-700">
+                              <thead className="bg-slate-50 font-bold text-slate-500 text-[10px] uppercase">
+                                <tr>
+                                  <th className="px-4 py-3">รหัสธุรกรรม</th>
+                                  <th className="px-4 py-3">ผู้ซื้อ / สมาชิก</th>
+                                  <th className="px-4 py-3 text-center">รหัสบิลสั่งซื้อ (Order ID)</th>
+                                  <th className="px-4 py-3 text-center">จำนวนคะแนน (PV)</th>
+                                  <th className="px-4 py-3 text-center">วันที่บันทึกพักยอด</th>
+                                  <th className="px-4 py-3 text-right">สถานะประมวลผล</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {paginatedHistory.length > 0 ? (
+                                  paginatedHistory.map(item => (
+                                    <tr key={item.id} className="hover:bg-slate-50/50 bg-slate-50/20">
+                                      <td className="px-4 py-3 font-mono text-[10px] text-slate-400">{item.id}</td>
+                                      <td className="px-4 py-3 text-slate-600">{item.buyerId}</td>
+                                      <td className="px-4 py-3 text-center font-mono text-slate-500">{item.orderId}</td>
+                                      <td className="px-4 py-3 text-center font-bold text-emerald-600 font-mono">{item.pvAmount.toFixed(2)} PV</td>
+                                      <td className="px-4 py-3 text-center text-slate-400 text-[11px]">{new Date(item.createdAt).toLocaleString('th-TH')}</td>
+                                      <td className="px-4 py-3 text-right">
+                                        <span className="bg-emerald-100 text-emerald-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-200">
+                                          คำนวณและตัดจ่ายแล้ว (Success)
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan={6} className="text-center py-8 text-slate-400">
+                                      ยังไม่มีข้อมูลประวัติการตัดยอด PV จากคูปองในระบบ
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                            {couponPvHistory.length > itemsPerPage && (
+                              <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+                                <TablePagination currentPage={adminCouponPvHistoryPage} totalItems={couponPvHistory.length} itemsPerPage={itemsPerPage} onPageChange={setAdminCouponPvHistoryPage} />
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
               )}
 
               {adminSubTab === 'systemReset' && (
-                <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-6 max-w-2xl mx-auto animate-fadeIn">
-                  <div className="text-center space-y-2">
-                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-rose-100 text-rose-600 mb-2">
-                      <Settings size={24} />
+                <div className="space-y-6 max-w-2xl mx-auto animate-fadeIn">
+                  {/* Firestore Manual Sync Card */}
+                  <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
+                    <div className="text-center space-y-2">
+                      <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 mb-2 border border-indigo-100">
+                        <RefreshCw size={24} className={syncingFirestore ? "animate-spin" : ""} />
+                      </div>
+                      <h3 className="text-lg font-black text-slate-800">🔄 ดึงข้อมูลล่าสุดจาก Cloud Firestore (Real-time Sync)</h3>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        ในระบบโปรดักชันจริง (nateeplus.com) ข้อมูลอาจถูกเก็บแยกตามเซิร์ฟเวอร์ย่อย (Multi-instance Containers ของ Cloud Run) 
+                        เมื่อเกิดความล่าช้าหรือข้อมูลแสดงผลไม่ทันที ท่านสามารถคลิกปุ่มนี้เพื่อสั่งให้เซิร์ฟเวอร์ดึงข้อมูลล่าสุดจากฐานข้อมูลระบบ Cloud Firestore มาแสดงผลโดยสมบูรณ์ได้ทันทีค่ะ
+                      </p>
                     </div>
-                    <h3 className="text-lg font-black text-slate-800">⚙️ เคลียร์ฐานข้อมูลระบบเพื่อพร้อมใช้งานจริง (Go-Live Reset)</h3>
-                    <p className="text-xs text-slate-400">ล้างข้อมูลประวัติและยอดเงินจากการทำสอบระบบ เพื่อเตรียมการเปิดรับเงินและลงทะเบียนสมาชิกจริง</p>
-                  </div>
-
-                  <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 text-xs text-rose-700 space-y-2">
-                    <p className="font-extrabold flex items-center gap-1.5 text-rose-800">
-                      🚨 คำเตือนสำคัญด้านความปลอดภัยและกฎหมายภาษี:
-                    </p>
-                    <ul className="list-disc pl-4 space-y-1 text-rose-600 font-semibold">
-                      <li>การกระทำนี้จะล้างข้อมูลและยอดเงินสะสมในกระเป๋าเงินทั้งหมดของสมาชิกทุกรายให้กลายเป็น <strong>฿ 0.00</strong> บาททันที</li>
-                      <li>บัญชีสมาชิกที่ถูกสร้างขึ้นเพื่อทดสอบ (เช่น pizzaone และสมาชิกจำลองอื่น ๆ) จะถูกลบออกอย่างถาวร</li>
-                      <li>ประวัติรายการสั่งซื้อสินค้า, ประวัติการฝากเงิน/ถอนเงิน, และบันทึกบัญชีธุรกรรม (Ledger) ทั้งหมดจะถูกเคลียร์เป็นค่าว่าง</li>
-                      <li>ข้อมูลสายงานใน <strong>แผนไบนารี่ 20 ชั้น และ แผน B</strong> ทั้งหมดจะถูกจัดระเบียบล้างโครงสร้างเพื่อความถูกต้องสูงสุดทางภาษีสรรพากร</li>
-                      <li>บัญชีผู้ดูแลระบบหลักระดับสูงสุด (nateeplus, admin, manager) จะได้รับสิทธิ์คงอยู่ตามเดิมแต่มีเงินสำรองเริ่มต้นเป็น 0.00 บาท</li>
-                      <li>แพ็กเกจสินค้าเปิดสิทธิ์ร้านค้ามาตรฐาน (S, M, L, XL, XXL) และรายการผลิตภัณฑ์ของแอดมินจะถูก <strong>อนุรักษ์คงไว้</strong> เช่นเดิม เพื่อให้ระบบพร้อมสแตนด์บายขายสินค้าได้ทันที</li>
-                    </ul>
-                  </div>
-
-                  <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 space-y-4">
-                    <div className="space-y-1">
-                      <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                        พิมพ์ข้อความเพื่อยืนยันการทำรายการ:
-                      </label>
-                      <p className="text-[10px] text-slate-400">กรุณาพิมพ์คำว่า <strong className="text-rose-600 select-all font-mono font-bold">RESET</strong> เพื่อยืนยันว่าท่านเข้าใจและยินยอมรับความเสี่ยงการล้างข้อมูลนี้</p>
-                    </div>
-
-                    <input
-                      type="text"
-                      value={resetConfirmationInput}
-                      onChange={(e) => setResetConfirmationInput(e.target.value)}
-                      placeholder="พิมพ์ RESET ตรงนี้..."
-                      className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-center text-xs font-mono font-black uppercase text-rose-600 focus:outline-none focus:border-rose-500 placeholder-slate-300"
-                    />
 
                     <button
-                      onClick={handleSystemReset}
-                      disabled={resettingSystem || resetConfirmationInput.trim().toUpperCase() !== "RESET"}
-                      className={`w-full font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-md ${
-                        resetConfirmationInput.trim().toUpperCase() === "RESET" 
-                          ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-200' 
-                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                      }`}
+                      id="force_sync_firestore_btn"
+                      onClick={handleFirestoreSync}
+                      disabled={syncingFirestore}
+                      className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-200 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-md"
                     >
-                      {resettingSystem ? (
+                      {syncingFirestore ? (
                         <>
-                          <RefreshCw size={14} className="animate-spin" /> กำลังล้างระบบและเริ่มการทำงานใหม่...
+                          <RefreshCw size={14} className="animate-spin" /> กำลังซิงค์ข้อมูลกับฐานข้อมูล Cloud...
                         </>
                       ) : (
                         <>
-                          🗑️ ล้างประวัติธุรกรรมและเปิดใช้งานจริงทันที
+                          🔄 ซิงค์ฐานข้อมูลสดจาก Cloud Firestore
                         </>
                       )}
                     </button>
+                  </div>
+
+                  {/* Rebuild Binary Tree Card */}
+                  <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
+                    <div className="text-center space-y-2">
+                      <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-amber-50 text-amber-600 mb-2 border border-amber-100">
+                        <RefreshCw size={24} className={rebuildingTree ? "animate-spin" : ""} />
+                      </div>
+                      <h3 className="text-lg font-black text-slate-800">🔧 ซ่อมแซมและจัดเรียงโครงสร้างสายงานแผน A (Rebuild Binary Tree)</h3>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        หากท่านพบว่ามีสมาชิกสมัครหรืออัปเกรดตำแหน่งเป็น S หรือสูงกว่าแล้ว แต่ข้อมูลคลาดเคลื่อนไม่ปรากฏรายชื่ออยู่ใน <strong>ผังไบนารี่ (แผน A)</strong> 
+                        ท่านสามารถคลิกปุ่มนี้เพื่อสั่งให้ระบบคำนวณและประมวลผลจัดวางตำแหน่งสายงานของสมาชิก S ขึ้นไปทั้งหมดเข้าสู่ผังระบบใหม่อัตโนมัติอย่างถูกต้องสมบูรณ์ พร้อมเซฟบันทึกคลาวด์ทันทีค่ะ
+                      </p>
+                    </div>
+
+                    <button
+                      id="rebuild_binary_tree_btn"
+                      onClick={handleRebuildBinaryTree}
+                      disabled={rebuildingTree}
+                      className="w-full bg-amber-600 hover:bg-amber-500 disabled:bg-slate-200 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-md"
+                    >
+                      {rebuildingTree ? (
+                        <>
+                          <RefreshCw size={14} className="animate-spin" /> กำลังประมวลผลจัดเรียงโครงสร้างสายงานใหม่...
+                        </>
+                      ) : (
+                        <>
+                          🔧 ประมวลผลจัดเรียงและซ่อมแซมผังไบนารีแผน A
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Go-Live Reset Card */}
+                  <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-6">
+                    <div className="text-center space-y-2">
+                      <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-rose-100 text-rose-600 mb-2">
+                        <Settings size={24} />
+                      </div>
+                      <h3 className="text-lg font-black text-slate-800">⚙️ เคลียร์ฐานข้อมูลระบบเพื่อพร้อมใช้งานจริง (Go-Live Reset)</h3>
+                      <p className="text-xs text-slate-400">ล้างข้อมูลประวัติและยอดเงินจากการทดสอบระบบ เพื่อเตรียมการเปิดรับเงินและลงทะเบียนสมาชิกจริง</p>
+                    </div>
+
+                    <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 text-xs text-rose-700 space-y-2">
+                      <p className="font-extrabold flex items-center gap-1.5 text-rose-800">
+                        🚨 คำเตือนสำคัญด้านความปลอดภัยและกฎหมายภาษี:
+                      </p>
+                      <ul className="list-disc pl-4 space-y-1 text-rose-600 font-semibold">
+                        <li>การกระทำนี้จะล้างข้อมูลและยอดเงินสะสมในกระเป๋าเงินทั้งหมดของสมาชิกทุกรายให้กลายเป็น <strong>฿ 0.00</strong> บาททันที</li>
+                        <li>บัญชีสมาชิกที่ถูกสร้างขึ้นเพื่อทดสอบ (เช่น pizzaone และสมาชิกจำลองอื่น ๆ) จะถูกลบออกอย่างถาวร</li>
+                        <li>ประวัติรายการสั่งซื้อสินค้า, ประวัติการฝากเงิน/ถอนเงิน, และบันทึกบัญชีธุรกรรม (Ledger) ทั้งหมดจะถูกเคลียร์เป็นค่าว่าง</li>
+                        <li>ข้อมูลสายงานใน <strong>แผนไบนารี่ 20 ชั้น และ แผน B</strong> ทั้งหมดจะถูกจัดระเบียบล้างโครงสร้างเพื่อความถูกต้องสูงสุดทางภาษีสรรพากร</li>
+                        <li>บัญชีผู้ดูแลระบบหลักระดับสูงสุด (nateeplus, admin, manager) จะได้รับสิทธิ์คงอยู่ตามเดิมแต่มีเงินสำรองเริ่มต้นเป็น 0.00 บาท</li>
+                        <li>แพ็กเกจสินค้าเปิดสิทธิ์ร้านค้ามาตรฐาน (S, M, L, XL, XXL) และรายการผลิตภัณฑ์ของแอดมินจะถูก <strong>อนุรักษ์คงไว้</strong> เช่นเดิม เพื่อให้ระบบพร้อมสแตนด์บายขายสินค้าได้ทันที</li>
+                      </ul>
+                    </div>
+
+                    <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 space-y-4">
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                          พิมพ์ข้อความเพื่อยืนยันการทำรายการ:
+                        </label>
+                        <p className="text-[10px] text-slate-400">กรุณาพิมพ์คำว่า <strong className="text-rose-600 select-all font-mono font-bold">RESET</strong> เพื่อยืนยันว่าท่านเข้าใจและยินยอมรับความเสี่ยงการล้างข้อมูลนี้</p>
+                      </div>
+
+                      <input
+                        type="text"
+                        value={resetConfirmationInput}
+                        onChange={(e) => setResetConfirmationInput(e.target.value)}
+                        placeholder="พิมพ์ RESET ตรงนี้..."
+                        className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-center text-xs font-mono font-black uppercase text-rose-600 focus:outline-none focus:border-rose-500 placeholder-slate-300"
+                      />
+
+                      <button
+                        onClick={handleSystemReset}
+                        disabled={resettingSystem || resetConfirmationInput.trim().toUpperCase() !== "RESET"}
+                        className={`w-full font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-md ${
+                          resetConfirmationInput.trim().toUpperCase() === "RESET" 
+                            ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-200' 
+                            : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {resettingSystem ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin" /> กำลังล้างระบบและเริ่มการทำงานใหม่...
+                          </>
+                        ) : (
+                          <>
+                            🗑️ ล้างประวัติธุรกรรมและเปิดใช้งานจริงทันที
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -8048,6 +10065,20 @@ export default function App() {
                           />
                         </div>
                         <div>
+                          <label className="block text-indigo-600 font-bold mb-1 flex items-center justify-between">
+                            <span>รหัสผู้แนะนำ (Sponsor ID)</span>
+                            <span className="text-[10px] text-slate-400 font-normal">(แก้ไขได้เฉพาะสิทธิ์ Manager / Admin)</span>
+                          </label>
+                          <input 
+                            type="text" 
+                            disabled={currentUser?.role !== 'Admin' && currentUser?.role !== 'Manager'}
+                            value={editingMember.sponsorId || ""}
+                            onChange={(e) => setEditingMember({ ...editingMember, sponsorId: e.target.value.toUpperCase() })}
+                            className="w-full bg-slate-50 border border-indigo-200 focus:border-indigo-500 rounded-xl px-3 py-2 font-mono text-indigo-600 font-bold disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed"
+                            placeholder="ระบุรหัสผู้แนะนำ เช่น USR1001"
+                          />
+                        </div>
+                        <div>
                           <label className="block text-slate-700 font-bold mb-1">เลขบัตรประจำตัวประชาชน</label>
                           <input 
                             type="text" 
@@ -8152,25 +10183,35 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-100 pt-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-slate-100 pt-4">
                         <div>
-                          <label className="block text-slate-700 font-bold mb-1 text-emerald-600">ปรับยอดเงินสด M-Cash (บาท)</label>
+                          <label className="block text-slate-700 font-bold mb-1 text-emerald-600">ปรับยอดเงินสด E-Cash (บาท)</label>
                           <input 
                             type="number" 
                             step="any"
-                            value={editingMember.balanceMCash !== undefined ? editingMember.balanceMCash : 0}
-                            onChange={(e) => setEditingMember({ ...editingMember, balanceMCash: parseFloat(e.target.value) || 0 })}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono text-emerald-600 font-bold"
+                            value={editingMember.balanceECash !== undefined ? editingMember.balanceECash : 0}
+                            onChange={(e) => setEditingMember({ ...editingMember, balanceECash: parseFloat(e.target.value) || 0 })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono text-emerald-600 font-bold text-xs"
                           />
                         </div>
                         <div>
-                          <label className="block text-slate-700 font-bold mb-1 text-indigo-600">ปรับยอดคูปอง M-Coupon (บาท)</label>
+                          <label className="block text-slate-700 font-bold mb-1 text-purple-600">ปรับยอดรายได้ E-Money (บาท)</label>
                           <input 
                             type="number" 
                             step="any"
-                            value={editingMember.balanceMCoupon !== undefined ? editingMember.balanceMCoupon : 0}
-                            onChange={(e) => setEditingMember({ ...editingMember, balanceMCoupon: parseFloat(e.target.value) || 0 })}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono text-indigo-600 font-bold"
+                            value={editingMember.balanceEMoney !== undefined ? editingMember.balanceEMoney : 0}
+                            onChange={(e) => setEditingMember({ ...editingMember, balanceEMoney: parseFloat(e.target.value) || 0 })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono text-purple-600 font-bold text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-slate-700 font-bold mb-1 text-indigo-600">ปรับยอดคูปอง E-Coupon (บาท)</label>
+                          <input 
+                            type="number" 
+                            step="any"
+                            value={editingMember.balanceECoupon !== undefined ? editingMember.balanceECoupon : 0}
+                            onChange={(e) => setEditingMember({ ...editingMember, balanceECoupon: parseFloat(e.target.value) || 0 })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono text-indigo-600 font-bold text-xs"
                           />
                         </div>
                       </div>
@@ -8311,7 +10352,7 @@ export default function App() {
                 <p className="text-[11px] text-slate-400">
                   {confirmProduct.category === 'Package' 
                     ? 'โปรดตรวจสอบข้อมูลการชำระเงินเพื่อยืนยันสิทธิ์ในระบบ นที พลัส' 
-                    : 'ระบบจะใช้ M-Coupon ชำระเงินก่อนเป็นอันดับแรก และใช้ M-Cash ชำระส่วนต่างที่เหลือ'}
+                    : 'ระบบจะใช้ E-Coupon ชำระเงินก่อนเป็นอันดับแรก และใช้ E-Cash ชำระส่วนต่างที่เหลือ'}
                 </p>
               </div>
 
@@ -8344,21 +10385,21 @@ export default function App() {
                 {confirmProduct.category !== 'Package' ? (
                   <>
                     <div className="flex justify-between border-b border-slate-100 pb-2 bg-amber-50/50 p-1.5 rounded">
-                      <span className="text-amber-700 font-medium">ชำระด้วย M-Coupon (บาท):</span>
+                      <span className="text-amber-700 font-medium">ชำระด้วย E-Coupon (บาท):</span>
                       <strong className="text-amber-800 text-right font-extrabold">
-                        - ฿ {Math.min(profile?.balanceMCoupon || 0, confirmProduct.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        - ฿ {Math.min(profile?.balanceECoupon || 0, confirmProduct.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </strong>
                     </div>
                     <div className="flex justify-between border-b border-slate-100 pb-2 bg-indigo-50/30 p-1.5 rounded">
-                      <span className="text-indigo-700 font-medium">ชำระด้วย M-Cash ส่วนต่าง (บาท):</span>
+                      <span className="text-indigo-700 font-medium">ชำระด้วย E-Cash ส่วนต่าง (บาท):</span>
                       <strong className="text-indigo-800 text-right font-extrabold">
-                        - ฿ {Math.max(0, confirmProduct.price - (profile?.balanceMCoupon || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        - ฿ {Math.max(0, confirmProduct.price - (profile?.balanceECoupon || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </strong>
                     </div>
                   </>
                 ) : (
                   <div className="flex justify-between border-b border-slate-100 pb-2 bg-emerald-50/50 p-1.5 rounded">
-                    <span className="text-emerald-700 font-medium">ราคาหักจ่ายจาก M-Cash (บาท):</span>
+                    <span className="text-emerald-700 font-medium">ราคาหักจ่ายจาก E-Cash (บาท):</span>
                     <strong className="text-emerald-800 text-right font-extrabold">
                       ฿ {confirmProduct.price?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </strong>
@@ -8377,36 +10418,36 @@ export default function App() {
               {confirmProduct.category === 'Package' ? (
                 <div className="bg-indigo-50/40 border border-indigo-100 rounded-2xl p-3.5 flex justify-between items-center text-xs">
                   <div>
-                    <span className="text-slate-400 text-[10px] block font-medium">M-Cash คงเหลือปัจจุบัน (บาท)</span>
-                    <strong className="text-slate-700">฿ {profile?.balanceMCash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                    <span className="text-slate-400 text-[10px] block font-medium">E-Cash คงเหลือปัจจุบัน (บาท)</span>
+                    <strong className="text-slate-700">฿ {profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                   </div>
                   <div className="text-right">
                     <span className="text-slate-400 text-[10px] block font-medium">คงเหลือหลังหักรายการ (บาท)</span>
-                    <strong className="text-indigo-600">฿ {(profile?.balanceMCash - confirmProduct.price)?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                    <strong className="text-indigo-600">฿ {(profile?.balanceECash - confirmProduct.price)?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                   </div>
                 </div>
               ) : (
                 <div className="bg-slate-100 border border-slate-200/50 rounded-2xl p-3.5 space-y-2 text-xs">
                   <div className="flex justify-between">
                     <div>
-                      <span className="text-slate-400 text-[10px] block">M-Coupon ก่อนซื้อ (บาท)</span>
-                      <strong className="text-amber-600">฿ {profile?.balanceMCoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                      <span className="text-slate-400 text-[10px] block">E-Coupon ก่อนซื้อ (บาท)</span>
+                      <strong className="text-amber-600">฿ {profile?.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                     </div>
                     <div className="text-right">
-                      <span className="text-slate-400 text-[10px] block">M-Coupon หลังหักรายการ (บาท)</span>
-                      <strong className="text-amber-800">฿ {Math.max(0, (profile?.balanceMCoupon || 0) - confirmProduct.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                      <span className="text-slate-400 text-[10px] block">E-Coupon หลังหักรายการ (บาท)</span>
+                      <strong className="text-amber-800">฿ {Math.max(0, (profile?.balanceECoupon || 0) - confirmProduct.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                     </div>
                   </div>
                   <div className="border-t border-dashed border-slate-200 my-1"></div>
                   <div className="flex justify-between">
                     <div>
-                      <span className="text-slate-400 text-[10px] block">M-Cash ก่อนซื้อ (บาท)</span>
-                      <strong className="text-slate-700">฿ {profile?.balanceMCash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                      <span className="text-slate-400 text-[10px] block">E-Cash ก่อนซื้อ (บาท)</span>
+                      <strong className="text-slate-700">฿ {profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                     </div>
                     <div className="text-right">
-                      <span className="text-slate-400 text-[10px] block">M-Cash หลังหักรายการ (บาท)</span>
+                      <span className="text-slate-400 text-[10px] block">E-Cash หลังหักรายการ (บาท)</span>
                       <strong className="text-indigo-600">
-                        ฿ {Math.max(0, profile?.balanceMCash - Math.max(0, confirmProduct.price - (profile?.balanceMCoupon || 0))).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        ฿ {Math.max(0, profile?.balanceECash - Math.max(0, confirmProduct.price - (profile?.balanceECoupon || 0))).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </strong>
                     </div>
                   </div>
@@ -8474,7 +10515,7 @@ export default function App() {
                   </div>
                   <div className="text-right mt-2">
                     <span className="text-slate-400 block">ช่องทางชำระเงิน / Payment:</span>
-                    <strong className="text-emerald-600 font-bold">M-Coupon ช้อปปิ้ง</strong>
+                    <strong className="text-emerald-600 font-bold">E-Coupon ช้อปปิ้ง</strong>
                   </div>
                   <div className="col-span-2 mt-2">
                     <span className="text-slate-400 block">ที่อยู่จัดส่ง / Shipping Address:</span>
@@ -8606,7 +10647,7 @@ export default function App() {
                 ✅ ยืนยันการอนุมัติเติมเงิน
               </h3>
               <p className="text-xs text-slate-600 leading-relaxed mb-5">
-                คุณต้องการอนุมัติรายการเติมเงินนี้ใช่หรือไม่? ระบบจะทำการโอนสิทธิ์และเพิ่มยอด <strong className="text-emerald-600 font-bold">M-Cash</strong> ให้กับสมาชิกรายนี้โดยอัตโนมัติทันที
+                คุณต้องการอนุมัติรายการเติมเงินนี้ใช่หรือไม่? ระบบจะทำการโอนสิทธิ์และเพิ่มยอด <strong className="text-emerald-600 font-bold">E-Cash</strong> ให้กับสมาชิกรายนี้โดยอัตโนมัติทันที
               </p>
               <div className="flex gap-2 justify-end">
                 <button
@@ -8713,6 +10754,88 @@ export default function App() {
                   className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-5 py-2 rounded-xl transition cursor-pointer shadow-md"
                 >
                   ยืนยันปฏิเสธเอกสาร
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* FINANCIAL TRANSACTION CONFIRMATION POPUP */}
+        {txnConfirm && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full shadow-2xl relative text-slate-800 text-left">
+              <h3 className="text-sm font-bold text-slate-950 flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+                ⚖️ ยืนยันตรวจสอบข้อมูลธุรกรรมโอนย้ายเงิน
+              </h3>
+              
+              <div className="space-y-3.5 mb-6 text-xs text-slate-600 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-semibold">ประเภทธุรกรรม:</span>
+                  <span className="font-bold text-slate-900">
+                    {txnConfirm.type === 'transfer_ecash_member' && 'โอนเงิน E-Cash ให้สมาชิกท่านอื่น'}
+                    {txnConfirm.type === 'transfer_ecash_emoney' && 'โอนย้าย E-Cash เข้ากระเป๋า E-Money ตัวเอง'}
+                    {txnConfirm.type === 'transfer_emoney_ecash' && 'โอนย้าย E-Money เข้ากระเป๋า E-Cash ตัวเอง'}
+                    {txnConfirm.type === 'transfer_emoney_ecoupon' && 'โอนย้าย E-Money เข้ากระเป๋า E-Coupon ตัวเอง'}
+                    {txnConfirm.type === 'withdraw_emoney' && 'ถอนยอดคอมมิชชันรายได้ E-Money เข้าบัญชีธนาคาร'}
+                    {txnConfirm.type === 'buy_coupon' && 'แลกยอด E-Cash ซื้อคูปองช้อปปิ้ง E-Coupon'}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-semibold">ผู้รับเงิน / บัญชีปลายทาง:</span>
+                  <span className="font-bold text-slate-800 break-words max-w-[200px] text-right">
+                    {txnConfirm.recipientName || '-'}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-semibold">ยอดเงินตั้งต้น:</span>
+                  <span className="font-mono font-bold text-slate-900">฿ {txnConfirm.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+                </div>
+
+                {txnConfirm.feeAmount !== undefined && txnConfirm.feeAmount > 0 && (
+                  <div className="flex justify-between text-rose-500">
+                    <span className="font-semibold">หักค่าธรรมเนียม / ภาษีบริการ:</span>
+                    <span className="font-mono font-bold">- ฿ {txnConfirm.feeAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+                  </div>
+                )}
+
+                <div className="border-t border-slate-200 my-2 pt-2 flex justify-between text-sm">
+                  <span className="text-slate-900 font-bold">ยอดเงินปลายทางสุทธิ:</span>
+                  <span className="font-mono font-bold text-emerald-600">
+                    ฿ {txnConfirm.netAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setTxnConfirm(null)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-4 py-2 rounded-xl transition cursor-pointer"
+                >
+                  ย้อนกลับแก้ไข
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (txnConfirm.type === 'transfer_ecash_member') {
+                      executeTransferECashMember();
+                    } else if (txnConfirm.type === 'transfer_ecash_emoney') {
+                      executeTransferECashToEMoney();
+                    } else if (txnConfirm.type === 'transfer_emoney_ecash') {
+                      executeTransferEMoneyToECash();
+                    } else if (txnConfirm.type === 'transfer_emoney_ecoupon') {
+                      executeTransferEMoneyToECoupon();
+                    } else if (txnConfirm.type === 'withdraw_emoney') {
+                      executeWithdrawEMoney();
+                    } else if (txnConfirm.type === 'buy_coupon') {
+                      executeBuyCoupon();
+                    }
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-5 py-2 rounded-xl transition cursor-pointer shadow-md"
+                >
+                  ยืนยันและทำรายการสุทธิ (Confirm)
                 </button>
               </div>
             </div>

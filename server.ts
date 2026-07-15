@@ -4,34 +4,91 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, getDoc, writeBatch } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache, doc, getDoc, writeBatch } from 'firebase/firestore';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Define path resolution supporting both ES Modules (dev) and CommonJS (compiled)
+const getAppDir = () => {
+  try {
+    if (typeof __dirname !== 'undefined' && __dirname) {
+      return __dirname;
+    }
+    if (typeof import.meta !== 'undefined' && import.meta && import.meta.url) {
+      return path.dirname(fileURLToPath(import.meta.url));
+    }
+    return process.cwd();
+  } catch (e) {
+    return process.cwd();
+  }
+};
+const appDir = getAppDir();
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-const DB_FILE = path.join(__dirname, 'db.json');
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const DB_FILE = path.join(appDir, 'db.json');
+const DB_FILE_SANDBOX = path.join(appDir, 'db_sandbox.json');
+const SANDBOX_STATE_FILE = path.join(appDir, 'sandbox_state.json');
+const UPLOADS_DIR = path.join(appDir, 'uploads');
 
-// Initialize Firebase Client SDK with credentials from firebase-applet-config.json
-let dbFirestore: any = null;
+let isSandboxActive = false;
+
+// Load sandbox state at boot
 try {
-  const firebaseConfigPath = path.join(__dirname, 'firebase-applet-config.json');
+  if (fs.existsSync(SANDBOX_STATE_FILE)) {
+    const sandboxState = JSON.parse(fs.readFileSync(SANDBOX_STATE_FILE, 'utf8'));
+    isSandboxActive = !!sandboxState.active;
+    console.log("⚙️ Sandbox state loaded from file. Active:", isSandboxActive);
+  }
+} catch (e) {
+  console.error("Failed to parse sandbox_state.json", e);
+}
+
+// Initialize Firebase Client SDK for server-side persistence with in-memory cache
+let dbFirestore: any = null;
+let firebaseConfig: any = null;
+
+try {
+  const firebaseConfigPath = path.join(appDir, 'firebase-applet-config.json');
   if (fs.existsSync(firebaseConfigPath)) {
-    const config = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
-    const firebaseApp = initializeApp({
-      apiKey: config.apiKey,
-      authDomain: config.authDomain,
-      projectId: config.projectId,
-      appId: config.appId
-    });
-    dbFirestore = getFirestore(firebaseApp, config.firestoreDatabaseId);
-    console.log("🔥 Firebase Client SDK initialized successfully with project ID:", config.projectId, "Database ID:", config.firestoreDatabaseId || "(default)");
+    firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
+  }
+} catch (e) {
+  console.error("⚠️ Failed to load firebase-applet-config.json", e);
+}
+
+// Fallback/Override with Environment Variables for App Hosting
+if (!firebaseConfig) {
+  firebaseConfig = {};
+}
+
+const finalConfig = {
+  apiKey: process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey || "",
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain || "",
+  projectId: process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId || "",
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket || "",
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfig.messagingSenderId || "",
+  appId: process.env.FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID || firebaseConfig.appId || "",
+  measurementId: process.env.FIREBASE_MEASUREMENT_ID || process.env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfig.measurementId || "",
+  firestoreDatabaseId: process.env.FIRESTORE_DATABASE_ID || process.env.VITE_FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId || "",
+  oAuthClientId: process.env.FIREBASE_OAUTH_CLIENT_ID || process.env.VITE_FIREBASE_OAUTH_CLIENT_ID || firebaseConfig.oAuthClientId || ""
+};
+
+try {
+  if (finalConfig.projectId && finalConfig.apiKey) {
+    const firebaseApp = initializeApp(finalConfig);
+    if (finalConfig.firestoreDatabaseId) {
+      dbFirestore = initializeFirestore(firebaseApp, {
+        localCache: memoryLocalCache()
+      }, finalConfig.firestoreDatabaseId);
+    } else {
+      dbFirestore = initializeFirestore(firebaseApp, {
+        localCache: memoryLocalCache()
+      });
+    }
+    console.log("🔥 Firebase Client SDK initialized with memoryLocalCache for project ID:", finalConfig.projectId);
   } else {
-    console.log("⚠️ firebase-applet-config.json not found, running without Firebase persistence.");
+    console.log("⚠️ No Firebase configuration found (neither JSON file nor Environment Variables). Running without Firebase persistence.");
   }
 } catch (error) {
   console.error("❌ Failed to initialize Firebase Client SDK:", error);
@@ -50,9 +107,12 @@ async function loadDbFromFirestore() {
     const loadedData: any = {};
     let hasData = false;
     
-    console.log("📥 Loading app sections from Firestore...");
+    const collectionName = isSandboxActive ? 'app_sections_sandbox' : 'app_sections';
+    const currentDbFile = isSandboxActive ? DB_FILE_SANDBOX : DB_FILE;
+    
+    console.log(`📥 Loading app sections from Firestore (${collectionName})...`);
     for (const key of keys) {
-      const docRef = doc(dbFirestore, 'app_sections', key);
+      const docRef = doc(dbFirestore, collectionName, key);
       const snap = await getDoc(docRef);
       if (snap.exists()) {
         loadedData[key] = snap.data().data;
@@ -60,17 +120,88 @@ async function loadDbFromFirestore() {
       }
     }
     
+    if (!hasData && isSandboxActive) {
+      console.log("🛠️ Sandbox database empty in Firestore. Copying production database to initialize sandbox...");
+      let prodData: any = null;
+      if (fs.existsSync(DB_FILE)) {
+        try {
+          prodData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        } catch (e) {}
+      }
+      if (prodData) {
+        cacheDb = JSON.parse(JSON.stringify(prodData));
+        fs.writeFileSync(DB_FILE_SANDBOX, JSON.stringify(cacheDb, null, 2), 'utf8');
+        await saveDbToFirestore(cacheDb);
+        console.log("✅ Sandbox database successfully initialized with production snapshot.");
+        return;
+      }
+    }
+
     if (hasData) {
-      console.log("✅ Successfully loaded all database sections from Firestore");
+      console.log(`✅ Successfully loaded all database sections from Firestore (${collectionName})`);
+      
+      // Load local db.json for safe merging of any unsaved members or transactions
+      let localDb: any = null;
+      try {
+        if (fs.existsSync(currentDbFile)) {
+          localDb = JSON.parse(fs.readFileSync(currentDbFile, 'utf8'));
+        }
+      } catch (e) {
+        console.error("⚠️ Failed to parse local db.json for backup/merge", e);
+      }
+
+      // Merge members (union by userId)
+      const mergedMembers = [...(loadedData.members || [])];
+      let hasMergedChanges = false;
+      if (localDb && Array.isArray(localDb.members)) {
+        for (const localMember of localDb.members) {
+          if (!localMember || !localMember.userId) continue;
+          const exists = mergedMembers.some((m: any) => m.userId === localMember.userId);
+          if (!exists) {
+            console.log(`📦 Merging local member into Firestore: ${localMember.userId} / ${localMember.username}`);
+            mergedMembers.push(localMember);
+            hasMergedChanges = true;
+          }
+        }
+      }
+
+      // Merge transactions (union by id)
+      const mergedTransactions = [...(loadedData.transactions || [])];
+      if (localDb && Array.isArray(localDb.transactions)) {
+        for (const localTx of localDb.transactions) {
+          if (!localTx || !localTx.id) continue;
+          const exists = mergedTransactions.some((t: any) => t.id === localTx.id);
+          if (!exists) {
+            console.log(`📦 Merging local transaction into Firestore: ${localTx.id}`);
+            mergedTransactions.push(localTx);
+            hasMergedChanges = true;
+          }
+        }
+      }
+
+      // Merge orders (union by id)
+      const mergedOrders = [...(loadedData.orders || [])];
+      if (localDb && Array.isArray(localDb.orders)) {
+        for (const localOrder of localDb.orders) {
+          if (!localOrder || !localOrder.id) continue;
+          const exists = mergedOrders.some((o: any) => o.id === localOrder.id);
+          if (!exists) {
+            console.log(`📦 Merging local order into Firestore: ${localOrder.id}`);
+            mergedOrders.push(localOrder);
+            hasMergedChanges = true;
+          }
+        }
+      }
+
       cacheDb = {
-        members: loadedData.members || [],
+        members: mergedMembers,
         products: loadedData.products || [],
         sellerProducts: loadedData.sellerProducts || [],
-        orders: loadedData.orders || [],
-        transactions: loadedData.transactions || [],
-        planB_Tree: loadedData.planB_Tree || {},
-        csrFund: loadedData.csrFund || { balance: 0, history: [] },
-        systemStats: loadedData.systemStats || { totalPlanBReserves: 0, totalTaxReserves: 0, totalCompanyProfits: 0 },
+        orders: mergedOrders,
+        transactions: mergedTransactions,
+        planB_Tree: loadedData.planB_Tree || (localDb && localDb.planB_Tree) || {},
+        csrFund: loadedData.csrFund || (localDb && localDb.csrFund) || { balance: 0, history: [] },
+        systemStats: loadedData.systemStats || (localDb && localDb.systemStats) || { totalPlanBReserves: 0, totalTaxReserves: 0, totalCompanyProfits: 0 },
         otps: loadedData.otps || {},
         packageProductChoices: loadedData.packageProductChoices || undefined,
         bankSettings: loadedData.bankSettings || undefined
@@ -175,37 +306,132 @@ async function loadDbFromFirestore() {
         }
 
         // 4. Save back to Firestore and local backup immediately if changes occurred
-        if (hasChanges) {
+        if (hasChanges || hasMergedChanges) {
           console.log("💾 Saving cleaned and self-healed database to Firestore...");
           saveDbToFirestore(cacheDb).catch(err => console.error("❌ Failed to save self-healed DB to Firestore:", err));
         }
       }
 
       // Write to local file as backup and for synchronous fallback
-      fs.writeFileSync(DB_FILE, JSON.stringify(cacheDb, null, 2), 'utf8');
+      fs.writeFileSync(currentDbFile, JSON.stringify(cacheDb, null, 2), 'utf8');
     } else {
-      console.log("⚠️ No sections found in Firestore. Seeding from local file or defaults on next write.");
+      console.log(`⚠️ No sections found in Firestore for ${collectionName}. Seeding from local file or defaults...`);
+      let localDb: any = null;
+      try {
+        if (fs.existsSync(currentDbFile)) {
+          localDb = JSON.parse(fs.readFileSync(currentDbFile, 'utf8'));
+        } else if (isSandboxActive && fs.existsSync(DB_FILE)) {
+          // Fallback to copy from prod for sandbox
+          localDb = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        }
+      } catch (e) {
+        console.error(`⚠️ Failed to parse local file ${currentDbFile}`, e);
+      }
+      if (localDb) {
+        cacheDb = localDb;
+        console.log(`💾 Seeding empty Firestore with ${currentDbFile} data...`);
+        saveDbToFirestore(cacheDb).catch(err => console.error("❌ Failed to save seeded DB to Firestore:", err));
+      } else {
+        console.log(`⚠️ No local file ${currentDbFile} found to seed Firestore.`);
+      }
     }
   } catch (err) {
     console.error("❌ Error loading database from Firestore:", err);
   }
 }
 
+let isSavingToFirestore = false;
+let pendingSaveData: any = null;
+let saveTimeout: NodeJS.Timeout | null = null;
+let retryCount = 0;
+
 async function saveDbToFirestore(data: any) {
   if (!dbFirestore) return;
+  
+  // Store the latest data to be saved
+  pendingSaveData = data;
+  
+  // If we are already saving, the pendingSaveData has been updated, so we can return.
+  // It will be processed when the current save finishes.
+  if (isSavingToFirestore) {
+    return;
+  }
+  
+  // Debounce the actual save to group rapid successive writes (e.g. within MLM transactions)
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+  }
+  
+  saveTimeout = setTimeout(async () => {
+    saveTimeout = null;
+    await processFirestoreSave();
+  }, 3000); // 3 seconds debounce to group multiple MLM actions together
+}
+
+async function processFirestoreSave() {
+  if (!dbFirestore || !pendingSaveData || isSavingToFirestore) return;
+  
+  isSavingToFirestore = true;
+  const dataToSave = pendingSaveData;
+  pendingSaveData = null; // Clear pending so we can detect new ones
+  
   try {
     const keys = ['members', 'products', 'sellerProducts', 'orders', 'transactions', 'planB_Tree', 'csrFund', 'systemStats', 'otps', 'packageProductChoices', 'bankSettings'];
     const batch = writeBatch(dbFirestore);
+    const collectionName = isSandboxActive ? 'app_sections_sandbox' : 'app_sections';
     for (const key of keys) {
-      if (data[key] !== undefined) {
-        const docRef = doc(dbFirestore, 'app_sections', key);
-        batch.set(docRef, { data: data[key] });
+      if (dataToSave[key] !== undefined) {
+        const docRef = doc(dbFirestore, collectionName, key);
+        batch.set(docRef, { data: dataToSave[key] });
       }
     }
     await batch.commit();
-    console.log("📤 Successfully saved changed database sections to Firestore batch");
-  } catch (err) {
+    console.log(`📤 Successfully saved database to Firestore batch (${collectionName})`);
+    retryCount = 0; // Reset retry count on success
+  } catch (err: any) {
     console.error("❌ Error saving database to Firestore:", err);
+    
+    const isQuotaExhausted = err.message && (
+      err.message.includes("RESOURCE_EXHAUSTED") || 
+      err.message.includes("quota") || 
+      err.message.includes("Quota limit exceeded")
+    );
+
+    if (isQuotaExhausted) {
+      console.warn("⚠️ [Firestore Sync] Firestore daily write quota has been exceeded. The application will continue running seamlessly in Local Mode using db.json! Retries are suspended for 15 minutes to preserve resources.");
+      if (!pendingSaveData) {
+        pendingSaveData = dataToSave;
+      }
+      setTimeout(() => {
+        isSavingToFirestore = false;
+        processFirestoreSave();
+      }, 15 * 60 * 1000); // 15 minutes backoff for quota exhaustion
+      return;
+    }
+
+    // If it failed, restore the data to pending so we don't lose changes, and schedule a retry
+    if (!pendingSaveData) {
+      pendingSaveData = dataToSave;
+    }
+    
+    retryCount++;
+    const backoffDelay = Math.min(retryCount * 5000, 30000); // 5s, 10s, 15s... max 30s
+    console.warn(`🔄 [Firestore Sync] Scheduling retry in ${backoffDelay / 1000} seconds (Attempt ${retryCount})...`);
+    
+    setTimeout(() => {
+      isSavingToFirestore = false;
+      processFirestoreSave();
+    }, backoffDelay);
+    return; // Exit early so we don't reset isSavingToFirestore prematurely
+  }
+  
+  isSavingToFirestore = false;
+  // If another update came in while we were saving, process it now after a slight delay
+  if (pendingSaveData) {
+    console.log("🔄 [Firestore Sync] Running queued save to Firestore in 1 second...");
+    setTimeout(() => {
+      processFirestoreSave();
+    }, 1000);
   }
 }
 
@@ -252,9 +478,10 @@ function initDb() {
         kycBookUrl: "",
         kycBeneficiary: "",
         kycRelation: "",
-        balanceMCash: 15000.00,
-        balanceMCoupon: 5000.00,
-        balanceAllShare: 0.00,
+        balanceECash: 15000.00,
+        balanceEMoney: 0.00,
+        balanceECoupon: 5000.00,
+        balanceEShare: 0.00,
         eligibleRights: 999999999,
         firstLogin: false,
         passwordReset: false,
@@ -284,9 +511,10 @@ function initDb() {
         statusKyc: "Active",
         kycImgUrl: "",
         kycBookUrl: "",
-        balanceMCash: 0.00,
-        balanceMCoupon: 0.00,
-        balanceAllShare: 0.00,
+        balanceECash: 0.00,
+        balanceEMoney: 0.00,
+        balanceECoupon: 0.00,
+        balanceEShare: 0.00,
         eligibleRights: 50000.00,
         firstLogin: false,
         passwordReset: false,
@@ -313,9 +541,10 @@ function initDb() {
         statusKyc: "Active",
         kycImgUrl: "",
         kycBookUrl: "",
-        balanceMCash: 0.00,
-        balanceMCoupon: 0.00,
-        balanceAllShare: 0.00,
+        balanceECash: 0.00,
+        balanceEMoney: 0.00,
+        balanceECoupon: 0.00,
+        balanceEShare: 0.00,
         eligibleRights: 50000.00,
         firstLogin: false,
         passwordReset: false,
@@ -444,7 +673,7 @@ function initDb() {
         userId: "A260600001",
         type: "Deposit",
         amount: 15000.00,
-        currency: "M-Cash",
+        currency: "E-Cash",
         details: "เติมเงินเข้ากระเป๋าเริ่มต้นระบบ",
         status: "Approved",
         createdAt: new Date().toISOString()
@@ -454,7 +683,7 @@ function initDb() {
         userId: "A260600001",
         type: "Deposit",
         amount: 5000.00,
-        currency: "M-Coupon",
+        currency: "E-Coupon",
         details: "โบนัสคูปองเริ่มต้นระบบ",
         status: "Approved",
         createdAt: new Date().toISOString()
@@ -506,13 +735,22 @@ initDb();
 
 function readDb() {
   let db: any;
+  const currentDbFile = isSandboxActive ? DB_FILE_SANDBOX : DB_FILE;
   if (cacheDb) {
     db = cacheDb;
   } else {
     try {
-      db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+      db = JSON.parse(fs.readFileSync(currentDbFile, 'utf8'));
     } catch (e) {
-      console.error("Error reading database file, returning default structure");
+      console.error(`Error reading database file ${currentDbFile}, returning default structure`);
+      if (isSandboxActive && fs.existsSync(DB_FILE)) {
+        try {
+          const prodData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+          fs.writeFileSync(DB_FILE_SANDBOX, JSON.stringify(prodData, null, 2), 'utf8');
+          cacheDb = prodData;
+          return prodData;
+        } catch (err) {}
+      }
       const defaultData = {
         members: [],
         products: [],
@@ -536,6 +774,7 @@ function readDb() {
     }
   }
 
+  let migratedEMoney = false;
   if (db && db.members) {
     const seen = new Set();
     db.members = db.members.filter((m: any) => {
@@ -548,10 +787,50 @@ function readDb() {
       if (!m.email) {
         m.email = `${m.username}@gmail.com`;
       }
+      // Migrate old database fields from M-* to E-* dynamically for backward-compatibility
+      // Correctly migrate old balanceMCash to separate E-Money and E-Cash wallets:
+      // E-Money gets the whole Baht part (accumulated income), and E-Cash gets the fractional part (satang).
+      if (m.balanceMCash !== undefined) {
+        const originalMCash = Number(m.balanceMCash);
+        const wholePart = Math.floor(originalMCash);
+        const fractionalPart = parseFloat((originalMCash % 1).toFixed(6));
+        
+        // Correct duplicate values from earlier migrations
+        if (m.balanceECash === originalMCash || m.balanceECash === undefined) {
+          m.balanceECash = fractionalPart;
+          migratedEMoney = true;
+        }
+        if (m.balanceEMoney === originalMCash || m.balanceEMoney === undefined || m.balanceEMoney === 0) {
+          m.balanceEMoney = wholePart;
+          migratedEMoney = true;
+        }
+      }
+
+      if (m.balanceMCoupon !== undefined && m.balanceECoupon === undefined) {
+        m.balanceECoupon = m.balanceMCoupon;
+      }
+      if (m.balanceAllShare !== undefined && m.balanceEShare === undefined) {
+        m.balanceEShare = m.balanceAllShare;
+      }
+    });
+    if (migratedEMoney) {
+      console.log("💰 [Self-Healing] Successfully migrated old earnings balance into E-Money for active members.");
+    }
+  }
+
+  if (db && db.transactions) {
+    db.transactions.forEach((t: any) => {
+      if (t.currency === "M-Cash") t.currency = "E-Cash";
+      if (t.currency === "M-Coupon") t.currency = "E-Coupon";
+      if (t.currency === "AllShare" || t.currency === "M-Share" || t.currency === "All-Share") t.currency = "E-Share";
+      if (t.type === "AllShare") t.type = "EShare";
     });
   }
 
   let hasPopulatedMissing = false;
+  if (typeof migratedEMoney !== 'undefined' && migratedEMoney) {
+    hasPopulatedMissing = true;
+  }
   if (db && !db.packageProductChoices) {
     db.packageProductChoices = [
       { id: "pc_m1", packageId: "pack_m", name: "M-Set A: ชุดของใช้สบู่สมุนไพรนทีพลัส 3 ชิ้น" },
@@ -580,7 +859,7 @@ function readDb() {
 
   if (hasPopulatedMissing) {
     cacheDb = db;
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
+    fs.writeFileSync(currentDbFile, JSON.stringify(db, null, 2), 'utf8');
     saveDbToFirestore(db).catch(err => {
       console.error("❌ Async save of self-healed choices to Firestore failed:", err);
     });
@@ -601,7 +880,8 @@ function writeDb(data) {
     });
   }
   cacheDb = data;
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
+  const currentDbFile = isSandboxActive ? DB_FILE_SANDBOX : DB_FILE;
+  fs.writeFileSync(currentDbFile, JSON.stringify(data, null, 2), 'utf8');
   saveDbToFirestore(data).catch(err => {
     console.error("❌ Async save to Firestore failed:", err);
   });
@@ -655,7 +935,7 @@ function findFirstActiveBinaryAncestor(db, sponsorId) {
     const member = db.members.find(m => m.userId === currentId || m.username === currentId);
     if (!member) break;
     
-    if (member.parentId && member.parentId !== "") {
+    if (member.userId === "A260600001" || (member.parentId && member.parentId !== "")) {
       return member.userId;
     }
     
@@ -666,44 +946,39 @@ function findFirstActiveBinaryAncestor(db, sponsorId) {
 }
 
 // Auto-place member in Binary Tree (Find deepest available slot in Sponsor's downline)
+function getEmptySlot(db, startNodeId = "A260600001") {
+  let currentLevel = [startNodeId];
+  
+  while (currentLevel.length > 0) {
+    // First check all left slots for this level
+    for (let nodeId of currentLevel) {
+      let left = db.members.find(m => m.parentId === nodeId && m.side === "Left");
+      if (!left) return { parentId: nodeId, side: "Left" };
+    }
+    // Then check all right slots for this level
+    for (let nodeId of currentLevel) {
+      let right = db.members.find(m => m.parentId === nodeId && m.side === "Right");
+      if (!right) return { parentId: nodeId, side: "Right" };
+    }
+    
+    // Move to next level: all left children first, then all right children
+    let nextLevel = [];
+    for (let nodeId of currentLevel) {
+      let left = db.members.find(m => m.parentId === nodeId && m.side === "Left");
+      if (left) nextLevel.push(left.userId);
+    }
+    for (let nodeId of currentLevel) {
+      let right = db.members.find(m => m.parentId === nodeId && m.side === "Right");
+      if (right) nextLevel.push(right.userId);
+    }
+    currentLevel = nextLevel;
+  }
+  return { parentId: "A260600001", side: "Left" }; // Default
+}
+
 function findAndPlaceBinaryMember(db, sponsorId) {
-  const activeAncestorId = findFirstActiveBinaryAncestor(db, sponsorId);
-  
-  let queue = [{ id: activeAncestorId, depth: 0 }];
-  let visited = new Set();
-  let allNodes = [];
-  
-  while (queue.length > 0) {
-    let curr = queue.shift();
-    if (!curr || visited.has(curr.id)) continue;
-    visited.add(curr.id);
-    
-    allNodes.push(curr);
-    
-    const leftChild = db.members.find(m => m.parentId === curr.id && m.side === "Left");
-    const rightChild = db.members.find(m => m.parentId === curr.id && m.side === "Right");
-    
-    if (leftChild) queue.push({ id: leftChild.userId, depth: curr.depth + 1 });
-    if (rightChild) queue.push({ id: rightChild.userId, depth: curr.depth + 1 });
-  }
-  
-  // Sort nodes by depth descending (deepest first) to find the bottom-most level
-  allNodes.sort((a, b) => b.depth - a.depth);
-  
-  // Find the first node in sorted order (deepest) that has an empty slot (either left or right child is missing)
-  for (const node of allNodes) {
-    const leftChild = db.members.find(m => m.parentId === node.id && m.side === "Left");
-    const rightChild = db.members.find(m => m.parentId === node.id && m.side === "Right");
-    
-    if (!leftChild) {
-      return { parentId: node.id, side: "Left" };
-    }
-    if (!rightChild) {
-      return { parentId: node.id, side: "Right" };
-    }
-  }
-  
-  return { parentId: rootSponsor, side: "Left" };
+  const activeSponsorId = findFirstActiveBinaryAncestor(db, sponsorId);
+  return getEmptySlot(db, activeSponsorId);
 }
 
 // Low-up commission calculation for Binary Tree Plan A (20 layers)
@@ -749,12 +1024,12 @@ function calculateBinaryCommissions(db, buyerId, pvAmount, orderId) {
         }
         
         // Split actual payout immediately according to 20% flat deduction rule:
-        // - 10% to M-Coupon
-        // - 3% to All-Share
+        // - 10% to E-Coupon
+        // - 3% to E-Share
         // - 5% to Plan B (used as point accumulation)
         // - 1% to CSR Fund (โครงการปันสุข)
         // - 1% to Company Profit
-        // - Remainder (80%) is paid to M-Cash
+        // - Remainder (80%) is paid to E-Cash
         
         const couponAllocation = actualPayout * 0.10;
         const allShareAllocation = actualPayout * 0.03;
@@ -762,11 +1037,14 @@ function calculateBinaryCommissions(db, buyerId, pvAmount, orderId) {
         const csrAllocation = actualPayout * 0.01;
         const companyAllocation = actualPayout * 0.01;
         
-        const netMCash = actualPayout * 0.80;
+        const netECash = actualPayout * 0.80; // This goes to E-Money
+        
+        const netCoupon = couponAllocation * 0.90;
+        const couponToAllShare = couponAllocation * 0.10;
         
         // Update balances
-        parent.balanceMCash = parseFloat((parent.balanceMCash + netMCash).toFixed(4));
-        parent.balanceMCoupon = parseFloat((parent.balanceMCoupon + couponAllocation).toFixed(4));
+        parent.balanceEMoney = parseFloat(((parent.balanceEMoney || 0) + netECash).toFixed(4));
+        parent.balanceECoupon = parseFloat((parent.balanceECoupon + netCoupon).toFixed(4));
         
         // Accumulate Plan B point
         parent.planBPoints = parseFloat(((parent.planBPoints || 0) + planBAllocation).toFixed(4));
@@ -787,8 +1065,8 @@ function calculateBinaryCommissions(db, buyerId, pvAmount, orderId) {
           createdAt: new Date().toISOString()
         });
         
-        // Process All-Share Allocation
-        processAllShareDistribution(db, allShareAllocation, buyerId);
+        // Process E-Share Allocation
+        processEShareDistribution(db, allShareAllocation + couponToAllShare, buyerId);
         
         // Check Plan B threshold (100 Points) to spawn child nodes in Plan B1 tree
         checkAndSpawnPlanBNodes(db, parent.userId);
@@ -799,8 +1077,8 @@ function calculateBinaryCommissions(db, buyerId, pvAmount, orderId) {
           userId: parent.userId,
           type: "Bonus",
           amount: parseFloat(actualPayout.toFixed(4)),
-          currency: "M-Cash",
-          details: `คอมมิชชันผังไบนารี ชั้นที่ ${level} (จ่ายจ่ายจริงลำดับที่ ${paidLayersCount + 1}) จากการสั่งซื้อของรหัส ${buyerId}`,
+          currency: "E-Money",
+          details: `คอมมิชชันผังไบนารี ชั้นที่ ${level} (จ่ายจริงลำดับที่ ${paidLayersCount + 1}) จากการสั่งซื้อของรหัส ${buyerId}`,
           status: "Approved",
           createdAt: new Date().toISOString()
         });
@@ -815,37 +1093,36 @@ function calculateBinaryCommissions(db, buyerId, pvAmount, orderId) {
   }
 }
 
-// All-Share immediate distribution to all active eligible members
-function processAllShareDistribution(db, amount, triggerMemberId, excludeTriggerId = false) {
+// E-Share immediate distribution to all active eligible members (All-Share)
+function processEShareDistribution(db, amount, triggerMemberId, excludeTriggerId = false) {
   if (amount <= 0) return;
   
   // Eligible members are active members in XXL position, or who have eligibleRights > 0 (everyone except those with no rights)
   const eligibleMembers = db.members.filter(m => 
     (m.eligibleRights || 0) > 0 && 
-    m.userId !== "ADMIN01" && 
-    m.userId !== "MGR01" &&
     (!excludeTriggerId || m.userId !== triggerMemberId)
   );
   if (eligibleMembers.length === 0) return;
   
   const sharePerMember = amount / eligibleMembers.length;
-  const mCashPart = sharePerMember * 0.50;
+  const eMoneyPart = sharePerMember * 0.50; // Pays into E-Money
   const planBPart = sharePerMember * 0.50; // Accumulates as direct Plan B point value
   
   if (!db.transactions) db.transactions = [];
 
   eligibleMembers.forEach(member => {
-    member.balanceMCash = parseFloat((member.balanceMCash + mCashPart).toFixed(6));
+    member.balanceEMoney = parseFloat(((member.balanceEMoney || 0) + eMoneyPart).toFixed(6));
     member.planBPoints = parseFloat(((member.planBPoints || 0) + planBPart).toFixed(6));
-    member.balanceAllShare = parseFloat(((member.balanceAllShare || 0) + sharePerMember).toFixed(6));
+    member.balanceEShare = parseFloat(((member.balanceEShare || 0) + sharePerMember).toFixed(6));
     
     // Log transaction
     db.transactions.push({
       id: "ALL_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
       userId: member.userId,
-      type: "AllShare",
-      amount: mCashPart,
-      description: `โบนัส All-Share จากรหัส ${triggerMemberId} (+${mCashPart.toFixed(4)} M-Cash / +${planBPart.toFixed(4)} คะแนน Plan B)`,
+      type: "EShare",
+      amount: eMoneyPart,
+      currency: "E-Money",
+      description: `โบนัส All-Share จากรหัส ${triggerMemberId} (+${eMoneyPart.toFixed(4)} E-Money / +${planBPart.toFixed(4)} คะแนน Plan B)`,
       createdAt: new Date().toISOString()
     });
 
@@ -854,8 +1131,8 @@ function processAllShareDistribution(db, amount, triggerMemberId, excludeTrigger
   });
 }
 
-// Unified helper to distribute any M-Cash income with flat 20% deduction and split allocation
-function distributeMCashWithDeduction(db, recipient, grossAmount, detailsText, triggerUserId) {
+// Unified helper to distribute any E-Cash/E-Money income with flat 20% deduction and split allocation
+function distributeECashWithDeduction(db, recipient, grossAmount, detailsText, triggerUserId) {
   if (grossAmount <= 0) return 0;
   
   const isManagerOrAdmin = recipient.role === 'Manager' || recipient.role === 'Admin';
@@ -868,22 +1145,25 @@ function distributeMCashWithDeduction(db, recipient, grossAmount, detailsText, t
     }
     
     // Split actual payout immediately according to 20% flat deduction rule:
-    // - 10% to M-Coupon
-    // - 3% to All-Share
+    // - 10% to E-Coupon
+    // - 3% to E-Share (All-Share)
     // - 5% to Plan B (used as point accumulation)
     // - 1% to CSR Fund (โครงการปันสุข)
     // - 1% to Company Profit
-    // - Remainder (80%) is paid to M-Cash
-    const netMCash = actualPayout * 0.80;
+    // - Remainder (80%) is paid to E-Money
+    const netEMoney = actualPayout * 0.80;
     const couponAllocation = actualPayout * 0.10;
     const allShareAllocation = actualPayout * 0.03;
     const planBAllocation = actualPayout * 0.05;
     const csrAllocation = actualPayout * 0.01;
     const companyAllocation = actualPayout * 0.01;
     
+    const netCoupon = couponAllocation * 0.90;
+    const couponToAllShare = couponAllocation * 0.10;
+    
     // Update balances
-    recipient.balanceMCash = parseFloat((recipient.balanceMCash + netMCash).toFixed(4));
-    recipient.balanceMCoupon = parseFloat(((recipient.balanceMCoupon || 0) + couponAllocation).toFixed(4));
+    recipient.balanceEMoney = parseFloat(((recipient.balanceEMoney || 0) + netEMoney).toFixed(4));
+    recipient.balanceECoupon = parseFloat(((recipient.balanceECoupon || 0) + netCoupon).toFixed(4));
     recipient.planBPoints = parseFloat(((recipient.planBPoints || 0) + planBAllocation).toFixed(4));
     
     // Update global/admin stats
@@ -902,8 +1182,8 @@ function distributeMCashWithDeduction(db, recipient, grossAmount, detailsText, t
       createdAt: new Date().toISOString()
     });
     
-    // Process All-Share Allocation
-    processAllShareDistribution(db, allShareAllocation, triggerUserId);
+    // Process E-Share Allocation (including withheld E-Coupon 10% that goes to All-Share)
+    processEShareDistribution(db, allShareAllocation + couponToAllShare, triggerUserId);
     
     // Check Plan B threshold (100 Points) to spawn child nodes in Plan B1 tree
     checkAndSpawnPlanBNodes(db, recipient.userId);
@@ -913,9 +1193,9 @@ function distributeMCashWithDeduction(db, recipient, grossAmount, detailsText, t
       id: "BON_DED_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
       userId: recipient.userId,
       type: "Bonus",
-      amount: parseFloat(netMCash.toFixed(4)),
-      currency: "M-Cash",
-      details: `${detailsText} (ได้รับสุทธิหลังหัก 20% ตามเงื่อนไข)`,
+      amount: parseFloat(netEMoney.toFixed(4)),
+      currency: "E-Money",
+      details: `${detailsText} (ได้รับสุทธิเข้ากระเป๋า E-Money หลังหัก 20% ตามเงื่อนไข)`,
       status: "Approved",
       createdAt: new Date().toISOString()
     });
@@ -1011,16 +1291,16 @@ function getPlanBDetailsForTier(tierNum: number) {
     }
   }
 
-  const mCashGross = partValue;
-  const mCashNet = mCashGross * 0.80;
+  const eCashGross = partValue;
+  const eCashNet = eCashGross * 0.80;
   
   return {
     nodeValue,
     totalPayout,
     partsCount,
     partValue,
-    mCashGross,
-    mCashNet,
+    eCashGross,
+    eCashNet,
     coupon: partValue,
     spawnReserve: tierNum === 15 ? 0 : partValue,
     allShare: partValue,
@@ -1118,35 +1398,39 @@ function processPlanBGenericUpwardPayments(db, tierNum, nodeId) {
       
       const parentMember = db.members.find(m => m.userId === parentNode.memberUserId);
       if (parentMember) {
-        // Calculate 20% flat deduction details on the gross M-Cash amount
-        const mCashGross = details.mCashGross;
-        const netMCash = details.mCashNet; // 80% of mCashGross
+        // Calculate 20% flat deduction details on the gross E-Cash amount
+        const eCashGross = details.eCashGross;
+        const netEMoney = details.eCashNet; // 80% of eCashGross (goes to E-Money)
         
-        const mCashCoupon = mCashGross * 0.10;
-        const mCashAllShare = mCashGross * 0.03;
-        const mCashPlanB = mCashGross * 0.05;
-        const mCashCSR = mCashGross * 0.01;
-        const mCashCompany = mCashGross * 0.01;
+        const eCashCoupon = eCashGross * 0.10;
+        const eCashEShare = eCashGross * 0.03;
+        const eCashPlanB = eCashGross * 0.05;
+        const eCashCSR = eCashGross * 0.01;
+        const eCashCompany = eCashGross * 0.01;
+
+        const grossCoupon = details.coupon + eCashCoupon;
+        const netCoupon = grossCoupon * 0.90;
+        const couponToAllShare = grossCoupon * 0.10;
 
         // Apply payouts:
-        // Net M-Cash goes to member's M-Cash wallet
-        parentMember.balanceMCash = parseFloat((parentMember.balanceMCash + netMCash).toFixed(4));
+        // Net E-Money goes to member's E-Money wallet
+        parentMember.balanceEMoney = parseFloat(((parentMember.balanceEMoney || 0) + netEMoney).toFixed(4));
         
-        // Coupon portion (direct coupon + 10% from M-Cash deduction) goes to member's Coupon wallet
-        parentMember.balanceMCoupon = parseFloat((parentMember.balanceMCoupon + details.coupon + mCashCoupon).toFixed(4));
+        // Coupon portion (direct coupon + 10% from E-Cash deduction - 10% withhold to All-Share) goes to member's Coupon wallet
+        parentMember.balanceECoupon = parseFloat((parentMember.balanceECoupon + netCoupon).toFixed(4));
         
         // 5% Plan B point deduction accumulates back to member's Plan B points
-        parentMember.planBPoints = parseFloat(((parentMember.planBPoints || 0) + mCashPlanB).toFixed(4));
+        parentMember.planBPoints = parseFloat(((parentMember.planBPoints || 0) + eCashPlanB).toFixed(4));
         
         // Update global/admin stats:
-        // Company portion (direct company profit + 1% from M-Cash deduction)
-        db.systemStats.totalCompanyProfits = parseFloat((db.systemStats.totalCompanyProfits + details.company + mCashCompany).toFixed(4));
+        // Company portion (direct company profit + 1% from E-Cash deduction)
+        db.systemStats.totalCompanyProfits = parseFloat((db.systemStats.totalCompanyProfits + details.company + eCashCompany).toFixed(4));
         
         // Plan B point deduction reserves
-        db.systemStats.totalPlanBReserves = parseFloat((db.systemStats.totalPlanBReserves + mCashPlanB).toFixed(4));
+        db.systemStats.totalPlanBReserves = parseFloat((db.systemStats.totalPlanBReserves + eCashPlanB).toFixed(4));
         
-        // CSR allocation (direct CSR + 1% from M-Cash deduction)
-        const totalCsrAllocation = details.csr + mCashCSR;
+        // CSR allocation (direct CSR + 1% from E-Cash deduction)
+        const totalCsrAllocation = details.csr + eCashCSR;
         db.csrFund.balance = parseFloat((db.csrFund.balance + totalCsrAllocation).toFixed(4));
         db.csrFund.history.push({
           id: "CSR_TXN_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
@@ -1154,13 +1438,13 @@ function processPlanBGenericUpwardPayments(db, tierNum, nodeId) {
           userId: parentMember.userId,
           amount: parseFloat(totalCsrAllocation.toFixed(4)),
           type: "Donation",
-          details: `หักกองทุนปันสุขจากโบนัสสำเร็จลูป Plan B${tierNum} (ปันสุขรายชั้น ฿${details.csr.toFixed(2)} + หัก 1% M-Cash ฿${mCashCSR.toFixed(2)})`,
+          details: `หักกองทุนปันสุขจากโบนัสสำเร็จลูป Plan B${tierNum} (ปันสุขรายชั้น ฿${details.csr.toFixed(2)} + หัก 1% E-Cash ฿${eCashCSR.toFixed(2)})`,
           createdAt: new Date().toISOString()
         });
         
-        // All-Share distribution (direct All-Share + 3% from M-Cash deduction)
-        const totalAllShareAllocation = details.allShare + mCashAllShare;
-        processAllShareDistribution(db, totalAllShareAllocation, parentMember.userId);
+        // E-Share distribution (direct E-Share + 3% from E-Cash deduction + 10% coupon withhold)
+        const totalEShareAllocation = details.allShare + eCashEShare + couponToAllShare;
+        processEShareDistribution(db, totalEShareAllocation, parentMember.userId);
         
         // Check Plan B threshold trigger for the recipient
         checkAndSpawnPlanBNodes(db, parentMember.userId);
@@ -1175,9 +1459,9 @@ function processPlanBGenericUpwardPayments(db, tierNum, nodeId) {
           id: `PLANB${tierNum}_` + Math.random().toString(36).substr(2, 9).toUpperCase(),
           userId: parentMember.userId,
           type: "Bonus",
-          amount: parseFloat(netMCash.toFixed(4)),
-          currency: "M-Cash",
-          details: `โบนัสพิเศษระบบ Plan B${tierNum} สำเร็จลูป (เต็ม 5 ชั้น จ่ายจริงสุทธิหลังหัก 20%)`,
+          amount: parseFloat(netEMoney.toFixed(4)),
+          currency: "E-Money",
+          details: `โบนัสพิเศษระบบ Plan B${tierNum} สำเร็จลูป (เต็ม 5 ชั้น จ่ายสุทธิเข้ากระเป๋า E-Money หลังหัก 20%)`,
           status: "Approved",
           createdAt: new Date().toISOString()
         });
@@ -1285,9 +1569,9 @@ app.post('/api/auth/register', (req, res) => {
     kycBookUrl: "",
     kycBeneficiary: kycBeneficiary || "",
     kycRelation: kycRelation || "",
-    balanceMCash: 0.00,
-    balanceMCoupon: 0.00,
-    balanceAllShare: 0.00,
+    balanceECash: 0.00,
+    balanceECoupon: 0.00,
+    balanceEShare: 0.00,
     eligibleRights: 0.00, // No rights until package purchased
     planBPoints: 0,
     firstLogin: true,
@@ -1531,10 +1815,20 @@ app.get('/api/member/profile/:userId', (req, res) => {
   if (!member) {
     return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
   }
+
+  const transactions = db.transactions || [];
+  const totalEarnings = transactions
+    .filter((t: any) => t.userId === member.userId && t.status === "Approved" && (t.currency === "E-Cash" || t.currency === "E-Money") && (t.type === "Bonus" || t.type === "EShare"))
+    .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+    
+  const totalCouponsEarned = transactions
+    .filter((t: any) => t.userId === member.userId && t.status === "Approved" && t.currency === "E-Coupon" && (t.amount || 0) > 0)
+    .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
   
   // Return safe profile summary data
   res.json({
     success: true,
+    isSandboxActive: isSandboxActive,
     profile: {
       userId: member.userId,
       username: member.username,
@@ -1548,9 +1842,12 @@ app.get('/api/member/profile/:userId', (req, res) => {
       sponsorId: member.sponsorId,
       rank: member.rank,
       statusKyc: member.statusKyc,
-      balanceMCash: member.balanceMCash,
-      balanceMCoupon: member.balanceMCoupon,
-      balanceAllShare: member.balanceAllShare,
+      balanceECash: member.balanceECash,
+      balanceEMoney: member.balanceEMoney || 0.00,
+      balanceECoupon: member.balanceECoupon,
+      balanceEShare: member.balanceEShare,
+      totalEarnings: parseFloat(totalEarnings.toFixed(4)),
+      totalCouponsEarned: parseFloat(totalCouponsEarned.toFixed(4)),
       eligibleRights: member.eligibleRights,
       planBPoints: member.planBPoints || 0,
       kycBeneficiary: member.kycBeneficiary || "",
@@ -1622,7 +1919,7 @@ app.post('/api/member/kyc', (req, res) => {
   res.json({ success: true, message: "ส่งเอกสารยืนยันตัวตน (KYC) สำเร็จแล้ว อยู่ระหว่างตรวจสอบจากแอดมิน" });
 });
 
-// BUY COUPOP (EXCHANGE M-CASH TO M-COUPON)
+// BUY COUPON (EXCHANGE E-CASH TO E-COUPON)
 app.post('/api/member/buy-coupon', (req, res) => {
   const { userId, amount, pin } = req.body;
   const db = readDb();
@@ -1639,20 +1936,20 @@ app.post('/api/member/buy-coupon', (req, res) => {
   }
   
   const amt = parseFloat(amount);
-  if (member.balanceMCash < amt) {
-    return res.status(400).json({ success: false, message: "ยอดเงินคงเหลือในกระเป๋า M-Cash ไม่เพียงพอ" });
+  if (member.balanceECash < amt) {
+    return res.status(400).json({ success: false, message: "ยอดเงินคงเหลือในกระเป๋า E-Cash ไม่เพียงพอ" });
   }
   
-  member.balanceMCash = parseFloat((member.balanceMCash - amt).toFixed(4));
-  member.balanceMCoupon = parseFloat((member.balanceMCoupon + amt).toFixed(4));
+  member.balanceECash = parseFloat((member.balanceECash - amt).toFixed(4));
+  member.balanceECoupon = parseFloat((member.balanceECoupon + amt).toFixed(4));
   
   db.transactions.push({
     id: "COUP_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
     userId: member.userId,
     type: "Exchange",
     amount: amt,
-    currency: "M-Coupon",
-    details: "โอนย้าย M-Cash ซื้อคูปองช้อปปิ้ง",
+    currency: "E-Coupon",
+    details: "โอนย้าย E-Cash ซื้อคูปองช้อปปิ้ง",
     status: "Approved",
     createdAt: new Date().toISOString()
   });
@@ -1661,8 +1958,8 @@ app.post('/api/member/buy-coupon', (req, res) => {
   res.json({
     success: true,
     message: "ซื้อคูปองช้อปปิ้งสำเร็จเรียบร้อย!",
-    newMCash: member.balanceMCash,
-    newMCoupon: member.balanceMCoupon
+    newECash: member.balanceECash,
+    newECoupon: member.balanceECoupon
   });
 });
 
@@ -1701,8 +1998,8 @@ app.post('/api/member/topup', (req, res) => {
     transferAmount: parseFloat(transferAmount),
     transferDate: transferDate,
     slipImgUrl: slipImgUrl,
-    currency: "M-Cash",
-    details: `แจ้งเติมเงิน M-Cash ยอดแจ้งโอน ฿${parseFloat(transferAmount).toLocaleString()} (จากยอดขอคำนวณ ฿${parseFloat(amount).toLocaleString()})`,
+    currency: "E-Cash",
+    details: `แจ้งเติมเงิน E-Cash ยอดแจ้งโอน ฿${parseFloat(transferAmount).toLocaleString()} (จากยอดขอคำนวณ ฿${parseFloat(amount).toLocaleString()})`,
     status: "Pending",
     createdAt: new Date().toISOString()
   });
@@ -1711,8 +2008,8 @@ app.post('/api/member/topup', (req, res) => {
   res.json({ success: true, message: "ส่งคำขอเติมเงินและหลักฐานสลิปเรียบร้อยแล้วค่ะ รอแอดมินอนุมัติ", txnId });
 });
 
-// TRANSFER M-CASH TO OTHER MEMBER
-app.post('/api/member/transfer-m-cash', (req, res) => {
+// TRANSFER E-CASH TO OTHER MEMBER
+app.post('/api/member/transfer-e-cash', (req, res) => {
   const { senderId, receiverPhoneOrUser, amount, pin } = req.body;
   const db = readDb();
   
@@ -1737,19 +2034,19 @@ app.post('/api/member/transfer-m-cash', (req, res) => {
   }
   
   const amt = parseFloat(amount);
-  if (sender.balanceMCash < amt) {
-    return res.status(400).json({ success: false, message: "ยอดเงิน M-Cash ของคุณไม่เพียงพอ" });
+  if (sender.balanceECash < amt) {
+    return res.status(400).json({ success: false, message: "ยอดเงิน E-Cash ของคุณไม่เพียงพอ" });
   }
   
-  sender.balanceMCash = parseFloat((sender.balanceMCash - amt).toFixed(4));
-  receiver.balanceMCash = parseFloat((receiver.balanceMCash + amt).toFixed(4));
+  sender.balanceECash = parseFloat((sender.balanceECash - amt).toFixed(4));
+  receiver.balanceECash = parseFloat((receiver.balanceECash + amt).toFixed(4));
   
   db.transactions.push({
     id: "XFER_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
     userId: sender.userId,
     type: "Withdraw",
     amount: amt,
-    currency: "M-Cash",
+    currency: "E-Cash",
     details: `โอนเงินออกไปยังรหัส ${receiver.userId} (${receiver.name})`,
     status: "Approved",
     createdAt: new Date().toISOString()
@@ -1760,7 +2057,7 @@ app.post('/api/member/transfer-m-cash', (req, res) => {
     userId: receiver.userId,
     type: "Deposit",
     amount: amt,
-    currency: "M-Cash",
+    currency: "E-Cash",
     details: `รับโอนเงินเข้าจากรหัส ${sender.userId} (${sender.name})`,
     status: "Approved",
     createdAt: new Date().toISOString()
@@ -1770,11 +2067,211 @@ app.post('/api/member/transfer-m-cash', (req, res) => {
   res.json({
     success: true,
     message: `โอนเงินสำเร็จไปยัง ${receiver.name} ${receiver.surname} เรียบร้อยแล้วค่ะ!`,
-    newMCash: sender.balanceMCash
+    newECash: sender.balanceECash
   });
 });
 
-// WITHDRAW M-CASH TO BANK
+// VERIFY RECIPIENT
+app.post('/api/member/verify-recipient', (req, res) => {
+  const { receiverPhoneOrUser, senderId } = req.body;
+  const db = readDb();
+  
+  const receiver = db.members.find(m => m.phone === receiverPhoneOrUser || m.username.toLowerCase() === receiverPhoneOrUser.toLowerCase() || m.userId === receiverPhoneOrUser);
+  if (!receiver) {
+    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกผู้รับปลายทาง กรุณาตรวจสอบเบอร์โทรหรือไอดีอีกครั้งค่ะ" });
+  }
+  
+  if (senderId && receiver.userId === senderId) {
+    return res.status(400).json({ success: false, message: "ไม่สามารถทำรายการโดยใช้บัญชีตนเองเป็นผู้รับได้ค่ะ" });
+  }
+  
+  res.json({
+    success: true,
+    recipient: {
+      userId: receiver.userId,
+      name: `${receiver.name} ${receiver.surname}`,
+      phone: receiver.phone,
+      username: receiver.username
+    }
+  });
+});
+
+// TRANSFER E-CASH TO E-MONEY (10% FEE: 5% ALL-SHARE, 5% COMPANY)
+app.post('/api/member/transfer-ecash-to-emoney', (req, res) => {
+  const { senderId, amount, pin } = req.body;
+  const db = readDb();
+  
+  const member = db.members.find(m => m.userId === senderId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
+  
+  if (member.statusKyc !== "Active") {
+    return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
+  }
+  
+  if (member.pin !== pin) {
+    return res.status(400).json({ success: false, message: "รหัส PIN ธุรกรรม 6 หลักไม่ถูกต้อง" });
+  }
+  
+  const amt = parseFloat(amount);
+  if (member.balanceECash < amt) {
+    return res.status(400).json({ success: false, message: "ยอดเงิน E-Cash ของคุณไม่เพียงพอ" });
+  }
+  
+  const fee = amt * 0.10;
+  const allSharePart = fee * 0.50; // 5% of amt
+  const companyPart = fee * 0.50;  // 5% of amt
+  const netAmount = amt - fee;      // 90% of amt
+  
+  member.balanceECash = parseFloat((member.balanceECash - amt).toFixed(4));
+  member.balanceEMoney = parseFloat(((member.balanceEMoney || 0) + netAmount).toFixed(4));
+  
+  // Deduct/distribute fee
+  db.systemStats.totalCompanyProfits = parseFloat((db.systemStats.totalCompanyProfits + companyPart).toFixed(4));
+  processEShareDistribution(db, allSharePart, member.userId);
+  
+  // Log transaction
+  db.transactions.push({
+    id: "XEC_EM_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+    userId: member.userId,
+    type: "Withdraw",
+    amount: amt,
+    currency: "E-Cash",
+    details: `โอนจาก E-Cash ไปยัง E-Money (ยอดโอน ฿${amt.toFixed(2)} • หักค่าบริการ 10% ฿${fee.toFixed(2)})`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+  
+  db.transactions.push({
+    id: "DEC_EM_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+    userId: member.userId,
+    type: "Deposit",
+    amount: netAmount,
+    currency: "E-Money",
+    details: `รับโอนจาก E-Cash (ยอดโอนสุทธิหลังหักค่าธรรมเนียม 10%)`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+  
+  writeDb(db);
+  res.json({
+    success: true,
+    message: `โอนเงินจาก E-Cash ไปยัง E-Money สำเร็จแล้วค่ะ! (ยอดรับสุทธิ ฿${netAmount.toFixed(2)})`,
+    newECash: member.balanceECash,
+    newEMoney: member.balanceEMoney
+  });
+});
+
+// TRANSFER E-MONEY TO E-CASH (1:1, NO FEE)
+app.post('/api/member/transfer-emoney-to-ecash', (req, res) => {
+  const { senderId, amount, pin } = req.body;
+  const db = readDb();
+  
+  const member = db.members.find(m => m.userId === senderId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
+  
+  if (member.statusKyc !== "Active") {
+    return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
+  }
+  
+  if (member.pin !== pin) {
+    return res.status(400).json({ success: false, message: "รหัส PIN ธุรกรรม 6 หลักไม่ถูกต้อง" });
+  }
+  
+  const amt = parseFloat(amount);
+  if ((member.balanceEMoney || 0) < amt) {
+    return res.status(400).json({ success: false, message: "ยอดเงิน E-Money ของคุณไม่เพียงพอ" });
+  }
+  
+  member.balanceEMoney = parseFloat(((member.balanceEMoney || 0) - amt).toFixed(4));
+  member.balanceECash = parseFloat((member.balanceECash + amt).toFixed(4));
+  
+  db.transactions.push({
+    id: "XEM_EC_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+    userId: member.userId,
+    type: "Withdraw",
+    amount: amt,
+    currency: "E-Money",
+    details: `โอนจาก E-Money ไปยัง E-Cash`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+  
+  db.transactions.push({
+    id: "DEM_EC_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+    userId: member.userId,
+    type: "Deposit",
+    amount: amt,
+    currency: "E-Cash",
+    details: `รับโอนจาก E-Money สัดส่วน 1:1`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+  
+  writeDb(db);
+  res.json({
+    success: true,
+    message: "โอนเงินจาก E-Money ไปยัง E-Cash สำเร็จเรียบร้อยแล้วค่ะ!",
+    newECash: member.balanceECash,
+    newEMoney: member.balanceEMoney
+  });
+});
+
+// TRANSFER E-MONEY TO E-COUPON (1:1, NO FEE)
+app.post('/api/member/transfer-emoney-to-ecoupon', (req, res) => {
+  const { senderId, amount, pin } = req.body;
+  const db = readDb();
+  
+  const member = db.members.find(m => m.userId === senderId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
+  
+  if (member.statusKyc !== "Active") {
+    return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
+  }
+  
+  if (member.pin !== pin) {
+    return res.status(400).json({ success: false, message: "รหัส PIN ธุรกรรม 6 หลักไม่ถูกต้อง" });
+  }
+  
+  const amt = parseFloat(amount);
+  if ((member.balanceEMoney || 0) < amt) {
+    return res.status(400).json({ success: false, message: "ยอดเงิน E-Money ของคุณไม่เพียงพอ" });
+  }
+  
+  member.balanceEMoney = parseFloat(((member.balanceEMoney || 0) - amt).toFixed(4));
+  member.balanceECoupon = parseFloat(((member.balanceECoupon || 0) + amt).toFixed(4));
+  
+  db.transactions.push({
+    id: "XEM_CP_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+    userId: member.userId,
+    type: "Withdraw",
+    amount: amt,
+    currency: "E-Money",
+    details: `โอนเปลี่ยนเป็น E-Coupon`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+  
+  db.transactions.push({
+    id: "DEM_CP_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+    userId: member.userId,
+    type: "Deposit",
+    amount: amt,
+    currency: "E-Coupon",
+    details: `ได้รับ E-Coupon จากการเปลี่ยนกระเป๋าเงิน E-Money`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+  
+  writeDb(db);
+  res.json({
+    success: true,
+    message: "โอนเงินจาก E-Money เปลี่ยนเป็น E-Coupon สำเร็จเรียบร้อยแล้วค่ะ!",
+    newECoupon: member.balanceECoupon,
+    newEMoney: member.balanceEMoney
+  });
+});
+
+// WITHDRAW E-MONEY TO BANK
 app.post('/api/member/withdraw', (req, res) => {
   const { userId, amount, pin } = req.body;
   const db = readDb();
@@ -1791,8 +2288,8 @@ app.post('/api/member/withdraw', (req, res) => {
   }
   
   const amt = parseFloat(amount);
-  if (member.balanceMCash < amt) {
-    return res.status(400).json({ success: false, message: "ยอดเงิน M-Cash ของคุณไม่เพียงพอ" });
+  if ((member.balanceEMoney || 0) < amt) {
+    return res.status(400).json({ success: false, message: "ยอดเงิน E-Money ของคุณไม่เพียงพอสำหรับการถอนเงิน" });
   }
   
   // Deductions: 15% Platform charge, 5% withholding tax (based on remainder after 15%)
@@ -1801,7 +2298,7 @@ app.post('/api/member/withdraw', (req, res) => {
   const withholdingTax = taxableAmount * 0.05;
   const netReceived = amt - platformCharge - withholdingTax;
   
-  member.balanceMCash = parseFloat((member.balanceMCash - amt).toFixed(4));
+  member.balanceEMoney = parseFloat(((member.balanceEMoney || 0) - amt).toFixed(4));
   
   db.transactions.push({
     id: "WITH_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
@@ -1809,7 +2306,7 @@ app.post('/api/member/withdraw', (req, res) => {
     type: "WithdrawalRequest",
     amount: amt,
     netAmount: netReceived,
-    currency: "M-Cash",
+    currency: "E-Money",
     details: `ถอนเงินออกบัญชีธนาคาร ${member.bankName} เลขที่ ${member.bankAccount}`,
     status: "Pending", // Pending Admin approval
     createdAt: new Date().toISOString()
@@ -1822,7 +2319,7 @@ app.post('/api/member/withdraw', (req, res) => {
   res.json({
     success: true,
     message: "ส่งคำถอนเงินสำเร็จ! เงินจะโอนเข้าบัญชีของคุณภายใน 48 ชั่วโมง",
-    newMCash: member.balanceMCash,
+    newEMoney: member.balanceEMoney,
     netReceived: parseFloat(netReceived.toFixed(2))
   });
 });
@@ -1850,6 +2347,7 @@ app.get('/api/mlm/direct-referrals/:userId', (req, res) => {
   const db = readDb();
   const directReferrals = db.members.filter(m => m.sponsorId === rootId).map(m => ({
     userId: m.userId,
+    sponsorId: m.sponsorId,
     username: m.username,
     name: `${m.name} ${m.surname}`,
     rank: m.rank,
@@ -1875,6 +2373,7 @@ app.get('/api/mlm/binary-members/:userId', (req, res) => {
     for (const child of children) {
       descendants.push({
         userId: child.userId,
+        sponsorId: child.sponsorId,
         username: child.username,
         name: `${child.name} ${child.surname}`,
         rank: child.rank,
@@ -2107,30 +2606,38 @@ app.post('/api/shop/purchase', (req, res) => {
 
   // 3. Perform pre-deduction check on balances to keep database transactions atomic and clean
   let couponUsed = 0;
+  let eMoneyUsed = 0;
   let cashUsed = 0;
 
   if (isPackage) {
-    if (member.balanceMCash < totalPrice) {
-      return res.status(400).json({ success: false, message: `ยอดเงิน M-Cash คงเหลือไม่พอสำหรับชำระเงินค่าแพ็กเกจ (ขาดอีก ${(totalPrice - member.balanceMCash).toFixed(2)} บาท)` });
+    if (member.balanceECash < totalPrice) {
+      return res.status(400).json({ success: false, message: `ยอดเงิน E-Cash คงเหลือไม่พอสำหรับชำระเงินค่าแพ็กเกจ (ขาดอีก ${(totalPrice - member.balanceECash).toFixed(2)} บาท)` });
     }
     cashUsed = totalPrice;
   } else {
-    couponUsed = Math.min(member.balanceMCoupon || 0, totalPrice);
-    cashUsed = totalPrice - couponUsed;
-    if (member.balanceMCash < cashUsed) {
+    couponUsed = Math.min(member.balanceECoupon || 0, totalPrice);
+    let remaining = totalPrice - couponUsed;
+    
+    eMoneyUsed = Math.min(member.balanceEMoney || 0, remaining);
+    remaining = remaining - eMoneyUsed;
+    
+    cashUsed = remaining;
+    
+    if (member.balanceECash < cashUsed) {
       return res.status(400).json({ 
         success: false, 
-        message: `ยอดเงินคงเหลือไม่พอสำหรับชำระเงิน (ราคารวม ฿${totalPrice.toLocaleString()} • ใช้ M-Coupon ได้ ฿${couponUsed.toLocaleString()} • ต้องใช้ M-Cash ชำระส่วนต่าง ฿${cashUsed.toLocaleString()} แต่มีเพียง ฿${member.balanceMCash.toLocaleString()} • ขาดอีก ฿${(cashUsed - member.balanceMCash).toFixed(2)})` 
+        message: `ยอดเงินคงเหลือไม่พอสำหรับชำระเงิน (ราคารวม ฿${totalPrice.toLocaleString()} • หัก E-Coupon ฿${couponUsed.toLocaleString()} • หัก E-Money ฿${eMoneyUsed.toLocaleString()} • ต้องใช้ E-Cash ชำระส่วนต่าง ฿${cashUsed.toLocaleString()} แต่มีเพียง ฿${member.balanceECash.toLocaleString()} • ขาดอีก ฿${(cashUsed - member.balanceECash).toFixed(2)})` 
       });
     }
   }
 
   // 4. All validations passed! Deduct the balances now.
   if (isPackage) {
-    member.balanceMCash = parseFloat((member.balanceMCash - cashUsed).toFixed(4));
+    member.balanceECash = parseFloat((member.balanceECash - cashUsed).toFixed(4));
   } else {
-    member.balanceMCoupon = parseFloat(((member.balanceMCoupon || 0) - couponUsed).toFixed(4));
-    member.balanceMCash = parseFloat((member.balanceMCash - cashUsed).toFixed(4));
+    member.balanceECoupon = parseFloat(((member.balanceECoupon || 0) - couponUsed).toFixed(4));
+    member.balanceEMoney = parseFloat(((member.balanceEMoney || 0) - eMoneyUsed).toFixed(4));
+    member.balanceECash = parseFloat((member.balanceECash - cashUsed).toFixed(4));
   }
   
   // Upgrade Position Rank and top-up income quota ONLY based on package purchased (S, M, L, XL, XXL)
@@ -2182,6 +2689,10 @@ app.post('/api/shop/purchase', (req, res) => {
   }
   
   // Record order
+  const sellerId = (product as any).sellerId || db.sellerProducts?.find((sp: any) => sp.id === product.id)?.sellerId || null;
+  const sellerCode = (product as any).sellerCode || db.sellerProducts?.find((sp: any) => sp.id === product.id)?.sellerCode || null;
+  const sellerStoreName = (product as any).sellerStoreName || db.sellerProducts?.find((sp: any) => sp.id === product.id)?.sellerStoreName || null;
+
   const orderId = "ORD_" + Math.random().toString(36).substr(2, 9).toUpperCase();
   db.orders.push({
     id: orderId,
@@ -2196,6 +2707,9 @@ app.post('/api/shop/purchase', (req, res) => {
     totalPv: totalPv,
     shippingAddress: shippingAddress || member.kycAddress || "ไม่มีที่อยู่ผู้จัดส่ง",
     status: productId === "pack_s" ? "Completed" : "Processing", // Will be marked as Completed by Admin
+    sellerId,
+    sellerCode,
+    sellerStoreName,
     createdAt: new Date().toISOString()
   });
   
@@ -2206,7 +2720,7 @@ app.post('/api/shop/purchase', (req, res) => {
       userId: member.userId,
       type: "Withdraw",
       amount: totalPrice,
-      currency: "M-Cash",
+      currency: "E-Cash",
       details: `ชำระเงินซื้อแพ็กเกจ ${product.name}`,
       status: "Approved",
       createdAt: new Date().toISOString()
@@ -2218,8 +2732,20 @@ app.post('/api/shop/purchase', (req, res) => {
         userId: member.userId,
         type: "Withdraw",
         amount: couponUsed,
-        currency: "M-Coupon",
-        details: `ชำระเงินซื้อสินค้าด้วย M-Coupon: ${product.name}`,
+        currency: "E-Coupon",
+        details: `ชำระเงินซื้อสินค้าด้วย E-Coupon: ${product.name}`,
+        status: "Approved",
+        createdAt: new Date().toISOString()
+      });
+    }
+    if (eMoneyUsed > 0) {
+      db.transactions.push({
+        id: "EMNY_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+        userId: member.userId,
+        type: "Withdraw",
+        amount: eMoneyUsed,
+        currency: "E-Money",
+        details: `ชำระเงินซื้อสินค้าด้วย E-Money (ระบบดึงอัตโนมัติ): ${product.name}`,
         status: "Approved",
         createdAt: new Date().toISOString()
       });
@@ -2230,8 +2756,8 @@ app.post('/api/shop/purchase', (req, res) => {
         userId: member.userId,
         type: "Withdraw",
         amount: cashUsed,
-        currency: "M-Cash",
-        details: `ชำระเงินซื้อสินค้าด้วย M-Cash (ส่วนต่าง): ${product.name}`,
+        currency: "E-Cash",
+        details: `ชำระเงินซื้อสินค้าด้วย E-Cash (ส่วนต่าง): ${product.name}`,
         status: "Approved",
         createdAt: new Date().toISOString()
       });
@@ -2241,29 +2767,33 @@ app.post('/api/shop/purchase', (req, res) => {
   // Calculate Commissions:
   if (productId === "pack_s") {
     // S package special calculations:
-    // 1. Direct referral (ค่าแนะนำ 50 บาท ให้ผู้แนะนำ ใน M-Cash ถูกหักตามเงื่อนไข)
+    // 1. Direct referral (ค่าแนะนำ 50 บาท ให้ผู้แนะนำ ใน E-Cash ถูกหักตามเงื่อนไข)
     const sponsor = db.members.find(m => m.userId === member.sponsorId);
     let actualSponsorPayout = 0;
     if (sponsor) {
       const referralBonus = 50.00;
-      actualSponsorPayout = distributeMCashWithDeduction(db, sponsor, referralBonus, `ค่าแนะนำตรงตำแหน่ง S ของรหัส ${member.userId}`, member.userId);
+      actualSponsorPayout = distributeECashWithDeduction(db, sponsor, referralBonus, `ค่าแนะนำตรงตำแหน่ง S ของรหัส ${member.userId}`, member.userId);
     }
 
-    // 2. Member's Coupon (เข้าคูปอง สมาชิก 10 บาท)
-    member.balanceMCoupon = parseFloat(((member.balanceMCoupon || 0) + 10.00).toFixed(4));
+    // 2. Member's Coupon (เข้าคูปอง สมาชิก 10 บาท - หัก 10% เข้า All-Share)
+    const rawCouponAward = 10.00;
+    const netCouponAward = rawCouponAward * 0.90; // 9.00
+    const couponToAllShare = rawCouponAward * 0.10; // 1.00
+
+    member.balanceECoupon = parseFloat(((member.balanceECoupon || 0) + netCouponAward).toFixed(4));
     db.transactions.push({
       id: "COUP_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
       userId: member.userId,
       type: "Deposit",
-      amount: 10.00,
-      currency: "M-Coupon",
-      details: `โบนัส M-Coupon จากการสมัครตำแหน่ง S`,
+      amount: netCouponAward,
+      currency: "E-Coupon",
+      details: `โบนัส E-Coupon จากการสมัครตำแหน่ง S (หัก 10% เข้า All-Share)`,
       status: "Approved",
       createdAt: new Date().toISOString()
     });
 
-    // 3. All-Share (เข้า All-Share 10 บาท (สมัครใหม่ครั้งแรกจะไม่ถูกนับรวมในผู้ได้รับสิทธิ์))
-    processAllShareDistribution(db, 10.00, member.userId, true);
+    // 3. E-Share (เข้า E-Share 10 บาท + ส่วนที่หัก 1 บาท)
+    processEShareDistribution(db, 10.00 + couponToAllShare, member.userId, true);
 
     // 4. CSR Fund (เข้ากองทุนปันสุข 5 บาท จ่ายในนามสมาชิก)
     db.csrFund.balance = parseFloat((db.csrFund.balance + 5.00).toFixed(4));
@@ -2310,7 +2840,7 @@ app.post('/api/shop/purchase', (req, res) => {
     const referralBonus = totalPv * 0.50;
     
     if (sponsor) {
-      actualSponsorPayout = distributeMCashWithDeduction(
+      actualSponsorPayout = distributeECashWithDeduction(
         db, 
         sponsor, 
         referralBonus, 
@@ -2380,7 +2910,7 @@ app.post('/api/shop/purchase', (req, res) => {
   res.json({
     success: true,
     message: "สั่งซื้อและชำระเงินเรียบร้อยแล้วค่ะ!",
-    newMCash: member.balanceMCash,
+    newECash: member.balanceECash,
     rank: member.rank,
     eligibleRights: member.eligibleRights
   });
@@ -2389,7 +2919,44 @@ app.post('/api/shop/purchase', (req, res) => {
 // GET MLM BINARY PLAN A TREE
 app.get('/api/mlm/binary-tree/:userId', (req, res) => {
   const rootId = req.params.userId;
+  const callerId = req.query.callerId as string;
   const db = readDb();
+  
+  // Resolve target member
+  let targetMember = db.members.find(m => m.userId === rootId || m.username === rootId);
+  if (!targetMember) {
+    targetMember = db.members.find(m => m.userId?.toUpperCase() === rootId.toUpperCase() || m.username?.toLowerCase() === rootId.toLowerCase());
+  }
+  
+  if (!targetMember) {
+    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกในระบบค่ะ" });
+  }
+  
+  const resolvedRootId = targetMember.userId;
+  
+  // Downline check for search restrictions
+  if (callerId && callerId !== resolvedRootId) {
+    const caller = db.members.find(m => m.userId === callerId);
+    const isAdminOrManager = caller && (caller.role === 'Admin' || caller.role === 'Manager');
+    if (!isAdminOrManager) {
+      let isAllowed = false;
+      let currentId = resolvedRootId;
+      const visited = new Set();
+      while (currentId && !visited.has(currentId)) {
+        visited.add(currentId);
+        const m = db.members.find(x => x.userId === currentId);
+        if (!m) break;
+        if (m.parentId === callerId) {
+          isAllowed = true;
+          break;
+        }
+        currentId = m.parentId;
+      }
+      if (!isAllowed) {
+        return res.status(403).json({ success: false, message: "ค้นหาหรือดูได้เฉพาะสมาชิกภายใต้สายงานคุณเท่านั้นค่ะ" });
+      }
+    }
+  }
   
   // Recursively build tree structure up to 5 levels
   function buildTree(nodeId, depth = 1) {
@@ -2406,21 +2973,59 @@ app.get('/api/mlm/binary-tree/:userId', (req, res) => {
       rank: member.rank,
       statusKyc: member.statusKyc,
       side: member.side,
+      status: member.status || "Active",
       left: leftChild ? buildTree(leftChild.userId, depth + 1) : null,
       right: rightChild ? buildTree(rightChild.userId, depth + 1) : null
     };
   }
   
-  const tree = buildTree(rootId);
+  const tree = buildTree(resolvedRootId);
   if (!tree) return res.status(404).json({ success: false, message: "ไม่พบสายงาน" });
   
-  res.json({ success: true, tree });
+  res.json({ success: true, tree, parentId: targetMember.parentId || null });
 });
 
 // GET MLM REFERRAL SPONSOR TREE
 app.get('/api/mlm/referral-tree/:userId', (req, res) => {
   const rootId = req.params.userId;
+  const callerId = req.query.callerId as string;
   const db = readDb();
+  
+  // Resolve target member
+  let targetMember = db.members.find(m => m.userId === rootId || m.username === rootId);
+  if (!targetMember) {
+    targetMember = db.members.find(m => m.userId?.toUpperCase() === rootId.toUpperCase() || m.username?.toLowerCase() === rootId.toLowerCase());
+  }
+  
+  if (!targetMember) {
+    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกในระบบค่ะ" });
+  }
+  
+  const resolvedRootId = targetMember.userId;
+  
+  // Downline check for search restrictions
+  if (callerId && callerId !== resolvedRootId) {
+    const caller = db.members.find(m => m.userId === callerId);
+    const isAdminOrManager = caller && (caller.role === 'Admin' || caller.role === 'Manager');
+    if (!isAdminOrManager) {
+      let isAllowed = false;
+      let currentId = resolvedRootId;
+      const visited = new Set();
+      while (currentId && !visited.has(currentId)) {
+        visited.add(currentId);
+        const m = db.members.find(x => x.userId === currentId);
+        if (!m) break;
+        if (m.sponsorId === callerId) {
+          isAllowed = true;
+          break;
+        }
+        currentId = m.sponsorId;
+      }
+      if (!isAllowed) {
+        return res.status(403).json({ success: false, message: "ค้นหาหรือดูได้เฉพาะสมาชิกภายใต้สายงานแนะนำตรงของคุณเท่านั้นค่ะ" });
+      }
+    }
+  }
   
   function buildReferralTree(nodeId, depth = 1) {
     const member = db.members.find(m => m.userId === nodeId);
@@ -2434,14 +3039,15 @@ app.get('/api/mlm/referral-tree/:userId', (req, res) => {
       name: `${member.name} ${member.surname}`,
       rank: member.rank,
       statusKyc: member.statusKyc,
+      status: member.status || "Active",
       children: recruits.map(r => buildReferralTree(r.userId, depth + 1)).filter(Boolean)
     };
   }
   
-  const tree = buildReferralTree(rootId);
+  const tree = buildReferralTree(resolvedRootId);
   if (!tree) return res.status(404).json({ success: false, message: "ไม่พบสายงานแนะนำตรง" });
   
-  res.json({ success: true, tree });
+  res.json({ success: true, tree, parentId: targetMember.sponsorId || null });
 });
 
 // GET PLAN B LISTINGS
@@ -2572,6 +3178,34 @@ app.get('/api/seller/products/:userId', (req, res) => {
   res.json({ success: true, products });
 });
 
+// GET SELLER ORDERS
+app.get('/api/seller/orders/:userId', (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  const orders = db.orders.filter((o: any) => o.sellerId === userId);
+  res.json({ success: true, orders });
+});
+
+// SELLER UPDATE ORDER TRACKING
+app.post('/api/seller/order-ship', (req, res) => {
+  const { orderId, sellerId, trackingCompany, trackingNo, shippingNote } = req.body;
+  const db = readDb();
+  const order = db.orders.find((o: any) => o.id === orderId);
+  if (!order) return res.status(404).json({ success: false, message: "ไม่พบบิลการสั่งซื้อ" });
+  
+  if (order.sellerId !== sellerId) {
+    return res.status(403).json({ success: false, message: "คุณไม่มีสิทธิ์จัดการบิลสั่งซื้อนี้" });
+  }
+  
+  order.status = "Completed";
+  order.trackingCompany = trackingCompany || "";
+  order.trackingNo = trackingNo || "";
+  order.shippingNote = shippingNote || "";
+  
+  writeDb(db);
+  res.json({ success: true, message: "บันทึกข้อมูลจัดส่งและจัดส่งสินค้าสำเร็จ!" });
+});
+
 // -------------------------------------------------------------
 // ADMIN CONSOLE ENDPOINTS
 // -------------------------------------------------------------
@@ -2666,8 +3300,8 @@ app.get('/api/admin/stats', (req, res) => {
   const csrBalance = db.csrFund.balance;
   
   // Total taxable transactions
-  const totalMCashHeld = db.members.reduce((acc, m) => acc + (m.balanceMCash || 0), 0);
-  const totalMCouponHeld = db.members.reduce((acc, m) => acc + (m.balanceMCoupon || 0), 0);
+  const totalECashHeld = db.members.reduce((acc, m) => acc + (m.balanceECash || 0), 0);
+  const totalECouponHeld = db.members.reduce((acc, m) => acc + (m.balanceECoupon || 0), 0);
   
   res.json({
     success: true,
@@ -2676,8 +3310,8 @@ app.get('/api/admin/stats', (req, res) => {
       taxReserves: stats.totalTaxReserves,
       companyProfits: stats.totalCompanyProfits,
       csrBalance: csrBalance,
-      memberMCash: totalMCashHeld,
-      memberMCoupon: totalMCouponHeld,
+      memberECash: totalECashHeld,
+      memberECoupon: totalECouponHeld,
       netProfits: parseFloat((stats.totalCompanyProfits * 0.85).toFixed(2)) // Net system profit
     }
   });
@@ -2984,8 +3618,8 @@ app.post('/api/admin/deposit-approve', (req, res) => {
   const member = db.members.find(m => m.userId === txn.userId);
   if (member) {
     const creditAmt = txn.transferAmount || txn.amount || 0;
-    member.balanceMCash = parseFloat(((member.balanceMCash || 0) + creditAmt).toFixed(4));
-    txn.details = `อนุมัติเติมเงิน M-Cash เข้าบัญชี ฿${creditAmt.toLocaleString()}`;
+    member.balanceECash = parseFloat(((member.balanceECash || 0) + creditAmt).toFixed(4));
+    txn.details = `อนุมัติเติมเงิน E-Cash เข้าบัญชี ฿${creditAmt.toLocaleString()}`;
     
     // Add transaction history record for approval
     db.transactions.push({
@@ -2993,15 +3627,15 @@ app.post('/api/admin/deposit-approve', (req, res) => {
       userId: member.userId,
       type: "Deposit_System",
       amount: creditAmt,
-      currency: "M-Cash",
-      details: `ได้รับเครดิต M-Cash จากการอนุมัติสลิปโอนเงิน (รหัสธุรกรรมอ้างอิง: ${txnId})`,
+      currency: "E-Cash",
+      details: `ได้รับเครดิต E-Cash จากการอนุมัติสลิปโอนเงิน (รหัสธุรกรรมอ้างอิง: ${txnId})`,
       status: "Approved",
       createdAt: new Date().toISOString()
     });
   }
   
   writeDb(db);
-  res.json({ success: true, message: "อนุมัติรายการเติมเงิน M-Cash เรียบร้อยแล้วค่ะ" });
+  res.json({ success: true, message: "อนุมัติรายการเติมเงิน E-Cash เรียบร้อยแล้วค่ะ" });
 });
 
 // REJECT DEPOSIT SLIP
@@ -3012,7 +3646,7 @@ app.post('/api/admin/deposit-reject', (req, res) => {
   if (!txn) return res.status(404).json({ success: false, message: "ไม่พบรายการธุรกรรม" });
   
   txn.status = "Rejected";
-  txn.details = `ปฏิเสธการเติมเงิน M-Cash: ${reason || 'ข้อมูลหรือสลิปไม่ถูกต้อง'}`;
+  txn.details = `ปฏิเสธการเติมเงิน E-Cash: ${reason || 'ข้อมูลหรือสลิปไม่ถูกต้อง'}`;
   
   writeDb(db);
   res.json({ success: true, message: "ปฏิเสธรายการเติมเงินเรียบร้อยแล้วค่ะ" });
@@ -3071,10 +3705,230 @@ app.post('/api/bank-settings', (req, res) => {
   res.json({ success: true, message: "บันทึกข้อมูลบัญชีธนาคารและ QR Code เรียบร้อยแล้วค่ะ", bankSettings: db.bankSettings });
 });
 
+// GET FIREBASE CLIENT CONFIG FOR REAL-TIME SYNC
+app.get('/api/firebase-config', (req, res) => {
+  let fileConfig: any = {};
+  try {
+    const firebaseConfigPath = path.join(appDir, 'firebase-applet-config.json');
+    if (fs.existsSync(firebaseConfigPath)) {
+      fileConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
+    }
+  } catch (e) {
+    console.error("⚠️ Failed to parse firebase-applet-config.json in API", e);
+  }
+
+  // Build config with priority: process.env (App Hosting environment) > firebase-applet-config.json (AI Studio environment)
+  const config = {
+    apiKey: process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || fileConfig.apiKey || "",
+    authDomain: process.env.FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN || fileConfig.authDomain || "",
+    projectId: process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || fileConfig.projectId || "",
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET || fileConfig.storageBucket || "",
+    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || fileConfig.messagingSenderId || "",
+    appId: process.env.FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID || fileConfig.appId || "",
+    measurementId: process.env.FIREBASE_MEASUREMENT_ID || process.env.VITE_FIREBASE_MEASUREMENT_ID || fileConfig.measurementId || "",
+    firestoreDatabaseId: process.env.FIRESTORE_DATABASE_ID || process.env.VITE_FIRESTORE_DATABASE_ID || fileConfig.firestoreDatabaseId || "",
+    oAuthClientId: process.env.FIREBASE_OAUTH_CLIENT_ID || process.env.VITE_FIREBASE_OAUTH_CLIENT_ID || fileConfig.oAuthClientId || ""
+  };
+
+  if (config.projectId && config.apiKey) {
+    res.json({ success: true, config });
+  } else {
+    res.status(404).json({ success: false, message: 'Firebase configuration not found. Please set environment variables or config files.' });
+  }
+});
+
+// UNIFIED SYNC STATE API (Fallback when Firestore Quota is exceeded or fails)
+app.get('/api/sync-state', (req, res) => {
+  try {
+    const db = readDb();
+    res.json({
+      success: true,
+      isSandboxActive: isSandboxActive,
+      data: {
+        members: db.members || [],
+        products: db.products || [],
+        sellerProducts: db.sellerProducts || [],
+        orders: db.orders || [],
+        transactions: db.transactions || [],
+        planB_Tree: db.planB_Tree || {},
+        csrFund: db.csrFund || { balance: 0, history: [] },
+        systemStats: db.systemStats || { totalPlanBReserves: 0, totalTaxReserves: 0, totalCompanyProfits: 0 },
+        packageProductChoices: db.packageProductChoices || [],
+        bankSettings: db.bankSettings || null
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET SANDBOX STATE
+app.get('/api/admin/sandbox-status', (req, res) => {
+  res.json({
+    success: true,
+    isSandboxActive: isSandboxActive
+  });
+});
+
+// TOGGLE SANDBOX STATE
+app.post('/api/admin/sandbox-toggle', async (req, res) => {
+  const { active, resetFromProduction } = req.body;
+  
+  try {
+    const oldState = isSandboxActive;
+    isSandboxActive = !!active;
+    
+    // Save to status file
+    fs.writeFileSync(SANDBOX_STATE_FILE, JSON.stringify({ active: isSandboxActive }, null, 2), 'utf8');
+    
+    if (isSandboxActive) {
+      if (resetFromProduction || !fs.existsSync(DB_FILE_SANDBOX)) {
+        console.log("🔄 Resetting sandbox from production snapshot...");
+        // Read production file directly
+        let prodData: any = null;
+        if (fs.existsSync(DB_FILE)) {
+          prodData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        }
+        
+        if (prodData) {
+          cacheDb = JSON.parse(JSON.stringify(prodData));
+          fs.writeFileSync(DB_FILE_SANDBOX, JSON.stringify(cacheDb, null, 2), 'utf8');
+          await saveDbToFirestore(cacheDb);
+          console.log("✅ Sandbox database overwritten with production snapshot.");
+        } else {
+          // Initialize fresh sandbox database
+          cacheDb = null;
+          await loadDbFromFirestore();
+        }
+      } else {
+        // Just switch cache to sandbox database by loading it
+        cacheDb = null;
+        await loadDbFromFirestore();
+      }
+    } else {
+      // Switched off: reload production database
+      cacheDb = null;
+      await loadDbFromFirestore();
+    }
+    
+    res.json({
+      success: true,
+      isSandboxActive: isSandboxActive,
+      message: isSandboxActive 
+        ? "เปิดใช้งานโหมดทดสอบระบบเรียบร้อยแล้วค่ะ (ข้อมูลจำลองถูกเตรียมพร้อมแล้ว)" 
+        : "สลับกลับสู่โหมดข้อมูลจริง (Production Mode) เรียบร้อยแล้วค่ะ"
+    });
+  } catch (err: any) {
+    console.error("Error toggling sandbox state:", err);
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการเปลี่ยนสถานะโหมดทดสอบ: " + err.message });
+  }
+});
+
 // GET ALL MEMBERS FOR ADMIN MANAGEMENT
 app.get('/api/admin/members', (req, res) => {
   const db = readDb();
-  res.json({ success: true, members: db.members || [] });
+  const members = db.members || [];
+  const transactions = db.transactions || [];
+  
+  const enrichedMembers = members.map((member: any) => {
+    // Sum of approved transaction amounts where currency is E-Cash and type is Bonus or EShare
+    const totalEarnings = transactions
+      .filter((t: any) => t.userId === member.userId && t.status === "Approved" && t.currency === "E-Cash" && (t.type === "Bonus" || t.type === "EShare"))
+      .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+      
+    // Sum of all approved transactions where currency is E-Coupon and amount is positive (accumulated coupons)
+    const totalCouponsEarned = transactions
+      .filter((t: any) => t.userId === member.userId && t.status === "Approved" && t.currency === "E-Coupon" && (t.amount || 0) > 0)
+      .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+
+    return {
+      ...member,
+      totalEarnings: parseFloat(totalEarnings.toFixed(4)),
+      totalCouponsEarned: parseFloat(totalCouponsEarned.toFixed(4))
+    };
+  });
+  
+  res.json({ success: true, members: enrichedMembers });
+});
+
+app.post('/api/admin/rebuild-binary-tree', (req, res) => {
+  const { managerId } = req.body;
+  const db = readDb();
+  
+  const manager = db.members.find(m => m.userId === managerId);
+  console.log("Checking manager auth:", { managerId, managerFound: !!manager, role: manager?.role });
+  if (!manager || (manager.role !== 'Manager' && manager.role !== 'Admin')) {
+    return res.status(403).json({ success: false, message: 'Unauthorized' });
+  }
+
+  // 1. Reset all binary placements first, but preserve the root
+  db.members.forEach(m => {
+    if (m.userId !== "A260600001") { // Don't reset root
+      m.parentId = "";
+      m.side = "";
+    }
+  });
+  
+  // 2. Get all members and sort them by createdAt (Plan A members)
+  const allMembers = db.members.filter(m => m.userId !== "A260600001").sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  
+  // 3. Place them one by one
+  allMembers.forEach(m => {
+    if (m.rank && m.rank !== "Member") {
+      const slot = findAndPlaceBinaryMember(db, m.sponsorId);
+      m.parentId = slot.parentId;
+      m.side = slot.side;
+    } else {
+      m.parentId = "";
+      m.side = "";
+    }
+  });
+  
+  writeDb(db);
+  res.json({ success: true, message: "จัดเรียงและซ่อมแซมผังสายงานโครงสร้างแผน A (Binary Tree) และซิงค์ลง Cloud Firestore เรียบร้อยแล้วค่ะ! สมาชิก S ขึ้นไปทั้งหมดเข้าผังอย่างสมบูรณ์แล้ว ✨" });
+});
+
+// Temporary endpoint to move a member
+app.post('/api/admin/move-member', (req, res) => {
+  const { userId, newParentId, newSide } = req.body;
+  const db = readDb();
+  const member = db.members.find(m => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: 'Member not found' });
+  
+  member.parentId = newParentId;
+  member.side = newSide;
+  
+  writeDb(db);
+  res.json({ success: true, message: 'Member moved' });
+});
+
+app.delete('/api/admin/delete-member/:userId', (req, res) => {
+  const { userId } = req.params;
+  const { managerId } = req.body;
+  
+  const db = readDb();
+  const manager = db.members.find(m => m.userId === managerId);
+  console.log("Checking manager auth for delete:", { managerId, managerFound: !!manager, role: manager?.role });
+  if (!manager || manager.role !== 'Manager') {
+    return res.status(403).json({ success: false, message: 'Unauthorized' });
+  }
+
+  // Remove the member
+  const memberIndex = db.members.findIndex(m => m.userId === userId);
+  if (memberIndex === -1) {
+    return res.status(404).json({ success: false, message: 'Member not found' });
+  }
+
+  // Prevent deleting the root
+  if (userId === "A260600001") {
+      return res.status(400).json({ success: false, message: 'Cannot delete root member' });
+  }
+
+  // Remove the member
+  db.members.splice(memberIndex, 1);
+  
+  writeDb(db);
+  res.json({ success: true, message: 'Member deleted' });
 });
 
 // UPDATE MEMBER INFO FROM ADMIN CONSOLE
@@ -3082,7 +3936,8 @@ app.post('/api/admin/member-update', (req, res) => {
   const { 
     userId, name, surname, phone, email, idCard, 
     bankName, bankAccount, bankAccountName, password, pin, 
-    rank, role, balanceMCash, balanceMCoupon, sellerStatus, eligibleRights,
+    rank, role, balanceECash, balanceEMoney, balanceECoupon, sellerStatus, eligibleRights,
+    sponsorId,
     editorUserId
   } = req.body;
   
@@ -3091,9 +3946,24 @@ app.post('/api/admin/member-update', (req, res) => {
   }
 
   const db = readDb();
+  
+  // Verify Editor is indeed Admin or Manager
+  const editor = db.members.find(m => m.userId === editorUserId);
+  if (!editor || (editor.role !== 'Admin' && editor.role !== 'Manager')) {
+    return res.status(403).json({ success: false, message: "ปฏิเสธการเข้าถึง: เฉพาะบัญชีสิทธิ์ Manager หรือ Admin เท่านั้นที่มีสิทธิ์แก้ไขข้อมูลสมาชิกได้ค่ะ" });
+  }
+
   const member = db.members.find(m => m.userId === userId);
   if (!member) {
     return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกที่ต้องการแก้ไข" });
+  }
+
+  // Validate sponsorId existence if updated
+  if (sponsorId !== undefined && sponsorId !== "" && sponsorId !== "SYSTEM" && sponsorId !== member.sponsorId) {
+    const sponsorExists = db.members.some(m => m.userId === sponsorId);
+    if (!sponsorExists) {
+      return res.status(400).json({ success: false, message: `ไม่พบรหัสผู้แนะนำ "${sponsorId}" ในระบบ กรุณาตรวจสอบให้ถูกต้องค่ะ` });
+    }
   }
 
   // 1. nateeplus must always be Manager & rank XXL & sellerStatus Active (Locked Permanently)
@@ -3147,6 +4017,7 @@ app.post('/api/admin/member-update', (req, res) => {
   if (bankAccount !== undefined) member.bankAccount = bankAccount;
   if (bankAccountName !== undefined) member.bankAccountName = bankAccountName;
   if (password !== undefined && password !== "") member.password = password;
+  if (sponsorId !== undefined) member.sponsorId = sponsorId;
   if (rank !== undefined) {
     member.rank = rank;
     if (rank !== "Member" && (!member.parentId || member.parentId === "")) {
@@ -3156,8 +4027,57 @@ app.post('/api/admin/member-update', (req, res) => {
     }
   }
   if (role !== undefined) member.role = role;
-  if (balanceMCash !== undefined) member.balanceMCash = Number(balanceMCash);
-  if (balanceMCoupon !== undefined) member.balanceMCoupon = Number(balanceMCoupon);
+  if (balanceECash !== undefined) {
+    const prev = Number(member.balanceECash || 0);
+    const curr = Number(balanceECash);
+    if (prev !== curr) {
+      member.balanceECash = curr;
+      db.transactions.push({
+        id: "ADJ_CASH_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+        userId: member.userId,
+        type: curr > prev ? "Deposit" : "Withdraw",
+        amount: Math.abs(curr - prev),
+        currency: "E-Cash",
+        details: `ผู้ดูแลระบบปรับปรุงยอด E-Cash (จาก ฿${prev.toFixed(2)} เป็น ฿${curr.toFixed(2)})`,
+        status: "Approved",
+        createdAt: new Date().toISOString()
+      });
+    }
+  }
+  if (balanceEMoney !== undefined) {
+    const prev = Number(member.balanceEMoney || 0);
+    const curr = Number(balanceEMoney);
+    if (prev !== curr) {
+      member.balanceEMoney = curr;
+      db.transactions.push({
+        id: "ADJ_MNY_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+        userId: member.userId,
+        type: curr > prev ? "Deposit" : "Withdraw",
+        amount: Math.abs(curr - prev),
+        currency: "E-Money",
+        details: `ผู้ดูแลระบบปรับปรุงยอด E-Money (จาก ฿${prev.toFixed(2)} เป็น ฿${curr.toFixed(2)})`,
+        status: "Approved",
+        createdAt: new Date().toISOString()
+      });
+    }
+  }
+  if (balanceECoupon !== undefined) {
+    const prev = Number(member.balanceECoupon || 0);
+    const curr = Number(balanceECoupon);
+    if (prev !== curr) {
+      member.balanceECoupon = curr;
+      db.transactions.push({
+        id: "ADJ_COUP_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+        userId: member.userId,
+        type: curr > prev ? "Deposit" : "Withdraw",
+        amount: Math.abs(curr - prev),
+        currency: "E-Coupon",
+        details: `ผู้ดูแลระบบปรับปรุงยอด E-Coupon (จาก ฿${prev.toFixed(2)} เป็น ฿${curr.toFixed(2)})`,
+        status: "Approved",
+        createdAt: new Date().toISOString()
+      });
+    }
+  }
   if (sellerStatus !== undefined) member.sellerStatus = sellerStatus;
   if (eligibleRights !== undefined) member.eligibleRights = Number(eligibleRights);
 
@@ -3200,9 +4120,9 @@ app.post('/api/admin/system-reset', (req, res) => {
         kycBookUrl: "",
         kycBeneficiary: "",
         kycRelation: "",
-        balanceMCash: 15000.00,
-        balanceMCoupon: 5000.00,
-        balanceAllShare: 0.00,
+        balanceECash: 15000.00,
+        balanceECoupon: 5000.00,
+        balanceEShare: 0.00,
         eligibleRights: 999999999,
         firstLogin: false,
         passwordReset: false,
@@ -3240,9 +4160,9 @@ app.post('/api/admin/system-reset', (req, res) => {
         member.kycBookUrl = "";
         member.kycBeneficiary = "";
         member.kycRelation = "";
-        member.balanceMCash = 15000.00;
-        member.balanceMCoupon = 5000.00;
-        member.balanceAllShare = 0.00;
+        member.balanceECash = 15000.00;
+        member.balanceECoupon = 5000.00;
+        member.balanceEShare = 0.00;
         member.eligibleRights = 999999999;
         member.firstLogin = false;
         member.passwordReset = false;
@@ -3312,16 +4232,25 @@ app.post('/api/admin/system-reset', (req, res) => {
   });
 });
 
-// STATIC PORT SERVING IN PRODUCTION
-const PORT = process.env.PORT || 3000;
+// FORCE RE-SYNC FROM FIRESTORE (FOR INSTANCE SYNC IN CLOUD RUN MULTI-INSTANCE ENV)
+app.post('/api/admin/sync-firestore', async (req, res) => {
+  try {
+    await loadDbFromFirestore();
+    res.json({
+      success: true,
+      message: "ซิงค์ข้อมูลเมมโมรี่ของเซิร์ฟเวอร์กับ Cloud Firestore ล่าสุดสำเร็จแล้วค่ะ! ข้อมูลทุกอย่างเป็นปัจจุบันเรียบร้อยแล้ว ✨"
+    });
+  } catch (error: any) {
+    console.error("Error manual sync Firestore:", error);
+    res.status(500).json({
+      success: false,
+      message: "ไม่สามารถซิงค์ข้อมูลกับ Firestore ได้: " + error.message
+    });
+  }
+});
 
-if (process.env.NODE_ENV === 'production') {
-  // Serve production build files
-  app.use(express.static(path.join(__dirname, 'dist')));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-  });
-}
+// STATIC PORT SERVING IN PRODUCTION / DEVELOPMENT VITE MIDDLEWARE
+const PORT = process.env.PORT || 3000;
 
 function ensurePizzaoneUser() {
   // Completely disabled to allow clean system-reset states with ONLY the core nateeplus root account.
@@ -3334,6 +4263,23 @@ async function startServer() {
   await loadDbFromFirestore();
   readDb(); // Ensure any missing sections like packageProductChoices or bankSettings are seeded and written to Firestore immediately!
   ensurePizzaoneUser();
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log("📦 Initializing Vite Development Middleware...");
+    const { createServer } = await import('vite');
+    const vite = await createServer({
+      server: { middlewareMode: true },
+      appType: 'spa'
+    });
+    app.use(vite.middlewares);
+  } else {
+    console.log("📁 Serving production build files from dist...");
+    app.use(express.static(path.join(appDir, 'dist')));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(appDir, 'dist', 'index.html'));
+    });
+  }
+
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`NaTee Plus full-stack server is listening on port ${PORT}`);
   });
