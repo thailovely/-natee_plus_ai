@@ -71,8 +71,8 @@ export interface MemberExportData {
   email: string;
   rank: string;
   role: string;
-  balanceECash: number;
-  balanceECoupon: number;
+  balanceMCash: number;
+  balanceMCoupon: number;
   totalEarnings: number;
   totalCouponsEarned: number;
   sponsorId: string;
@@ -125,10 +125,10 @@ export const exportMembersToGoogleSheets = async (
     'อีเมล',
     'ตำแหน่งธุรกิจ (Rank)',
     'บทบาทสิทธิ์ (Role)',
-    'ยอดเงิน E-Cash คงเหลือ (฿)',
-    'คูปอง E-Coupon คงเหลือ (฿)',
-    'รายได้สะสม E-Cash (฿)',
-    'คูปองสะสม E-Coupon (฿)',
+    'ยอดเงิน M-Cash คงเหลือ (฿)',
+    'คูปอง M-Coupon คงเหลือ (฿)',
+    'รายได้สะสม M-Cash (฿)',
+    'คูปองสะสม M-Coupon (฿)',
     'รหัสผู้แนะนำ (SponsorId)'
   ];
 
@@ -151,8 +151,8 @@ export const exportMembersToGoogleSheets = async (
       m.email || '',
       m.rank || 'S',
       m.role || 'Member',
-      m.balanceECash || 0,
-      m.balanceECoupon || 0,
+      m.balanceMCash || 0,
+      m.balanceMCoupon || 0,
       m.totalEarnings || 0,
       m.totalCouponsEarned || 0,
       m.sponsorId || ''

@@ -14,22 +14,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 const DB_FILE = path.join(__dirname, 'db.json');
-const DB_FILE_SANDBOX = path.join(__dirname, 'db_sandbox.json');
-const SANDBOX_STATE_FILE = path.join(__dirname, 'sandbox_state.json');
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
-
-let isSandboxActive = false;
-
-// Load sandbox state at boot
-try {
-  if (fs.existsSync(SANDBOX_STATE_FILE)) {
-    const sandboxState = JSON.parse(fs.readFileSync(SANDBOX_STATE_FILE, 'utf8'));
-    isSandboxActive = !!sandboxState.active;
-    console.log("⚙️ Sandbox state loaded from file. Active:", isSandboxActive);
-  }
-} catch (e) {
-  console.error("Failed to parse sandbox_state.json", e);
-}
 
 // Initialize Firebase Client SDK for server-side persistence
 let dbFirestore: any = null;
@@ -62,12 +47,9 @@ async function loadDbFromFirestore() {
     const loadedData: any = {};
     let hasData = false;
     
-    const collectionName = isSandboxActive ? 'app_sections_sandbox' : 'app_sections';
-    const currentDbFile = isSandboxActive ? DB_FILE_SANDBOX : DB_FILE;
-    
-    console.log(`📥 Loading app sections from Firestore (${collectionName})...`);
+    console.log("📥 Loading app sections from Firestore...");
     for (const key of keys) {
-      const docRef = doc(dbFirestore, collectionName, key);
+      const docRef = doc(dbFirestore, 'app_sections', key);
       const snap = await getDoc(docRef);
       if (snap.exists()) {
         loadedData[key] = snap.data().data;
@@ -75,31 +57,14 @@ async function loadDbFromFirestore() {
       }
     }
     
-    if (!hasData && isSandboxActive) {
-      console.log("🛠️ Sandbox database empty in Firestore. Copying production database to initialize sandbox...");
-      let prodData: any = null;
-      if (fs.existsSync(DB_FILE)) {
-        try {
-          prodData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-        } catch (e) {}
-      }
-      if (prodData) {
-        cacheDb = JSON.parse(JSON.stringify(prodData));
-        fs.writeFileSync(DB_FILE_SANDBOX, JSON.stringify(cacheDb, null, 2), 'utf8');
-        await saveDbToFirestore(cacheDb);
-        console.log("✅ Sandbox database successfully initialized with production snapshot.");
-        return;
-      }
-    }
-
     if (hasData) {
-      console.log(`✅ Successfully loaded all database sections from Firestore (${collectionName})`);
+      console.log("✅ Successfully loaded all database sections from Firestore");
       
       // Load local db.json for safe merging of any unsaved members or transactions
       let localDb: any = null;
       try {
-        if (fs.existsSync(currentDbFile)) {
-          localDb = JSON.parse(fs.readFileSync(currentDbFile, 'utf8'));
+        if (fs.existsSync(DB_FILE)) {
+          localDb = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
         }
       } catch (e) {
         console.error("⚠️ Failed to parse local db.json for backup/merge", e);
@@ -268,26 +233,23 @@ async function loadDbFromFirestore() {
       }
 
       // Write to local file as backup and for synchronous fallback
-      fs.writeFileSync(currentDbFile, JSON.stringify(cacheDb, null, 2), 'utf8');
+      fs.writeFileSync(DB_FILE, JSON.stringify(cacheDb, null, 2), 'utf8');
     } else {
-      console.log(`⚠️ No sections found in Firestore for ${collectionName}. Seeding from local file or defaults...`);
+      console.log("⚠️ No sections found in Firestore. Seeding from local file or defaults...");
       let localDb: any = null;
       try {
-        if (fs.existsSync(currentDbFile)) {
-          localDb = JSON.parse(fs.readFileSync(currentDbFile, 'utf8'));
-        } else if (isSandboxActive && fs.existsSync(DB_FILE)) {
-          // Fallback to copy from prod for sandbox
+        if (fs.existsSync(DB_FILE)) {
           localDb = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
         }
       } catch (e) {
-        console.error(`⚠️ Failed to parse local file ${currentDbFile}`, e);
+        console.error("⚠️ Failed to parse local db.json", e);
       }
       if (localDb) {
         cacheDb = localDb;
-        console.log(`💾 Seeding empty Firestore with ${currentDbFile} data...`);
+        console.log("💾 Seeding empty Firestore with local db.json data...");
         saveDbToFirestore(cacheDb).catch(err => console.error("❌ Failed to save seeded DB to Firestore:", err));
       } else {
-        console.log(`⚠️ No local file ${currentDbFile} found to seed Firestore.`);
+        console.log("⚠️ No local db.json found to seed Firestore.");
       }
     }
   } catch (err) {
@@ -295,65 +257,21 @@ async function loadDbFromFirestore() {
   }
 }
 
-let isSavingToFirestore = false;
-let pendingSaveData: any = null;
-let saveTimeout: NodeJS.Timeout | null = null;
-
 async function saveDbToFirestore(data: any) {
   if (!dbFirestore) return;
-  
-  // Store the latest data to be saved
-  pendingSaveData = data;
-  
-  // If we are already saving, the pendingSaveData has been updated, so we can return.
-  // It will be processed when the current save finishes.
-  if (isSavingToFirestore) {
-    console.log("⏳ [Firestore Sync] Already saving to Firestore. Queuing latest update.");
-    return;
-  }
-  
-  // Debounce the actual save to group rapid successive writes (e.g. within MLM transactions)
-  if (saveTimeout) {
-    clearTimeout(saveTimeout);
-  }
-  
-  saveTimeout = setTimeout(async () => {
-    saveTimeout = null;
-    await processFirestoreSave();
-  }, 1000); // 1 second debounce
-}
-
-async function processFirestoreSave() {
-  if (!dbFirestore || !pendingSaveData || isSavingToFirestore) return;
-  
-  isSavingToFirestore = true;
-  const dataToSave = pendingSaveData;
-  pendingSaveData = null; // Clear pending so we can detect new ones
-  
   try {
     const keys = ['members', 'products', 'sellerProducts', 'orders', 'transactions', 'planB_Tree', 'csrFund', 'systemStats', 'otps', 'packageProductChoices', 'bankSettings'];
     const batch = writeBatch(dbFirestore);
-    const collectionName = isSandboxActive ? 'app_sections_sandbox' : 'app_sections';
     for (const key of keys) {
-      if (dataToSave[key] !== undefined) {
-        const docRef = doc(dbFirestore, collectionName, key);
-        batch.set(docRef, { data: dataToSave[key] });
+      if (data[key] !== undefined) {
+        const docRef = doc(dbFirestore, 'app_sections', key);
+        batch.set(docRef, { data: data[key] });
       }
     }
     await batch.commit();
-    console.log(`📤 Successfully saved changed database sections to Firestore batch (${collectionName})`);
+    console.log("📤 Successfully saved changed database sections to Firestore batch");
   } catch (err) {
     console.error("❌ Error saving database to Firestore:", err);
-  } finally {
-    isSavingToFirestore = false;
-    // If another update came in while we were saving, process it now
-    if (pendingSaveData) {
-      console.log("🔄 [Firestore Sync] Running queued save to Firestore...");
-      // Add a slight delay to avoid hammering the connection
-      setTimeout(() => {
-        processFirestoreSave();
-      }, 500);
-    }
   }
 }
 
@@ -400,10 +318,9 @@ function initDb() {
         kycBookUrl: "",
         kycBeneficiary: "",
         kycRelation: "",
-        balanceECash: 15000.00,
-        balanceEMoney: 0.00,
-        balanceECoupon: 5000.00,
-        balanceEShare: 0.00,
+        balanceMCash: 15000.00,
+        balanceMCoupon: 5000.00,
+        balanceAllShare: 0.00,
         eligibleRights: 999999999,
         firstLogin: false,
         passwordReset: false,
@@ -433,10 +350,9 @@ function initDb() {
         statusKyc: "Active",
         kycImgUrl: "",
         kycBookUrl: "",
-        balanceECash: 0.00,
-        balanceEMoney: 0.00,
-        balanceECoupon: 0.00,
-        balanceEShare: 0.00,
+        balanceMCash: 0.00,
+        balanceMCoupon: 0.00,
+        balanceAllShare: 0.00,
         eligibleRights: 50000.00,
         firstLogin: false,
         passwordReset: false,
@@ -463,10 +379,9 @@ function initDb() {
         statusKyc: "Active",
         kycImgUrl: "",
         kycBookUrl: "",
-        balanceECash: 0.00,
-        balanceEMoney: 0.00,
-        balanceECoupon: 0.00,
-        balanceEShare: 0.00,
+        balanceMCash: 0.00,
+        balanceMCoupon: 0.00,
+        balanceAllShare: 0.00,
         eligibleRights: 50000.00,
         firstLogin: false,
         passwordReset: false,
@@ -595,7 +510,7 @@ function initDb() {
         userId: "A260600001",
         type: "Deposit",
         amount: 15000.00,
-        currency: "E-Cash",
+        currency: "M-Cash",
         details: "เติมเงินเข้ากระเป๋าเริ่มต้นระบบ",
         status: "Approved",
         createdAt: new Date().toISOString()
@@ -605,7 +520,7 @@ function initDb() {
         userId: "A260600001",
         type: "Deposit",
         amount: 5000.00,
-        currency: "E-Coupon",
+        currency: "M-Coupon",
         details: "โบนัสคูปองเริ่มต้นระบบ",
         status: "Approved",
         createdAt: new Date().toISOString()
@@ -657,22 +572,13 @@ initDb();
 
 function readDb() {
   let db: any;
-  const currentDbFile = isSandboxActive ? DB_FILE_SANDBOX : DB_FILE;
   if (cacheDb) {
     db = cacheDb;
   } else {
     try {
-      db = JSON.parse(fs.readFileSync(currentDbFile, 'utf8'));
+      db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
     } catch (e) {
-      console.error(`Error reading database file ${currentDbFile}, returning default structure`);
-      if (isSandboxActive && fs.existsSync(DB_FILE)) {
-        try {
-          const prodData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-          fs.writeFileSync(DB_FILE_SANDBOX, JSON.stringify(prodData, null, 2), 'utf8');
-          cacheDb = prodData;
-          return prodData;
-        } catch (err) {}
-      }
+      console.error("Error reading database file, returning default structure");
       const defaultData = {
         members: [],
         products: [],
@@ -696,7 +602,6 @@ function readDb() {
     }
   }
 
-  let migratedEMoney = false;
   if (db && db.members) {
     const seen = new Set();
     db.members = db.members.filter((m: any) => {
@@ -709,50 +614,10 @@ function readDb() {
       if (!m.email) {
         m.email = `${m.username}@gmail.com`;
       }
-      // Migrate old database fields from M-* to E-* dynamically for backward-compatibility
-      // Correctly migrate old balanceMCash to separate E-Money and E-Cash wallets:
-      // E-Money gets the whole Baht part (accumulated income), and E-Cash gets the fractional part (satang).
-      if (m.balanceMCash !== undefined) {
-        const originalMCash = Number(m.balanceMCash);
-        const wholePart = Math.floor(originalMCash);
-        const fractionalPart = parseFloat((originalMCash % 1).toFixed(6));
-        
-        // Correct duplicate values from earlier migrations
-        if (m.balanceECash === originalMCash || m.balanceECash === undefined) {
-          m.balanceECash = fractionalPart;
-          migratedEMoney = true;
-        }
-        if (m.balanceEMoney === originalMCash || m.balanceEMoney === undefined || m.balanceEMoney === 0) {
-          m.balanceEMoney = wholePart;
-          migratedEMoney = true;
-        }
-      }
-
-      if (m.balanceMCoupon !== undefined && m.balanceECoupon === undefined) {
-        m.balanceECoupon = m.balanceMCoupon;
-      }
-      if (m.balanceAllShare !== undefined && m.balanceEShare === undefined) {
-        m.balanceEShare = m.balanceAllShare;
-      }
-    });
-    if (migratedEMoney) {
-      console.log("💰 [Self-Healing] Successfully migrated old earnings balance into E-Money for active members.");
-    }
-  }
-
-  if (db && db.transactions) {
-    db.transactions.forEach((t: any) => {
-      if (t.currency === "M-Cash") t.currency = "E-Cash";
-      if (t.currency === "M-Coupon") t.currency = "E-Coupon";
-      if (t.currency === "AllShare" || t.currency === "M-Share" || t.currency === "All-Share") t.currency = "E-Share";
-      if (t.type === "AllShare") t.type = "EShare";
     });
   }
 
   let hasPopulatedMissing = false;
-  if (typeof migratedEMoney !== 'undefined' && migratedEMoney) {
-    hasPopulatedMissing = true;
-  }
   if (db && !db.packageProductChoices) {
     db.packageProductChoices = [
       { id: "pc_m1", packageId: "pack_m", name: "M-Set A: ชุดของใช้สบู่สมุนไพรนทีพลัส 3 ชิ้น" },
@@ -781,7 +646,7 @@ function readDb() {
 
   if (hasPopulatedMissing) {
     cacheDb = db;
-    fs.writeFileSync(currentDbFile, JSON.stringify(db, null, 2), 'utf8');
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
     saveDbToFirestore(db).catch(err => {
       console.error("❌ Async save of self-healed choices to Firestore failed:", err);
     });
@@ -802,8 +667,7 @@ function writeDb(data) {
     });
   }
   cacheDb = data;
-  const currentDbFile = isSandboxActive ? DB_FILE_SANDBOX : DB_FILE;
-  fs.writeFileSync(currentDbFile, JSON.stringify(data, null, 2), 'utf8');
+  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
   saveDbToFirestore(data).catch(err => {
     console.error("❌ Async save to Firestore failed:", err);
   });
@@ -946,12 +810,12 @@ function calculateBinaryCommissions(db, buyerId, pvAmount, orderId) {
         }
         
         // Split actual payout immediately according to 20% flat deduction rule:
-        // - 10% to E-Coupon
-        // - 3% to E-Share
+        // - 10% to M-Coupon
+        // - 3% to All-Share
         // - 5% to Plan B (used as point accumulation)
         // - 1% to CSR Fund (โครงการปันสุข)
         // - 1% to Company Profit
-        // - Remainder (80%) is paid to E-Cash
+        // - Remainder (80%) is paid to M-Cash
         
         const couponAllocation = actualPayout * 0.10;
         const allShareAllocation = actualPayout * 0.03;
@@ -959,14 +823,11 @@ function calculateBinaryCommissions(db, buyerId, pvAmount, orderId) {
         const csrAllocation = actualPayout * 0.01;
         const companyAllocation = actualPayout * 0.01;
         
-        const netECash = actualPayout * 0.80; // This goes to E-Money
-        
-        const netCoupon = couponAllocation * 0.90;
-        const couponToAllShare = couponAllocation * 0.10;
+        const netMCash = actualPayout * 0.80;
         
         // Update balances
-        parent.balanceEMoney = parseFloat(((parent.balanceEMoney || 0) + netECash).toFixed(4));
-        parent.balanceECoupon = parseFloat((parent.balanceECoupon + netCoupon).toFixed(4));
+        parent.balanceMCash = parseFloat((parent.balanceMCash + netMCash).toFixed(4));
+        parent.balanceMCoupon = parseFloat((parent.balanceMCoupon + couponAllocation).toFixed(4));
         
         // Accumulate Plan B point
         parent.planBPoints = parseFloat(((parent.planBPoints || 0) + planBAllocation).toFixed(4));
@@ -987,8 +848,8 @@ function calculateBinaryCommissions(db, buyerId, pvAmount, orderId) {
           createdAt: new Date().toISOString()
         });
         
-        // Process E-Share Allocation
-        processEShareDistribution(db, allShareAllocation + couponToAllShare, buyerId);
+        // Process All-Share Allocation
+        processAllShareDistribution(db, allShareAllocation, buyerId);
         
         // Check Plan B threshold (100 Points) to spawn child nodes in Plan B1 tree
         checkAndSpawnPlanBNodes(db, parent.userId);
@@ -999,8 +860,8 @@ function calculateBinaryCommissions(db, buyerId, pvAmount, orderId) {
           userId: parent.userId,
           type: "Bonus",
           amount: parseFloat(actualPayout.toFixed(4)),
-          currency: "E-Money",
-          details: `คอมมิชชันผังไบนารี ชั้นที่ ${level} (จ่ายจริงลำดับที่ ${paidLayersCount + 1}) จากการสั่งซื้อของรหัส ${buyerId}`,
+          currency: "M-Cash",
+          details: `คอมมิชชันผังไบนารี ชั้นที่ ${level} (จ่ายจ่ายจริงลำดับที่ ${paidLayersCount + 1}) จากการสั่งซื้อของรหัส ${buyerId}`,
           status: "Approved",
           createdAt: new Date().toISOString()
         });
@@ -1015,8 +876,8 @@ function calculateBinaryCommissions(db, buyerId, pvAmount, orderId) {
   }
 }
 
-// E-Share immediate distribution to all active eligible members (All-Share)
-function processEShareDistribution(db, amount, triggerMemberId, excludeTriggerId = false) {
+// All-Share immediate distribution to all active eligible members
+function processAllShareDistribution(db, amount, triggerMemberId, excludeTriggerId = false) {
   if (amount <= 0) return;
   
   // Eligible members are active members in XXL position, or who have eligibleRights > 0 (everyone except those with no rights)
@@ -1027,24 +888,23 @@ function processEShareDistribution(db, amount, triggerMemberId, excludeTriggerId
   if (eligibleMembers.length === 0) return;
   
   const sharePerMember = amount / eligibleMembers.length;
-  const eMoneyPart = sharePerMember * 0.50; // Pays into E-Money
+  const mCashPart = sharePerMember * 0.50;
   const planBPart = sharePerMember * 0.50; // Accumulates as direct Plan B point value
   
   if (!db.transactions) db.transactions = [];
 
   eligibleMembers.forEach(member => {
-    member.balanceEMoney = parseFloat(((member.balanceEMoney || 0) + eMoneyPart).toFixed(6));
+    member.balanceMCash = parseFloat((member.balanceMCash + mCashPart).toFixed(6));
     member.planBPoints = parseFloat(((member.planBPoints || 0) + planBPart).toFixed(6));
-    member.balanceEShare = parseFloat(((member.balanceEShare || 0) + sharePerMember).toFixed(6));
+    member.balanceAllShare = parseFloat(((member.balanceAllShare || 0) + sharePerMember).toFixed(6));
     
     // Log transaction
     db.transactions.push({
       id: "ALL_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
       userId: member.userId,
-      type: "EShare",
-      amount: eMoneyPart,
-      currency: "E-Money",
-      description: `โบนัส All-Share จากรหัส ${triggerMemberId} (+${eMoneyPart.toFixed(4)} E-Money / +${planBPart.toFixed(4)} คะแนน Plan B)`,
+      type: "AllShare",
+      amount: mCashPart,
+      description: `โบนัส All-Share จากรหัส ${triggerMemberId} (+${mCashPart.toFixed(4)} M-Cash / +${planBPart.toFixed(4)} คะแนน Plan B)`,
       createdAt: new Date().toISOString()
     });
 
@@ -1053,8 +913,8 @@ function processEShareDistribution(db, amount, triggerMemberId, excludeTriggerId
   });
 }
 
-// Unified helper to distribute any E-Cash/E-Money income with flat 20% deduction and split allocation
-function distributeECashWithDeduction(db, recipient, grossAmount, detailsText, triggerUserId) {
+// Unified helper to distribute any M-Cash income with flat 20% deduction and split allocation
+function distributeMCashWithDeduction(db, recipient, grossAmount, detailsText, triggerUserId) {
   if (grossAmount <= 0) return 0;
   
   const isManagerOrAdmin = recipient.role === 'Manager' || recipient.role === 'Admin';
@@ -1067,25 +927,22 @@ function distributeECashWithDeduction(db, recipient, grossAmount, detailsText, t
     }
     
     // Split actual payout immediately according to 20% flat deduction rule:
-    // - 10% to E-Coupon
-    // - 3% to E-Share (All-Share)
+    // - 10% to M-Coupon
+    // - 3% to All-Share
     // - 5% to Plan B (used as point accumulation)
     // - 1% to CSR Fund (โครงการปันสุข)
     // - 1% to Company Profit
-    // - Remainder (80%) is paid to E-Money
-    const netEMoney = actualPayout * 0.80;
+    // - Remainder (80%) is paid to M-Cash
+    const netMCash = actualPayout * 0.80;
     const couponAllocation = actualPayout * 0.10;
     const allShareAllocation = actualPayout * 0.03;
     const planBAllocation = actualPayout * 0.05;
     const csrAllocation = actualPayout * 0.01;
     const companyAllocation = actualPayout * 0.01;
     
-    const netCoupon = couponAllocation * 0.90;
-    const couponToAllShare = couponAllocation * 0.10;
-    
     // Update balances
-    recipient.balanceEMoney = parseFloat(((recipient.balanceEMoney || 0) + netEMoney).toFixed(4));
-    recipient.balanceECoupon = parseFloat(((recipient.balanceECoupon || 0) + netCoupon).toFixed(4));
+    recipient.balanceMCash = parseFloat((recipient.balanceMCash + netMCash).toFixed(4));
+    recipient.balanceMCoupon = parseFloat(((recipient.balanceMCoupon || 0) + couponAllocation).toFixed(4));
     recipient.planBPoints = parseFloat(((recipient.planBPoints || 0) + planBAllocation).toFixed(4));
     
     // Update global/admin stats
@@ -1104,8 +961,8 @@ function distributeECashWithDeduction(db, recipient, grossAmount, detailsText, t
       createdAt: new Date().toISOString()
     });
     
-    // Process E-Share Allocation (including withheld E-Coupon 10% that goes to All-Share)
-    processEShareDistribution(db, allShareAllocation + couponToAllShare, triggerUserId);
+    // Process All-Share Allocation
+    processAllShareDistribution(db, allShareAllocation, triggerUserId);
     
     // Check Plan B threshold (100 Points) to spawn child nodes in Plan B1 tree
     checkAndSpawnPlanBNodes(db, recipient.userId);
@@ -1115,9 +972,9 @@ function distributeECashWithDeduction(db, recipient, grossAmount, detailsText, t
       id: "BON_DED_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
       userId: recipient.userId,
       type: "Bonus",
-      amount: parseFloat(netEMoney.toFixed(4)),
-      currency: "E-Money",
-      details: `${detailsText} (ได้รับสุทธิเข้ากระเป๋า E-Money หลังหัก 20% ตามเงื่อนไข)`,
+      amount: parseFloat(netMCash.toFixed(4)),
+      currency: "M-Cash",
+      details: `${detailsText} (ได้รับสุทธิหลังหัก 20% ตามเงื่อนไข)`,
       status: "Approved",
       createdAt: new Date().toISOString()
     });
@@ -1213,16 +1070,16 @@ function getPlanBDetailsForTier(tierNum: number) {
     }
   }
 
-  const eCashGross = partValue;
-  const eCashNet = eCashGross * 0.80;
+  const mCashGross = partValue;
+  const mCashNet = mCashGross * 0.80;
   
   return {
     nodeValue,
     totalPayout,
     partsCount,
     partValue,
-    eCashGross,
-    eCashNet,
+    mCashGross,
+    mCashNet,
     coupon: partValue,
     spawnReserve: tierNum === 15 ? 0 : partValue,
     allShare: partValue,
@@ -1320,39 +1177,35 @@ function processPlanBGenericUpwardPayments(db, tierNum, nodeId) {
       
       const parentMember = db.members.find(m => m.userId === parentNode.memberUserId);
       if (parentMember) {
-        // Calculate 20% flat deduction details on the gross E-Cash amount
-        const eCashGross = details.eCashGross;
-        const netEMoney = details.eCashNet; // 80% of eCashGross (goes to E-Money)
+        // Calculate 20% flat deduction details on the gross M-Cash amount
+        const mCashGross = details.mCashGross;
+        const netMCash = details.mCashNet; // 80% of mCashGross
         
-        const eCashCoupon = eCashGross * 0.10;
-        const eCashEShare = eCashGross * 0.03;
-        const eCashPlanB = eCashGross * 0.05;
-        const eCashCSR = eCashGross * 0.01;
-        const eCashCompany = eCashGross * 0.01;
-
-        const grossCoupon = details.coupon + eCashCoupon;
-        const netCoupon = grossCoupon * 0.90;
-        const couponToAllShare = grossCoupon * 0.10;
+        const mCashCoupon = mCashGross * 0.10;
+        const mCashAllShare = mCashGross * 0.03;
+        const mCashPlanB = mCashGross * 0.05;
+        const mCashCSR = mCashGross * 0.01;
+        const mCashCompany = mCashGross * 0.01;
 
         // Apply payouts:
-        // Net E-Money goes to member's E-Money wallet
-        parentMember.balanceEMoney = parseFloat(((parentMember.balanceEMoney || 0) + netEMoney).toFixed(4));
+        // Net M-Cash goes to member's M-Cash wallet
+        parentMember.balanceMCash = parseFloat((parentMember.balanceMCash + netMCash).toFixed(4));
         
-        // Coupon portion (direct coupon + 10% from E-Cash deduction - 10% withhold to All-Share) goes to member's Coupon wallet
-        parentMember.balanceECoupon = parseFloat((parentMember.balanceECoupon + netCoupon).toFixed(4));
+        // Coupon portion (direct coupon + 10% from M-Cash deduction) goes to member's Coupon wallet
+        parentMember.balanceMCoupon = parseFloat((parentMember.balanceMCoupon + details.coupon + mCashCoupon).toFixed(4));
         
         // 5% Plan B point deduction accumulates back to member's Plan B points
-        parentMember.planBPoints = parseFloat(((parentMember.planBPoints || 0) + eCashPlanB).toFixed(4));
+        parentMember.planBPoints = parseFloat(((parentMember.planBPoints || 0) + mCashPlanB).toFixed(4));
         
         // Update global/admin stats:
-        // Company portion (direct company profit + 1% from E-Cash deduction)
-        db.systemStats.totalCompanyProfits = parseFloat((db.systemStats.totalCompanyProfits + details.company + eCashCompany).toFixed(4));
+        // Company portion (direct company profit + 1% from M-Cash deduction)
+        db.systemStats.totalCompanyProfits = parseFloat((db.systemStats.totalCompanyProfits + details.company + mCashCompany).toFixed(4));
         
         // Plan B point deduction reserves
-        db.systemStats.totalPlanBReserves = parseFloat((db.systemStats.totalPlanBReserves + eCashPlanB).toFixed(4));
+        db.systemStats.totalPlanBReserves = parseFloat((db.systemStats.totalPlanBReserves + mCashPlanB).toFixed(4));
         
-        // CSR allocation (direct CSR + 1% from E-Cash deduction)
-        const totalCsrAllocation = details.csr + eCashCSR;
+        // CSR allocation (direct CSR + 1% from M-Cash deduction)
+        const totalCsrAllocation = details.csr + mCashCSR;
         db.csrFund.balance = parseFloat((db.csrFund.balance + totalCsrAllocation).toFixed(4));
         db.csrFund.history.push({
           id: "CSR_TXN_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
@@ -1360,13 +1213,13 @@ function processPlanBGenericUpwardPayments(db, tierNum, nodeId) {
           userId: parentMember.userId,
           amount: parseFloat(totalCsrAllocation.toFixed(4)),
           type: "Donation",
-          details: `หักกองทุนปันสุขจากโบนัสสำเร็จลูป Plan B${tierNum} (ปันสุขรายชั้น ฿${details.csr.toFixed(2)} + หัก 1% E-Cash ฿${eCashCSR.toFixed(2)})`,
+          details: `หักกองทุนปันสุขจากโบนัสสำเร็จลูป Plan B${tierNum} (ปันสุขรายชั้น ฿${details.csr.toFixed(2)} + หัก 1% M-Cash ฿${mCashCSR.toFixed(2)})`,
           createdAt: new Date().toISOString()
         });
         
-        // E-Share distribution (direct E-Share + 3% from E-Cash deduction + 10% coupon withhold)
-        const totalEShareAllocation = details.allShare + eCashEShare + couponToAllShare;
-        processEShareDistribution(db, totalEShareAllocation, parentMember.userId);
+        // All-Share distribution (direct All-Share + 3% from M-Cash deduction)
+        const totalAllShareAllocation = details.allShare + mCashAllShare;
+        processAllShareDistribution(db, totalAllShareAllocation, parentMember.userId);
         
         // Check Plan B threshold trigger for the recipient
         checkAndSpawnPlanBNodes(db, parentMember.userId);
@@ -1381,9 +1234,9 @@ function processPlanBGenericUpwardPayments(db, tierNum, nodeId) {
           id: `PLANB${tierNum}_` + Math.random().toString(36).substr(2, 9).toUpperCase(),
           userId: parentMember.userId,
           type: "Bonus",
-          amount: parseFloat(netEMoney.toFixed(4)),
-          currency: "E-Money",
-          details: `โบนัสพิเศษระบบ Plan B${tierNum} สำเร็จลูป (เต็ม 5 ชั้น จ่ายสุทธิเข้ากระเป๋า E-Money หลังหัก 20%)`,
+          amount: parseFloat(netMCash.toFixed(4)),
+          currency: "M-Cash",
+          details: `โบนัสพิเศษระบบ Plan B${tierNum} สำเร็จลูป (เต็ม 5 ชั้น จ่ายจริงสุทธิหลังหัก 20%)`,
           status: "Approved",
           createdAt: new Date().toISOString()
         });
@@ -1491,9 +1344,9 @@ app.post('/api/auth/register', (req, res) => {
     kycBookUrl: "",
     kycBeneficiary: kycBeneficiary || "",
     kycRelation: kycRelation || "",
-    balanceECash: 0.00,
-    balanceECoupon: 0.00,
-    balanceEShare: 0.00,
+    balanceMCash: 0.00,
+    balanceMCoupon: 0.00,
+    balanceAllShare: 0.00,
     eligibleRights: 0.00, // No rights until package purchased
     planBPoints: 0,
     firstLogin: true,
@@ -1737,20 +1590,10 @@ app.get('/api/member/profile/:userId', (req, res) => {
   if (!member) {
     return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
   }
-
-  const transactions = db.transactions || [];
-  const totalEarnings = transactions
-    .filter((t: any) => t.userId === member.userId && t.status === "Approved" && (t.currency === "E-Cash" || t.currency === "E-Money") && (t.type === "Bonus" || t.type === "EShare"))
-    .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
-    
-  const totalCouponsEarned = transactions
-    .filter((t: any) => t.userId === member.userId && t.status === "Approved" && t.currency === "E-Coupon" && (t.amount || 0) > 0)
-    .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
   
   // Return safe profile summary data
   res.json({
     success: true,
-    isSandboxActive: isSandboxActive,
     profile: {
       userId: member.userId,
       username: member.username,
@@ -1764,12 +1607,9 @@ app.get('/api/member/profile/:userId', (req, res) => {
       sponsorId: member.sponsorId,
       rank: member.rank,
       statusKyc: member.statusKyc,
-      balanceECash: member.balanceECash,
-      balanceEMoney: member.balanceEMoney || 0.00,
-      balanceECoupon: member.balanceECoupon,
-      balanceEShare: member.balanceEShare,
-      totalEarnings: parseFloat(totalEarnings.toFixed(4)),
-      totalCouponsEarned: parseFloat(totalCouponsEarned.toFixed(4)),
+      balanceMCash: member.balanceMCash,
+      balanceMCoupon: member.balanceMCoupon,
+      balanceAllShare: member.balanceAllShare,
       eligibleRights: member.eligibleRights,
       planBPoints: member.planBPoints || 0,
       kycBeneficiary: member.kycBeneficiary || "",
@@ -1841,7 +1681,7 @@ app.post('/api/member/kyc', (req, res) => {
   res.json({ success: true, message: "ส่งเอกสารยืนยันตัวตน (KYC) สำเร็จแล้ว อยู่ระหว่างตรวจสอบจากแอดมิน" });
 });
 
-// BUY COUPON (EXCHANGE E-CASH TO E-COUPON)
+// BUY COUPOP (EXCHANGE M-CASH TO M-COUPON)
 app.post('/api/member/buy-coupon', (req, res) => {
   const { userId, amount, pin } = req.body;
   const db = readDb();
@@ -1858,20 +1698,20 @@ app.post('/api/member/buy-coupon', (req, res) => {
   }
   
   const amt = parseFloat(amount);
-  if (member.balanceECash < amt) {
-    return res.status(400).json({ success: false, message: "ยอดเงินคงเหลือในกระเป๋า E-Cash ไม่เพียงพอ" });
+  if (member.balanceMCash < amt) {
+    return res.status(400).json({ success: false, message: "ยอดเงินคงเหลือในกระเป๋า M-Cash ไม่เพียงพอ" });
   }
   
-  member.balanceECash = parseFloat((member.balanceECash - amt).toFixed(4));
-  member.balanceECoupon = parseFloat((member.balanceECoupon + amt).toFixed(4));
+  member.balanceMCash = parseFloat((member.balanceMCash - amt).toFixed(4));
+  member.balanceMCoupon = parseFloat((member.balanceMCoupon + amt).toFixed(4));
   
   db.transactions.push({
     id: "COUP_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
     userId: member.userId,
     type: "Exchange",
     amount: amt,
-    currency: "E-Coupon",
-    details: "โอนย้าย E-Cash ซื้อคูปองช้อปปิ้ง",
+    currency: "M-Coupon",
+    details: "โอนย้าย M-Cash ซื้อคูปองช้อปปิ้ง",
     status: "Approved",
     createdAt: new Date().toISOString()
   });
@@ -1880,8 +1720,8 @@ app.post('/api/member/buy-coupon', (req, res) => {
   res.json({
     success: true,
     message: "ซื้อคูปองช้อปปิ้งสำเร็จเรียบร้อย!",
-    newECash: member.balanceECash,
-    newECoupon: member.balanceECoupon
+    newMCash: member.balanceMCash,
+    newMCoupon: member.balanceMCoupon
   });
 });
 
@@ -1920,8 +1760,8 @@ app.post('/api/member/topup', (req, res) => {
     transferAmount: parseFloat(transferAmount),
     transferDate: transferDate,
     slipImgUrl: slipImgUrl,
-    currency: "E-Cash",
-    details: `แจ้งเติมเงิน E-Cash ยอดแจ้งโอน ฿${parseFloat(transferAmount).toLocaleString()} (จากยอดขอคำนวณ ฿${parseFloat(amount).toLocaleString()})`,
+    currency: "M-Cash",
+    details: `แจ้งเติมเงิน M-Cash ยอดแจ้งโอน ฿${parseFloat(transferAmount).toLocaleString()} (จากยอดขอคำนวณ ฿${parseFloat(amount).toLocaleString()})`,
     status: "Pending",
     createdAt: new Date().toISOString()
   });
@@ -1930,8 +1770,8 @@ app.post('/api/member/topup', (req, res) => {
   res.json({ success: true, message: "ส่งคำขอเติมเงินและหลักฐานสลิปเรียบร้อยแล้วค่ะ รอแอดมินอนุมัติ", txnId });
 });
 
-// TRANSFER E-CASH TO OTHER MEMBER
-app.post('/api/member/transfer-e-cash', (req, res) => {
+// TRANSFER M-CASH TO OTHER MEMBER
+app.post('/api/member/transfer-m-cash', (req, res) => {
   const { senderId, receiverPhoneOrUser, amount, pin } = req.body;
   const db = readDb();
   
@@ -1956,19 +1796,19 @@ app.post('/api/member/transfer-e-cash', (req, res) => {
   }
   
   const amt = parseFloat(amount);
-  if (sender.balanceECash < amt) {
-    return res.status(400).json({ success: false, message: "ยอดเงิน E-Cash ของคุณไม่เพียงพอ" });
+  if (sender.balanceMCash < amt) {
+    return res.status(400).json({ success: false, message: "ยอดเงิน M-Cash ของคุณไม่เพียงพอ" });
   }
   
-  sender.balanceECash = parseFloat((sender.balanceECash - amt).toFixed(4));
-  receiver.balanceECash = parseFloat((receiver.balanceECash + amt).toFixed(4));
+  sender.balanceMCash = parseFloat((sender.balanceMCash - amt).toFixed(4));
+  receiver.balanceMCash = parseFloat((receiver.balanceMCash + amt).toFixed(4));
   
   db.transactions.push({
     id: "XFER_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
     userId: sender.userId,
     type: "Withdraw",
     amount: amt,
-    currency: "E-Cash",
+    currency: "M-Cash",
     details: `โอนเงินออกไปยังรหัส ${receiver.userId} (${receiver.name})`,
     status: "Approved",
     createdAt: new Date().toISOString()
@@ -1979,7 +1819,7 @@ app.post('/api/member/transfer-e-cash', (req, res) => {
     userId: receiver.userId,
     type: "Deposit",
     amount: amt,
-    currency: "E-Cash",
+    currency: "M-Cash",
     details: `รับโอนเงินเข้าจากรหัส ${sender.userId} (${sender.name})`,
     status: "Approved",
     createdAt: new Date().toISOString()
@@ -1989,211 +1829,11 @@ app.post('/api/member/transfer-e-cash', (req, res) => {
   res.json({
     success: true,
     message: `โอนเงินสำเร็จไปยัง ${receiver.name} ${receiver.surname} เรียบร้อยแล้วค่ะ!`,
-    newECash: sender.balanceECash
+    newMCash: sender.balanceMCash
   });
 });
 
-// VERIFY RECIPIENT
-app.post('/api/member/verify-recipient', (req, res) => {
-  const { receiverPhoneOrUser, senderId } = req.body;
-  const db = readDb();
-  
-  const receiver = db.members.find(m => m.phone === receiverPhoneOrUser || m.username.toLowerCase() === receiverPhoneOrUser.toLowerCase() || m.userId === receiverPhoneOrUser);
-  if (!receiver) {
-    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกผู้รับปลายทาง กรุณาตรวจสอบเบอร์โทรหรือไอดีอีกครั้งค่ะ" });
-  }
-  
-  if (senderId && receiver.userId === senderId) {
-    return res.status(400).json({ success: false, message: "ไม่สามารถทำรายการโดยใช้บัญชีตนเองเป็นผู้รับได้ค่ะ" });
-  }
-  
-  res.json({
-    success: true,
-    recipient: {
-      userId: receiver.userId,
-      name: `${receiver.name} ${receiver.surname}`,
-      phone: receiver.phone,
-      username: receiver.username
-    }
-  });
-});
-
-// TRANSFER E-CASH TO E-MONEY (10% FEE: 5% ALL-SHARE, 5% COMPANY)
-app.post('/api/member/transfer-ecash-to-emoney', (req, res) => {
-  const { senderId, amount, pin } = req.body;
-  const db = readDb();
-  
-  const member = db.members.find(m => m.userId === senderId);
-  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
-  
-  if (member.statusKyc !== "Active") {
-    return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
-  }
-  
-  if (member.pin !== pin) {
-    return res.status(400).json({ success: false, message: "รหัส PIN ธุรกรรม 6 หลักไม่ถูกต้อง" });
-  }
-  
-  const amt = parseFloat(amount);
-  if (member.balanceECash < amt) {
-    return res.status(400).json({ success: false, message: "ยอดเงิน E-Cash ของคุณไม่เพียงพอ" });
-  }
-  
-  const fee = amt * 0.10;
-  const allSharePart = fee * 0.50; // 5% of amt
-  const companyPart = fee * 0.50;  // 5% of amt
-  const netAmount = amt - fee;      // 90% of amt
-  
-  member.balanceECash = parseFloat((member.balanceECash - amt).toFixed(4));
-  member.balanceEMoney = parseFloat(((member.balanceEMoney || 0) + netAmount).toFixed(4));
-  
-  // Deduct/distribute fee
-  db.systemStats.totalCompanyProfits = parseFloat((db.systemStats.totalCompanyProfits + companyPart).toFixed(4));
-  processEShareDistribution(db, allSharePart, member.userId);
-  
-  // Log transaction
-  db.transactions.push({
-    id: "XEC_EM_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-    userId: member.userId,
-    type: "Withdraw",
-    amount: amt,
-    currency: "E-Cash",
-    details: `โอนจาก E-Cash ไปยัง E-Money (ยอดโอน ฿${amt.toFixed(2)} • หักค่าบริการ 10% ฿${fee.toFixed(2)})`,
-    status: "Approved",
-    createdAt: new Date().toISOString()
-  });
-  
-  db.transactions.push({
-    id: "DEC_EM_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-    userId: member.userId,
-    type: "Deposit",
-    amount: netAmount,
-    currency: "E-Money",
-    details: `รับโอนจาก E-Cash (ยอดโอนสุทธิหลังหักค่าธรรมเนียม 10%)`,
-    status: "Approved",
-    createdAt: new Date().toISOString()
-  });
-  
-  writeDb(db);
-  res.json({
-    success: true,
-    message: `โอนเงินจาก E-Cash ไปยัง E-Money สำเร็จแล้วค่ะ! (ยอดรับสุทธิ ฿${netAmount.toFixed(2)})`,
-    newECash: member.balanceECash,
-    newEMoney: member.balanceEMoney
-  });
-});
-
-// TRANSFER E-MONEY TO E-CASH (1:1, NO FEE)
-app.post('/api/member/transfer-emoney-to-ecash', (req, res) => {
-  const { senderId, amount, pin } = req.body;
-  const db = readDb();
-  
-  const member = db.members.find(m => m.userId === senderId);
-  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
-  
-  if (member.statusKyc !== "Active") {
-    return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
-  }
-  
-  if (member.pin !== pin) {
-    return res.status(400).json({ success: false, message: "รหัส PIN ธุรกรรม 6 หลักไม่ถูกต้อง" });
-  }
-  
-  const amt = parseFloat(amount);
-  if ((member.balanceEMoney || 0) < amt) {
-    return res.status(400).json({ success: false, message: "ยอดเงิน E-Money ของคุณไม่เพียงพอ" });
-  }
-  
-  member.balanceEMoney = parseFloat(((member.balanceEMoney || 0) - amt).toFixed(4));
-  member.balanceECash = parseFloat((member.balanceECash + amt).toFixed(4));
-  
-  db.transactions.push({
-    id: "XEM_EC_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-    userId: member.userId,
-    type: "Withdraw",
-    amount: amt,
-    currency: "E-Money",
-    details: `โอนจาก E-Money ไปยัง E-Cash`,
-    status: "Approved",
-    createdAt: new Date().toISOString()
-  });
-  
-  db.transactions.push({
-    id: "DEM_EC_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-    userId: member.userId,
-    type: "Deposit",
-    amount: amt,
-    currency: "E-Cash",
-    details: `รับโอนจาก E-Money สัดส่วน 1:1`,
-    status: "Approved",
-    createdAt: new Date().toISOString()
-  });
-  
-  writeDb(db);
-  res.json({
-    success: true,
-    message: "โอนเงินจาก E-Money ไปยัง E-Cash สำเร็จเรียบร้อยแล้วค่ะ!",
-    newECash: member.balanceECash,
-    newEMoney: member.balanceEMoney
-  });
-});
-
-// TRANSFER E-MONEY TO E-COUPON (1:1, NO FEE)
-app.post('/api/member/transfer-emoney-to-ecoupon', (req, res) => {
-  const { senderId, amount, pin } = req.body;
-  const db = readDb();
-  
-  const member = db.members.find(m => m.userId === senderId);
-  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
-  
-  if (member.statusKyc !== "Active") {
-    return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
-  }
-  
-  if (member.pin !== pin) {
-    return res.status(400).json({ success: false, message: "รหัส PIN ธุรกรรม 6 หลักไม่ถูกต้อง" });
-  }
-  
-  const amt = parseFloat(amount);
-  if ((member.balanceEMoney || 0) < amt) {
-    return res.status(400).json({ success: false, message: "ยอดเงิน E-Money ของคุณไม่เพียงพอ" });
-  }
-  
-  member.balanceEMoney = parseFloat(((member.balanceEMoney || 0) - amt).toFixed(4));
-  member.balanceECoupon = parseFloat(((member.balanceECoupon || 0) + amt).toFixed(4));
-  
-  db.transactions.push({
-    id: "XEM_CP_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-    userId: member.userId,
-    type: "Withdraw",
-    amount: amt,
-    currency: "E-Money",
-    details: `โอนเปลี่ยนเป็น E-Coupon`,
-    status: "Approved",
-    createdAt: new Date().toISOString()
-  });
-  
-  db.transactions.push({
-    id: "DEM_CP_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-    userId: member.userId,
-    type: "Deposit",
-    amount: amt,
-    currency: "E-Coupon",
-    details: `ได้รับ E-Coupon จากการเปลี่ยนกระเป๋าเงิน E-Money`,
-    status: "Approved",
-    createdAt: new Date().toISOString()
-  });
-  
-  writeDb(db);
-  res.json({
-    success: true,
-    message: "โอนเงินจาก E-Money เปลี่ยนเป็น E-Coupon สำเร็จเรียบร้อยแล้วค่ะ!",
-    newECoupon: member.balanceECoupon,
-    newEMoney: member.balanceEMoney
-  });
-});
-
-// WITHDRAW E-MONEY TO BANK
+// WITHDRAW M-CASH TO BANK
 app.post('/api/member/withdraw', (req, res) => {
   const { userId, amount, pin } = req.body;
   const db = readDb();
@@ -2210,8 +1850,8 @@ app.post('/api/member/withdraw', (req, res) => {
   }
   
   const amt = parseFloat(amount);
-  if ((member.balanceEMoney || 0) < amt) {
-    return res.status(400).json({ success: false, message: "ยอดเงิน E-Money ของคุณไม่เพียงพอสำหรับการถอนเงิน" });
+  if (member.balanceMCash < amt) {
+    return res.status(400).json({ success: false, message: "ยอดเงิน M-Cash ของคุณไม่เพียงพอ" });
   }
   
   // Deductions: 15% Platform charge, 5% withholding tax (based on remainder after 15%)
@@ -2220,7 +1860,7 @@ app.post('/api/member/withdraw', (req, res) => {
   const withholdingTax = taxableAmount * 0.05;
   const netReceived = amt - platformCharge - withholdingTax;
   
-  member.balanceEMoney = parseFloat(((member.balanceEMoney || 0) - amt).toFixed(4));
+  member.balanceMCash = parseFloat((member.balanceMCash - amt).toFixed(4));
   
   db.transactions.push({
     id: "WITH_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
@@ -2228,7 +1868,7 @@ app.post('/api/member/withdraw', (req, res) => {
     type: "WithdrawalRequest",
     amount: amt,
     netAmount: netReceived,
-    currency: "E-Money",
+    currency: "M-Cash",
     details: `ถอนเงินออกบัญชีธนาคาร ${member.bankName} เลขที่ ${member.bankAccount}`,
     status: "Pending", // Pending Admin approval
     createdAt: new Date().toISOString()
@@ -2241,7 +1881,7 @@ app.post('/api/member/withdraw', (req, res) => {
   res.json({
     success: true,
     message: "ส่งคำถอนเงินสำเร็จ! เงินจะโอนเข้าบัญชีของคุณภายใน 48 ชั่วโมง",
-    newEMoney: member.balanceEMoney,
+    newMCash: member.balanceMCash,
     netReceived: parseFloat(netReceived.toFixed(2))
   });
 });
@@ -2528,38 +2168,30 @@ app.post('/api/shop/purchase', (req, res) => {
 
   // 3. Perform pre-deduction check on balances to keep database transactions atomic and clean
   let couponUsed = 0;
-  let eMoneyUsed = 0;
   let cashUsed = 0;
 
   if (isPackage) {
-    if (member.balanceECash < totalPrice) {
-      return res.status(400).json({ success: false, message: `ยอดเงิน E-Cash คงเหลือไม่พอสำหรับชำระเงินค่าแพ็กเกจ (ขาดอีก ${(totalPrice - member.balanceECash).toFixed(2)} บาท)` });
+    if (member.balanceMCash < totalPrice) {
+      return res.status(400).json({ success: false, message: `ยอดเงิน M-Cash คงเหลือไม่พอสำหรับชำระเงินค่าแพ็กเกจ (ขาดอีก ${(totalPrice - member.balanceMCash).toFixed(2)} บาท)` });
     }
     cashUsed = totalPrice;
   } else {
-    couponUsed = Math.min(member.balanceECoupon || 0, totalPrice);
-    let remaining = totalPrice - couponUsed;
-    
-    eMoneyUsed = Math.min(member.balanceEMoney || 0, remaining);
-    remaining = remaining - eMoneyUsed;
-    
-    cashUsed = remaining;
-    
-    if (member.balanceECash < cashUsed) {
+    couponUsed = Math.min(member.balanceMCoupon || 0, totalPrice);
+    cashUsed = totalPrice - couponUsed;
+    if (member.balanceMCash < cashUsed) {
       return res.status(400).json({ 
         success: false, 
-        message: `ยอดเงินคงเหลือไม่พอสำหรับชำระเงิน (ราคารวม ฿${totalPrice.toLocaleString()} • หัก E-Coupon ฿${couponUsed.toLocaleString()} • หัก E-Money ฿${eMoneyUsed.toLocaleString()} • ต้องใช้ E-Cash ชำระส่วนต่าง ฿${cashUsed.toLocaleString()} แต่มีเพียง ฿${member.balanceECash.toLocaleString()} • ขาดอีก ฿${(cashUsed - member.balanceECash).toFixed(2)})` 
+        message: `ยอดเงินคงเหลือไม่พอสำหรับชำระเงิน (ราคารวม ฿${totalPrice.toLocaleString()} • ใช้ M-Coupon ได้ ฿${couponUsed.toLocaleString()} • ต้องใช้ M-Cash ชำระส่วนต่าง ฿${cashUsed.toLocaleString()} แต่มีเพียง ฿${member.balanceMCash.toLocaleString()} • ขาดอีก ฿${(cashUsed - member.balanceMCash).toFixed(2)})` 
       });
     }
   }
 
   // 4. All validations passed! Deduct the balances now.
   if (isPackage) {
-    member.balanceECash = parseFloat((member.balanceECash - cashUsed).toFixed(4));
+    member.balanceMCash = parseFloat((member.balanceMCash - cashUsed).toFixed(4));
   } else {
-    member.balanceECoupon = parseFloat(((member.balanceECoupon || 0) - couponUsed).toFixed(4));
-    member.balanceEMoney = parseFloat(((member.balanceEMoney || 0) - eMoneyUsed).toFixed(4));
-    member.balanceECash = parseFloat((member.balanceECash - cashUsed).toFixed(4));
+    member.balanceMCoupon = parseFloat(((member.balanceMCoupon || 0) - couponUsed).toFixed(4));
+    member.balanceMCash = parseFloat((member.balanceMCash - cashUsed).toFixed(4));
   }
   
   // Upgrade Position Rank and top-up income quota ONLY based on package purchased (S, M, L, XL, XXL)
@@ -2642,7 +2274,7 @@ app.post('/api/shop/purchase', (req, res) => {
       userId: member.userId,
       type: "Withdraw",
       amount: totalPrice,
-      currency: "E-Cash",
+      currency: "M-Cash",
       details: `ชำระเงินซื้อแพ็กเกจ ${product.name}`,
       status: "Approved",
       createdAt: new Date().toISOString()
@@ -2654,20 +2286,8 @@ app.post('/api/shop/purchase', (req, res) => {
         userId: member.userId,
         type: "Withdraw",
         amount: couponUsed,
-        currency: "E-Coupon",
-        details: `ชำระเงินซื้อสินค้าด้วย E-Coupon: ${product.name}`,
-        status: "Approved",
-        createdAt: new Date().toISOString()
-      });
-    }
-    if (eMoneyUsed > 0) {
-      db.transactions.push({
-        id: "EMNY_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-        userId: member.userId,
-        type: "Withdraw",
-        amount: eMoneyUsed,
-        currency: "E-Money",
-        details: `ชำระเงินซื้อสินค้าด้วย E-Money (ระบบดึงอัตโนมัติ): ${product.name}`,
+        currency: "M-Coupon",
+        details: `ชำระเงินซื้อสินค้าด้วย M-Coupon: ${product.name}`,
         status: "Approved",
         createdAt: new Date().toISOString()
       });
@@ -2678,8 +2298,8 @@ app.post('/api/shop/purchase', (req, res) => {
         userId: member.userId,
         type: "Withdraw",
         amount: cashUsed,
-        currency: "E-Cash",
-        details: `ชำระเงินซื้อสินค้าด้วย E-Cash (ส่วนต่าง): ${product.name}`,
+        currency: "M-Cash",
+        details: `ชำระเงินซื้อสินค้าด้วย M-Cash (ส่วนต่าง): ${product.name}`,
         status: "Approved",
         createdAt: new Date().toISOString()
       });
@@ -2689,33 +2309,29 @@ app.post('/api/shop/purchase', (req, res) => {
   // Calculate Commissions:
   if (productId === "pack_s") {
     // S package special calculations:
-    // 1. Direct referral (ค่าแนะนำ 50 บาท ให้ผู้แนะนำ ใน E-Cash ถูกหักตามเงื่อนไข)
+    // 1. Direct referral (ค่าแนะนำ 50 บาท ให้ผู้แนะนำ ใน M-Cash ถูกหักตามเงื่อนไข)
     const sponsor = db.members.find(m => m.userId === member.sponsorId);
     let actualSponsorPayout = 0;
     if (sponsor) {
       const referralBonus = 50.00;
-      actualSponsorPayout = distributeECashWithDeduction(db, sponsor, referralBonus, `ค่าแนะนำตรงตำแหน่ง S ของรหัส ${member.userId}`, member.userId);
+      actualSponsorPayout = distributeMCashWithDeduction(db, sponsor, referralBonus, `ค่าแนะนำตรงตำแหน่ง S ของรหัส ${member.userId}`, member.userId);
     }
 
-    // 2. Member's Coupon (เข้าคูปอง สมาชิก 10 บาท - หัก 10% เข้า All-Share)
-    const rawCouponAward = 10.00;
-    const netCouponAward = rawCouponAward * 0.90; // 9.00
-    const couponToAllShare = rawCouponAward * 0.10; // 1.00
-
-    member.balanceECoupon = parseFloat(((member.balanceECoupon || 0) + netCouponAward).toFixed(4));
+    // 2. Member's Coupon (เข้าคูปอง สมาชิก 10 บาท)
+    member.balanceMCoupon = parseFloat(((member.balanceMCoupon || 0) + 10.00).toFixed(4));
     db.transactions.push({
       id: "COUP_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
       userId: member.userId,
       type: "Deposit",
-      amount: netCouponAward,
-      currency: "E-Coupon",
-      details: `โบนัส E-Coupon จากการสมัครตำแหน่ง S (หัก 10% เข้า All-Share)`,
+      amount: 10.00,
+      currency: "M-Coupon",
+      details: `โบนัส M-Coupon จากการสมัครตำแหน่ง S`,
       status: "Approved",
       createdAt: new Date().toISOString()
     });
 
-    // 3. E-Share (เข้า E-Share 10 บาท + ส่วนที่หัก 1 บาท)
-    processEShareDistribution(db, 10.00 + couponToAllShare, member.userId, true);
+    // 3. All-Share (เข้า All-Share 10 บาท (สมัครใหม่ครั้งแรกจะไม่ถูกนับรวมในผู้ได้รับสิทธิ์))
+    processAllShareDistribution(db, 10.00, member.userId, true);
 
     // 4. CSR Fund (เข้ากองทุนปันสุข 5 บาท จ่ายในนามสมาชิก)
     db.csrFund.balance = parseFloat((db.csrFund.balance + 5.00).toFixed(4));
@@ -2762,7 +2378,7 @@ app.post('/api/shop/purchase', (req, res) => {
     const referralBonus = totalPv * 0.50;
     
     if (sponsor) {
-      actualSponsorPayout = distributeECashWithDeduction(
+      actualSponsorPayout = distributeMCashWithDeduction(
         db, 
         sponsor, 
         referralBonus, 
@@ -2832,7 +2448,7 @@ app.post('/api/shop/purchase', (req, res) => {
   res.json({
     success: true,
     message: "สั่งซื้อและชำระเงินเรียบร้อยแล้วค่ะ!",
-    newECash: member.balanceECash,
+    newMCash: member.balanceMCash,
     rank: member.rank,
     eligibleRights: member.eligibleRights
   });
@@ -3222,8 +2838,8 @@ app.get('/api/admin/stats', (req, res) => {
   const csrBalance = db.csrFund.balance;
   
   // Total taxable transactions
-  const totalECashHeld = db.members.reduce((acc, m) => acc + (m.balanceECash || 0), 0);
-  const totalECouponHeld = db.members.reduce((acc, m) => acc + (m.balanceECoupon || 0), 0);
+  const totalMCashHeld = db.members.reduce((acc, m) => acc + (m.balanceMCash || 0), 0);
+  const totalMCouponHeld = db.members.reduce((acc, m) => acc + (m.balanceMCoupon || 0), 0);
   
   res.json({
     success: true,
@@ -3232,8 +2848,8 @@ app.get('/api/admin/stats', (req, res) => {
       taxReserves: stats.totalTaxReserves,
       companyProfits: stats.totalCompanyProfits,
       csrBalance: csrBalance,
-      memberECash: totalECashHeld,
-      memberECoupon: totalECouponHeld,
+      memberMCash: totalMCashHeld,
+      memberMCoupon: totalMCouponHeld,
       netProfits: parseFloat((stats.totalCompanyProfits * 0.85).toFixed(2)) // Net system profit
     }
   });
@@ -3540,8 +3156,8 @@ app.post('/api/admin/deposit-approve', (req, res) => {
   const member = db.members.find(m => m.userId === txn.userId);
   if (member) {
     const creditAmt = txn.transferAmount || txn.amount || 0;
-    member.balanceECash = parseFloat(((member.balanceECash || 0) + creditAmt).toFixed(4));
-    txn.details = `อนุมัติเติมเงิน E-Cash เข้าบัญชี ฿${creditAmt.toLocaleString()}`;
+    member.balanceMCash = parseFloat(((member.balanceMCash || 0) + creditAmt).toFixed(4));
+    txn.details = `อนุมัติเติมเงิน M-Cash เข้าบัญชี ฿${creditAmt.toLocaleString()}`;
     
     // Add transaction history record for approval
     db.transactions.push({
@@ -3549,15 +3165,15 @@ app.post('/api/admin/deposit-approve', (req, res) => {
       userId: member.userId,
       type: "Deposit_System",
       amount: creditAmt,
-      currency: "E-Cash",
-      details: `ได้รับเครดิต E-Cash จากการอนุมัติสลิปโอนเงิน (รหัสธุรกรรมอ้างอิง: ${txnId})`,
+      currency: "M-Cash",
+      details: `ได้รับเครดิต M-Cash จากการอนุมัติสลิปโอนเงิน (รหัสธุรกรรมอ้างอิง: ${txnId})`,
       status: "Approved",
       createdAt: new Date().toISOString()
     });
   }
   
   writeDb(db);
-  res.json({ success: true, message: "อนุมัติรายการเติมเงิน E-Cash เรียบร้อยแล้วค่ะ" });
+  res.json({ success: true, message: "อนุมัติรายการเติมเงิน M-Cash เรียบร้อยแล้วค่ะ" });
 });
 
 // REJECT DEPOSIT SLIP
@@ -3568,7 +3184,7 @@ app.post('/api/admin/deposit-reject', (req, res) => {
   if (!txn) return res.status(404).json({ success: false, message: "ไม่พบรายการธุรกรรม" });
   
   txn.status = "Rejected";
-  txn.details = `ปฏิเสธการเติมเงิน E-Cash: ${reason || 'ข้อมูลหรือสลิปไม่ถูกต้อง'}`;
+  txn.details = `ปฏิเสธการเติมเงิน M-Cash: ${reason || 'ข้อมูลหรือสลิปไม่ถูกต้อง'}`;
   
   writeDb(db);
   res.json({ success: true, message: "ปฏิเสธรายการเติมเงินเรียบร้อยแล้วค่ะ" });
@@ -3627,83 +3243,6 @@ app.post('/api/bank-settings', (req, res) => {
   res.json({ success: true, message: "บันทึกข้อมูลบัญชีธนาคารและ QR Code เรียบร้อยแล้วค่ะ", bankSettings: db.bankSettings });
 });
 
-// GET FIREBASE CLIENT CONFIG FOR REAL-TIME SYNC
-app.get('/api/firebase-config', (req, res) => {
-  const firebaseConfigPath = path.join(__dirname, 'firebase-applet-config.json');
-  if (fs.existsSync(firebaseConfigPath)) {
-    try {
-      const config = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
-      res.json({ success: true, config });
-    } catch (e) {
-      res.status(500).json({ success: false, message: 'Failed to read firebase config' });
-    }
-  } else {
-    res.status(404).json({ success: false, message: 'Firebase config not found' });
-  }
-});
-
-// GET SANDBOX STATE
-app.get('/api/admin/sandbox-status', (req, res) => {
-  res.json({
-    success: true,
-    isSandboxActive: isSandboxActive
-  });
-});
-
-// TOGGLE SANDBOX STATE
-app.post('/api/admin/sandbox-toggle', async (req, res) => {
-  const { active, resetFromProduction } = req.body;
-  
-  try {
-    const oldState = isSandboxActive;
-    isSandboxActive = !!active;
-    
-    // Save to status file
-    fs.writeFileSync(SANDBOX_STATE_FILE, JSON.stringify({ active: isSandboxActive }, null, 2), 'utf8');
-    
-    if (isSandboxActive) {
-      if (resetFromProduction || !fs.existsSync(DB_FILE_SANDBOX)) {
-        console.log("🔄 Resetting sandbox from production snapshot...");
-        // Read production file directly
-        let prodData: any = null;
-        if (fs.existsSync(DB_FILE)) {
-          prodData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-        }
-        
-        if (prodData) {
-          cacheDb = JSON.parse(JSON.stringify(prodData));
-          fs.writeFileSync(DB_FILE_SANDBOX, JSON.stringify(cacheDb, null, 2), 'utf8');
-          await saveDbToFirestore(cacheDb);
-          console.log("✅ Sandbox database overwritten with production snapshot.");
-        } else {
-          // Initialize fresh sandbox database
-          cacheDb = null;
-          await loadDbFromFirestore();
-        }
-      } else {
-        // Just switch cache to sandbox database by loading it
-        cacheDb = null;
-        await loadDbFromFirestore();
-      }
-    } else {
-      // Switched off: reload production database
-      cacheDb = null;
-      await loadDbFromFirestore();
-    }
-    
-    res.json({
-      success: true,
-      isSandboxActive: isSandboxActive,
-      message: isSandboxActive 
-        ? "เปิดใช้งานโหมดทดสอบระบบเรียบร้อยแล้วค่ะ (ข้อมูลจำลองถูกเตรียมพร้อมแล้ว)" 
-        : "สลับกลับสู่โหมดข้อมูลจริง (Production Mode) เรียบร้อยแล้วค่ะ"
-    });
-  } catch (err: any) {
-    console.error("Error toggling sandbox state:", err);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการเปลี่ยนสถานะโหมดทดสอบ: " + err.message });
-  }
-});
-
 // GET ALL MEMBERS FOR ADMIN MANAGEMENT
 app.get('/api/admin/members', (req, res) => {
   const db = readDb();
@@ -3711,14 +3250,14 @@ app.get('/api/admin/members', (req, res) => {
   const transactions = db.transactions || [];
   
   const enrichedMembers = members.map((member: any) => {
-    // Sum of approved transaction amounts where currency is E-Cash and type is Bonus or EShare
+    // Sum of approved transaction amounts where currency is M-Cash and type is Bonus or AllShare
     const totalEarnings = transactions
-      .filter((t: any) => t.userId === member.userId && t.status === "Approved" && t.currency === "E-Cash" && (t.type === "Bonus" || t.type === "EShare"))
+      .filter((t: any) => t.userId === member.userId && t.status === "Approved" && t.currency === "M-Cash" && (t.type === "Bonus" || t.type === "AllShare"))
       .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
       
-    // Sum of all approved transactions where currency is E-Coupon and amount is positive (accumulated coupons)
+    // Sum of all approved transactions where currency is M-Coupon and amount is positive (accumulated coupons)
     const totalCouponsEarned = transactions
-      .filter((t: any) => t.userId === member.userId && t.status === "Approved" && t.currency === "E-Coupon" && (t.amount || 0) > 0)
+      .filter((t: any) => t.userId === member.userId && t.status === "Approved" && t.currency === "M-Coupon" && (t.amount || 0) > 0)
       .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
 
     return {
@@ -3816,7 +3355,7 @@ app.post('/api/admin/member-update', (req, res) => {
   const { 
     userId, name, surname, phone, email, idCard, 
     bankName, bankAccount, bankAccountName, password, pin, 
-    rank, role, balanceECash, balanceEMoney, balanceECoupon, sellerStatus, eligibleRights,
+    rank, role, balanceMCash, balanceMCoupon, sellerStatus, eligibleRights,
     sponsorId,
     editorUserId
   } = req.body;
@@ -3907,9 +3446,8 @@ app.post('/api/admin/member-update', (req, res) => {
     }
   }
   if (role !== undefined) member.role = role;
-  if (balanceECash !== undefined) member.balanceECash = Number(balanceECash);
-  if (balanceEMoney !== undefined) member.balanceEMoney = Number(balanceEMoney);
-  if (balanceECoupon !== undefined) member.balanceECoupon = Number(balanceECoupon);
+  if (balanceMCash !== undefined) member.balanceMCash = Number(balanceMCash);
+  if (balanceMCoupon !== undefined) member.balanceMCoupon = Number(balanceMCoupon);
   if (sellerStatus !== undefined) member.sellerStatus = sellerStatus;
   if (eligibleRights !== undefined) member.eligibleRights = Number(eligibleRights);
 
@@ -3952,9 +3490,9 @@ app.post('/api/admin/system-reset', (req, res) => {
         kycBookUrl: "",
         kycBeneficiary: "",
         kycRelation: "",
-        balanceECash: 15000.00,
-        balanceECoupon: 5000.00,
-        balanceEShare: 0.00,
+        balanceMCash: 15000.00,
+        balanceMCoupon: 5000.00,
+        balanceAllShare: 0.00,
         eligibleRights: 999999999,
         firstLogin: false,
         passwordReset: false,
@@ -3992,9 +3530,9 @@ app.post('/api/admin/system-reset', (req, res) => {
         member.kycBookUrl = "";
         member.kycBeneficiary = "";
         member.kycRelation = "";
-        member.balanceECash = 15000.00;
-        member.balanceECoupon = 5000.00;
-        member.balanceEShare = 0.00;
+        member.balanceMCash = 15000.00;
+        member.balanceMCoupon = 5000.00;
+        member.balanceAllShare = 0.00;
         member.eligibleRights = 999999999;
         member.firstLogin = false;
         member.passwordReset = false;
