@@ -331,6 +331,7 @@ async function loadDbFromFirestore() {
 }
 
 let isSavingToFirestore = false;
+let isFirestoreQuotaExceeded = false;
 let pendingSaveData: any = null;
 let saveTimeout: NodeJS.Timeout | null = null;
 let retryCount = 0;
@@ -378,6 +379,7 @@ async function processFirestoreSave() {
     await batch.commit();
     console.log(`📤 Successfully saved database to Firestore batch (${collectionName})`);
     retryCount = 0; // Reset retry count on success
+    isFirestoreQuotaExceeded = false;
   } catch (err: any) {
     console.error("❌ Error saving database to Firestore:", err);
     
@@ -388,6 +390,7 @@ async function processFirestoreSave() {
     );
 
     if (isQuotaExhausted) {
+      isFirestoreQuotaExceeded = true;
       console.warn("⚠️ [Firestore Sync] Firestore daily write quota has been exceeded. The application will continue running seamlessly in Local Mode using db.json! Retries are suspended for 15 minutes to preserve resources.");
       if (!pendingSaveData) {
         pendingSaveData = dataToSave;
@@ -3721,7 +3724,7 @@ app.get('/api/firebase-config', (req, res) => {
   };
 
   if (config.projectId && config.apiKey) {
-    res.json({ success: true, config });
+    res.json({ success: true, config, isFirestoreQuotaExceeded });
   } else {
     res.status(404).json({ success: false, message: 'Firebase configuration not found. Please set environment variables or config files.' });
   }
@@ -3734,6 +3737,7 @@ app.get('/api/sync-state', (req, res) => {
     res.json({
       success: true,
       isSandboxActive: isSandboxActive,
+      isFirestoreQuotaExceeded: isFirestoreQuotaExceeded,
       data: {
         members: db.members || [],
         products: db.products || [],

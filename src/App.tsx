@@ -971,6 +971,13 @@ export default function App() {
           throw new Error("No Firebase config returned from server");
         }
 
+        if (dConfig.isFirestoreQuotaExceeded) {
+          console.warn("⚠️ Firestore daily write quota is exceeded on the server. Activating local polling fallback directly!");
+          setIsUsingPollingFallback(true);
+          activateFallbackPolling("Firestore write quota exceeded on server");
+          return;
+        }
+
         const config = dConfig.config;
         const firebaseApp = initializeApp(config);
         const dbFirestore = getFirestore(firebaseApp, config.firestoreDatabaseId);
