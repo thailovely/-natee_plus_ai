@@ -1,0 +1,11 @@
+env:
+  - variable: FIREBASE_PROJECT_ID
+    value: "indigo-brand-j6rpq"
+  - variable: FIREBASE_APP_ID
+    value: "1:418124597541:web:11302d7a7e24a4177072cc"
+  - variable: FIREBASE_MESSAGING_SENDER_ID
+    value: "418124597541"
+  - variable: FIREBASE_AUTH_DOMAIN
+    value: "indigo-brand-j6rpq.firebaseapp.com"
+  - variable: FIREBASE_STORAGE_BUCKET
+    value: "indigo-brand-j6rpq.firebasestorage.app"
