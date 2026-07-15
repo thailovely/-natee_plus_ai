@@ -4343,33 +4343,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Sound Notification Test Section (Only for Admin & Manager) */}
-              {(currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
-                <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-left">
-                  <div className="space-y-1">
-                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                      🔊 ทดสอบระบบเสียงเอฟเฟกต์ & เสียงพูดแจ้งเตือน (E-Cash)
-                    </h4>
-                    <p className="text-xs text-slate-500">
-                      เฉพาะแอดมินและผู้จัดการเท่านั้นที่เห็นส่วนนี้ค่ะ คุณสามารถกดทดสอบเพื่อฟังตัวอย่างเสียงพูดภาษาไทย (เสียงผู้หญิง) และเสียงเอฟเฟกต์เงินเข้าจริงได้ทันทีค่ะ
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <button 
-                      onClick={() => playMoneySound(1000, 'deposit')}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-2xl text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/10 active:scale-95 transition duration-150 cursor-pointer"
-                    >
-                      🪙 ทดสอบเสียงเติมเงิน (฿1,000)
-                    </button>
-                    <button 
-                      onClick={() => playMoneySound(999.99, 'bonus')}
-                      className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-2xl text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/10 active:scale-95 transition duration-150 cursor-pointer"
-                    >
-                      🎁 ทดสอบเสียงโบนัสเข้า (฿999.99)
-                    </button>
-                  </div>
-                </div>
-              )}
+
 
               {/* Activation Package Reminder for new Member rank */}
               {profile?.rank === 'Member' && (
