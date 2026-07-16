@@ -2358,11 +2358,12 @@ app.post('/api/member/withdraw', (req, res) => {
     return res.status(400).json({ success: false, message: "ยอดเงิน E-Money ของคุณไม่เพียงพอสำหรับการถอนเงิน" });
   }
   
-  // Deductions: 15% Platform charge, 5% withholding tax (based on remainder after 15%)
-  const platformCharge = amt * 0.15;
-  const taxableAmount = amt - platformCharge;
-  const withholdingTax = taxableAmount * 0.05;
-  const netReceived = amt - platformCharge - withholdingTax;
+  // Deductions: 20% Auto-reserve (per plan conditions), and 5% fee (which is 3% withholding tax + 2% company fee on the 80% remaining)
+  const autoReserve = amt * 0.20;
+  const taxableAmount = amt - autoReserve; // remaining 80%
+  const withholdingTax = taxableAmount * 0.03; // 3% withholding tax
+  const platformCharge = taxableAmount * 0.02; // 2% company service/handling fee
+  const netReceived = taxableAmount - withholdingTax - platformCharge; // net amount to transfer (amt * 0.76)
   
   member.balanceEMoney = parseFloat(((member.balanceEMoney || 0) - amt).toFixed(4));
   
@@ -2371,6 +2372,10 @@ app.post('/api/member/withdraw', (req, res) => {
     userId: member.userId,
     type: "WithdrawalRequest",
     amount: amt,
+    autoReserve: autoReserve,
+    taxableAmount: taxableAmount,
+    withholdingTax: withholdingTax,
+    companyFee: platformCharge,
     netAmount: netReceived,
     currency: "E-Money",
     details: `ถอนเงินออกบัญชีธนาคาร ${member.bankName} เลขที่ ${member.bankAccount}`,
@@ -3730,9 +3735,11 @@ app.post('/api/admin/withdrawal-approve', (req, res) => {
   
   // Deduct from system stats if applicable
   if (deductionType === 'Tax' && txn.netAmount) {
-     db.systemStats.totalTaxReserves = parseFloat((db.systemStats.totalTaxReserves - (txn.amount - txn.netAmount)).toFixed(4));
+     const taxDeduct = txn.withholdingTax !== undefined ? txn.withholdingTax : ((txn.amount * 0.80) * 0.03);
+     db.systemStats.totalTaxReserves = parseFloat((db.systemStats.totalTaxReserves - taxDeduct).toFixed(4));
   } else if (deductionType === 'Profit' && txn.netAmount) {
-     db.systemStats.totalCompanyProfits = parseFloat((db.systemStats.totalCompanyProfits - txn.netAmount).toFixed(4));
+     const feeDeduct = txn.companyFee !== undefined ? txn.companyFee : ((txn.amount * 0.80) * 0.02);
+     db.systemStats.totalCompanyProfits = parseFloat((db.systemStats.totalCompanyProfits - feeDeduct).toFixed(4));
   }
   
   writeDb(db);

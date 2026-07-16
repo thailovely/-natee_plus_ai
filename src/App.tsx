@@ -5,7 +5,7 @@ import {
   TrendingUp, HelpCircle, ArrowRight, Upload, Search, 
   Trash2, Plus, Star, AlertCircle, RefreshCw, Layers, MapPin,
   Eye, EyeOff, X, ClipboardList, Printer, Lock, FileSpreadsheet,
-  Coins
+  Coins, FileText
 } from 'lucide-react';
 import { thaiAddressData } from './thaiAddressData';
 import { NateeWarehouseMap } from './components/NateeWarehouseMap';
@@ -2435,6 +2435,56 @@ export default function App() {
     setCustomTaxYear((new Date(data.createdAt || Date.now()).getFullYear() + 543).toString());
   };
 
+  const openAnnualTaxDoc = (withdrawals: any[]) => {
+    const grossIncome = withdrawals.reduce((sum, t) => sum + t.amount, 0);
+    const autoReserve = grossIncome * 0.20;
+    const taxableIncome = grossIncome - autoReserve;
+    const totalWithholdingTax = taxableIncome * 0.03;
+    const totalCompanyFee = taxableIncome * 0.02;
+    const totalNetReceived = withdrawals.reduce((sum, t) => sum + (t.netAmount || (t.amount * 0.76)), 0);
+
+    const annualData = {
+      id: "ANNUAL_2569_" + (currentUser?.userId || 'MEMBER'),
+      createdAt: "2026-12-31T23:59:59.000Z", // end of year 2569
+      isAnnual: true,
+      amount: grossIncome,
+      taxableAmount: taxableIncome,
+      withholdingTax: totalWithholdingTax,
+      companyFee: totalCompanyFee,
+      netAmount: totalNetReceived,
+      details: "รวบรวมนำส่ง ตลอดปี 2569 (ม.ค. - ธ.ค. 2569)"
+    };
+
+    setSelectedTaxDoc({ type: 'member', data: annualData });
+    setCustomPayeeName(`${profile?.name || ''} ${profile?.surname || ''}`);
+    setCustomPayeeTaxId(profile?.idCard || '');
+    setCustomPayeeAddress(profile?.address || profile?.kycAddress || 'จัดส่งตามที่อยู่โปรไฟล์ผู้ใช้งานหลัก');
+    setCustomTaxYear("2569");
+  };
+
+  const getReceiptDetails = (order: any) => {
+    if (!order || !order.createdAt) return { book: "07/69", no: "16A00001" };
+    const date = new Date(order.createdAt);
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yy = String((date.getFullYear() + 543) % 100).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    
+    // Generate deterministic 5-digit sequence based on order ID
+    let seqNum = 1;
+    if (order.id) {
+      let hash = 0;
+      for (let i = 0; i < order.id.length; i++) {
+        hash = order.id.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      seqNum = Math.abs(hash % 99999) + 1;
+    }
+    const seqStr = String(seqNum).padStart(5, '0');
+    return {
+      book: `${mm}/${yy}`,
+      no: `${dd}A${seqStr}`
+    };
+  };
+
   const handleKycSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!kycForm.bankName || !kycForm.bankAccount) {
@@ -2770,15 +2820,23 @@ export default function App() {
       showNotif('กรุณากรอกรหัส PIN 6 หลัก', 'error');
       return;
     }
-    const fee = amt * 0.20;
-    const net = amt - fee;
+    const autoReserve = amt * 0.20;
+    const remaining = amt - autoReserve;
+    const tax = remaining * 0.03;
+    const companyFee = remaining * 0.02;
+    const totalFeeAndTax = tax + companyFee;
+    const net = remaining - totalFeeAndTax;
     setTxnConfirm({
       type: 'withdraw_emoney',
       amount: amt,
       pin: withdrawPin,
       recipientIdOrPhone: currentUser.userId,
       recipientName: `บัญชีธนาคารของคุณ: ${profile?.bankName} (เลขที่: ${profile?.bankAccount})`,
-      feeAmount: fee,
+      autoReserve: autoReserve,
+      taxableAmount: remaining,
+      withholdingTax: tax,
+      companyFee: companyFee,
+      feeAmount: totalFeeAndTax,
       netAmount: net
     });
   };
@@ -7787,32 +7845,24 @@ export default function App() {
                     {(() => {
                       const approvedWithdrawals = transactions.filter(t => t.userId === currentUser?.userId && t.type === 'WithdrawalRequest' && t.status === 'Approved');
                       const grossIncome = approvedWithdrawals.reduce((sum, t) => sum + t.amount, 0);
-                      const platformFee = grossIncome * 0.15;
-                      const taxableIncome = grossIncome - platformFee;
-                      const totalWithholdingTax = taxableIncome * 0.05;
-                      const totalNetReceived = approvedWithdrawals.reduce((sum, t) => sum + (t.netAmount || 0), 0);
+                      const autoReserve = grossIncome * 0.20;
+                      const taxableIncome = grossIncome - autoReserve; // 80% remaining
+                      const totalWithholdingTax = taxableIncome * 0.03; // 3%
+                      const totalNetReceived = approvedWithdrawals.reduce((sum, t) => sum + (t.netAmount || (t.amount * 0.76)), 0);
 
                       return (
-                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 pt-2">
-                          <div className="bg-white/10 p-3.5 rounded-2xl border border-white/10">
-                            <span className="text-[10px] text-indigo-200 block">ยอดขอถอนรวม (Gross)</span>
-                            <strong className="text-base font-bold font-mono">฿ {grossIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                          <div className="bg-white/10 p-4 rounded-2xl border border-white/10">
+                            <span className="text-[11px] text-indigo-200 block mb-1">ยอดรายได้สุทธิสะสม (หลังหัก 20%)</span>
+                            <strong className="text-lg font-bold font-mono text-sky-200">฿ {taxableIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                           </div>
-                          <div className="bg-white/10 p-3.5 rounded-2xl border border-white/10">
-                            <span className="text-[10px] text-indigo-200 block">ค่าธรรมเนียมระบบ 15%</span>
-                            <strong className="text-base font-bold font-mono text-amber-300">฿ {platformFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                          <div className="bg-white/10 p-4 rounded-2xl border border-white/10">
+                            <span className="text-[11px] text-indigo-200 block mb-1">ภาษีหัก ณ ที่จ่ายสะสม (3%)</span>
+                            <strong className="text-lg font-bold font-mono text-rose-300">฿ {totalWithholdingTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                           </div>
-                          <div className="bg-white/10 p-3.5 rounded-2xl border border-white/10 col-span-2 md:col-span-1">
-                            <span className="text-[10px] text-indigo-200 block">ฐานรายได้พิจารณาภาษี</span>
-                            <strong className="text-base font-bold font-mono text-sky-200">฿ {taxableIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                          </div>
-                          <div className="bg-white/10 p-3.5 rounded-2xl border border-white/10">
-                            <span className="text-[10px] text-indigo-200 block">ภาษีหัก ณ ที่จ่าย 5%</span>
-                            <strong className="text-base font-bold font-mono text-rose-300">฿ {totalWithholdingTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                          </div>
-                          <div className="bg-emerald-500/30 p-3.5 rounded-2xl border border-emerald-500/20">
-                            <span className="text-[10px] text-emerald-200 block">ยอดโอนสุทธิเข้ารับ</span>
-                            <strong className="text-base font-bold font-mono text-emerald-300">฿ {totalNetReceived.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                          <div className="bg-emerald-500/30 p-4 rounded-2xl border border-emerald-500/20">
+                            <span className="text-[11px] text-emerald-200 block mb-1">รายได้คงเหลือรับสุทธิ์สะสม</span>
+                            <strong className="text-lg font-bold font-mono text-emerald-300">฿ {totalNetReceived.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                           </div>
                         </div>
                       );
@@ -7827,69 +7877,92 @@ export default function App() {
 
                     {(() => {
                       const userWithdrawals = transactions.filter(t => t.userId === currentUser?.userId && t.type === 'WithdrawalRequest');
+                      const approvedWithdrawals = userWithdrawals.filter(t => t.status === 'Approved');
                       
                       return (
-                        <div className="overflow-x-auto rounded-2xl border border-slate-100">
-                          <table className="w-full text-left text-xs border-collapse">
-                            <thead>
-                              <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold text-[11px]">
-                                <th className="p-3">วันที่/เวลาโอนเงิน</th>
-                                <th className="p-3">รหัสบิล/Txn ID</th>
-                                <th className="p-3 text-right">ยอดเงินถอน (Gross)</th>
-                                <th className="p-3 text-right">หักค่าบริการ 15%</th>
-                                <th className="p-3 text-right">ฐานคำนวณภาษี</th>
-                                <th className="p-3 text-right">ภาษีหัก ณ ที่จ่าย (5%)</th>
-                                <th className="p-3 text-right">ยอดรับเงินสุทธิ (Net)</th>
-                                <th className="p-3 text-center">สถานะธุรกรรม</th>
-                                <th className="p-3 text-right">หนังสือ ทวิ 50</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 text-[11px] text-slate-700">
-                              {userWithdrawals.length === 0 ? (
-                                <tr>
-                                  <td colSpan={9} className="p-6 text-center italic text-slate-400">ยังไม่เคยทำรายการถอนเงินออกจากระบบ E-Money ค่ะ</td>
+                        <>
+                          {/* Annual 50 Tawi Summary Download Widget */}
+                          <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-indigo-900 font-medium">
+                            <div className="space-y-1 text-left">
+                              <h5 className="font-bold text-indigo-950 flex items-center gap-1.5">
+                                📅 หนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ) ประจำปี พ.ศ. 2569 (ม.ค. - ธ.ค. 2569)
+                              </h5>
+                              <p className="text-[11px] text-indigo-700">
+                                สรุปยอดรวมรายได้ค่านายหน้าสะสมและภาษีนำส่งสรรพากรทั้งหมดตลอดปี พ.ศ. 2569 ในเอกสารฉบับเดียว
+                              </p>
+                            </div>
+                            {approvedWithdrawals.length > 0 ? (
+                              <button
+                                onClick={() => openAnnualTaxDoc(approvedWithdrawals)}
+                                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-xl transition shadow-sm hover:shadow flex items-center gap-2 cursor-pointer whitespace-nowrap"
+                              >
+                                <Printer size={14} /> พิมพ์ ทวิ 50 ประจำปี
+                              </button>
+                            ) : (
+                              <span className="text-slate-400 italic">ไม่มีข้อมูลรายได้ที่อนุมัติในปีภาษีนี้</span>
+                            )}
+                          </div>
+
+                          <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold text-[11px]">
+                                  <th className="p-3">วันที่/เวลาโอนเงิน</th>
+                                  <th className="p-3">รหัสบิล/Txn ID</th>
+                                  <th className="p-3 text-right">ยอดรายได้สุทธิ (บาท)</th>
+                                  <th className="p-3 text-right">ภาษีหัก ณ.ที่จ่ายสะสม (บาท)</th>
+                                  <th className="p-3 text-right">รายได้คงเหลือรับสุทธิ์ (บาท)</th>
+                                  <th className="p-3 text-center">สถานะธุรกรรม</th>
+                                  <th className="p-3 text-right">หนังสือ ทวิ 50</th>
                                 </tr>
-                              ) : (
-                                userWithdrawals.map(txn => {
-                                  const fee = txn.amount * 0.15;
-                                  const taxable = txn.amount - fee;
-                                  const tax = taxable * 0.05;
-                                  
-                                  return (
-                                    <tr key={txn.id} className="hover:bg-slate-50/40 font-sans">
-                                      <td className="p-3">{new Date(txn.createdAt).toLocaleString('th-TH')}</td>
-                                      <td className="p-3 font-mono font-bold text-[10px]">{txn.id}</td>
-                                      <td className="p-3 text-right font-semibold text-slate-900">฿ {txn.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                      <td className="p-3 text-right text-amber-600">฿ {fee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                      <td className="p-3 text-right text-sky-700">฿ {taxable.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                      <td className="p-3 text-right font-bold text-rose-600">฿ {tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                      <td className="p-3 text-right font-extrabold text-emerald-600">฿ {(txn.netAmount || (txn.amount - fee - tax)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                      <td className="p-3 text-center">
-                                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] font-bold ${
-                                          txn.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800 animate-pulse'
-                                        }`}>
-                                          {txn.status === 'Approved' ? '✓ สำเร็จแล้ว' : 'รอแอดมินอนุมัติ'}
-                                        </span>
-                                      </td>
-                                      <td className="p-3 text-right">
-                                        {txn.status === 'Approved' ? (
-                                          <button
-                                            onClick={() => openTaxDoc('member', txn)}
-                                            className="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer shadow-sm hover:shadow ml-auto"
-                                          >
-                                            <FileText size={12} /> ใบ 50 ทวิ
-                                          </button>
-                                        ) : (
-                                          <span className="text-[10px] text-slate-400 italic">พร้อมพิมพ์เมื่อสำเร็จ</span>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  );
-                                })
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-[11px] text-slate-700">
+                                {userWithdrawals.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={7} className="p-6 text-center italic text-slate-400">ยังไม่เคยทำรายการถอนเงินออกจากระบบ E-Money ค่ะ</td>
+                                  </tr>
+                                ) : (
+                                  userWithdrawals.map(txn => {
+                                    const autoReserve = txn.autoReserve !== undefined ? txn.autoReserve : (txn.amount * 0.20);
+                                    const taxable = txn.taxableAmount !== undefined ? txn.taxableAmount : (txn.amount - autoReserve);
+                                    const tax = txn.withholdingTax !== undefined ? txn.withholdingTax : (taxable * 0.03);
+                                    const compFee = txn.companyFee !== undefined ? txn.companyFee : (taxable * 0.02);
+                                    const net = txn.netAmount !== undefined ? txn.netAmount : (taxable - tax - compFee);
+                                    
+                                    return (
+                                      <tr key={txn.id} className="hover:bg-slate-50/40 font-sans">
+                                        <td className="p-3">{new Date(txn.createdAt).toLocaleString('th-TH')}</td>
+                                        <td className="p-3 font-mono font-bold text-[10px]">{txn.id}</td>
+                                        <td className="p-3 text-right font-semibold text-slate-900">฿ {taxable.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                        <td className="p-3 text-right font-bold text-rose-600">฿ {tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                        <td className="p-3 text-right font-extrabold text-emerald-600">฿ {net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                        <td className="p-3 text-center">
+                                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] font-bold ${
+                                            txn.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800 animate-pulse'
+                                          }`}>
+                                            {txn.status === 'Approved' ? '✓ สำเร็จแล้ว' : 'รอแอนมินอนุมัติ'}
+                                          </span>
+                                        </td>
+                                        <td className="p-3 text-right">
+                                          {txn.status === 'Approved' ? (
+                                            <button
+                                              onClick={() => openTaxDoc('member', txn)}
+                                              className="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer shadow-sm hover:shadow ml-auto"
+                                            >
+                                              <FileText size={12} /> ใบ 50 ทวิ
+                                            </button>
+                                          ) : (
+                                            <span className="text-[10px] text-slate-400 italic">พร้อมพิมพ์เมื่อสำเร็จ</span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
                       );
                     })()}
                   </div>
@@ -11678,10 +11751,18 @@ export default function App() {
 
                 <div className="grid grid-cols-2 gap-2 text-[11px] border-b border-slate-100 pb-3 font-sans">
                   <div>
+                    <span className="text-slate-400 block">เล่มที่ / Book No:</span>
+                    <strong className="text-indigo-600 font-mono text-[11px]">{getReceiptDetails(selectedReceiptOrder).book}</strong>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-slate-400 block">เลขที่ใบเสร็จ / Receipt No:</span>
+                    <strong className="text-indigo-600 font-mono text-[11px]">{getReceiptDetails(selectedReceiptOrder).no}</strong>
+                  </div>
+                  <div className="mt-2">
                     <span className="text-slate-400 block">เลขที่ใบสั่งซื้อ / Bill No:</span>
                     <strong className="text-slate-800 font-mono text-[10px]">{selectedReceiptOrder.id}</strong>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right mt-2">
                     <span className="text-slate-400 block">วันที่ทำรายการ / Date:</span>
                     <strong className="text-slate-800">{new Date(selectedReceiptOrder.createdAt).toLocaleString('th-TH')}</strong>
                   </div>
@@ -11881,82 +11962,92 @@ export default function App() {
                 </div>
 
                 {/* Table of Income Details */}
-                <div className="mt-4 border border-slate-800 text-[10px] overflow-hidden">
-                  <div className="grid grid-cols-12 bg-slate-50 border-b border-slate-800 text-slate-900 font-bold text-center">
-                    <div className="col-span-6 p-2 text-left border-r border-slate-800">ประเภทเงินได้ที่จ่าย (Type of Income)</div>
-                    <div className="col-span-2 p-2 border-r border-slate-800">วัน เดือน หรือปี ที่จ่าย</div>
-                    <div className="col-span-2 p-2 border-r border-slate-800">จำนวนเงินที่จ่าย (บาท)</div>
-                    <div className="col-span-2 p-2">ภาษีที่หักและนำส่ง (บาท)</div>
-                  </div>
+                {(() => {
+                  const isMember = selectedTaxDoc.type === 'member';
+                  const amountPaid = isMember
+                    ? (selectedTaxDoc.data.taxableAmount !== undefined ? selectedTaxDoc.data.taxableAmount : (selectedTaxDoc.data.amount * 0.80))
+                    : (selectedTaxDoc.data.totalPrice * 0.8);
+                  const taxwithheld = isMember
+                    ? (selectedTaxDoc.data.withholdingTax !== undefined ? selectedTaxDoc.data.withholdingTax : (amountPaid * 0.03))
+                    : (selectedTaxDoc.data.totalPrice * 0.8 * 0.03);
 
-                  {/* Row 1 */}
-                  {selectedTaxDoc.type === 'member' ? (
-                    <div className="grid grid-cols-12 border-b border-slate-200 text-slate-800 font-medium">
-                      <div className="col-span-6 p-2.5 border-r border-slate-800 leading-normal">
-                        <strong>เงินได้ประเภทที่ 2 (ตามมาตรา 40(2))</strong>
-                        <span className="block text-[9px] text-slate-500 mt-0.5">ค่าแนะนำผู้รับสิทธิ์, ค่าคอมมิชชันทีม, โบนัสสะสม และส่วนแบ่งปันผลระบบออลแชร์ นทีพลัส</span>
-                      </div>
-                      <div className="col-span-2 p-2.5 text-center border-r border-slate-800 flex items-center justify-center font-mono">
-                        {new Date(selectedTaxDoc.data.createdAt).toLocaleDateString('th-TH')}
-                      </div>
-                      <div className="col-span-2 p-2.5 text-right border-r border-slate-800 flex items-center justify-end font-mono font-bold">
-                        {parseFloat((selectedTaxDoc.data.amount * 0.85).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </div>
-                      <div className="col-span-2 p-2.5 text-right flex items-center justify-end font-mono font-bold text-rose-600">
-                        {parseFloat(((selectedTaxDoc.data.amount * 0.85) * 0.05).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-12 border-b border-slate-200 text-slate-800 font-medium">
-                      <div className="col-span-6 p-2.5 border-r border-slate-800 leading-normal">
-                        <strong>เงินได้ประเภทที่ 8 (ตามมาตรา 40(8))</strong>
-                        <span className="block text-[9px] text-slate-500 mt-0.5">รายได้จากการจำหน่ายพัสดุสินค้าออนไลน์, ค่าบริการฝากขาย, และจัดส่งคลังสินค้านทีช็อป</span>
-                      </div>
-                      <div className="col-span-2 p-2.5 text-center border-r border-slate-800 flex items-center justify-center font-mono">
-                        {new Date(selectedTaxDoc.data.createdAt).toLocaleDateString('th-TH')}
-                      </div>
-                      <div className="col-span-2 p-2.5 text-right border-r border-slate-800 flex items-center justify-end font-mono font-bold">
-                        {parseFloat((selectedTaxDoc.data.totalPrice * 0.8).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </div>
-                      <div className="col-span-2 p-2.5 text-right flex items-center justify-end font-mono font-bold text-rose-600">
-                        {parseFloat(((selectedTaxDoc.data.totalPrice * 0.8) * 0.03).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </div>
-                    </div>
-                  )}
+                  return (
+                    <>
+                      <div className="mt-4 border border-slate-800 text-[10px] overflow-hidden">
+                        <div className="grid grid-cols-12 bg-slate-50 border-b border-slate-800 text-slate-900 font-bold text-center">
+                          <div className="col-span-6 p-2 text-left border-r border-slate-800">ประเภทเงินได้ที่จ่าย (Type of Income)</div>
+                          <div className="col-span-2 p-2 border-r border-slate-800">วัน เดือน หรือปี ที่จ่าย</div>
+                          <div className="col-span-2 p-2 border-r border-slate-800">จำนวนเงินที่จ่าย (บาท)</div>
+                          <div className="col-span-2 p-2">ภาษีที่หักและนำส่ง (บาท)</div>
+                        </div>
 
-                  {/* Summary Rows */}
-                  <div className="grid grid-cols-12 bg-slate-50/50 font-bold border-t border-slate-800">
-                    <div className="col-span-6 p-2.5 text-right border-r border-slate-800 text-slate-950">
-                      รวมเงินได้และภาษีที่นำส่งทั้งสิ้น (Total):
-                    </div>
-                    <div className="col-span-2 p-2.5 text-center border-r border-slate-800">
-                      -
-                    </div>
-                    <div className="col-span-2 p-2.5 text-right border-r border-slate-800 font-mono">
-                      {selectedTaxDoc.type === 'member' 
-                        ? parseFloat((selectedTaxDoc.data.amount * 0.85).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })
-                        : parseFloat((selectedTaxDoc.data.totalPrice * 0.8).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })
-                      }
-                    </div>
-                    <div className="col-span-2 p-2.5 text-right font-mono text-rose-700">
-                      {selectedTaxDoc.type === 'member'
-                        ? parseFloat(((selectedTaxDoc.data.amount * 0.85) * 0.05).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })
-                        : parseFloat(((selectedTaxDoc.data.totalPrice * 0.8) * 0.03).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })
-                      }
-                    </div>
-                  </div>
-                </div>
+                        {/* Row 1 */}
+                        {isMember ? (
+                          <div className="grid grid-cols-12 border-b border-slate-200 text-slate-800 font-medium">
+                            <div className="col-span-6 p-2.5 border-r border-slate-800 leading-normal">
+                              <strong>เงินได้ประเภทที่ 2 (ตามมาตรา 40(2)) - ค่านายหน้า</strong>
+                              <span className="block text-[9px] text-slate-500 mt-0.5">
+                                {selectedTaxDoc.data.isAnnual 
+                                  ? "ค่านายหน้าสะสมตลอดปีภาษี พ.ศ. 2569 (รวมค่าแนะนำ, บริหารทีม, ออลแชร์)"
+                                  : "ค่าแนะนำผู้รับสิทธิ์, ค่าคอมมิชชันทีม, โบนัสสะสม และส่วนแบ่งปันผลระบบออลแชร์ นทีพลัส"
+                                }
+                              </span>
+                            </div>
+                            <div className="col-span-2 p-2.5 text-center border-r border-slate-800 flex items-center justify-center font-mono">
+                              {new Date(selectedTaxDoc.data.createdAt).toLocaleDateString('th-TH')}
+                            </div>
+                            <div className="col-span-2 p-2.5 text-right border-r border-slate-800 flex items-center justify-end font-mono font-bold">
+                              {amountPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <div className="col-span-2 p-2.5 text-right flex items-center justify-end font-mono font-bold text-rose-600">
+                              {taxwithheld.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-12 border-b border-slate-200 text-slate-800 font-medium">
+                            <div className="col-span-6 p-2.5 border-r border-slate-800 leading-normal">
+                              <strong>เงินได้ประเภทที่ 8 (ตามมาตรา 40(8))</strong>
+                              <span className="block text-[9px] text-slate-500 mt-0.5">รายได้จากการจำหน่ายพัสดุสินค้าออนไลน์, ค่าบริการฝากขาย, และจัดส่งคลังสินค้านทีช็อป</span>
+                            </div>
+                            <div className="col-span-2 p-2.5 text-center border-r border-slate-800 flex items-center justify-center font-mono">
+                              {new Date(selectedTaxDoc.data.createdAt).toLocaleDateString('th-TH')}
+                            </div>
+                            <div className="col-span-2 p-2.5 text-right border-r border-slate-800 flex items-center justify-end font-mono font-bold">
+                              {amountPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <div className="col-span-2 p-2.5 text-right flex items-center justify-end font-mono font-bold text-rose-600">
+                              {taxwithheld.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                        )}
 
-                {/* Thai Baht text representation */}
-                <div className="mt-2 border border-slate-800 p-2 text-[10px] flex items-center justify-between font-bold text-slate-900">
-                  <span>รวมเงินภาษีหัก ณ ที่จ่ายนำส่ง (ตัวอักษร):</span>
-                  <span className="text-indigo-900">
-                    ( {arabicToThaiBaht(selectedTaxDoc.type === 'member' 
-                      ? ((selectedTaxDoc.data.amount * 0.85) * 0.05)
-                      : ((selectedTaxDoc.data.totalPrice * 0.8) * 0.03)
-                    )} )
-                  </span>
-                </div>
+                        {/* Summary Rows */}
+                        <div className="grid grid-cols-12 bg-slate-50/50 font-bold border-t border-slate-800">
+                          <div className="col-span-6 p-2.5 text-right border-r border-slate-800 text-slate-950">
+                            รวมเงินได้และภาษีที่นำส่งทั้งสิ้น (Total):
+                          </div>
+                          <div className="col-span-2 p-2.5 text-center border-r border-slate-800">
+                            -
+                          </div>
+                          <div className="col-span-2 p-2.5 text-right border-r border-slate-800 font-mono">
+                            {amountPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div className="col-span-2 p-2.5 text-right font-mono text-rose-700">
+                            {taxwithheld.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Thai Baht text representation */}
+                      <div className="mt-2 border border-slate-800 p-2 text-[10px] flex items-center justify-between font-bold text-slate-900">
+                        <span>รวมเงินภาษีหัก ณ ที่จ่ายนำส่ง (ตัวอักษร):</span>
+                        <span className="text-indigo-900">
+                          ( {arabicToThaiBaht(taxwithheld)} )
+                        </span>
+                      </div>
+                    </>
+                  );
+                })()}
 
                 {/* Official Declaration Footer */}
                 <div className="mt-6 border border-slate-800 p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-[10px] text-slate-600 leading-relaxed">
@@ -12190,20 +12281,37 @@ export default function App() {
                   </span>
                 </div>
 
-                <div className="flex justify-between">
-                  <span className="text-slate-400 font-semibold">ยอดเงินตั้งต้น:</span>
-                  <span className="font-mono font-bold text-slate-900">฿ {txnConfirm.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
-                </div>
+                {txnConfirm.type === 'withdraw_emoney' ? (
+                  <>
+                    <div className="flex justify-between border-t border-slate-100 pt-2">
+                      <span className="text-slate-500 font-semibold">ยอดรายได้สุทธิ (บาท):</span>
+                      <span className="font-mono font-bold text-slate-900">฿ {txnConfirm.taxableAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+                    </div>
+                    <div className="flex justify-between text-rose-600">
+                      <span className="font-semibold">ภาษีหัก ณ.ที่จ่ายสะสม (บาท):</span>
+                      <span className="font-mono font-bold">- ฿ {txnConfirm.withholdingTax?.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400 font-semibold">ยอดเงินตั้งต้น:</span>
+                      <span className="font-mono font-bold text-slate-900">฿ {txnConfirm.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+                    </div>
 
-                {txnConfirm.feeAmount !== undefined && txnConfirm.feeAmount > 0 && (
-                  <div className="flex justify-between text-rose-500">
-                    <span className="font-semibold">หักค่าธรรมเนียม / ภาษีบริการ:</span>
-                    <span className="font-mono font-bold">- ฿ {txnConfirm.feeAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
-                  </div>
+                    {txnConfirm.feeAmount !== undefined && txnConfirm.feeAmount > 0 && (
+                      <div className="flex justify-between text-rose-500">
+                        <span className="font-semibold">หักค่าธรรมเนียม / ภาษีบริการ:</span>
+                        <span className="font-mono font-bold">- ฿ {txnConfirm.feeAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 <div className="border-t border-slate-200 my-2 pt-2 flex justify-between text-sm">
-                  <span className="text-slate-900 font-bold">ยอดเงินปลายทางสุทธิ:</span>
+                  <span className="text-slate-900 font-bold">
+                    {txnConfirm.type === 'withdraw_emoney' ? 'รายได้คงเหลือรับสุทธิ์ (บาท):' : 'ยอดเงินปลายทางสุทธิ:'}
+                  </span>
                   <span className="font-mono font-bold text-emerald-600">
                     ฿ {txnConfirm.netAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท
                   </span>
