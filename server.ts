@@ -86,11 +86,6 @@ try {
 
 // In-Memory DB Cache
 let cacheDb: any = null;
-let isSavingToFirestore = false;
-let isFirestoreQuotaExceeded = false;
-let pendingSaveData: any = null;
-let saveTimeout: NodeJS.Timeout | null = null;
-let retryCount = 0;
 
 async function loadDbFromFirestore() {
   if (!dbFirestore) {
@@ -330,33 +325,16 @@ async function loadDbFromFirestore() {
         console.log(`⚠️ No local file ${currentDbFile} found to seed Firestore.`);
       }
     }
-  } catch (err: any) {
+  } catch (err) {
     console.error("❌ Error loading database from Firestore:", err);
-
-    const isQuotaExhausted = err.message && (
-      err.message.includes("RESOURCE_EXHAUSTED") || 
-      err.message.includes("quota") || 
-      err.message.includes("Quota") ||
-      err.message.includes("exhausted")
-    );
-
-    if (isQuotaExhausted) {
-      isFirestoreQuotaExceeded = true;
-      console.warn("⚠️ [Firestore Startup] Firestore daily read/write quota exceeded during startup. Activated Local Failover Mode directly!");
-    }
-
-    // Safety fallback: load local database so cacheDb is populated immediately
-    try {
-      const currentDbFile = isSandboxActive ? DB_FILE_SANDBOX : DB_FILE;
-      if (fs.existsSync(currentDbFile)) {
-        cacheDb = JSON.parse(fs.readFileSync(currentDbFile, 'utf8'));
-        console.log("📂 [Firestore Startup Fallback] Successfully loaded local database from disk as safety fallback.");
-      }
-    } catch (e) {
-      console.error("❌ Failed to load local database during Firestore startup failure:", e);
-    }
   }
 }
+
+let isSavingToFirestore = false;
+let isFirestoreQuotaExceeded = false;
+let pendingSaveData: any = null;
+let saveTimeout: NodeJS.Timeout | null = null;
+let retryCount = 0;
 
 async function saveDbToFirestore(data: any) {
   if (!dbFirestore || isFirestoreQuotaExceeded) return;
@@ -4287,9 +4265,7 @@ async function startServer() {
   readDb(); // Ensure any missing sections like packageProductChoices or bankSettings are seeded and written to Firestore immediately!
   ensurePizzaoneUser();
 
-  const isProduction = process.env.NODE_ENV === 'production' || (typeof __filename !== 'undefined' && (__filename.includes('server.cjs') || __filename.includes('dist')));
-
-  if (!isProduction) {
+  if (process.env.NODE_ENV !== 'production') {
     console.log("📦 Initializing Vite Development Middleware...");
     const { createServer } = await import('vite');
     const vite = await createServer({
