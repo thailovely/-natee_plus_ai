@@ -4390,7 +4390,10 @@ async function startServer() {
   readDb(); // Ensure any missing sections like packageProductChoices or bankSettings are seeded and written to Firestore immediately!
   ensurePizzaoneUser();
 
-  if (process.env.NODE_ENV !== 'production') {
+  const isProd = process.env.NODE_ENV === 'production' || 
+                 (typeof __filename !== 'undefined' && __filename.endsWith('.cjs'));
+
+  if (!isProd) {
     console.log("📦 Initializing Vite Development Middleware...");
     const { createServer } = await import('vite');
     const vite = await createServer({
