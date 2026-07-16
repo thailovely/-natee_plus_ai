@@ -1,10 +1,24 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, type User } from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, type User, type Auth } from 'firebase/auth';
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+let _auth: Auth | null = null;
+
+const getFirebaseAuth = async (): Promise<Auth> => {
+  if (_auth) return _auth;
+  try {
+    const res = await fetch('/api/firebase-config');
+    const data = await res.json();
+    if (data.success && data.config) {
+      const app = getApps().length > 0 ? getApp() : initializeApp(data.config);
+      _auth = getAuth(app);
+      return _auth;
+    }
+    throw new Error("Unable to retrieve firebase-config");
+  } catch (err) {
+    console.error("Failed to dynamically fetch Firebase config for auth:", err);
+    throw err;
+  }
+};
 
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/spreadsheets');
@@ -20,24 +34,38 @@ export const initGoogleSheetsAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
   onAuthFailure?: () => void
 ) => {
-  return onAuthStateChanged(auth, async (user) => {
-    if (user) {
-      if (cachedAccessToken) {
-        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-      } else if (!isSigningIn) {
+  let unsubscribe: (() => void) | null = null;
+  
+  getFirebaseAuth().then((auth) => {
+    unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        if (cachedAccessToken) {
+          if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
+        } else if (!isSigningIn) {
+          cachedAccessToken = null;
+          if (onAuthFailure) onAuthFailure();
+        }
+      } else {
         cachedAccessToken = null;
         if (onAuthFailure) onAuthFailure();
       }
-    } else {
-      cachedAccessToken = null;
-      if (onAuthFailure) onAuthFailure();
-    }
+    });
+  }).catch((err) => {
+    console.error("Failed to init auth listener:", err);
+    if (onAuthFailure) onAuthFailure();
   });
+
+  return () => {
+    if (unsubscribe) {
+      unsubscribe();
+    }
+  };
 };
 
 export const signInWithGoogleSheets = async (): Promise<{ user: User; accessToken: string } | null> => {
   try {
     isSigningIn = true;
+    const auth = await getFirebaseAuth();
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
@@ -58,7 +86,12 @@ export const getCachedToken = (): string | null => {
 };
 
 export const logoutGoogleSheets = async () => {
-  await auth.signOut();
+  try {
+    const auth = await getFirebaseAuth();
+    await auth.signOut();
+  } catch (err) {
+    console.error("Error signing out:", err);
+  }
   cachedAccessToken = null;
 };
 
@@ -71,8 +104,8 @@ export interface MemberExportData {
   email: string;
   rank: string;
   role: string;
-  balanceMCash: number;
-  balanceMCoupon: number;
+  balanceECash: number;
+  balanceECoupon: number;
   totalEarnings: number;
   totalCouponsEarned: number;
   sponsorId: string;
@@ -125,10 +158,10 @@ export const exportMembersToGoogleSheets = async (
     'อีเมล',
     'ตำแหน่งธุรกิจ (Rank)',
     'บทบาทสิทธิ์ (Role)',
-    'ยอดเงิน M-Cash คงเหลือ (฿)',
-    'คูปอง M-Coupon คงเหลือ (฿)',
-    'รายได้สะสม M-Cash (฿)',
-    'คูปองสะสม M-Coupon (฿)',
+    'ยอดเงิน E-Cash คงเหลือ (฿)',
+    'คูปอง E-Coupon คงเหลือ (฿)',
+    'รายได้สะสม E-Cash (฿)',
+    'คูปองสะสม E-Coupon (฿)',
     'รหัสผู้แนะนำ (SponsorId)'
   ];
 
@@ -151,8 +184,8 @@ export const exportMembersToGoogleSheets = async (
       m.email || '',
       m.rank || 'S',
       m.role || 'Member',
-      m.balanceMCash || 0,
-      m.balanceMCoupon || 0,
+      m.balanceECash || 0,
+      m.balanceECoupon || 0,
       m.totalEarnings || 0,
       m.totalCouponsEarned || 0,
       m.sponsorId || ''

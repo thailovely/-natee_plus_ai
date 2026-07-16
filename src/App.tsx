@@ -4,7 +4,8 @@ import {
   UserCheck, ShieldCheck, Settings, LogOut, Copy, Check, 
   TrendingUp, HelpCircle, ArrowRight, Upload, Search, 
   Trash2, Plus, Star, AlertCircle, RefreshCw, Layers, MapPin,
-  Eye, EyeOff, X, ClipboardList, Printer, Lock, FileSpreadsheet
+  Eye, EyeOff, X, ClipboardList, Printer, Lock, FileSpreadsheet,
+  Coins
 } from 'lucide-react';
 import { thaiAddressData } from './thaiAddressData';
 import { NateeWarehouseMap } from './components/NateeWarehouseMap';
@@ -14,6 +15,8 @@ import {
   exportMembersToGoogleSheets,
   logoutGoogleSheets
 } from './lib/googleSheets';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
 
 interface PaginationProps {
   currentPage: number;
@@ -80,6 +83,7 @@ export default function App() {
 
 
 
+  const [isUsingPollingFallback, setIsUsingPollingFallback] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>('dash');
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   const [notif, setNotif] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -219,14 +223,46 @@ export default function App() {
 
   // Member Profile States
   const [profile, setProfile] = useState<any>(null);
+  const [isSandboxActive, setIsSandboxActive] = useState(false);
+  const [togglingSandbox, setTogglingSandbox] = useState(false);
+
+  const handleToggleSandbox = async (active: boolean, resetFromProduction: boolean = false) => {
+    setTogglingSandbox(true);
+    try {
+      const res = await fetch('/api/admin/sandbox-toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active, resetFromProduction })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsSandboxActive(data.isSandboxActive);
+        showNotif(data.message, 'success');
+        
+        // Refresh all states
+        if (currentUser) {
+          fetchProfile(true);
+          fetchAdminQueues();
+        }
+      } else {
+        showNotif(data.message, 'error');
+      }
+    } catch (e: any) {
+      showNotif("เกิดข้อผิดพลาดในการปรับสถานะโหมดทดสอบ", "error");
+    } finally {
+      setTogglingSandbox(false);
+    }
+  };
+
   const [copied, setCopied] = useState(false);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [txnPerPage, setTxnPerPage] = useState<number>(20);
   const [txnCurrentPage, setTxnCurrentPage] = useState<number>(1);
 
   // Pagination states for reports
-  const [mCashPage, setMCashPage] = useState<number>(1);
-  const [allSharePage, setAllSharePage] = useState<number>(1);
+  const [eCashPage, setECashPage] = useState<number>(1);
+  const [eMoneyPage, setEMoneyPage] = useState<number>(1);
+  const [allSharePage, setESharePage] = useState<number>(1);
   const [referralsPage, setReferralsPage] = useState<number>(1);
   const [binaryPage, setBinaryPage] = useState<number>(1);
 
@@ -340,7 +376,7 @@ export default function App() {
   const [kycRejectReason, setKycRejectReason] = useState<string>('');
   
   // Transactions States
-  const [topupAmount, setTopupAmount] = useState<string>('500');
+  const [topupAmount, setTopupAmount] = useState<string>('');
   const [topupDecimal, setTopupDecimal] = useState<string>('');
   const [topupSlip, setTopupSlip] = useState<string>('');
   const [topupSlipBase64, setTopupSlipBase64] = useState<string>('');
@@ -382,6 +418,16 @@ export default function App() {
   const [withdrawPin, setWithdrawPin] = useState('');
   const [exchangeAmount, setExchangeAmount] = useState('');
   const [exchangePin, setExchangePin] = useState('');
+
+  // E-Money transaction form states
+  const [ecashToEmoneyAmount, setEcashToEmoneyAmount] = useState('');
+  const [ecashToEmoneyPin, setEcashToEmoneyPin] = useState('');
+  const [emoneyToEcashAmount, setEmoneyToEcashAmount] = useState('');
+  const [emoneyToEcashPin, setEmoneyToEcashPin] = useState('');
+  const [emoneyToEcouponAmount, setEmoneyToEcouponAmount] = useState('');
+  const [emoneyToEcouponPin, setEmoneyToEcouponPin] = useState('');
+  const [withdrawEmoneyAmount, setWithdrawEmoneyAmount] = useState('');
+  const [withdrawEmoneyPin, setWithdrawEmoneyPin] = useState('');
   
   // MLM Trees States
   const [binaryTree, setBinaryTree] = useState<any>(null);
@@ -545,8 +591,8 @@ export default function App() {
         email: m.email || '',
         rank: m.rank || 'S',
         role: m.role || 'Member',
-        balanceMCash: m.balanceMCash || 0,
-        balanceMCoupon: m.balanceMCoupon || 0,
+        balanceECash: m.balanceECash || 0,
+        balanceECoupon: m.balanceECoupon || 0,
         totalEarnings: m.totalEarnings || 0,
         totalCouponsEarned: m.totalCouponsEarned || 0,
         sponsorId: m.sponsorId || '',
@@ -583,16 +629,29 @@ export default function App() {
   const [orderSearchStatus, setOrderSearchStatus] = useState('');
   
   // Report States
-  const [reportSubTab, setReportSubTab] = useState<'mcash' | 'mcoupon' | 'allshare' | 'referrals' | 'binary'>('mcash');
+  const [reportSubTab, setReportSubTab] = useState<'ecash' | 'emoney' | 'ecoupon' | 'eshare' | 'referrals' | 'binary'>('ecash');
   const [memberOrders, setMemberOrders] = useState<any[]>([]);
   const [directReferrals, setDirectReferrals] = useState<any[]>([]);
   const [binaryDescendants, setBinaryDescendants] = useState<any[]>([]);
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<any | null>(null);
 
+  // Financial Transaction Confirmation Modal state
+  const [txnConfirm, setTxnConfirm] = useState<{
+    type: 'transfer_ecash_member' | 'transfer_ecash_emoney' | 'transfer_emoney_ecash' | 'transfer_emoney_ecoupon' | 'withdraw_emoney' | 'buy_coupon';
+    amount: number;
+    pin: string;
+    recipientIdOrPhone?: string;
+    recipientName?: string;
+    feeAmount?: number;
+    netAmount?: number;
+  } | null>(null);
+  const [isVerifyingRecipient, setIsVerifyingRecipient] = useState(false);
+
   // Reset pagination pages to 1 when search queries or tabs change
   useEffect(() => {
-    setMCashPage(1);
-    setAllSharePage(1);
+    setECashPage(1);
+    setEMoneyPage(1);
+    setESharePage(1);
     setReferralsPage(1);
     setBinaryPage(1);
     setAdminWithQueuePage(1);
@@ -607,7 +666,7 @@ export default function App() {
     setAdminCouponPvHistoryPage(1);
   }, [searchMemberQuery, prodSearchQuery, orderSearchId, orderSearchUserId, orderSearchDate, orderSearchStatus, activeTab, reportSubTab, adminSubTab]);
 
-  // Sound on money (M-Cash) deposit addition (cha-ching money sound effect + actual net amount)
+  // Sound on money (E-Cash) deposit addition (cha-ching money sound effect + actual net amount)
   const playMoneySound = (amount?: number, messageType: 'deposit' | 'bonus' | 'general' = 'general') => {
     try {
       const AudioCtxClass = typeof window !== 'undefined' ? (window.AudioContext || (window as any).webkitAudioContext) : null;
@@ -732,6 +791,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Check initial sandbox status
+    fetch('/api/admin/sandbox-status')
+      .then(res => res.json())
+      .then(d => {
+        if (d.success && d.isSandboxActive !== undefined) {
+          setIsSandboxActive(d.isSandboxActive);
+        }
+      })
+      .catch(() => {});
+
     const params = new URLSearchParams(window.location.search);
     const sponsor = params.get('sponsor');
     
@@ -787,66 +856,327 @@ export default function App() {
     }
   }, [activeTab, currentUser]);
 
-  // Handle polling for sound trigger on new commission/transaction
+  // Handle real-time Firestore synchronization for all application data
   useEffect(() => {
-    let prevBalance = 0;
-    if (profile) {
-      prevBalance = profile.balanceMCash;
-    }
-    const interval = setInterval(() => {
-      if (currentUser) {
-        fetch('/api/member/profile/' + currentUser.userId)
-          .then(res => res.json())
-          .then(data => {
-            if (data.success && data.profile) {
-              const newBalance = data.profile.balanceMCash;
-              if (newBalance > prevBalance && prevBalance > 0) {
-                const diff = parseFloat((newBalance - prevBalance).toFixed(4));
-                
-                // Fetch user's recent transactions to check if this is an approved Deposit
-                fetch(`/api/member/transactions/${currentUser.userId}`)
-                  .then(tRes => tRes.json())
-                  .then(tData => {
-                    let isDeposit = false;
-                    let depositAmount = diff;
+    if (!currentUser) return;
+    setIsUsingPollingFallback(false);
 
-                    if (tData.success && tData.transactions) {
-                      // Find any approved Deposit or Deposit_System transaction in the last 60 seconds
-                      const recentDeposit = tData.transactions.find((t: any) => {
-                        const isDepType = t.type === "Deposit" || t.type === "Deposit_System";
-                        const isApproved = t.status === "Approved";
-                        const isRecent = (new Date().getTime() - new Date(t.createdAt).getTime()) < 60000;
-                        return isDepType && isApproved && isRecent;
-                      });
+    let activeUnsubscribes: (() => void)[] = [];
+    let fallbackInterval: NodeJS.Timeout | null = null;
+    let usingPollingFallback = false;
 
-                      if (recentDeposit) {
-                        isDeposit = true;
-                        depositAmount = recentDeposit.transferAmount || recentDeposit.amount || diff;
-                      }
-                    }
+    const activateFallbackPolling = (reason: string) => {
+      if (usingPollingFallback) return;
+      usingPollingFallback = true;
+      setIsUsingPollingFallback(true);
+      console.warn(`⚠️ Firestore Real-time listener failed (${reason}). Activating fallback HTTP polling...`);
+      
+      // Clear any current Firestore subscriptions to save network/resources
+      activeUnsubscribes.forEach(unsub => {
+        try { unsub(); } catch (e) {}
+      });
+      activeUnsubscribes = [];
 
-                    if (isDeposit) {
-                      showNotif(`เติมเงิน M-Cash สำเร็จแล้ว! +${depositAmount.toLocaleString()} บาท (ได้รับยอดจริงครบถ้วนแล้วค่ะ)`, 'success');
-                      playMoneySound(depositAmount, 'deposit');
-                    } else {
-                      // If it is a Bonus/All-Share or other commission
-                      showNotif(`ได้รับปันผลสำเร็จ! +${diff.toLocaleString()} บาท จาก Bonus/All-Share`, 'success');
-                      playMoneySound(diff, 'bonus');
-                    }
-                  })
-                  .catch(() => {
-                    showNotif(`ยอดเงิน M-Cash ของคุณเพิ่มขึ้น +${diff.toLocaleString()} บาท`, 'success');
-                    playMoneySound(diff, 'general');
-                  });
-              }
-              prevBalance = newBalance;
-              setProfile(data.profile);
-            }
-          });
+      // Start Polling Fallback immediately and then periodically
+      let prevBalance = 0;
+      if (profile) {
+        prevBalance = profile.balanceECash;
       }
-    }, 10000); // Check every 10 seconds
-    return () => clearInterval(interval);
-  }, [currentUser, profile]);
+
+      const runPoll = () => {
+        fetch('/api/sync-state')
+          .then(res => res.json())
+          .then(resData => {
+            if (resData.success && resData.data) {
+              const data = resData.data;
+              if (resData.isSandboxActive !== undefined) {
+                setIsSandboxActive(resData.isSandboxActive);
+              }
+
+              // 1. Sync Members
+              const members = data.members || [];
+              setAdminMembersList(members);
+              const currentMember = members.find((m: any) => m.userId === currentUser.userId);
+              if (currentMember) {
+                setProfile((prevProfile: any) => {
+                  if (prevProfile) {
+                    const prevB = prevProfile.balanceECash;
+                    const newBalance = currentMember.balanceECash;
+                    if (newBalance > prevB && prevB > 0) {
+                      const diff = parseFloat((newBalance - prevB).toFixed(4));
+                      showNotif(`ยอดเงิน E-Cash ของคุณเพิ่มขึ้น +${diff.toLocaleString()} บาท`, 'success');
+                      playMoneySound(diff, 'general');
+                    }
+                  }
+                  return currentMember;
+                });
+                if (currentMember.firstLogin) {
+                  setIsFirstLoginModal(true);
+                }
+              }
+              if (currentUser.role === 'Admin' || currentUser.role === 'Manager') {
+                setKycQueue(members.filter((m: any) => m.statusKyc === 'Pending'));
+              }
+
+              // 2. Sync Transactions & Queues
+              const transactions = data.transactions || [];
+              setTransactions(transactions.filter((t: any) => t.userId === currentUser.userId));
+              setWithQueue(transactions.filter((t: any) => t.type === 'WithdrawalRequest' && t.status === 'Pending'));
+              setDepositQueue(transactions.filter((t: any) => t.type === 'Deposit' && t.status === 'Pending'));
+
+              // 3. Sync Orders
+              const orders = data.orders || [];
+              setMemberOrders(orders.filter((o: any) => o.userId === currentUser.userId));
+              setAdminOrders(orders);
+              setSellerOrders(orders.filter((o: any) => o.sellerId === currentUser.userId));
+
+              // 4. Sync Products
+              setProducts(data.products || []);
+
+              // 5. Sync Seller Products
+              const sellerProducts = data.sellerProducts || [];
+              setSellerProducts(sellerProducts.filter((p: any) => p.sellerId === currentUser.userId));
+              setAllSellerProducts(sellerProducts);
+              setProdQueue(sellerProducts.filter((p: any) => p.status === 'Pending'));
+
+              // 6. Sync CSR Fund
+              const csrFund = data.csrFund || { balance: 0, history: [] };
+              setCsrFeed(csrFund.history || []);
+              setCsrBalance(csrFund.balance || 0);
+
+              // 7. Sync System Stats
+              setAdminStats(data.systemStats || null);
+
+              // 8. Sync Package Choices
+              setPackageChoices(data.packageProductChoices || []);
+
+              // 9. Sync Bank Settings
+              if (data.bankSettings) {
+                setBankSettings(data.bankSettings);
+              }
+            }
+          })
+          .catch(e => console.error("Poll sync-state error:", e));
+      };
+
+      runPoll();
+      fallbackInterval = setInterval(runPoll, 7000);
+    };
+
+    const setupRealTimeSync = async () => {
+      try {
+        const resConfig = await fetch('/api/firebase-config');
+        const dConfig = await resConfig.json();
+        if (!dConfig.success || !dConfig.config) {
+          throw new Error("No Firebase config returned from server");
+        }
+
+        if (dConfig.isFirestoreQuotaExceeded) {
+          console.warn("⚠️ Firestore daily write quota is exceeded on the server. Activating local polling fallback directly!");
+          setIsUsingPollingFallback(true);
+          activateFallbackPolling("Firestore write quota exceeded on server");
+          return;
+        }
+
+        const config = dConfig.config;
+        const firebaseApp = initializeApp(config);
+        const dbFirestore = getFirestore(firebaseApp, config.firestoreDatabaseId);
+
+        const collectionName = isSandboxActive ? 'app_sections_sandbox' : 'app_sections';
+        console.log(`🔥 [Client] Initializing Firestore onSnapshot real-time listener on collection: ${collectionName}`);
+
+        // Safe helper to subscribe and add to unsubscribe list
+        const safeSubscribe = (docName: string, onNext: (snapshot: any) => void) => {
+          if (usingPollingFallback) return;
+          
+          let unsub: (() => void) | null = null;
+          const onError = (error: any) => {
+            console.error(`onSnapshot ${docName} error:`, error);
+            const isQuota = error.message && (
+              error.message.includes("RESOURCE_EXHAUSTED") ||
+              error.message.includes("quota") ||
+              error.message.includes("Quota") ||
+              error.message.includes("exhausted")
+            );
+            if (isQuota) {
+              fetch('/api/report-quota-exceeded', { method: 'POST' }).catch(() => {});
+            }
+            activateFallbackPolling(`${docName} failed: ${error.message}`);
+            if (unsub) {
+              try { unsub(); } catch (e) {}
+            }
+          };
+
+          try {
+            unsub = onSnapshot(doc(dbFirestore, collectionName, docName), onNext, onError);
+            if (usingPollingFallback) {
+              if (unsub) {
+                try { unsub(); } catch (e) {}
+              }
+            } else if (unsub) {
+              activeUnsubscribes.push(unsub);
+            }
+          } catch (err: any) {
+            console.error(`Error subscribing to ${docName}:`, err);
+            activateFallbackPolling(`${docName} catch failed: ${err.message}`);
+          }
+        };
+
+        // 1. Members document listener
+        safeSubscribe('members', (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || [];
+            setAdminMembersList(data);
+            
+            const currentMember = data.find((m: any) => m.userId === currentUser.userId);
+            if (currentMember) {
+              setProfile((prevProfile: any) => {
+                if (prevProfile) {
+                  const prevBalance = prevProfile.balanceECash;
+                  const newBalance = currentMember.balanceECash;
+                  if (newBalance > prevBalance && prevBalance > 0) {
+                    const diff = parseFloat((newBalance - prevBalance).toFixed(4));
+                    
+                    // Look up transactions for recent approved deposit vs bonus
+                    fetch(`/api/member/transactions/${currentUser.userId}`)
+                      .then(tRes => tRes.json())
+                      .then(tData => {
+                        let isDeposit = false;
+                        let depositAmount = diff;
+
+                        if (tData.success && tData.transactions) {
+                          const recentDeposit = tData.transactions.find((t: any) => {
+                            const isDepType = t.type === "Deposit" || t.type === "Deposit_System";
+                            const isApproved = t.status === "Approved";
+                            const isRecent = (new Date().getTime() - new Date(t.createdAt).getTime()) < 60000;
+                            return isDepType && isApproved && isRecent;
+                          });
+
+                          if (recentDeposit) {
+                            isDeposit = true;
+                            depositAmount = recentDeposit.transferAmount || recentDeposit.amount || diff;
+                          }
+                        }
+
+                        if (isDeposit) {
+                          showNotif(`เติมเงิน E-Cash สำเร็จแล้ว! +${depositAmount.toLocaleString()} บาท (ได้รับยอดจริงครบถ้วนแล้วค่ะ)`, 'success');
+                          playMoneySound(depositAmount, 'deposit');
+                        } else {
+                          showNotif(`ได้รับปันผลสำเร็จ! +${diff.toLocaleString()} บาท จาก Bonus/E-Share`, 'success');
+                          playMoneySound(diff, 'bonus');
+                        }
+                      })
+                      .catch(() => {
+                        showNotif(`ยอดเงิน E-Cash ของคุณเพิ่มขึ้น +${diff.toLocaleString()} บาท`, 'success');
+                        playMoneySound(diff, 'general');
+                      });
+                  }
+                }
+                return currentMember;
+              });
+              
+              if (currentMember.firstLogin) {
+                setIsFirstLoginModal(true);
+              }
+            }
+
+            // Update kycQueue for admins
+            if (currentUser.role === 'Admin' || currentUser.role === 'Manager') {
+              setKycQueue(data.filter((m: any) => m.statusKyc === 'Pending'));
+            }
+          }
+        });
+
+        // 2. Transactions document listener
+        safeSubscribe('transactions', (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || [];
+            setTransactions(data.filter((t: any) => t.userId === currentUser.userId));
+            setWithQueue(data.filter((t: any) => t.type === 'WithdrawalRequest' && t.status === 'Pending'));
+            setDepositQueue(data.filter((t: any) => t.type === 'Deposit' && t.status === 'Pending'));
+          }
+        });
+
+        // 3. Orders document listener
+        safeSubscribe('orders', (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || [];
+            setMemberOrders(data.filter((o: any) => o.userId === currentUser.userId));
+            setAdminOrders(data);
+            setSellerOrders(data.filter((o: any) => o.sellerId === currentUser.userId));
+          }
+        });
+
+        // 4. Products document listener
+        safeSubscribe('products', (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || [];
+            setProducts(data);
+          }
+        });
+
+        // 5. Seller Products document listener
+        safeSubscribe('sellerProducts', (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || [];
+            setSellerProducts(data.filter((p: any) => p.sellerId === currentUser.userId));
+            setAllSellerProducts(data);
+            setProdQueue(data.filter((p: any) => p.status === 'Pending'));
+          }
+        });
+
+        // 6. CSR Fund document listener
+        safeSubscribe('csrFund', (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || { balance: 0, history: [] };
+            setCsrFeed(data.history || []);
+            setCsrBalance(data.balance || 0);
+          }
+        });
+
+        // 7. System Stats document listener
+        safeSubscribe('systemStats', (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || null;
+            setAdminStats(data);
+          }
+        });
+
+        // 8. Package product choices document listener
+        safeSubscribe('packageProductChoices', (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || [];
+            setPackageChoices(data);
+          }
+        });
+
+        // 9. Bank settings document listener
+        safeSubscribe('bankSettings', (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data().data || null;
+            if (data) {
+              setBankSettings(data);
+            }
+          }
+        });
+
+      } catch (err: any) {
+        activateFallbackPolling(err?.message || "initial setup failed");
+      }
+    };
+
+    setupRealTimeSync();
+
+    return () => {
+      console.log("🧹 Tearing down real-time active listeners / timers");
+      activeUnsubscribes.forEach(unsub => {
+        try { unsub(); } catch (e) {}
+      });
+      if (fallbackInterval) {
+        clearInterval(fallbackInterval);
+      }
+    };
+  }, [currentUser, isSandboxActive]);
 
   const getRemainingRights = () => {
     if (profile?.role === 'Manager' || profile?.role === 'Admin') return 999999999;
@@ -883,6 +1213,9 @@ export default function App() {
       const res = await fetch(`/api/member/profile/${currentUser.userId}`);
       const data = await res.json();
       if (data.success) {
+        if (data.isSandboxActive !== undefined) {
+          setIsSandboxActive(data.isSandboxActive);
+        }
         setProfile(data.profile);
         setShippingAddress(data.profile.kycAddress || '');
         if (data.profile.firstLogin) {
@@ -2004,7 +2337,7 @@ export default function App() {
     } catch (err) {}
   };
 
-  // Top up Wallet simulation (adds real M-Cash on approval)
+  // Top up Wallet simulation (adds real E-Cash on approval)
   const handleTopupRequest = (e: React.FormEvent) => {
     e.preventDefault();
     if (!topupAmount || parseFloat(topupAmount) <= 0) {
@@ -2131,7 +2464,7 @@ export default function App() {
       });
       const d = await res.json();
       if (d.success) {
-        showNotif('ส่งหลักฐานสลิปเรียบร้อยแล้วค่ะ รอการตรวจสอบและอนุมัติยอด M-Cash จากแอดมินหลังบ้าน!', 'success');
+        showNotif('ส่งหลักฐานสลิปเรียบร้อยแล้วค่ะ รอการตรวจสอบและอนุมัติยอด E-Cash จากแอดมินหลังบ้าน!', 'success');
         setTopupSlip('');
         setTopupSlipBase64('');
         setTopupDecimal('');
@@ -2149,44 +2482,108 @@ export default function App() {
     }
   };
 
-  // Convert M-Cash to M-Coupon
-  const handleBuyCoupon = async (e: React.FormEvent) => {
+  // Convert E-Cash to E-Coupon (Initiate confirmation)
+  const initiateBuyCoupon = (e: React.FormEvent) => {
     e.preventDefault();
+    const amt = parseFloat(exchangeAmount);
+    if (!exchangeAmount || amt <= 0) {
+      showNotif('กรุณาระบุจำนวนยอดที่ต้องการแลกเปลี่ยน', 'error');
+      return;
+    }
+    if (!exchangePin || exchangePin.length !== 6) {
+      showNotif('กรุณากรอกรหัส PIN 6 หลัก', 'error');
+      return;
+    }
+    setTxnConfirm({
+      type: 'buy_coupon',
+      amount: amt,
+      pin: exchangePin,
+      recipientIdOrPhone: currentUser.userId,
+      recipientName: 'คูปองช้อปปิ้งพอร์ทัล E-Coupon (แลกแล้วไม่สามารถแลกคืนได้)',
+      feeAmount: 0,
+      netAmount: amt
+    });
+  };
+
+  const executeBuyCoupon = async () => {
+    if (!txnConfirm) return;
     try {
       const res = await fetch('/api/member/buy-coupon', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: currentUser.userId,
-          amount: exchangeAmount,
-          pin: exchangePin
+          amount: txnConfirm.amount,
+          pin: txnConfirm.pin
         })
       });
       const d = await res.json();
       if (d.success) {
-        showNotif(`แลกคูปองช้อปปิ้งสำเร็จ! รับสิทธิ์คงเหลือ ${d.newMCoupon} คูปอง`, 'success');
+        showNotif(`แลกคูปองช้อปปิ้งสำเร็จ! รับสิทธิ์คงเหลือ ${d.newECoupon} คูปอง`, 'success');
         setExchangeAmount('');
         setExchangePin('');
+        setTxnConfirm(null);
         fetchProfile();
         fetchTransactions();
       } else {
         showNotif(d.message, 'error');
       }
-    } catch (err) {}
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการทำรายการ', 'error');
+    }
   };
 
-  // Transfer M-Cash
-  const handleTransferMCash = async (e: React.FormEvent) => {
+  // Transfer E-Cash to another member (Initiate confirmation)
+  const initiateTransferECashMember = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!transferUser || !transferAmount || parseFloat(transferAmount) <= 0) {
+      showNotif('กรุณากรอกข้อมูลรหัสผู้รับและจำนวนเงินให้ถูกต้อง', 'error');
+      return;
+    }
+    if (!transferPin || transferPin.length !== 6) {
+      showNotif('กรุณากรอกรหัส PIN 6 หลักให้ครบถ้วน', 'error');
+      return;
+    }
+
+    setIsVerifyingRecipient(true);
     try {
-      const res = await fetch('/api/member/transfer-m-cash', {
+      const res = await fetch('/api/member/verify-recipient', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: transferUser })
+      });
+      const d = await res.json();
+      if (d.success && d.member) {
+        setTxnConfirm({
+          type: 'transfer_ecash_member',
+          amount: parseFloat(transferAmount),
+          pin: transferPin,
+          recipientIdOrPhone: d.member.userId,
+          recipientName: `${d.member.name} ${d.member.surname}`,
+          feeAmount: 0,
+          netAmount: parseFloat(transferAmount)
+        });
+      } else {
+        showNotif(d.message || 'ไม่พบสมาชิกปลายทาง กรุณาตรวจสอบรหัสผู้ใช้หรือเบอร์โทรศัพท์อีกครั้ง', 'error');
+      }
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการตรวจสอบผู้รับ', 'error');
+    } finally {
+      setIsVerifyingRecipient(false);
+    }
+  };
+
+  const executeTransferECashMember = async () => {
+    if (!txnConfirm) return;
+    try {
+      const res = await fetch('/api/member/transfer-e-cash', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           senderId: currentUser.userId,
-          receiverPhoneOrUser: transferUser,
-          amount: transferAmount,
-          pin: transferPin
+          receiverPhoneOrUser: txnConfirm.recipientIdOrPhone,
+          amount: txnConfirm.amount,
+          pin: txnConfirm.pin
         })
       });
       const d = await res.json();
@@ -2195,25 +2592,52 @@ export default function App() {
         setTransferUser('');
         setTransferAmount('');
         setTransferPin('');
+        setTxnConfirm(null);
         fetchProfile();
         fetchTransactions();
       } else {
         showNotif(d.message, 'error');
       }
-    } catch (err) {}
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการทำรายการ', 'error');
+    }
   };
 
-  // Withdraw M-Cash
-  const handleWithdrawMCash = async (e: React.FormEvent) => {
+  // Withdraw E-Money / E-Cash to Bank (Initiate confirmation)
+  const initiateWithdrawECash = (e: React.FormEvent) => {
     e.preventDefault();
+    const amt = parseFloat(withdrawAmount);
+    if (!withdrawAmount || amt <= 0) {
+      showNotif('กรุณาระบุจำนวนเงินต้องการถอน', 'error');
+      return;
+    }
+    if (!withdrawPin || withdrawPin.length !== 6) {
+      showNotif('กรุณากรอกรหัส PIN 6 หลัก', 'error');
+      return;
+    }
+    const fee = amt * 0.20;
+    const net = amt - fee;
+    setTxnConfirm({
+      type: 'withdraw_emoney',
+      amount: amt,
+      pin: withdrawPin,
+      recipientIdOrPhone: currentUser.userId,
+      recipientName: `บัญชีธนาคารของคุณ: ${profile?.bankName} (เลขที่: ${profile?.bankAccount})`,
+      feeAmount: fee,
+      netAmount: net
+    });
+  };
+
+  const executeWithdrawEMoney = async () => {
+    if (!txnConfirm) return;
     try {
       const res = await fetch('/api/member/withdraw', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: currentUser.userId,
-          amount: withdrawAmount,
-          pin: withdrawPin
+          amount: txnConfirm.amount,
+          pin: txnConfirm.pin
         })
       });
       const d = await res.json();
@@ -2221,12 +2645,170 @@ export default function App() {
         showNotif(d.message, 'success');
         setWithdrawAmount('');
         setWithdrawPin('');
+        setTxnConfirm(null);
         fetchProfile();
         fetchTransactions();
       } else {
         showNotif(d.message, 'error');
       }
-    } catch (err) {}
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการทำรายการ', 'error');
+    }
+  };
+
+  // Self E-Cash to E-Money Transfer
+  const initiateTransferECashToEMoney = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(ecashToEmoneyAmount);
+    if (!ecashToEmoneyAmount || amt <= 0) {
+      showNotif('กรุณาระบุจำนวนเงินที่ต้องการโอน', 'error');
+      return;
+    }
+    if (!ecashToEmoneyPin || ecashToEmoneyPin.length !== 6) {
+      showNotif('กรุณากรอกรหัส PIN 6 หลัก', 'error');
+      return;
+    }
+    const fee = amt * 0.10;
+    const net = amt - fee;
+    setTxnConfirm({
+      type: 'transfer_ecash_emoney',
+      amount: amt,
+      pin: ecashToEmoneyPin,
+      recipientIdOrPhone: currentUser.userId,
+      recipientName: 'บัญชีกระเป๋า E-Money ของคุณ (หักค่าธรรมเนียมจัดสรร All-Share 10%)',
+      feeAmount: fee,
+      netAmount: net
+    });
+  };
+
+  const executeTransferECashToEMoney = async () => {
+    if (!txnConfirm) return;
+    try {
+      const res = await fetch('/api/member/transfer-ecash-to-emoney', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser.userId,
+          amount: txnConfirm.amount,
+          pin: txnConfirm.pin
+        })
+      });
+      const d = await res.json();
+      if (d.success) {
+        showNotif(d.message, 'success');
+        setEcashToEmoneyAmount('');
+        setEcashToEmoneyPin('');
+        setTxnConfirm(null);
+        fetchProfile();
+        fetchTransactions();
+      } else {
+        showNotif(d.message, 'error');
+      }
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการทำรายการ', 'error');
+    }
+  };
+
+  // Self E-Money to E-Cash Transfer
+  const initiateTransferEMoneyToECash = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(emoneyToEcashAmount);
+    if (!emoneyToEcashAmount || amt <= 0) {
+      showNotif('กรุณาระบุจำนวนเงินที่ต้องการโอน', 'error');
+      return;
+    }
+    if (!emoneyToEcashPin || emoneyToEcashPin.length !== 6) {
+      showNotif('กรุณากรอกรหัส PIN 6 หลัก', 'error');
+      return;
+    }
+    setTxnConfirm({
+      type: 'transfer_emoney_ecash',
+      amount: amt,
+      pin: emoneyToEcashPin,
+      recipientIdOrPhone: currentUser.userId,
+      recipientName: 'บัญชีกระเป๋า E-Cash ของคุณ (อัตรา 1:1 ไม่มีค่าธรรมเนียม)',
+      feeAmount: 0,
+      netAmount: amt
+    });
+  };
+
+  const executeTransferEMoneyToECash = async () => {
+    if (!txnConfirm) return;
+    try {
+      const res = await fetch('/api/member/transfer-emoney-to-ecash', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser.userId,
+          amount: txnConfirm.amount,
+          pin: txnConfirm.pin
+        })
+      });
+      const d = await res.json();
+      if (d.success) {
+        showNotif(d.message, 'success');
+        setEmoneyToEcashAmount('');
+        setEmoneyToEcashPin('');
+        setTxnConfirm(null);
+        fetchProfile();
+        fetchTransactions();
+      } else {
+        showNotif(d.message, 'error');
+      }
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการทำรายการ', 'error');
+    }
+  };
+
+  // Self E-Money to E-Coupon Transfer
+  const initiateTransferEMoneyToECoupon = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(emoneyToEcouponAmount);
+    if (!emoneyToEcouponAmount || amt <= 0) {
+      showNotif('กรุณาระบุจำนวนเงินที่ต้องการโอน', 'error');
+      return;
+    }
+    if (!emoneyToEcouponPin || emoneyToEcouponPin.length !== 6) {
+      showNotif('กรุณากรอกรหัส PIN 6 หลัก', 'error');
+      return;
+    }
+    setTxnConfirm({
+      type: 'transfer_emoney_ecoupon',
+      amount: amt,
+      pin: emoneyToEcouponPin,
+      recipientIdOrPhone: currentUser.userId,
+      recipientName: 'บัญชีกระเป๋า E-Coupon ของคุณ (อัตรา 1:1 ไม่มีค่าธรรมเนียม)',
+      feeAmount: 0,
+      netAmount: amt
+    });
+  };
+
+  const executeTransferEMoneyToECoupon = async () => {
+    if (!txnConfirm) return;
+    try {
+      const res = await fetch('/api/member/transfer-emoney-to-ecoupon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser.userId,
+          amount: txnConfirm.amount,
+          pin: txnConfirm.pin
+        })
+      });
+      const d = await res.json();
+      if (d.success) {
+        showNotif(d.message, 'success');
+        setEmoneyToEcouponAmount('');
+        setEmoneyToEcouponPin('');
+        setTxnConfirm(null);
+        fetchProfile();
+        fetchTransactions();
+      } else {
+        showNotif(d.message, 'error');
+      }
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการทำรายการ', 'error');
+    }
   };
 
   // Purchase Package or General Product
@@ -2246,18 +2828,18 @@ export default function App() {
     let cashToUse = product.price;
 
     if (!isPkg) {
-      couponToUse = Math.min(profile?.balanceMCoupon || 0, product.price);
+      couponToUse = Math.min(profile?.balanceECoupon || 0, product.price);
       cashToUse = product.price - couponToUse;
     }
 
     if (isPkg) {
-      if (profile?.balanceMCash < product.price) {
-        showNotif('ยอดเงินคงเหลือในกระเป๋า M-Cash ไม่เพียงพอสำหรับชำระเงินค่าแพ็กเกจ กรุณาเติมเงินก่อนทำรายการค่ะ', 'error');
+      if (profile?.balanceECash < product.price) {
+        showNotif('ยอดเงินคงเหลือในกระเป๋า E-Cash ไม่เพียงพอสำหรับชำระเงินค่าแพ็กเกจ กรุณาเติมเงินก่อนทำรายการค่ะ', 'error');
         return;
       }
     } else {
-      if (profile?.balanceMCash < cashToUse) {
-        showNotif(`ยอดเงินคงเหลือไม่พอสำหรับชำระเงิน (ราคารวม ฿${product.price?.toLocaleString()} • หักจ่ายด้วย M-Coupon ฿${couponToUse?.toLocaleString()} • ต้องใช้ M-Cash ชำระส่วนต่าง ฿${cashToUse?.toLocaleString()} แต่ท่านมี M-Cash เพียง ฿${profile?.balanceMCash?.toLocaleString()})`, 'error');
+      if (profile?.balanceECash < cashToUse) {
+        showNotif(`ยอดเงินคงเหลือไม่พอสำหรับชำระเงิน (ราคารวม ฿${product.price?.toLocaleString()} • หักจ่ายด้วย E-Coupon ฿${couponToUse?.toLocaleString()} • ต้องใช้ E-Cash ชำระส่วนต่าง ฿${cashToUse?.toLocaleString()} แต่ท่านมี E-Cash เพียง ฿${profile?.balanceECash?.toLocaleString()})`, 'error');
         return;
       }
     }
@@ -2825,21 +3407,8 @@ export default function App() {
           <div className="text-[9px] mt-1 bg-white/70 px-1 py-0.5 rounded font-bold inline-block border border-slate-200/50">
             ตำแหน่ง: {node.rank || 'Member'}
           </div>
-          <div className="text-[9px] mt-1.5 flex justify-between items-center gap-1 bg-white/90 px-1.5 py-0.5 rounded text-slate-600 border border-slate-100">
+          <div className="text-[9px] mt-1.5 flex justify-center items-center gap-1 bg-white/90 px-1.5 py-0.5 rounded text-slate-600 border border-slate-100">
             <span className="font-bold text-[8px]">{node.side === 'Left' ? 'ฝั่งซ้าย' : node.side === 'Right' ? 'ฝั่งขวา' : '-'}</span>
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                handleLogout();
-                clearRegisterForm(node.userId);
-                setAuthMode('register');
-                showNotif(`ตั้งค่าผู้แนะนำสปอนเซอร์เป็น: ${node.name} (${node.userId}) และไปหน้าลงทะเบียนใหม่`, 'success');
-              }}
-              className="ml-1 px-1 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded transition text-[8px] font-bold cursor-pointer border border-indigo-200"
-              title="แนะนำสมาชิกใหม่ภายใต้รหัสนี้"
-            >
-              + สมัคร
-            </button>
           </div>
           {depth === maxTreeDepth && hasChildren && (
             <div className="text-[8px] text-indigo-600 font-bold mt-1 animate-pulse">
@@ -3662,7 +4231,7 @@ export default function App() {
                 }`}
               >
                 <span className="flex items-center gap-3">
-                  <span className="text-base">💰</span> อนุมัติเติมเงิน M-Cash
+                  <span className="text-base">💰</span> อนุมัติเติมเงิน E-Cash
                 </span>
                 {depositQueue.length > 0 && (
                   <span className="bg-red-500 text-white font-extrabold px-2 py-0.5 rounded-full text-[10px] animate-pulse">
@@ -3754,6 +4323,24 @@ export default function App() {
         {/* Dynamic Content Views */}
         <div className="p-6 md:p-8 flex-1">
           
+          {/* Firestore Quota Exceeded Local Backup Mode Warning */}
+          {isUsingPollingFallback && (
+            <div className="mb-6 bg-amber-50 border border-amber-200/80 rounded-2xl p-4 shadow-sm text-left flex gap-3.5 items-start">
+              <span className="text-amber-500 text-xl leading-none mt-0.5">⚠️</span>
+              <div>
+                <h4 className="text-sm font-semibold text-amber-900 leading-tight">
+                  ระบบกำลังเชื่อมต่อโหมดสำรองข้อมูลท้องถิ่น (Local Failover Mode)
+                </h4>
+                <p className="text-xs text-amber-700/95 mt-1 leading-relaxed">
+                  เนื่องจากปริมาณการเขียนข้อมูลของ Cloud Database ประจำวันของโควตาฟรี (Firebase Spark Plan) เต็มพิกัดแล้ว 
+                  ระบบได้เปิดใช้งานระบบรักษาเสถียรภาพและเปลี่ยนมาจัดเก็บข้อมูลบนเซิร์ฟเวอร์สำรองในทันที 
+                  <strong> สมาชิกทุกท่านยังสามารถเข้าใช้งาน ทำธุรกรรม สมัครสมาชิก ฝากถอน แนะนำตำแหน่ง และซื้อขายได้เต็มประสิทธิภาพ 100% ตามปกติ </strong> 
+                  โดยข้อมูลทั้งหมดจะได้รับการจัดเก็บบันทึกอย่างปลอดภัยบนเซิร์ฟเวอร์ นที พลัส และจะทำการซิงก์กลับขึ้นสู่ระบบคลาวด์โดยอัตโนมัติเมื่อพ้นกำหนดรีเซ็ตโควตาประจำวันค่ะ
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* DASHBOARD TAB */}
           {activeTab === 'dash' && (
             <div className="space-y-8 animate-fadeIn">
@@ -3764,33 +4351,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Sound Notification Test Section (Only for Admin & Manager) */}
-              {(currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
-                <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-left">
-                  <div className="space-y-1">
-                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                      🔊 ทดสอบระบบเสียงเอฟเฟกต์ & เสียงพูดแจ้งเตือน (M-Cash)
-                    </h4>
-                    <p className="text-xs text-slate-500">
-                      เฉพาะแอดมินและผู้จัดการเท่านั้นที่เห็นส่วนนี้ค่ะ คุณสามารถกดทดสอบเพื่อฟังตัวอย่างเสียงพูดภาษาไทย (เสียงผู้หญิง) และเสียงเอฟเฟกต์เงินเข้าจริงได้ทันทีค่ะ
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <button 
-                      onClick={() => playMoneySound(1000, 'deposit')}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-2xl text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/10 active:scale-95 transition duration-150 cursor-pointer"
-                    >
-                      🪙 ทดสอบเสียงเติมเงิน (฿1,000)
-                    </button>
-                    <button 
-                      onClick={() => playMoneySound(999.99, 'bonus')}
-                      className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-2xl text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/10 active:scale-95 transition duration-150 cursor-pointer"
-                    >
-                      🎁 ทดสอบเสียงโบนัสเข้า (฿999.99)
-                    </button>
-                  </div>
-                </div>
-              )}
+
 
               {/* Activation Package Reminder for new Member rank */}
               {profile?.rank === 'Member' && (
@@ -3813,7 +4374,7 @@ export default function App() {
                       </p>
                     )}
                     <p className="text-[10px] text-slate-400">
-                      *กรุณาเติมเงิน M-Cash ในกระเป๋าให้เพียงพอ จากนั้นกดปุ่มชำระเงินเพื่อเริ่มต้นสิทธิ์แนะนำสมาชิกและขยายสายงานทันทีค่ะ
+                      *กรุณาเติมเงิน E-Cash ในกระเป๋าให้เพียงพอ จากนั้นกดปุ่มชำระเงินเพื่อเริ่มต้นสิทธิ์แนะนำสมาชิกและขยายสายงานทันทีค่ะ
                     </p>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
@@ -3821,7 +4382,7 @@ export default function App() {
                       onClick={() => setActiveTab('txn')}
                       className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-2xl text-xs transition text-center shrink-0 cursor-pointer"
                     >
-                      เติมเงิน M-Cash
+                      เติมเงิน E-Cash
                     </button>
                     <button 
                       onClick={() => handlePurchaseProduct(profile?.selectedPackageId || 'pack_s')}
@@ -3834,19 +4395,40 @@ export default function App() {
               )}
 
               {/* Bento Grid Balance Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
                 <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden">
                   <div className="absolute right-4 top-4 bg-white/10 p-2.5 rounded-2xl">
                     <Wallet size={24} />
                   </div>
-                  <span className="text-xs text-indigo-100 font-medium">M-Coupon (บาท)</span>
-                  <h3 className="text-3xl font-extrabold tracking-tight mt-3">{profile?.balanceMCash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
-                  <p className="text-[10px] text-indigo-200 mt-4">กระเป๋าหลักสำหรับทำธุรกรรมสั่งซื้อสินค้าและถอนเงิน</p>
+                  <span className="text-xs text-indigo-100 font-medium">E-Cash (บาท)</span>
+                  <h3 className="text-3xl font-extrabold tracking-tight mt-3">{profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+                  <p className="text-[10px] text-indigo-200 mt-4">กระเป๋าเงินฝากเข้าจากภายนอก สำหรับซื้อแพ็กเกจหรือโอนเปลี่ยน</p>
                   <button 
-                    onClick={() => { setActiveTab('report'); setReportSubTab('mcash'); }}
+                    onClick={() => { setActiveTab('report'); setReportSubTab('ecash'); }}
                     className="mt-4 text-[9px] bg-white text-indigo-700 font-bold px-3 py-1 rounded-lg hover:bg-indigo-50 transition"
                   >
-                    ดูรายงาน M-Coupon
+                    ดูรายงาน E-Cash
+                  </button>
+                </div>
+
+                <div className="bg-gradient-to-br from-purple-600 to-indigo-800 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                  <div className="absolute right-4 top-4 bg-white/10 p-2.5 rounded-2xl">
+                    <Coins size={24} />
+                  </div>
+                  <span className="text-xs text-purple-100 font-medium font-semibold">E-Money (บาท)</span>
+                  <h3 className="text-3xl font-extrabold tracking-tight mt-3">{profile?.balanceEMoney?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+                  
+                  <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-purple-200">
+                    <span className="font-medium">ยอดรายได้สะสมทั้งหมด:</span>
+                    <span className="font-extrabold text-yellow-300 bg-white/10 px-2 py-0.5 rounded-md">฿{(profile?.totalEarnings || profile?.balanceEMoney || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+
+                  <p className="text-[10px] text-purple-200 mt-3">กระเป๋าเงินรายได้ระบบทั้งหมด สำหรับถอนเงินหรือโอนเปลี่ยน</p>
+                  <button 
+                    onClick={() => { setActiveTab('report'); setReportSubTab('emoney'); }}
+                    className="mt-4 text-[9px] bg-white text-purple-700 font-bold px-3 py-1 rounded-lg hover:bg-purple-50 transition"
+                  >
+                    ดูรายงาน E-Money
                   </button>
                 </div>
 
@@ -3854,14 +4436,20 @@ export default function App() {
                   <div className="absolute right-4 top-4 bg-white/10 p-2.5 rounded-2xl">
                     <ShoppingBag size={24} />
                   </div>
-                  <span className="text-xs text-emerald-100 font-medium">M-Coupon (บาท)</span>
-                  <h3 className="text-3xl font-extrabold tracking-tight mt-3">{profile?.balanceMCoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
-                  <p className="text-[10px] text-emerald-200 mt-4">ใช้เป็นส่วนลดหรือชำระค่าสินค้าหลักบนเว็ปนทีช็อป</p>
+                  <span className="text-xs text-emerald-100 font-medium">E-Coupon (บาท)</span>
+                  <h3 className="text-3xl font-extrabold tracking-tight mt-3">{profile?.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
+
+                  <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-teal-100">
+                    <span className="font-medium">ยอดคูปองสะสมทั้งหมด:</span>
+                    <span className="font-extrabold text-yellow-300 bg-white/10 px-2 py-0.5 rounded-md">฿{(profile?.totalCouponsEarned || profile?.balanceECoupon || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+
+                  <p className="text-[10px] text-emerald-200 mt-3">ใช้เป็นส่วนลดหรือชำระค่าสินค้าหลักบนเว็ปนทีช็อป</p>
                   <button 
-                    onClick={() => { setActiveTab('report'); setReportSubTab('mcoupon'); }}
+                    onClick={() => { setActiveTab('report'); setReportSubTab('ecoupon'); }}
                     className="mt-4 text-[9px] bg-white text-emerald-700 font-bold px-3 py-1 rounded-lg hover:bg-emerald-50 transition"
                   >
-                    ดูรายงาน M-Coupon
+                    ดูรายงาน E-Coupon
                   </button>
                 </div>
 
@@ -3869,24 +4457,24 @@ export default function App() {
                   <div className="absolute right-4 top-4 bg-white/10 p-2.5 rounded-2xl">
                     <TrendingUp size={24} />
                   </div>
-                  <span className="text-xs text-amber-100 font-medium">โบนัส All-Share สะสม (สุทธิหักแล้ว 50%)</span>
+                  <span className="text-xs text-amber-100 font-medium font-semibold">โบนัส All-Share สะสม (สุทธิหักแล้ว 50%)</span>
                   <h3 className="text-2xl font-extrabold tracking-tight mt-3">
-                    {((profile?.balanceAllShare || 0) * 0.50).toFixed(7)}
+                    {((profile?.balanceEShare || 0) * 0.50).toFixed(7)}
                   </h3>
-                  <p className="text-[10px] text-amber-100/90 mt-5">ยอดเงินสุทธิหลังหักจัดสรรเข้าระบบ Plan B แล้ว 50%</p>
+                  <p className="text-[10px] text-amber-100/90 mt-5">ยอดสิทธิ์การเป็นเจ้าของส่วนแบ่งบริษัทหลังจัดสรร Plan B</p>
                   <button 
-                    onClick={() => { setActiveTab('report'); setReportSubTab('allshare'); }}
+                    onClick={() => { setActiveTab('report'); setReportSubTab('eshare'); }}
                     className="mt-4 text-[9px] bg-white text-amber-700 font-bold px-3 py-1 rounded-lg hover:bg-amber-50 transition"
                   >
                     ดูรายงาน All-Share
                   </button>
                 </div>
 
-                <div className="bg-gradient-to-br from-slate-800 to-slate-950 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                <div className="bg-gradient-to-br from-slate-800 to-slate-950 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden col-span-1 sm:col-span-2 lg:col-span-1">
                   <div className="absolute right-4 top-4 bg-white/10 p-2.5 rounded-2xl">
                     <ShieldCheck size={24} />
                   </div>
-                  <span className="text-xs text-slate-300 font-medium font-semibold">สิทธิ์รับรายได้คงเหลือ (10 เท่า)</span>
+                  <span className="text-xs text-slate-300 font-semibold">สิทธิ์รับรายได้คงเหลือ (10 เท่า)</span>
                   <h3 className="text-xl font-extrabold tracking-tight mt-3 text-emerald-400">
                     {profile?.role === 'Manager' || profile?.role === 'Admin' 
                       ? 'ไร้ขีดจำกัด (Unlimited)' 
@@ -3912,14 +4500,40 @@ export default function App() {
                       <span className="text-3xl font-extrabold text-rose-700">฿ {csrBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                     </div>
                   </div>
-                  <div className="mt-6 border-t border-slate-100 pt-4 space-y-3">
-                    <span className="text-xs font-bold text-slate-800 block">ผู้บริจาคล่าสุด 3 อันดับ</span>
-                    {csrFeed.slice(0, 3).map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-[11px] text-slate-600 bg-slate-50 p-2 rounded-xl">
-                        <span>คุณ {item.name}</span>
-                        <span className="text-rose-500 font-bold">฿ {parseFloat(item.amount).toFixed(2)}</span>
+                  <div className="mt-6 border-t border-slate-100 pt-4 flex-1 flex flex-col min-h-[290px]">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs font-bold text-slate-800">ผู้ร่วมปันสุขล่าสุด 20 อันดับ</span>
+                      <span className="text-[9px] bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded-full font-bold animate-pulse">LIVE FEED</span>
+                    </div>
+                    {csrFeed.length > 0 ? (
+                      <div className="relative h-[238px] overflow-hidden rounded-2xl bg-slate-50/60 p-2 border border-slate-100/80 shadow-inner">
+                        {/* Smooth top & bottom fade mask */}
+                        <div className="absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-slate-50/90 to-transparent pointer-events-none z-10"></div>
+                        <div className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-slate-50/90 to-transparent pointer-events-none z-10"></div>
+                        
+                        <div 
+                          className="animate-scroll-up space-y-2"
+                          style={{
+                            animationDuration: `${Math.max(15, Math.min(20, csrFeed.slice(0, 20).length) * 2.5)}s`
+                          }}
+                        >
+                          {[...csrFeed.slice(0, 20), ...csrFeed.slice(0, 20)].map((item, idx) => (
+                            <div key={idx} className="h-[38px] flex justify-between items-center text-[11px] text-slate-600 bg-white px-3.5 rounded-xl border border-slate-100 shadow-sm transition hover:scale-[1.01] hover:border-rose-100">
+                              <span className="font-semibold flex items-center gap-1.5 min-w-0">
+                                <span className="text-rose-500 shrink-0">💖</span>
+                                <span className="truncate">คุณ {item.name || item.username || 'ผู้ใหญ่ใจดี'}</span>
+                              </span>
+                              <span className="text-rose-500 font-extrabold shrink-0 bg-rose-50/50 px-2 py-0.5 rounded-lg border border-rose-100/30">฿{parseFloat(item.amount || '0').toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    ))}
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 p-4 text-center">
+                        <span className="text-lg">🌸</span>
+                        <p className="text-[10px] text-slate-400 mt-1 font-medium">เริ่มต้นแบ่งปันสิ่งดีๆ ด้วยกองทุนปันสุขร่วมกันนะคะ</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -3997,7 +4611,7 @@ export default function App() {
                     </div>
                     <div>
                       <h5 className="text-xs font-bold text-slate-800">คู่มือแนะนำธุรกิจเบื้องต้น</h5>
-                      <p className="text-[10px] text-slate-500 mt-1">เริ่มจากการเติมเงินเข้ากระเป๋า M-Cash ของท่าน แล้วทำการซื้อแพ็กเกจตำแหน่ง S เพื่อเปิดร้านออนไลน์!</p>
+                      <p className="text-[10px] text-slate-500 mt-1">เริ่มจากการเติมเงินเข้ากระเป๋า E-Cash ของท่าน แล้วทำการซื้อแพ็กเกจตำแหน่ง S เพื่อเปิดร้านออนไลน์!</p>
                     </div>
                   </div>
                 </div>
@@ -4049,7 +4663,7 @@ export default function App() {
                   </div>
 
                   <p className="text-[10px] text-slate-400 mt-6 leading-relaxed">
-                    *หากเอกสารยังไม่ได้รับการอนุมัติ ท่านจะไม่สามารถทำการโอน M-Cash หรือเบิกเงินถอนคอมมิชชันออกจากระบบนทีพลัสได้
+                    *หากเอกสารยังไม่ได้รับการอนุมัติ ท่านจะไม่สามารถทำการโอน E-Cash หรือเบิกเงินถอนคอมมิชชันออกจากระบบนทีพลัสได้
                   </p>
                 </div>
 
@@ -4121,16 +4735,7 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-slate-700 text-xs font-bold mb-1.5">ที่อยู่จัดส่งสินค้าหลัก</label>
-                        <textarea 
-                          rows={2}
-                          value={kycForm.address}
-                          onChange={(e) => setKycForm(prev => ({ ...prev, address: e.target.value }))}
-                          placeholder="กรอกบ้านเลขที่ ถนน แขวง เขต จังหวัด รหัสไปรษณีย์"
-                          className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:outline-none"
-                        />
-                      </div>
+
 
                       <div className="grid grid-cols-2 gap-2">
                         <div>
@@ -4737,7 +5342,7 @@ export default function App() {
                 <div>
                   <h2 className="text-2xl font-bold text-indigo-950">ระบบสั่งซื้อ นที พลัส ช็อป 🛍️</h2>
                   <p className="text-xs text-slate-500 mt-1">
-                    เลือกซื้อแพ็กเกจขยายตำแหน่งด้วย <span className="font-bold text-indigo-600">M-Cash</span> หรือเลือกซื้อสินค้าทั่วไปจากร้านค้า <span className="font-bold text-amber-600">Natee Plus Shop</span> โดยหักจ่ายผ่าน <span className="font-bold text-amber-600">M-Coupon</span> เป็นอันดับแรก
+                    เลือกซื้อแพ็กเกจขยายตำแหน่งด้วย <span className="font-bold text-indigo-600">E-Cash</span> หรือเลือกซื้อสินค้าทั่วไปจากร้านค้า <span className="font-bold text-amber-600">Natee Plus Shop</span> โดยหักจ่ายผ่าน <span className="font-bold text-amber-600">E-Coupon</span> เป็นอันดับแรก
                   </p>
                 </div>
 
@@ -4833,11 +5438,11 @@ export default function App() {
                         </p>
                         <div className="flex flex-wrap items-center gap-3 pt-2 text-[11px] text-amber-900/95 font-bold border-t border-amber-200/40 mt-1">
                           <span className="flex items-center gap-1">
-                            💳 ชำระด้วย: <span className="underline decoration-amber-500 font-extrabold">M-Coupon เป็นอันดับแรก</span>
+                            💳 ชำระด้วย: <span className="underline decoration-amber-500 font-extrabold">E-Coupon เป็นอันดับแรก</span>
                           </span>
                           <span>•</span>
                           <span className="flex items-center gap-1">
-                            หากไม่พอ: <span className="underline decoration-indigo-500 font-extrabold">หักส่วนต่างอัตโนมัติจาก M-Cash</span>
+                            หากไม่พอ: <span className="underline decoration-indigo-500 font-extrabold">หักส่วนต่างอัตโนมัติจาก E-Cash</span>
                           </span>
                         </div>
                       </div>
@@ -5006,7 +5611,7 @@ export default function App() {
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4">
                       <div>
                         <h3 className="text-base font-bold text-slate-900">🕸️ แผนผังไบนารีสองสายงาน (Binary Plan A)</h3>
-                        <p className="text-xs text-slate-400 mt-0.5">ค้นหาหรือคลิกปุ่ม <b>+ สมัคร</b> เพื่อแนะนำผู้สมัครเข้าต่อสายงานทันที</p>
+                        <p className="text-xs text-slate-400 mt-0.5">แสดงแผนผังโครงสร้างสายงานระบบสองสายงาน (Binary Plan A) ใต้องค์กรของท่าน</p>
                       </div>
 
                       <div className="flex gap-2 w-full md:w-auto">
@@ -5092,7 +5697,7 @@ export default function App() {
                           >
                             ➕
                           </button>
-                          <span className="font-mono font-bold min-w-[36px] text-center text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">
+                          <span className="font-mono font-bold min-w-[36px] text-center text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 hidden">
                             {Math.round(treeScale * 100)}%
                           </span>
                           <button 
@@ -5158,7 +5763,7 @@ export default function App() {
                 <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6 animate-fadeIn">
                   <div>
                     <h3 className="text-base font-bold text-slate-900">👥 แผนสายงานโครงสร้างแนะนำตรง (Direct Sponsor)</h3>
-                    <p className="text-xs text-slate-400 mt-0.5">คลิกเครื่องหมายบวกสีน้ำเงินหลังข้อมูลผู้ใด เพื่อทำการสมัครสมาชิกสัญญากับผู้นั้นเป็นผู้แนะนำโดยตรง</p>
+                    <p className="text-xs text-slate-400 mt-0.5">แสดงแผนผังโครงสร้างสายงานความสัมพันธ์แนะนำตรงใต้องค์กรของท่าน</p>
                   </div>
 
                   <div className="border border-slate-100 p-6 rounded-2xl bg-slate-50">
@@ -5243,7 +5848,7 @@ export default function App() {
 
                       <p className="text-xs text-slate-500 leading-relaxed">
                         {planBSelectedTier === 1 
-                          ? 'กองทุนรันระบบขั้นต้นสำหรับผู้สมัครสมาชิกทุกระดับ มอบสิทธิ์ในการปันผลเมื่อคิวสายงาน Global ขยายถึง 100% ระบบจ่ายรับคอมมิชชั่น M-Cash สุทธิ = 850.00 บาท ต่อรอบปันผล +คูปอง + All-Share + สิทธิ์ระดับถัดไป จะโอนโดยอัตโนมัติ'
+                          ? 'กองทุนรันระบบขั้นต้นสำหรับผู้สมัครสมาชิกทุกระดับ มอบสิทธิ์ในการปันผลเมื่อคิวสายงาน Global ขยายถึง 100% ระบบจ่ายรับคอมมิชชั่น E-Cash สุทธิ = 850.00 บาท ต่อรอบปันผล +คูปอง + E-Share + สิทธิ์ระดับถัดไป จะโอนโดยอัตโนมัติ'
                           : `กองทุนอัปเกรดออโต้รันระดับสูง ผู้ร่วมสายงานจะได้รับสิทธิ์ปันผลเมื่อสายงาน Global ขยายตัวครบตามรอบระบบ และจะโอนสิทธิ์ไปสู่ระดับถัดไปโดยอัตโนมัติเมื่อปันผลครบถ้วน`
                         }
                       </p>
@@ -5263,7 +5868,7 @@ export default function App() {
                             />
                           </div>
                           <p className="text-[9px] text-slate-400 leading-normal">
-                            *สะสมพอยท์จาก 5% ของคอมมิชชัน Plan A และ 50% ของ All-Share ครบทุกๆ 100 Point ระบบจะปั่นรหัสอัตโนมัติขึ้นสายงานกองทุน Plan B1
+                            *สะสมพอยท์จาก 5% ของคอมมิชชัน Plan A และ 50% ของ E-Share ครบทุกๆ 100 Point ระบบจะปั่นรหัสอัตโนมัติขึ้นสายงานกองทุน Plan B1
                           </p>
                         </div>
                       )}
@@ -5312,16 +5917,16 @@ export default function App() {
                             }
                           }
 
-                          const mCashGross = partValue;
-                          const mCashNet = mCashGross * 0.80;
+                          const eCashGross = partValue;
+                          const eCashNet = eCashGross * 0.80;
                           
                           return {
                             nodeValue,
                             totalPayout,
                             partsCount,
                             partValue,
-                            mCashGross,
-                            mCashNet,
+                            eCashGross,
+                            eCashNet,
                             coupon: partValue,
                             spawnReserve: tier === 15 ? 0 : partValue,
                             allShare: partValue,
@@ -5334,7 +5939,7 @@ export default function App() {
                         const currentTierNodes = planBData?.[`b${planBSelectedTier}Nodes`] || [];
 
                         const accumulatedIncome = currentTierNodes.reduce((sum: number, node: any) => {
-                          const basePayout = details.mCashNet;
+                          const basePayout = details.eCashNet;
                           if (node.status === "Success" || (node.progress || 0) >= 100) {
                             return sum + basePayout;
                           } else {
@@ -5383,16 +5988,16 @@ export default function App() {
                             }
                           }
 
-                          const mCashGross = partValue;
-                          const mCashNet = mCashGross * 0.80;
+                          const eCashGross = partValue;
+                          const eCashNet = eCashGross * 0.80;
                           
                           return {
                             nodeValue,
                             totalPayout,
                             partsCount,
                             partValue,
-                            mCashGross,
-                            mCashNet,
+                            eCashGross,
+                            eCashNet,
                             coupon: partValue,
                             spawnReserve: tier === 15 ? 0 : partValue,
                             allShare: partValue,
@@ -5412,13 +6017,13 @@ export default function App() {
                                 </span>
                               </div>
                               <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-50">
-                                <span className="text-slate-500 font-medium">ยอดสุทธิเข้า M-Cash (หลังหัก 20%)</span>
+                                <span className="text-slate-500 font-medium">ยอดสุทธิเข้า E-Cash (หลังหัก 20%)</span>
                                 <span className="font-extrabold text-emerald-600 text-sm">
-                                  ฿ {details.mCashNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / รอบ
+                                  ฿ {details.eCashNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / รอบ
                                 </span>
                               </div>
                               <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-50">
-                                <span className="text-slate-500">ส่วนที่ไป คูปอง ของสมาชิก (M-Coupon)</span>
+                                <span className="text-slate-500">ส่วนที่ไป คูปอง ของสมาชิก (E-Coupon)</span>
                                 <span className="font-bold text-slate-800">
                                   ฿ {details.coupon.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
@@ -5570,215 +6175,218 @@ export default function App() {
             <div className="space-y-6 animate-fadeIn max-w-5xl">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900">ธุรกรรมการเงินกระเป๋า นที พลัส 💳</h2>
-                <p className="text-xs text-slate-400 mt-1">บริหารจัดการยอดเงิน M-Cash โอน ย้ายกระเป๋า และ ส่งคำสั่งถอนยอดรายได้</p>
+                <p className="text-xs text-slate-400 mt-1">บริหารจัดการยอดเงิน E-Cash โอน ย้ายกระเป๋า และ ส่งคำสั่งถอนยอดรายได้</p>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 
-                {/* Deposit M-Cash Mock */}
-                <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
-                  <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
-                    <Wallet size={16} /> แจ้งฝากเงินหลักฐานโอนเงิน M-Cash 💸
-                  </h4>
-                  
-                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-3xl text-center space-y-4 shadow-sm">
+                {/* Column 1: Deposit E-Cash */}
+                <div className="space-y-6">
+                  {/* Deposit E-Cash Mock */}
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                      <Wallet size={16} /> แจ้งฝากเงินหลักฐานโอนเงิน E-Cash 💸
+                    </h4>
                     
-                    {/* Step 1: ยอดเงินต้องการเติม */}
-                    <div className="space-y-3 text-left">
-                      <div>
-                        <label className="block text-slate-700 font-bold text-xs mb-1.5">💵 1. ยอดเงินต้องการเติม (บาท) *</label>
-                        <div className="flex gap-2">
+                    <div className="p-4 bg-slate-50 border border-slate-100 rounded-3xl text-center space-y-4 shadow-sm">
+                      
+                      {/* Step 1: ยอดเงินต้องการเติม */}
+                      <div className="space-y-3 text-left">
+                        <div>
+                          <label className="block text-slate-700 font-bold text-xs mb-1.5">💵 1. ยอดเงินต้องการเติม (บาท) *</label>
+                          <div className="flex gap-2">
+                            <input 
+                              type="number"
+                              value={topupAmount}
+                              onChange={(e) => {
+                                setTopupAmount(e.target.value);
+                                // Clear confirmed decimal/actual amount on edit to force re-confirm
+                                setTopupDecimal('');
+                                setTopupActualAmount('');
+                              }}
+                              className="flex-1 border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white"
+                              placeholder="ระบุจำนวนเงินที่ต้องการเติม"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleTopupRequest}
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl cursor-pointer transition shadow-sm"
+                            >
+                              ยืนยันยอดที่จะโอน
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Step 1.5: Big randomized transfer amount shown once confirmed */}
+                      {topupDecimal ? (
+                        <div className="space-y-4 animate-fadeIn">
+                          
+                          {/* BIG TEXT TOTAL AMOUNT */}
+                          <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl text-center shadow-inner">
+                            <span className="text-[10px] text-slate-500 font-bold block mb-1">ยอดเงินที่ท่านต้องโอนจริง (รวมเศษทศนิยมสุ่ม)</span>
+                            <span className="text-3xl font-black text-indigo-700 font-mono block">
+                              {topupActualAmount} บาท
+                            </span>
+                            <span className="text-[10px] text-rose-600 font-extrabold block mt-1.5 leading-normal">
+                              ⚠️ กรุณาโอนยอดเงินตรงตามทศนิยมด้านบนนี้ เพื่อความถูกต้องรวดเร็วในการอนุมัติค่ะ
+                            </span>
+                          </div>
+
+                          {/* SHOW QR Code and Bank info configured by Manager */}
+                          <div className="bg-white border border-slate-150 p-4 rounded-2xl space-y-3 shadow-sm text-left">
+                            <div className="text-center font-bold text-xs text-slate-700 border-b border-slate-100 pb-2">
+                              รายละเอียดช่องทางชำระเงิน
+                            </div>
+
+                            <div className="flex flex-col items-center gap-3">
+                              {bankSettings.qrCodeUrl ? (
+                                <div className="w-36 h-36 border border-slate-100 rounded-xl p-1 bg-white shadow-inner flex items-center justify-center">
+                                  <img 
+                                    src={bankSettings.qrCodeUrl} 
+                                    alt="Bank QR Code" 
+                                    className="max-w-full max-h-full object-contain rounded-lg"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="mx-auto w-36 h-36 bg-indigo-50 rounded-2xl flex items-center justify-center border border-indigo-100 shadow-inner">
+                                  <span className="text-[9px] text-slate-400 font-bold tracking-wider uppercase text-center p-2">QR CODE SIMULATED</span>
+                                </div>
+                              )}
+                              <p className="text-[10px] text-slate-500 font-bold leading-normal text-center">
+                                สแกน QR Code ด้านบนเพื่อสแกนจ่ายเงินผ่านแอปธนาคารของท่าน
+                              </p>
+                            </div>
+
+                            <div className="pt-2 border-t border-slate-100 text-xs space-y-1">
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">🏦 ธนาคาร:</span>
+                                <strong className="text-slate-800">{bankSettings.bankName}</strong>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">💳 เลขที่บัญชี:</span>
+                                <strong className="text-indigo-600 font-mono">{bankSettings.bankAccount}</strong>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">👤 ชื่อบัญชี:</span>
+                                <strong className="text-slate-800">{bankSettings.bankAccountName}</strong>
+                              </div>
+                            </div>
+                          </div>
+
+                        </div>
+                      ) : (
+                        <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl text-center text-xs text-amber-800 font-semibold leading-relaxed">
+                          💡 กรุณากรอกยอดเงินต้องการเติม และกดปุ่ม <strong className="text-indigo-600">"ยืนยันยอดที่จะโอน"</strong> เพื่อให้ระบบสุ่มตัวเลขจุดทศนิยมและแสดง QR Code / บัญชีธนาคารสำหรับโอนเงินค่ะ
+                        </div>
+                      )}
+
+                      {/* Step 2, 3, 4 Inputs */}
+                      <div className="space-y-4 border-t border-slate-200/60 pt-4 text-left">
+                        <div>
+                          <label className="block text-slate-700 font-bold text-xs mb-1.5">💰 2. ยอดโอนเงินจริง (บาท) *</label>
                           <input 
                             type="number"
-                            value={topupAmount}
-                            onChange={(e) => {
-                              setTopupAmount(e.target.value);
-                              // Clear confirmed decimal/actual amount on edit to force re-confirm
-                              setTopupDecimal('');
-                              setTopupActualAmount('');
-                            }}
-                            className="flex-1 border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white"
-                            placeholder="ระบุจำนวนเงินที่ต้องการเติม"
+                            step="0.01"
+                            disabled={!topupDecimal}
+                            value={topupActualAmount}
+                            onChange={(e) => setTopupActualAmount(e.target.value)}
+                            className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-indigo-700 bg-indigo-50/50 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-55"
+                            placeholder="จะแสดงอัตโนมัติเมื่อกดยืนยันยอดด้านบน"
                           />
-                          <button
-                            type="button"
-                            onClick={handleTopupRequest}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl cursor-pointer transition shadow-sm"
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-700 font-bold text-xs mb-1.5">📅 3. วันที่ทำรายการโอนเงิน *</label>
+                          <input 
+                            type="date"
+                            disabled={!topupDecimal}
+                            value={topupTransferDate}
+                            onChange={(e) => setTopupTransferDate(e.target.value)}
+                            className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white disabled:opacity-55"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-700 font-bold text-xs mb-1.5">🕒 4. เวลาที่โอนเงิน *</label>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <span className="block text-slate-400 text-[10px] mb-1">ชั่วโมง *</span>
+                              <select
+                                disabled={!topupDecimal}
+                                value={topupTransferHour}
+                                onChange={(e) => setTopupTransferHour(e.target.value)}
+                                className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white disabled:opacity-55 cursor-pointer"
+                              >
+                                {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map((h) => (
+                                  <option key={h} value={h}>{h}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <span className="block text-slate-400 text-[10px] mb-1">นาที *</span>
+                              <select
+                                disabled={!topupDecimal}
+                                value={topupTransferMinute}
+                                onChange={(e) => setTopupTransferMinute(e.target.value)}
+                                className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white disabled:opacity-55 cursor-pointer"
+                              >
+                                {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map((m) => (
+                                  <option key={m} value={m}>{m}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-1.5 border-t border-slate-200/60 pt-4 text-left">
+                        <label className="block text-slate-700 font-bold text-xs mb-1">📷 5. อัปโหลดรูปสลิปทำรายการโอน *</label>
+                        <div className="relative">
+                          <input 
+                            type="file" 
+                            accept="image/*"
+                            disabled={!topupDecimal}
+                            id="custom-slip-upload"
+                            onChange={handleSlipFileChange}
+                            className="hidden"
+                          />
+                          <label 
+                            htmlFor="custom-slip-upload"
+                            className={`flex flex-col items-center justify-center border border-dashed border-indigo-300 bg-indigo-50/10 hover:bg-indigo-50/40 rounded-2xl p-4 cursor-pointer transition text-center space-y-1.5 ${!topupDecimal ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
                           >
-                            ยืนยันยอดที่จะโอน
-                          </button>
+                            <Upload size={24} className="text-indigo-500 animate-pulse" />
+                            <span className="text-xs font-bold text-rose-600 leading-relaxed max-w-[240px]">
+                              {topupSlip ? `✓ เลือกไฟล์สำเร็จ: ${topupSlip}` : "กรุณาใส่สลิปจริง หากพบการทุจริต อาจถูกดำเนินคดีตามกฎหมาย"}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              (คลิกเพื่ออัปโหลดไฟล์รูปภาพ)
+                            </span>
+                          </label>
                         </div>
                       </div>
+                      
+                      <button 
+                        onClick={handleTopupSubmit}
+                        disabled={isSubmittingTopup || !topupSlip || !topupAmount || parseFloat(topupAmount) <= 0 || !topupActualAmount || parseFloat(topupActualAmount) <= 0 || !topupTransferDate}
+                        className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 text-white font-bold py-3 rounded-xl text-xs disabled:text-slate-500 cursor-pointer shadow-sm transition"
+                      >
+                        {isSubmittingTopup ? 'กำลังส่งข้อมูล...' : 'ยืนยันส่งหลักฐานโอนเงินเพื่อตรวจสอบ'}
+                      </button>
                     </div>
-
-                    {/* Step 1.5: Big randomized transfer amount shown once confirmed */}
-                    {topupDecimal ? (
-                      <div className="space-y-4 animate-fadeIn">
-                        
-                        {/* BIG TEXT TOTAL AMOUNT */}
-                        <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl text-center shadow-inner">
-                          <span className="text-[10px] text-slate-500 font-bold block mb-1">ยอดเงินที่ท่านต้องโอนจริง (รวมเศษทศนิยมสุ่ม)</span>
-                          <span className="text-3xl font-black text-indigo-700 font-mono block">
-                            {topupActualAmount} บาท
-                          </span>
-                          <span className="text-[10px] text-rose-600 font-extrabold block mt-1.5 leading-normal">
-                            ⚠️ กรุณาโอนยอดเงินตรงตามทศนิยมด้านบนนี้ เพื่อความถูกต้องรวดเร็วในการอนุมัติค่ะ
-                          </span>
-                        </div>
-
-                        {/* SHOW QR Code and Bank info configured by Manager */}
-                        <div className="bg-white border border-slate-150 p-4 rounded-2xl space-y-3 shadow-sm text-left">
-                          <div className="text-center font-bold text-xs text-slate-700 border-b border-slate-100 pb-2">
-                            รายละเอียดช่องทางชำระเงิน
-                          </div>
-
-                          <div className="flex flex-col items-center gap-3">
-                            {bankSettings.qrCodeUrl ? (
-                              <div className="w-36 h-36 border border-slate-100 rounded-xl p-1 bg-white shadow-inner flex items-center justify-center">
-                                <img 
-                                  src={bankSettings.qrCodeUrl} 
-                                  alt="Bank QR Code" 
-                                  className="max-w-full max-h-full object-contain rounded-lg"
-                                  referrerPolicy="no-referrer"
-                                />
-                              </div>
-                            ) : (
-                              <div className="mx-auto w-36 h-36 bg-indigo-50 rounded-2xl flex items-center justify-center border border-indigo-100 shadow-inner">
-                                <span className="text-[9px] text-slate-400 font-bold tracking-wider uppercase text-center p-2">QR CODE SIMULATED</span>
-                              </div>
-                            )}
-                            <p className="text-[10px] text-slate-500 font-bold leading-normal text-center">
-                              สแกน QR Code ด้านบนเพื่อสแกนจ่ายเงินผ่านแอปธนาคารของท่าน
-                            </p>
-                          </div>
-
-                          <div className="pt-2 border-t border-slate-100 text-xs space-y-1">
-                            <div className="flex justify-between">
-                              <span className="text-slate-500">🏦 ธนาคาร:</span>
-                              <strong className="text-slate-800">{bankSettings.bankName}</strong>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-500">💳 เลขที่บัญชี:</span>
-                              <strong className="text-indigo-600 font-mono">{bankSettings.bankAccount}</strong>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-500">👤 ชื่อบัญชี:</span>
-                              <strong className="text-slate-800">{bankSettings.bankAccountName}</strong>
-                            </div>
-                          </div>
-                        </div>
-
-                      </div>
-                    ) : (
-                      <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl text-center text-xs text-amber-800 font-semibold leading-relaxed">
-                        💡 กรุณากรอกยอดเงินต้องการเติม และกดปุ่ม <strong className="text-indigo-600">"ยืนยันยอดที่จะโอน"</strong> เพื่อให้ระบบสุ่มตัวเลขจุดทศนิยมและแสดง QR Code / บัญชีธนาคารสำหรับโอนเงินค่ะ
-                      </div>
-                    )}
-
-                    {/* Step 2, 3, 4 Inputs */}
-                    <div className="space-y-4 border-t border-slate-200/60 pt-4 text-left">
-                      <div>
-                        <label className="block text-slate-700 font-bold text-xs mb-1.5">💰 2. ยอดโอนเงินจริง (บาท) *</label>
-                        <input 
-                          type="number"
-                          step="0.01"
-                          disabled={!topupDecimal}
-                          value={topupActualAmount}
-                          onChange={(e) => setTopupActualAmount(e.target.value)}
-                          className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-indigo-700 bg-indigo-50/50 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-55"
-                          placeholder="จะแสดงอัตโนมัติเมื่อกดยืนยันยอดด้านบน"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 font-bold text-xs mb-1.5">📅 3. วันที่ทำรายการโอนเงิน *</label>
-                        <input 
-                          type="date"
-                          disabled={!topupDecimal}
-                          value={topupTransferDate}
-                          onChange={(e) => setTopupTransferDate(e.target.value)}
-                          className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white disabled:opacity-55"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-slate-700 font-bold text-xs mb-1.5">🕒 4. เวลาที่โอนเงิน *</label>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <span className="block text-slate-400 text-[10px] mb-1">ชั่วโมง *</span>
-                            <select
-                              disabled={!topupDecimal}
-                              value={topupTransferHour}
-                              onChange={(e) => setTopupTransferHour(e.target.value)}
-                              className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white disabled:opacity-55 cursor-pointer"
-                            >
-                              {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map((h) => (
-                                <option key={h} value={h}>{h}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <span className="block text-slate-400 text-[10px] mb-1">นาที *</span>
-                            <select
-                              disabled={!topupDecimal}
-                              value={topupTransferMinute}
-                              onChange={(e) => setTopupTransferMinute(e.target.value)}
-                              className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white disabled:opacity-55 cursor-pointer"
-                            >
-                              {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map((m) => (
-                                <option key={m} value={m}>{m}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-1.5 border-t border-slate-200/60 pt-4 text-left">
-                      <label className="block text-slate-700 font-bold text-xs mb-1">📷 5. อัปโหลดรูปสลิปทำรายการโอน *</label>
-                      <div className="relative">
-                        <input 
-                          type="file" 
-                          accept="image/*"
-                          disabled={!topupDecimal}
-                          id="custom-slip-upload"
-                          onChange={handleSlipFileChange}
-                          className="hidden"
-                        />
-                        <label 
-                          htmlFor="custom-slip-upload"
-                          className={`flex flex-col items-center justify-center border border-dashed border-indigo-300 bg-indigo-50/10 hover:bg-indigo-50/40 rounded-2xl p-4 cursor-pointer transition text-center space-y-1.5 ${!topupDecimal ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
-                        >
-                          <Upload size={24} className="text-indigo-500 animate-pulse" />
-                          <span className="text-xs font-bold text-rose-600 leading-relaxed max-w-[240px]">
-                            {topupSlip ? `✓ เลือกไฟล์สำเร็จ: ${topupSlip}` : "กรุณาใส่สลิปจริง หากพบการทุจริต อาจถูกดำเนินคดีตามกฎหมาย"}
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-medium">
-                            (คลิกเพื่ออัปโหลดไฟล์รูปภาพ)
-                          </span>
-                        </label>
-                      </div>
-                    </div>
-                    
-                    <button 
-                      onClick={handleTopupSubmit}
-                      disabled={isSubmittingTopup || !topupSlip || !topupAmount || parseFloat(topupAmount) <= 0 || !topupActualAmount || parseFloat(topupActualAmount) <= 0 || !topupTransferDate}
-                      className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 text-white font-bold py-3 rounded-xl text-xs disabled:text-slate-500 cursor-pointer shadow-sm transition"
-                    >
-                      {isSubmittingTopup ? 'กำลังส่งข้อมูล...' : 'ยืนยันส่งหลักฐานโอนเงินเพื่อตรวจสอบ'}
-                    </button>
                   </div>
                 </div>
 
-                {/* Transfer to Member & Exchange to Coupon */}
-                <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6 lg:col-span-2">
+                {/* Column 2: Separate Frames for Transfer, Exchange, Withdrawal */}
+                <div className="space-y-6">
                   
-                  {/* MCash Transfer to User */}
-                  <div className="border-b border-slate-100 pb-5 space-y-3">
-                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                      <UserCheck size={16} /> โอนเงิน M-Cash ระหว่างสมาชิก
+                  {/* Frame 1: โอนเงิน E-Cash ระหว่างสมาชิก */}
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                      <UserCheck size={16} className="text-indigo-600" /> โอนเงิน E-Cash ระหว่างสมาชิก 💸
                     </h4>
-                    <form onSubmit={handleTransferMCash} className="grid grid-cols-2 gap-3 text-xs">
+                    <form onSubmit={initiateTransferECashMember} className="grid grid-cols-2 gap-3 text-xs">
                       <div>
                         <label className="block text-slate-700 font-semibold mb-1">รหัสผู้ใช้ / เบอร์โทรศัพท์ปลายทาง</label>
                         <input 
@@ -5787,18 +6395,18 @@ export default function App() {
                           value={transferUser}
                           onChange={(e) => setTransferUser(e.target.value)}
                           placeholder="ไอดีผู้รับปลายทาง"
-                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                         />
                       </div>
                       <div>
-                        <label className="block text-slate-700 font-semibold mb-1">จำนวนยอดเงิน (M-Cash)</label>
+                        <label className="block text-slate-700 font-semibold mb-1">จำนวนยอดเงิน (E-Cash)</label>
                         <input 
                           type="number" 
                           required
                           value={transferAmount}
                           onChange={(e) => setTransferAmount(e.target.value)}
                           placeholder="จำนวนเงิน"
-                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                         />
                       </div>
                       <div className="col-span-2 flex gap-2">
@@ -5809,23 +6417,118 @@ export default function App() {
                           value={transferPin}
                           onChange={(e) => setTransferPin(e.target.value.replace(/\D/g, ''))}
                           placeholder="ใส่รหัสธุรกรรม PIN 6 หลัก"
-                          className="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs text-center font-mono tracking-widest"
+                          className="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs text-center font-mono tracking-widest focus:border-indigo-500"
                         />
-                        <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 rounded-xl text-xs font-bold">
-                          ยืนยันการโอนเงิน
+                        <button type="submit" disabled={isVerifyingRecipient} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 rounded-xl text-xs font-bold disabled:bg-slate-300 cursor-pointer">
+                          {isVerifyingRecipient ? 'กำลังตรวจสอบ...' : 'ยืนยันการโอนเงิน'}
                         </button>
                       </div>
                     </form>
                   </div>
 
-                  {/* MCash to MCoupon exchange */}
-                  <div className="border-b border-slate-100 pb-5 space-y-3">
-                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                      <CreditCard size={16} /> แลกเปลี่ยนยอด M-Cash ซื้อคูปอง M-Coupon
+                  {/* Frame 2: โอนย้ายสลับกระเป๋าเงินภายในระบบ */}
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                      <Coins size={16} className="text-purple-600" /> โอนย้ายสลับกระเป๋าเงินภายในระบบ 🔁
                     </h4>
-                    <form onSubmit={handleBuyCoupon} className="grid grid-cols-2 gap-3 text-xs">
+                    
+                    <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl space-y-4 text-xs shadow-inner">
+                      
+                      {/* Option A: E-Cash to E-Money (10% fee) */}
+                      <div className="border-b border-slate-200 pb-4">
+                        <span className="font-bold text-slate-800 block mb-1">1. โอน E-Cash ไปกระเป๋า E-Money (มีค่าบริการ 10%)</span>
+                        <p className="text-[10px] text-slate-400 mb-2">หักค่าบริการจัดสรร All-Share 5% และสิทธิบริษัท 5% รวม 10%</p>
+                        <form onSubmit={initiateTransferECashToEMoney} className="grid grid-cols-3 gap-2">
+                          <input 
+                            type="number" 
+                            required
+                            value={ecashToEmoneyAmount}
+                            onChange={(e) => setEcashToEmoneyAmount(e.target.value)}
+                            placeholder="จำนวนเงิน"
+                            className="border border-slate-300 rounded-xl px-2 py-1.5 text-[11px] bg-white"
+                          />
+                          <input 
+                            type="password" 
+                            required
+                            maxLength={6}
+                            value={ecashToEmoneyPin}
+                            onChange={(e) => setEcashToEmoneyPin(e.target.value.replace(/\D/g, ''))}
+                            placeholder="PIN 6 หลัก"
+                            className="border border-slate-300 rounded-xl px-2 py-1.5 text-[11px] text-center font-mono tracking-widest bg-white"
+                          />
+                          <button type="submit" className="bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-[10px] transition cursor-pointer">
+                            โอนเข้า E-Money
+                          </button>
+                        </form>
+                      </div>
+
+                      {/* Option B: E-Money to E-Cash (1:1 no fee) */}
+                      <div className="border-b border-slate-200 pb-4">
+                        <span className="font-bold text-slate-800 block mb-1">2. โอน E-Money ไปกระเป๋า E-Cash (อัตรา 1:1)</span>
+                        <p className="text-[10px] text-slate-400 mb-2">ย้ายรายได้เข้ากระเป๋าหลัก เพื่อชำระค่าสิทธิ์แพ็กเกจหรือส่งต่อสมาชิก</p>
+                        <form onSubmit={initiateTransferEMoneyToECash} className="grid grid-cols-3 gap-2">
+                          <input 
+                            type="number" 
+                            required
+                            value={emoneyToEcashAmount}
+                            onChange={(e) => setEmoneyToEcashAmount(e.target.value)}
+                            placeholder="จำนวนเงิน"
+                            className="border border-slate-300 rounded-xl px-2 py-1.5 text-[11px] bg-white"
+                          />
+                          <input 
+                            type="password" 
+                            required
+                            maxLength={6}
+                            value={emoneyToEcashPin}
+                            onChange={(e) => setEmoneyToEcashPin(e.target.value.replace(/\D/g, ''))}
+                            placeholder="PIN 6 หลัก"
+                            className="border border-slate-300 rounded-xl px-2 py-1.5 text-[11px] text-center font-mono tracking-widest bg-white"
+                          />
+                          <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-[10px] transition cursor-pointer">
+                            ย้ายเข้า E-Cash
+                          </button>
+                        </form>
+                      </div>
+
+                      {/* Option C: E-Money to E-Coupon (1:1 no fee) */}
                       <div>
-                        <label className="block text-slate-700 font-semibold mb-1">ยอดเงินที่ต้องการแลกเปลี่ยน (M-Cash)</label>
+                        <span className="font-bold text-slate-800 block mb-1">3. โอน E-Money ไปกระเป๋า E-Coupon (อัตรา 1:1)</span>
+                        <p className="text-[10px] text-slate-400 mb-2">แลกรับเป็นแต้มคูปองซื้อสินค้าและสิทธิประโยชน์ในการช้อปปิ้ง</p>
+                        <form onSubmit={initiateTransferEMoneyToECoupon} className="grid grid-cols-3 gap-2">
+                          <input 
+                            type="number" 
+                            required
+                            value={emoneyToEcouponAmount}
+                            onChange={(e) => setEmoneyToEcouponAmount(e.target.value)}
+                            placeholder="จำนวนเงิน"
+                            className="border border-slate-300 rounded-xl px-2 py-1.5 text-[11px] bg-white"
+                          />
+                          <input 
+                            type="password" 
+                            required
+                            maxLength={6}
+                            value={emoneyToEcouponPin}
+                            onChange={(e) => setEmoneyToEcouponPin(e.target.value.replace(/\D/g, ''))}
+                            placeholder="PIN 6 หลัก"
+                            className="border border-slate-300 rounded-xl px-2 py-1.5 text-[11px] text-center font-mono tracking-widest bg-white"
+                          />
+                          <button type="submit" className="bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-[10px] transition cursor-pointer">
+                            ย้ายเข้า E-Coupon
+                          </button>
+                        </form>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* Frame 3: แลกเปลี่ยนคูปอง */}
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                      <CreditCard size={16} /> แลกเปลี่ยนยอด E-Cash ซื้อคูปอง E-Coupon 🛍️
+                    </h4>
+                    <form onSubmit={initiateBuyCoupon} className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <label className="block text-slate-700 font-semibold mb-1">ยอดเงินที่ต้องการแลกเปลี่ยน (E-Cash)</label>
                         <input 
                           type="number" 
                           required
@@ -5849,29 +6552,29 @@ export default function App() {
                       </div>
                       <div className="col-span-2">
                         <p className="text-[9px] text-rose-500 bg-rose-50 p-2 rounded-lg border border-rose-100 mb-2">
-                          ⚠️ เมื่อแลกยอด M-Cash ไปเป็น M-Coupon ช้อปปิ้งแล้ว จะไม่สามารถแลกกลับคืนมาเป็นยอดเงินเงินสดได้
+                          ⚠️ เมื่อแลกยอด E-Cash ไปเป็น E-Coupon ช้อปปิ้งแล้ว จะไม่สามารถแลกกลับคืนมาเป็นยอดเงินเงินสดได้
                         </p>
-                        <button type="submit" className="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 rounded-xl">
-                          แลกสิทธิ์ M-Coupon คูปองช้อปปิ้งพอร์ทัล
+                        <button type="submit" className="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 rounded-xl cursor-pointer">
+                          แลกสิทธิ์ E-Coupon คูปองช้อปปิ้งพอร์ทัล
                         </button>
                       </div>
                     </form>
                   </div>
 
-                  {/* MCash Withdrawal to bank */}
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                      <Star size={16} className="text-rose-500" /> ถอนยอดรายได้เข้าบัญชีธนาคาร (มีหักภาษี ณ ที่จ่าย)
+                  {/* Frame 4: ถอนรายได้เข้าบัญชีธนาคารจากกระเป๋า E-Money */}
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                      <Star size={16} className="text-rose-500" /> ถอนยอดรายได้เข้าบัญชีธนาคาร (จากกระเป๋า E-Money) 🏦
                     </h4>
-                    <form onSubmit={handleWithdrawMCash} className="grid grid-cols-2 gap-3 text-xs">
+                    <form onSubmit={initiateWithdrawECash} className="grid grid-cols-2 gap-3 text-xs">
                       <div>
-                        <label className="block text-slate-700 font-semibold mb-1">ยอดเงินคอมมิชชันที่ต้องการถอน</label>
+                        <label className="block text-slate-700 font-semibold mb-1">ยอดเงินต้องการถอน (E-Money)</label>
                         <input 
                           type="number" 
                           required
                           value={withdrawAmount}
                           onChange={(e) => setWithdrawAmount(e.target.value)}
-                          placeholder="ยอดถอน M-Cash"
+                          placeholder="ยอดถอน E-Money"
                           className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
                         />
                       </div>
@@ -5890,7 +6593,7 @@ export default function App() {
                       <div className="col-span-2 bg-slate-50 border border-slate-200 p-3.5 rounded-2xl text-[10px] space-y-1 text-slate-500">
                         <p>ชื่อผู้รับโอนเงินปลายทาง: <b>{profile?.name} {profile?.surname}</b></p>
                         <p>ธนาคาร: <b>{profile?.bankName} (เลขที่: {profile?.bankAccount})</b></p>
-                        <p className="text-rose-500 font-bold">✓ หักค่าบริการระบบหลังบ้าน 15% และหักภาษี ณ ที่จ่าย 5% รวมหักทั้งสิ้น 20%</p>
+                        <p className="text-rose-500 font-bold">✓ หักค่าบริการระบบหลังบ้าน 15% และหักภาษี ณ ที่จ่าย 5% รวมหักทั้งสิ้น 20% เพื่อรักษาเสถียรภาพ</p>
                         {withdrawAmount && (
                           <div className="mt-2 pt-2 border-t border-slate-200 text-xs font-bold text-slate-800 flex justify-between">
                             <span>ยอดเงินที่จะเข้าบัญชีจริง:</span>
@@ -5899,7 +6602,7 @@ export default function App() {
                         )}
                       </div>
                       <button type="submit" className="col-span-2 w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-2 rounded-xl shadow-lg cursor-pointer">
-                        ส่งคำขอถอนเงินรายได้
+                        ส่งคำขอถอนเงินรายได้ E-Money
                       </button>
                     </form>
                   </div>
@@ -5965,7 +6668,7 @@ export default function App() {
                                   t.type === 'Exchange' ? 'bg-sky-50 text-sky-700 border border-sky-100' :
                                   'bg-rose-50 text-rose-700 border border-rose-100'
                                 }`}>
-                                  {t.type === 'Deposit' ? 'เงินเข้า (M-Cash)' :
+                                  {t.type === 'Deposit' ? 'เงินเข้า (E-Cash)' :
                                    t.type === 'Bonus' ? 'โบนัส MLM / คอมมิชชัน' :
                                    t.type === 'Exchange' ? 'แลกเปลี่ยนคูปอง' :
                                    t.type === 'WithdrawalRequest' ? 'ขอถอนเงินสด' : t.type}
@@ -6040,7 +6743,7 @@ export default function App() {
                   </h5>
                   <p>1. <b>สิทธิ์การรับรายได้โบนัสสูงสุด (Quota Rights Limit):</b> จำกัดการรับโบนัสสะสมรวมสูงสุดไม่เกิน 10 เท่าของมูลค่าแพ็กเกจที่คุณสั่งซื้อ (เช่น แพ็กเกจ S (100 บ.) รับสิทธิ์ได้สูงสุด 1,000 บาท | M: 5,000 บาท | L: 10,000 บาท | XL: 30,000 บาท | XXL: 50,000 บาท) เมื่อสิทธิ์โบนัสครบกำหนด ระบบจะตัดยอดและโอนสิทธิ์ระดับถัดไปโดยอัตโนมัติ</p>
                   <p>2. <b>ความลึกชั้นสายงานแผน A (ไบนารี่):</b> สมาชิกจะได้รับผลประโยชน์คำนวณตามจำนวนชั้นลึกสูงสุดตามแพ็กเกจปัจจุบันของคุณ ได้แก่ S รับลึก 1 ชั้น | M ลึก 5 ชั้น | L ลึก 10 ชั้น | XL ลึก 15 ชั้น | XXL ลึก 20 ชั้นลึก</p>
-                  <p>3. <b>ค่าบริหารจัดการและภาษีหัก ณ ที่จ่าย:</b> การขอถอนเงินปันผลจากยอดเงินสด (M-Cash) จะถูกหักค่าบริการบำรุงรักษาระบบหลังบ้าน 15% และภาษีเงินได้หัก ณ ที่จ่าย 5% รวมหักทั้งสิ้น 20% เพื่อประโยชน์สูงสุดในการรักษาเสถียรภาพระบบ</p>
+                  <p>3. <b>ค่าบริหารจัดการและภาษีหัก ณ ที่จ่าย:</b> การขอถอนเงินปันผลจากยอดเงินสด (E-Cash) จะถูกหักค่าบริการบำรุงรักษาระบบหลังบ้าน 15% และภาษีเงินได้หัก ณ ที่จ่าย 5% รวมหักทั้งสิ้น 20% เพื่อประโยชน์สูงสุดในการรักษาเสถียรภาพระบบ</p>
                 </div>
               </div>
 
@@ -6059,25 +6762,33 @@ export default function App() {
                 {/* Report Sub-tabs Selector */}
                 <div className="flex flex-wrap gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200">
                   <button 
-                    onClick={() => setReportSubTab('mcash')}
+                    onClick={() => setReportSubTab('ecash')}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                      reportSubTab === 'mcash' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                      reportSubTab === 'ecash' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    💳 รายงาน M-Cash
+                    💳 รายงาน E-Cash
                   </button>
                   <button 
-                    onClick={() => setReportSubTab('mcoupon')}
+                    onClick={() => setReportSubTab('emoney')}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                      reportSubTab === 'mcoupon' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                      reportSubTab === 'emoney' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    🎟️ รายงาน M-Coupon
+                    🪙 รายงาน E-Money
                   </button>
                   <button 
-                    onClick={() => setReportSubTab('allshare')}
+                    onClick={() => setReportSubTab('ecoupon')}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                      reportSubTab === 'allshare' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                      reportSubTab === 'ecoupon' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    🎟️ รายงาน E-Coupon
+                  </button>
+                  <button 
+                    onClick={() => setReportSubTab('eshare')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      reportSubTab === 'eshare' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     🌐 รายงาน All-Share
@@ -6101,17 +6812,17 @@ export default function App() {
                 </div>
               </div>
 
-              {/* REPORT M-CASH SUB-VIEW */}
-              {reportSubTab === 'mcash' && (
+              {/* REPORT E-CASH SUB-VIEW */}
+              {reportSubTab === 'ecash' && (
                 <div className="space-y-6">
                   {/* Ledger Balance Card */}
                   <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-3xl p-6 text-white shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="space-y-1">
-                      <span className="text-xs text-emerald-100 font-medium">ยอดคงเหลือ M-Cash ปัจจุบัน</span>
-                      <h3 className="text-3xl font-extrabold tracking-tight">฿ {profile?.balanceMCash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+                      <span className="text-xs text-emerald-100 font-medium">ยอดคงเหลือ E-Cash ปัจจุบัน</span>
+                      <h3 className="text-3xl font-extrabold tracking-tight">฿ {profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
                     </div>
                     <div className="text-[11px] bg-white/10 px-3 py-2 rounded-xl backdrop-blur-sm space-y-1">
-                      <div>• ยอดรวมเงินหมุนเวียน M-Cash ทั้งระบบประมวลผลเรียลไทม์</div>
+                      <div>• ยอดรวมเงินหมุนเวียน E-Cash ทั้งระบบประมวลผลเรียลไทม์</div>
                       <div>• ปลอดภัยด้วยรหัส PIN และระบบยืนยันตนสองชั้น</div>
                     </div>
                   </div>
@@ -6120,29 +6831,29 @@ export default function App() {
                   <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
                     <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                       <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                        <CreditCard size={16} className="text-emerald-500" /> สมุดบันทึกรายการบัญชี M-Cash Ledger
+                        <CreditCard size={16} className="text-emerald-500" /> สมุดบันทึกรายการบัญชี E-Cash Ledger
                       </h4>
                       <span className="text-[10px] text-slate-400 font-medium">อัปเดตข้อมูลล่าสุดเมื่อ: {new Date().toLocaleTimeString()}</span>
                     </div>
 
                     {(() => {
-                      const mCashTxns = transactions.filter((t) => {
+                      const eCashTxns = transactions.filter((t) => {
                         if (t.type === 'Deposit_System') return false;
-                        if (t.currency && t.currency !== 'M-Cash') return false;
+                        if (t.currency && t.currency !== 'E-Cash') return false;
                         
                         // ซ่อนรายการที่เป็นโบนัสหรือค่าแนะนำที่มาจากตนเอง (userId === senderId)
                         const detailsText = t.details || t.description || t.remarks || '';
                         const senderIdMatch = detailsText.match(/(A26\d{6,})/);
                         const senderId = senderIdMatch ? senderIdMatch[1] : null;
-                        if (senderId && senderId === t.userId && (t.type === 'Bonus' || t.type === 'AllShare' || t.type === 'Commission')) {
+                        if (senderId && senderId === t.userId && (t.type === 'Bonus' || t.type === 'EShare' || t.type === 'Commission')) {
                           return false;
                         }
                         return true;
                       });
 
                       const itemsPerPage = 20;
-                      const startIndex = (mCashPage - 1) * itemsPerPage;
-                      const paginatedTxns = mCashTxns.slice(startIndex, startIndex + itemsPerPage);
+                      const startIndex = (eCashPage - 1) * itemsPerPage;
+                      const paginatedTxns = eCashTxns.slice(startIndex, startIndex + itemsPerPage);
 
                       return (
                         <>
@@ -6165,7 +6876,7 @@ export default function App() {
                                   </tr>
                                 ) : (
                                   paginatedTxns.map((t) => {
-                                    const isCredit = t.type === 'Deposit' || t.type === 'AllShare' || t.type === 'Commission' || t.type === 'Receive' || t.type === 'Bonus' || t.type === 'Deposit_System';
+                                    const isCredit = t.type === 'Deposit' || t.type === 'EShare' || t.type === 'Commission' || t.type === 'Receive' || t.type === 'Bonus' || t.type === 'Deposit_System';
                                     const detailsText = t.details || t.description || t.remarks || '';
                                     const senderIdMatch = detailsText.match(/(A26\d{6,})/);
                                     const senderId = senderIdMatch ? senderIdMatch[1] : null;
@@ -6181,7 +6892,7 @@ export default function App() {
                                               t.type === 'Withdraw' ? 'bg-rose-50 text-rose-600' :
                                               t.type === 'Transfer' ? 'bg-amber-50 text-amber-600' :
                                               t.type === 'Commission' || t.type === 'Bonus' ? 'bg-blue-50 text-blue-600' :
-                                              t.type === 'AllShare' ? 'bg-indigo-50 text-indigo-600' :
+                                              t.type === 'EShare' ? 'bg-indigo-50 text-indigo-600' :
                                               t.type === 'Exchange' ? 'bg-purple-50 text-purple-600' :
                                               'bg-slate-50 text-slate-600'
                                             }`}>
@@ -6189,7 +6900,7 @@ export default function App() {
                                                t.type === 'Withdraw' ? '💸 ถอนเงินสด' :
                                                t.type === 'Transfer' ? '🔁 โอนไปสมาชิก' :
                                                t.type === 'Commission' || t.type === 'Bonus' ? '💰 โบนัสค่าแนะนำ' + (senderId ? ' (จากรหัส ' + senderId + ')' : '') :
-                                               t.type === 'AllShare' ? '🌐 ออลแชร์โบนัส' + (senderId ? ' (จากรหัส ' + senderId + ')' : '') :
+                                               t.type === 'EShare' ? '🌐 ออลแชร์โบนัส' + (senderId ? ' (จากรหัส ' + senderId + ')' : '') :
                                                t.type === 'Exchange' ? '🎟️ แลกคูปอง' : t.type}
                                             </span>
                                             {senderId && (
@@ -6221,7 +6932,7 @@ export default function App() {
                               </tbody>
                             </table>
                           </div>
-                          <TablePagination currentPage={mCashPage} totalItems={mCashTxns.length} itemsPerPage={itemsPerPage} onPageChange={setMCashPage} />
+                          <TablePagination currentPage={eCashPage} totalItems={eCashTxns.length} itemsPerPage={itemsPerPage} onPageChange={setECashPage} />
                         </>
                       );
                     })()}
@@ -6229,37 +6940,161 @@ export default function App() {
                 </div>
               )}
 
-              {/* REPORT M-COUPON SUB-VIEW */}
-              {reportSubTab === 'mcoupon' && (
+              {/* REPORT E-MONEY SUB-VIEW */}
+              {reportSubTab === 'emoney' && (
+                <div className="space-y-6">
+                  {/* Ledger Balance Card */}
+                  <div className="bg-gradient-to-br from-purple-500 to-indigo-600 rounded-3xl p-6 text-white shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div className="space-y-1">
+                      <span className="text-xs text-purple-100 font-medium">ยอดคงเหลือ E-Money ปัจจุบัน</span>
+                      <h3 className="text-3xl font-extrabold tracking-tight">฿ {profile?.balanceEMoney?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+                    </div>
+                    <div className="text-[11px] bg-white/10 px-3 py-2 rounded-xl backdrop-blur-sm space-y-1">
+                      <div>• แหล่งสะสมรายได้ระบบภายในทั้งหมด เช่น ค่าแนะนำ ปันสุข และส่วนแบ่งออลแชร์</div>
+                      <div>• ใช้ทำธุรกรรมโอนเงินออกบัญชีธนาคาร หรือเปลี่ยนเป็น E-Cash, E-Coupon 1:1 ได้โดยไม่มีค่าธรรมเนียม</div>
+                    </div>
+                  </div>
+
+                  {/* Transaction Ledger Table */}
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                      <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                        <Coins size={16} className="text-purple-500" /> สมุดบันทึกรายการบัญชี E-Money Ledger
+                      </h4>
+                      <span className="text-[10px] text-slate-400 font-medium">อัปเดตข้อมูลล่าสุดเมื่อ: {new Date().toLocaleTimeString()}</span>
+                    </div>
+
+                    {(() => {
+                      const eMoneyTxns = transactions.filter((t) => {
+                        if (t.type === 'Deposit_System') return false;
+                        return (
+                          t.currency === 'E-Money' ||
+                          t.type === 'Bonus' ||
+                          t.type === 'AllShare' ||
+                          t.type === 'EShare' ||
+                          t.type === 'Commission'
+                        );
+                      });
+
+                      const itemsPerPage = 20;
+                      const startIndex = (eMoneyPage - 1) * itemsPerPage;
+                      const paginatedTxns = eMoneyTxns.slice(startIndex, startIndex + itemsPerPage);
+
+                      return (
+                        <>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-100">
+                                  <th className="px-4 py-3">รหัสรายการ</th>
+                                  <th className="px-4 py-3">วัน-เวลาทำรายการ</th>
+                                  <th className="px-4 py-3">ประเภทรายการ</th>
+                                  <th className="px-4 py-3">จำนวนเงิน (บาท)</th>
+                                  <th className="px-4 py-3">รายละเอียดบัญชี</th>
+                                  <th className="px-4 py-3">สถานะรายการ</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-slate-700">
+                                {paginatedTxns.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={6} className="p-6 text-center text-slate-400">ยังไม่มีรายงานประวัติทำธุรกรรม E-Money ในขณะนี้</td>
+                                  </tr>
+                                ) : (
+                                  paginatedTxns.map((t) => {
+                                    const isCredit = t.type === 'Deposit' || t.type === 'EShare' || t.type === 'Commission' || t.type === 'Receive' || t.type === 'Bonus' || t.type === 'Deposit_System';
+                                    const detailsText = t.details || t.description || t.remarks || '';
+                                    const senderIdMatch = detailsText.match(/(A26\d{6,})/);
+                                    const senderId = senderIdMatch ? senderIdMatch[1] : null;
+
+                                    return (
+                                      <tr key={t.id} className="hover:bg-slate-50/50">
+                                        <td className="px-4 py-3 font-mono text-[10px] font-bold text-indigo-600">{t.id}</td>
+                                        <td className="px-4 py-3 text-slate-500">{new Date(t.createdAt).toLocaleString()}</td>
+                                        <td className="px-4 py-3">
+                                          <div className="flex flex-col gap-1 items-start">
+                                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                              t.type === 'Deposit' ? 'bg-emerald-50 text-emerald-600' :
+                                              t.type === 'Withdraw' ? 'bg-rose-50 text-rose-600' :
+                                              t.type === 'Transfer' ? 'bg-amber-50 text-amber-600' :
+                                              t.type === 'Commission' || t.type === 'Bonus' ? 'bg-purple-50 text-purple-600' :
+                                              t.type === 'EShare' ? 'bg-indigo-50 text-indigo-600' :
+                                              t.type === 'WithdrawalRequest' ? 'bg-red-50 text-red-600' :
+                                              'bg-slate-50 text-slate-600'
+                                            }`}>
+                                              {t.type === 'Deposit' ? '💵 รับเงินโอนเข้า' :
+                                               t.type === 'Withdraw' ? '💸 ถอน/จ่ายเงิน' :
+                                               t.type === 'Transfer' ? '🔁 สลับเปลี่ยนกระเป๋า' :
+                                               t.type === 'Commission' || t.type === 'Bonus' ? '🎁 โบนัสรายได้ระบบ' :
+                                               t.type === 'EShare' ? '🌐 ออลแชร์รายได้' : 
+                                               t.type === 'WithdrawalRequest' ? '🏦 คำขอถอนเงินสดเข้าธนาคาร' : t.type}
+                                            </span>
+                                            {senderId && (
+                                              <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded-md mt-1">
+                                                จากรหัส: {senderId}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className={`px-4 py-3 font-bold ${isCredit ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                          {isCredit ? '+' : '-'}{(t.transferAmount || t.amount)?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บ.
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-500 text-[11px] max-w-xs truncate" title={detailsText || '-'}>
+                                          {detailsText || '-'}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span className="flex items-center gap-1.5">
+                                            <span className={`w-2 h-2 rounded-full ${t.status === 'Approved' || t.status === 'Completed' || !t.status ? 'bg-emerald-500' : t.status === 'Pending' ? 'bg-amber-400' : 'bg-rose-500'}`} />
+                                            <span className="text-[11px]">
+                                              {t.status === 'Approved' || t.status === 'Completed' || !t.status ? 'เสร็จสมบูรณ์' : t.status === 'Pending' ? 'รอดำเนินการอนุมัติ' : 'ปฏิเสธ/ยกเลิก'}
+                                            </span>
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                          <TablePagination currentPage={eMoneyPage} totalItems={eMoneyTxns.length} itemsPerPage={itemsPerPage} onPageChange={setEMoneyPage} />
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* REPORT E-COUPON SUB-VIEW */}
+              {reportSubTab === 'ecoupon' && (
                 <div className="space-y-6">
                   {/* Coupon Balance Card */}
                   <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-6 text-white shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="space-y-1">
-                      <span className="text-xs text-indigo-100 font-medium">ยอดคงเหลือ Point (M-Coupon)</span>
-                      <h3 className="text-3xl font-extrabold tracking-tight">฿ {profile?.balanceMCoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
+                      <span className="text-xs text-indigo-100 font-medium">ยอดคงเหลือ Point (E-Coupon)</span>
+                      <h3 className="text-3xl font-extrabold tracking-tight">฿ {profile?.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
                     </div>
                     <div className="text-[11px] bg-white/10 px-3 py-2 rounded-xl backdrop-blur-sm space-y-1">
-                      <div>• แลกจาก M-Coupon ได้ที่แถบธุรกรรมการเงิน (โอนกลับเป็นเงินสดไม่ได้)</div>
+                      <div>• แลกจาก E-Cash ได้ที่แถบธุรกรรมการเงิน (โอนกลับเป็นเงินสดไม่ได้)</div>
                       <div>• ใช้เสมือนเงินสดสำหรับการแลกซื้อสินค้าและตำแหน่งภายในร้านค้าพอร์ทัล</div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* REPORT ALL-SHARE SUB-VIEW */}
-              {reportSubTab === 'allshare' && (
+              {/* REPORT E-SHARE SUB-VIEW */}
+              {reportSubTab === 'eshare' && (
                 <div className="space-y-6">
                   {/* All share Stats cards */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="bg-gradient-to-br from-amber-500 to-amber-700 rounded-3xl p-6 text-white shadow-sm space-y-1">
-                      <span className="text-xs text-amber-100 font-medium">ยอดรายรับสะสม All-Share สุทธิ (฿) (หักแล้ว 50%)</span>
-                      <h3 className="text-3xl font-extrabold tracking-tight">฿ {((profile?.balanceAllShare || 0) * 0.50).toFixed(6)}</h3>
-                      <p className="text-[10px] text-amber-200 pt-2">• ยอดสุทธิหลังจากหักแบ่งจัดสรรเข้าระบบ Plan B แล้ว 50% และโอนเข้ากระเป๋า M-Cash ของคุณ</p>
+                      <span className="text-xs text-amber-100 font-medium">ยอดรายรับสะสม E-Share สุทธิ (฿) (หักแล้ว 50%)</span>
+                      <h3 className="text-3xl font-extrabold tracking-tight">฿ {((profile?.balanceEShare || 0) * 0.50).toFixed(6)}</h3>
+                      <p className="text-[10px] text-amber-200 pt-2">• ยอดสุทธิหลังจากหักแบ่งจัดสรรเข้าระบบ Plan B แล้ว 50% และโอนเข้ากระเป๋า E-Cash ของคุณ</p>
                     </div>
 
                     <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
                       <div>
-                        <span className="text-xs text-slate-400 font-medium block">ตำแหน่งเกียรติยศและคุณสมบัติรับ All-Share</span>
+                        <span className="text-xs text-slate-400 font-medium block">ตำแหน่งเกียรติยศและคุณสมบัติรับ E-Share</span>
                         <div className="flex items-center gap-2 mt-1">
                           <span className={`px-3 py-1 rounded-full text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600`}>
                             {profile?.rank || "Member"}
@@ -6270,7 +7105,7 @@ export default function App() {
                         </div>
                       </div>
                       <div className="text-[11px] text-slate-400 leading-tight pt-3 border-t border-slate-100 mt-3">
-                        * All-Share คำนวณจากยอดขายออพชั่นกลางระบบ และกระจายทันทีให้สมาชิกผู้มีส่วนร่วมในโครงการ
+                        * E-Share คำนวณจากยอดขายออพชั่นกลางระบบ และกระจายทันทีให้สมาชิกผู้มีส่วนร่วมในโครงการ
                       </div>
                     </div>
                   </div>
@@ -6278,11 +7113,11 @@ export default function App() {
                   {/* All Share History Table */}
                   <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
                     <h4 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 flex items-center gap-1.5">
-                      <TrendingUp size={16} className="text-amber-500" /> ประวัติการรับโบนัส All-Share โครงสร้างกองทุนรวม
+                      <TrendingUp size={16} className="text-amber-500" /> ประวัติการรับโบนัส E-Share โครงสร้างกองทุนรวม
                     </h4>
 
                     {(() => {
-                      const allShareTxns = transactions.filter(t => t.type === 'AllShare');
+                      const allShareTxns = transactions.filter(t => t.type === 'EShare');
                       const itemsPerPage = 20;
                       const startIndex = (allSharePage - 1) * itemsPerPage;
                       const paginatedTxns = allShareTxns.slice(startIndex, startIndex + itemsPerPage);
@@ -6296,14 +7131,14 @@ export default function App() {
                                   <th className="px-4 py-3">เลขอ้างอิงรายการ</th>
                                   <th className="px-4 py-3">วันเวลาประมวลผล</th>
                                   <th className="px-4 py-3">คำอธิบายโบนัสออลแชร์</th>
-                                  <th className="px-4 py-3">ยอดได้รับเข้ารายได้ M-Cash (50%)</th>
+                                  <th className="px-4 py-3">ยอดได้รับเข้ารายได้ E-Cash (50%)</th>
                                   <th className="px-4 py-3">ยอดสะสมคะแนนรันระบบ Plan B (50%)</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100 text-slate-700">
                                 {paginatedTxns.length === 0 ? (
                                   <tr>
-                                    <td colSpan={5} className="p-6 text-center text-slate-400">ยังไม่มีรายงานประวัติ All-Share โบนัสปันผลเข้าบัญชีในขณะนี้</td>
+                                    <td colSpan={5} className="p-6 text-center text-slate-400">ยังไม่มีรายงานประวัติ E-Share โบนัสปันผลเข้าบัญชีในขณะนี้</td>
                                   </tr>
                                 ) : (
                                   paginatedTxns.map((t) => (
@@ -6319,7 +7154,7 @@ export default function App() {
                               </tbody>
                             </table>
                           </div>
-                          <TablePagination currentPage={allSharePage} totalItems={allShareTxns.length} itemsPerPage={itemsPerPage} onPageChange={setAllSharePage} />
+                          <TablePagination currentPage={allSharePage} totalItems={allShareTxns.length} itemsPerPage={itemsPerPage} onPageChange={setESharePage} />
                         </>
                       );
                     })()}
@@ -7174,7 +8009,7 @@ export default function App() {
                         : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/50'
                     }`}
                   >
-                    💰 อนุมัติเติมเงิน M-Cash
+                    💰 อนุมัติเติมเงิน E-Cash
                     {depositQueue.length > 0 && (
                       <span className="bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse">
                         {depositQueue.length}
@@ -7245,8 +8080,8 @@ export default function App() {
                   <strong className="text-base text-slate-900">฿ {adminStats?.companyProfits?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                 </div>
                 <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 shadow-sm text-center">
-                  <span className="text-[10px] text-emerald-800 block mb-1">เงินหมุนเวียน M-Cash ทั้งระบบ</span>
-                  <strong className="text-base text-emerald-600 font-extrabold">฿ {adminStats?.memberMCash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                  <span className="text-[10px] text-emerald-800 block mb-1">เงินหมุนเวียน E-Cash ทั้งระบบ</span>
+                  <strong className="text-base text-emerald-600 font-extrabold">฿ {adminStats?.memberECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                 </div>
               </div>
 
@@ -7496,8 +8331,9 @@ export default function App() {
                                   <td className="px-4 py-3 text-right font-semibold">
                                     <div className="mb-1.5">
                                       <span className="text-[9px] text-slate-400 block font-bold uppercase leading-none mb-0.5">คงเหลือ</span>
-                                      <span className="block text-emerald-600 font-bold text-xs">M-Cash: ฿{member.balanceMCash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                      <span className="block text-indigo-500 font-bold text-[10px]">Coupon: ฿{member.balanceMCoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                      <span className="block text-emerald-600 font-bold text-xs">E-Cash: ฿{member.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                      <span className="block text-purple-600 font-bold text-[10px]">E-Money: ฿{(member.balanceEMoney || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                      <span className="block text-indigo-500 font-bold text-[10px]">Coupon: ฿{member.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                     </div>
                                     <div className="pt-1 border-t border-slate-100">
                                       <span className="text-[9px] text-slate-400 block font-bold uppercase leading-none mb-0.5">สะสมทั้งหมด</span>
@@ -7802,7 +8638,7 @@ export default function App() {
                           <th className="px-4 py-3">ชื่อ - นามสกุล</th>
                           <th className="px-4 py-3">เบอร์โทร / อีเมล</th>
                           <th className="px-4 py-3">ระดับ / สิทธิ์</th>
-                          <th className="px-4 py-3 text-right">M-Cash / M-Coupon</th>
+                          <th className="px-4 py-3 text-right">E-Cash / E-Coupon</th>
                           <th className="px-4 py-3 text-center">จัดการ</th>
                         </tr>
                       </thead>
@@ -7852,8 +8688,8 @@ export default function App() {
                               <span className="block text-[10px] text-slate-400 font-bold">สิทธิ์: {member.role || "Member"}</span>
                             </td>
                             <td className="px-4 py-3 text-right font-semibold">
-                              <span className="block text-emerald-600 font-bold">฿ {member.balanceMCash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                              <span className="block text-[10px] text-indigo-500 font-bold">฿ {member.balanceMCoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                              <span className="block text-emerald-600 font-bold">฿ {member.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                              <span className="block text-[10px] text-indigo-500 font-bold">฿ {member.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </td>
                             <td className="px-4 py-3 text-center">
                               <button 
@@ -8015,7 +8851,7 @@ export default function App() {
                             <th className="px-4 py-3">ชื่อ - นามสกุล</th>
                             <th className="px-4 py-3">เบอร์โทร / อีเมล</th>
                             <th className="px-4 py-3">ระดับ / สิทธิ์</th>
-                            <th className="px-4 py-3 text-right">M-Cash / M-Coupon</th>
+                            <th className="px-4 py-3 text-right">E-Cash / E-Coupon</th>
                             <th className="px-4 py-3 text-center">จัดการ</th>
                           </tr>
                         </thead>
@@ -8053,8 +8889,8 @@ export default function App() {
                                 <span className="block text-[10px] text-slate-400 font-bold">สิทธิ์: {member.role || "Member"}</span>
                               </td>
                               <td className="px-4 py-3 text-right font-semibold">
-                                <span className="block text-emerald-600 font-bold">฿ {member.balanceMCash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                <span className="block text-[10px] text-indigo-500 font-bold">฿ {member.balanceMCoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                <span className="block text-emerald-600 font-bold">฿ {member.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                <span className="block text-[10px] text-indigo-500 font-bold">฿ {member.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                               </td>
                               <td className="px-4 py-3 text-center">
                                 <button 
@@ -8090,7 +8926,7 @@ export default function App() {
                     <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                       <div>
                         <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                          💰 รายการตรวจสอบและอนุมัติเติมเงิน M-Cash
+                          💰 รายการตรวจสอบและอนุมัติเติมเงิน E-Cash
                         </h4>
                         <p className="text-xs text-slate-400 mt-0.5">กรุณาตรวจสอบความถูกต้องของยอดโอนและภาพหลักฐานสลิป ก่อนกดปุ่มอนุมัติ</p>
                       </div>
@@ -8457,7 +9293,7 @@ export default function App() {
                     <div className="overflow-x-auto text-xs text-slate-700">
                       {(() => {
                         const itemsPerPage = 20;
-                        const startIndex = (adminProdQueuePage - 1) * itemsPerPage;
+                        const startIndex = (adminProductQueuePage - 1) * itemsPerPage;
                         const paginatedProdQueue = (prodQueue || []).slice(startIndex, startIndex + itemsPerPage);
 
                         return (
@@ -8511,7 +9347,7 @@ export default function App() {
                                 </table>
                                 {prodQueue.length > itemsPerPage && (
                                   <div className="mt-4 pt-4 border-t border-slate-100">
-                                    <TablePagination currentPage={adminProdQueuePage} totalItems={prodQueue.length} itemsPerPage={itemsPerPage} onPageChange={setAdminProdQueuePage} />
+                                    <TablePagination currentPage={adminProductQueuePage} totalItems={prodQueue.length} itemsPerPage={itemsPerPage} onPageChange={setAdminProductQueuePage} />
                                   </div>
                                 )}
                               </>
@@ -8789,7 +9625,7 @@ export default function App() {
                           🎟️ ยอดสะสมคะแนน PV จากส่วนที่ซื้อด้วยคูปองค้างคำนวณ (Pending Coupon PV Queue)
                         </h4>
                         <p className="text-xs text-slate-400 mt-0.5">
-                          เมื่อสมาชิกสั่งซื้อสินค้าด้วย M-Coupon ยอด PV จะยังไม่จ่ายเข้าสู่แผนไบนารี่ทันที แต่จะพักสะสมไว้ที่นี่เพื่อคำนวณตัดยอด (ทุกวันที่ 10 ของเดือน หรือตัดจ่ายด้วยตนเอง)
+                          เมื่อสมาชิกสั่งซื้อสินค้าด้วย E-Coupon ยอด PV จะยังไม่จ่ายเข้าสู่แผนไบนารี่ทันที แต่จะพักสะสมไว้ที่นี่เพื่อคำนวณตัดยอด (ทุกวันที่ 10 ของเดือน หรือตัดจ่ายด้วยตนเอง)
                         </p>
                       </div>
                       
@@ -8945,22 +9781,33 @@ export default function App() {
                       </p>
                     </div>
 
-                    <button
-                      id="force_sync_firestore_btn"
-                      onClick={handleFirestoreSync}
-                      disabled={syncingFirestore}
-                      className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-200 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-md"
-                    >
-                      {syncingFirestore ? (
-                        <>
-                          <RefreshCw size={14} className="animate-spin" /> กำลังซิงค์ข้อมูลกับฐานข้อมูล Cloud...
-                        </>
-                      ) : (
-                        <>
-                          🔄 ซิงค์ฐานข้อมูลสดจาก Cloud Firestore
-                        </>
-                      )}
-                    </button>
+                    {isUsingPollingFallback ? (
+                      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center space-y-2">
+                        <span className="text-xl">⚠️</span>
+                        <h4 className="text-xs font-bold text-amber-900">ระงับการซิงค์ Cloud ชั่วคราว (เนื่องจากโควตาฐานข้อมูลบน Cloud เต็ม)</h4>
+                        <p className="text-[11px] text-amber-700 leading-relaxed">
+                          ขณะนี้ระบบหลักกำลังรันงานอยู่บนเซิร์ฟเวอร์สำรองท้องถิ่น (Local Failover Mode) อย่างปลอดภัยและอัปเดตแบบเรียลไทม์ 100% 
+                          ท่านสามารถใช้งานระบบและทำธุรกรรมได้ตามปกติโดยไม่ต้องกดปุ่มนี้ค่ะ ระบบจะยกเลิกการระงับและซิงค์กลับอัตโนมัติเมื่อพ้นกำหนดรีเซ็ตโควตาประจำวันของ Cloud ค่ะ
+                        </p>
+                      </div>
+                    ) : (
+                      <button
+                        id="force_sync_firestore_btn"
+                        onClick={handleFirestoreSync}
+                        disabled={syncingFirestore}
+                        className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-200 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-md"
+                      >
+                        {syncingFirestore ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin" /> กำลังซิงค์ข้อมูลกับฐานข้อมูล Cloud...
+                          </>
+                        ) : (
+                          <>
+                            🔄 ซิงค์ฐานข้อมูลสดจาก Cloud Firestore
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
 
                   {/* Rebuild Binary Tree Card */}
@@ -9355,25 +10202,35 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-100 pt-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-slate-100 pt-4">
                         <div>
-                          <label className="block text-slate-700 font-bold mb-1 text-emerald-600">ปรับยอดเงินสด M-Cash (บาท)</label>
+                          <label className="block text-slate-700 font-bold mb-1 text-emerald-600">ปรับยอดเงินสด E-Cash (บาท)</label>
                           <input 
                             type="number" 
                             step="any"
-                            value={editingMember.balanceMCash !== undefined ? editingMember.balanceMCash : 0}
-                            onChange={(e) => setEditingMember({ ...editingMember, balanceMCash: parseFloat(e.target.value) || 0 })}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono text-emerald-600 font-bold"
+                            value={editingMember.balanceECash !== undefined ? editingMember.balanceECash : 0}
+                            onChange={(e) => setEditingMember({ ...editingMember, balanceECash: parseFloat(e.target.value) || 0 })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono text-emerald-600 font-bold text-xs"
                           />
                         </div>
                         <div>
-                          <label className="block text-slate-700 font-bold mb-1 text-indigo-600">ปรับยอดคูปอง M-Coupon (บาท)</label>
+                          <label className="block text-slate-700 font-bold mb-1 text-purple-600">ปรับยอดรายได้ E-Money (บาท)</label>
                           <input 
                             type="number" 
                             step="any"
-                            value={editingMember.balanceMCoupon !== undefined ? editingMember.balanceMCoupon : 0}
-                            onChange={(e) => setEditingMember({ ...editingMember, balanceMCoupon: parseFloat(e.target.value) || 0 })}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono text-indigo-600 font-bold"
+                            value={editingMember.balanceEMoney !== undefined ? editingMember.balanceEMoney : 0}
+                            onChange={(e) => setEditingMember({ ...editingMember, balanceEMoney: parseFloat(e.target.value) || 0 })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono text-purple-600 font-bold text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-slate-700 font-bold mb-1 text-indigo-600">ปรับยอดคูปอง E-Coupon (บาท)</label>
+                          <input 
+                            type="number" 
+                            step="any"
+                            value={editingMember.balanceECoupon !== undefined ? editingMember.balanceECoupon : 0}
+                            onChange={(e) => setEditingMember({ ...editingMember, balanceECoupon: parseFloat(e.target.value) || 0 })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono text-indigo-600 font-bold text-xs"
                           />
                         </div>
                       </div>
@@ -9514,7 +10371,7 @@ export default function App() {
                 <p className="text-[11px] text-slate-400">
                   {confirmProduct.category === 'Package' 
                     ? 'โปรดตรวจสอบข้อมูลการชำระเงินเพื่อยืนยันสิทธิ์ในระบบ นที พลัส' 
-                    : 'ระบบจะใช้ M-Coupon ชำระเงินก่อนเป็นอันดับแรก และใช้ M-Cash ชำระส่วนต่างที่เหลือ'}
+                    : 'ระบบจะใช้ E-Coupon ชำระเงินก่อนเป็นอันดับแรก และใช้ E-Cash ชำระส่วนต่างที่เหลือ'}
                 </p>
               </div>
 
@@ -9547,21 +10404,21 @@ export default function App() {
                 {confirmProduct.category !== 'Package' ? (
                   <>
                     <div className="flex justify-between border-b border-slate-100 pb-2 bg-amber-50/50 p-1.5 rounded">
-                      <span className="text-amber-700 font-medium">ชำระด้วย M-Coupon (บาท):</span>
+                      <span className="text-amber-700 font-medium">ชำระด้วย E-Coupon (บาท):</span>
                       <strong className="text-amber-800 text-right font-extrabold">
-                        - ฿ {Math.min(profile?.balanceMCoupon || 0, confirmProduct.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        - ฿ {Math.min(profile?.balanceECoupon || 0, confirmProduct.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </strong>
                     </div>
                     <div className="flex justify-between border-b border-slate-100 pb-2 bg-indigo-50/30 p-1.5 rounded">
-                      <span className="text-indigo-700 font-medium">ชำระด้วย M-Cash ส่วนต่าง (บาท):</span>
+                      <span className="text-indigo-700 font-medium">ชำระด้วย E-Cash ส่วนต่าง (บาท):</span>
                       <strong className="text-indigo-800 text-right font-extrabold">
-                        - ฿ {Math.max(0, confirmProduct.price - (profile?.balanceMCoupon || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        - ฿ {Math.max(0, confirmProduct.price - (profile?.balanceECoupon || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </strong>
                     </div>
                   </>
                 ) : (
                   <div className="flex justify-between border-b border-slate-100 pb-2 bg-emerald-50/50 p-1.5 rounded">
-                    <span className="text-emerald-700 font-medium">ราคาหักจ่ายจาก M-Cash (บาท):</span>
+                    <span className="text-emerald-700 font-medium">ราคาหักจ่ายจาก E-Cash (บาท):</span>
                     <strong className="text-emerald-800 text-right font-extrabold">
                       ฿ {confirmProduct.price?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </strong>
@@ -9580,36 +10437,36 @@ export default function App() {
               {confirmProduct.category === 'Package' ? (
                 <div className="bg-indigo-50/40 border border-indigo-100 rounded-2xl p-3.5 flex justify-between items-center text-xs">
                   <div>
-                    <span className="text-slate-400 text-[10px] block font-medium">M-Cash คงเหลือปัจจุบัน (บาท)</span>
-                    <strong className="text-slate-700">฿ {profile?.balanceMCash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                    <span className="text-slate-400 text-[10px] block font-medium">E-Cash คงเหลือปัจจุบัน (บาท)</span>
+                    <strong className="text-slate-700">฿ {profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                   </div>
                   <div className="text-right">
                     <span className="text-slate-400 text-[10px] block font-medium">คงเหลือหลังหักรายการ (บาท)</span>
-                    <strong className="text-indigo-600">฿ {(profile?.balanceMCash - confirmProduct.price)?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                    <strong className="text-indigo-600">฿ {(profile?.balanceECash - confirmProduct.price)?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                   </div>
                 </div>
               ) : (
                 <div className="bg-slate-100 border border-slate-200/50 rounded-2xl p-3.5 space-y-2 text-xs">
                   <div className="flex justify-between">
                     <div>
-                      <span className="text-slate-400 text-[10px] block">M-Coupon ก่อนซื้อ (บาท)</span>
-                      <strong className="text-amber-600">฿ {profile?.balanceMCoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                      <span className="text-slate-400 text-[10px] block">E-Coupon ก่อนซื้อ (บาท)</span>
+                      <strong className="text-amber-600">฿ {profile?.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                     </div>
                     <div className="text-right">
-                      <span className="text-slate-400 text-[10px] block">M-Coupon หลังหักรายการ (บาท)</span>
-                      <strong className="text-amber-800">฿ {Math.max(0, (profile?.balanceMCoupon || 0) - confirmProduct.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                      <span className="text-slate-400 text-[10px] block">E-Coupon หลังหักรายการ (บาท)</span>
+                      <strong className="text-amber-800">฿ {Math.max(0, (profile?.balanceECoupon || 0) - confirmProduct.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                     </div>
                   </div>
                   <div className="border-t border-dashed border-slate-200 my-1"></div>
                   <div className="flex justify-between">
                     <div>
-                      <span className="text-slate-400 text-[10px] block">M-Cash ก่อนซื้อ (บาท)</span>
-                      <strong className="text-slate-700">฿ {profile?.balanceMCash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                      <span className="text-slate-400 text-[10px] block">E-Cash ก่อนซื้อ (บาท)</span>
+                      <strong className="text-slate-700">฿ {profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                     </div>
                     <div className="text-right">
-                      <span className="text-slate-400 text-[10px] block">M-Cash หลังหักรายการ (บาท)</span>
+                      <span className="text-slate-400 text-[10px] block">E-Cash หลังหักรายการ (บาท)</span>
                       <strong className="text-indigo-600">
-                        ฿ {Math.max(0, profile?.balanceMCash - Math.max(0, confirmProduct.price - (profile?.balanceMCoupon || 0))).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        ฿ {Math.max(0, profile?.balanceECash - Math.max(0, confirmProduct.price - (profile?.balanceECoupon || 0))).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </strong>
                     </div>
                   </div>
@@ -9677,7 +10534,7 @@ export default function App() {
                   </div>
                   <div className="text-right mt-2">
                     <span className="text-slate-400 block">ช่องทางชำระเงิน / Payment:</span>
-                    <strong className="text-emerald-600 font-bold">M-Coupon ช้อปปิ้ง</strong>
+                    <strong className="text-emerald-600 font-bold">E-Coupon ช้อปปิ้ง</strong>
                   </div>
                   <div className="col-span-2 mt-2">
                     <span className="text-slate-400 block">ที่อยู่จัดส่ง / Shipping Address:</span>
@@ -9809,7 +10666,7 @@ export default function App() {
                 ✅ ยืนยันการอนุมัติเติมเงิน
               </h3>
               <p className="text-xs text-slate-600 leading-relaxed mb-5">
-                คุณต้องการอนุมัติรายการเติมเงินนี้ใช่หรือไม่? ระบบจะทำการโอนสิทธิ์และเพิ่มยอด <strong className="text-emerald-600 font-bold">M-Cash</strong> ให้กับสมาชิกรายนี้โดยอัตโนมัติทันที
+                คุณต้องการอนุมัติรายการเติมเงินนี้ใช่หรือไม่? ระบบจะทำการโอนสิทธิ์และเพิ่มยอด <strong className="text-emerald-600 font-bold">E-Cash</strong> ให้กับสมาชิกรายนี้โดยอัตโนมัติทันที
               </p>
               <div className="flex gap-2 justify-end">
                 <button
@@ -9916,6 +10773,88 @@ export default function App() {
                   className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-5 py-2 rounded-xl transition cursor-pointer shadow-md"
                 >
                   ยืนยันปฏิเสธเอกสาร
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* FINANCIAL TRANSACTION CONFIRMATION POPUP */}
+        {txnConfirm && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full shadow-2xl relative text-slate-800 text-left">
+              <h3 className="text-sm font-bold text-slate-950 flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+                ⚖️ ยืนยันตรวจสอบข้อมูลธุรกรรมโอนย้ายเงิน
+              </h3>
+              
+              <div className="space-y-3.5 mb-6 text-xs text-slate-600 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-semibold">ประเภทธุรกรรม:</span>
+                  <span className="font-bold text-slate-900">
+                    {txnConfirm.type === 'transfer_ecash_member' && 'โอนเงิน E-Cash ให้สมาชิกท่านอื่น'}
+                    {txnConfirm.type === 'transfer_ecash_emoney' && 'โอนย้าย E-Cash เข้ากระเป๋า E-Money ตัวเอง'}
+                    {txnConfirm.type === 'transfer_emoney_ecash' && 'โอนย้าย E-Money เข้ากระเป๋า E-Cash ตัวเอง'}
+                    {txnConfirm.type === 'transfer_emoney_ecoupon' && 'โอนย้าย E-Money เข้ากระเป๋า E-Coupon ตัวเอง'}
+                    {txnConfirm.type === 'withdraw_emoney' && 'ถอนยอดคอมมิชชันรายได้ E-Money เข้าบัญชีธนาคาร'}
+                    {txnConfirm.type === 'buy_coupon' && 'แลกยอด E-Cash ซื้อคูปองช้อปปิ้ง E-Coupon'}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-semibold">ผู้รับเงิน / บัญชีปลายทาง:</span>
+                  <span className="font-bold text-slate-800 break-words max-w-[200px] text-right">
+                    {txnConfirm.recipientName || '-'}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-semibold">ยอดเงินตั้งต้น:</span>
+                  <span className="font-mono font-bold text-slate-900">฿ {txnConfirm.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+                </div>
+
+                {txnConfirm.feeAmount !== undefined && txnConfirm.feeAmount > 0 && (
+                  <div className="flex justify-between text-rose-500">
+                    <span className="font-semibold">หักค่าธรรมเนียม / ภาษีบริการ:</span>
+                    <span className="font-mono font-bold">- ฿ {txnConfirm.feeAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+                  </div>
+                )}
+
+                <div className="border-t border-slate-200 my-2 pt-2 flex justify-between text-sm">
+                  <span className="text-slate-900 font-bold">ยอดเงินปลายทางสุทธิ:</span>
+                  <span className="font-mono font-bold text-emerald-600">
+                    ฿ {txnConfirm.netAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setTxnConfirm(null)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-4 py-2 rounded-xl transition cursor-pointer"
+                >
+                  ย้อนกลับแก้ไข
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (txnConfirm.type === 'transfer_ecash_member') {
+                      executeTransferECashMember();
+                    } else if (txnConfirm.type === 'transfer_ecash_emoney') {
+                      executeTransferECashToEMoney();
+                    } else if (txnConfirm.type === 'transfer_emoney_ecash') {
+                      executeTransferEMoneyToECash();
+                    } else if (txnConfirm.type === 'transfer_emoney_ecoupon') {
+                      executeTransferEMoneyToECoupon();
+                    } else if (txnConfirm.type === 'withdraw_emoney') {
+                      executeWithdrawEMoney();
+                    } else if (txnConfirm.type === 'buy_coupon') {
+                      executeBuyCoupon();
+                    }
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-5 py-2 rounded-xl transition cursor-pointer shadow-md"
+                >
+                  ยืนยันและทำรายการสุทธิ (Confirm)
                 </button>
               </div>
             </div>
