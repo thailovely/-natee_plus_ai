@@ -2348,6 +2348,12 @@ app.post('/api/member/withdraw', (req, res) => {
   }
   
   const amt = parseFloat(amount);
+  if (amt < 300) {
+    return res.status(400).json({ success: false, message: "การถอนเงินขั้นต่ำต้องเป็น 300 บาทขึ้นไปค่ะ" });
+  }
+  if ((member.balanceEMoney || 0) < 300) {
+    return res.status(400).json({ success: false, message: "การถอนเงินเข้าธนาคาร ต้องมียอดเงินใน E-Money ขั้นต่ำ 300 บาทขึ้นไปค่ะ" });
+  }
   if ((member.balanceEMoney || 0) < amt) {
     return res.status(400).json({ success: false, message: "ยอดเงิน E-Money ของคุณไม่เพียงพอสำหรับการถอนเงิน" });
   }

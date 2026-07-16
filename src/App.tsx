@@ -2665,6 +2665,18 @@ export default function App() {
       showNotif('กรุณาระบุจำนวนเงินต้องการถอน', 'error');
       return;
     }
+    if (amt < 300) {
+      showNotif('การถอนเงินขั้นต่ำต้องเป็น 300 บาทขึ้นไปค่ะ', 'error');
+      return;
+    }
+    if ((profile?.balanceEMoney || 0) < 300) {
+      showNotif('การถอนเงินเข้าธนาคาร ต้องมียอดเงินใน E-Money ขั้นต่ำ 300 บาทขึ้นไปค่ะ', 'error');
+      return;
+    }
+    if ((profile?.balanceEMoney || 0) < amt) {
+      showNotif('ยอดเงินในกระเป๋า E-Money ของคุณไม่เพียงพอสำหรับยอดที่ระบุค่ะ', 'error');
+      return;
+    }
     if (!withdrawPin || withdrawPin.length !== 6) {
       showNotif('กรุณากรอกรหัส PIN 6 หลัก', 'error');
       return;
@@ -6646,9 +6658,10 @@ export default function App() {
                         <input 
                           type="number" 
                           required
+                          min={300}
                           value={withdrawAmount}
                           onChange={(e) => setWithdrawAmount(e.target.value)}
-                          placeholder="ยอดถอน E-Money"
+                          placeholder="ยอดถอน E-Money (ขั้นต่ำ ฿300)"
                           className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
                         />
                       </div>
@@ -6663,6 +6676,11 @@ export default function App() {
                           placeholder="PIN ธุรกรรม"
                           className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs text-center font-mono tracking-widest"
                         />
+                      </div>
+                      <div className="col-span-2">
+                        <p className="text-[10px] text-amber-600 bg-amber-50 p-2.5 rounded-xl border border-amber-200/50 mb-1 font-medium">
+                          ⚠️ การถอนเงินเข้าธนาคาร ต้องมียอดเงินใน E-Money ขั้นต่ำ 300 บาทขึ้นไป และยอดถอนขั้นต่ำคือ 300 บาทขึ้นไปค่ะ
+                        </p>
                       </div>
                       <div className="col-span-2 bg-slate-50 border border-slate-200 p-3.5 rounded-2xl text-[10px] space-y-1 text-slate-500">
                         <p>ชื่อผู้รับโอนเงินปลายทาง: <b>{profile?.name} {profile?.surname}</b></p>
