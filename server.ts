@@ -146,11 +146,45 @@ async function loadDbFromFirestore() {
       if (localDb && Array.isArray(localDb.members)) {
         for (const localMember of localDb.members) {
           if (!localMember || !localMember.userId) continue;
-          const exists = mergedMembers.some((m: any) => m.userId === localMember.userId);
-          if (!exists) {
+          const idx = mergedMembers.findIndex((m: any) => m.userId === localMember.userId);
+          if (idx === -1) {
             console.log(`📦 Merging local member into Firestore: ${localMember.userId} / ${localMember.username}`);
             mergedMembers.push(localMember);
             hasMergedChanges = true;
+          } else {
+            // If exists, compare critical fields (like rank, status, balances) and if they are different, let local override to prevent stale overwrite on upload
+            const firestoreMember = mergedMembers[idx];
+            let memberUpdated = false;
+            
+            if (localMember.rank && localMember.rank !== firestoreMember.rank) {
+              console.log(`🔄 Updating member ${localMember.userId} rank from Firestore "${firestoreMember.rank}" to local "${localMember.rank}"`);
+              firestoreMember.rank = localMember.rank;
+              memberUpdated = true;
+            }
+            if (localMember.role && localMember.role !== firestoreMember.role) {
+              firestoreMember.role = localMember.role;
+              memberUpdated = true;
+            }
+            if (localMember.sellerStatus && localMember.sellerStatus !== firestoreMember.sellerStatus) {
+              firestoreMember.sellerStatus = localMember.sellerStatus;
+              memberUpdated = true;
+            }
+            if (localMember.balanceECash !== undefined && localMember.balanceECash !== firestoreMember.balanceECash) {
+              firestoreMember.balanceECash = localMember.balanceECash;
+              memberUpdated = true;
+            }
+            if (localMember.balanceEMoney !== undefined && localMember.balanceEMoney !== firestoreMember.balanceEMoney) {
+              firestoreMember.balanceEMoney = localMember.balanceEMoney;
+              memberUpdated = true;
+            }
+            if (localMember.balanceECoupon !== undefined && localMember.balanceECoupon !== firestoreMember.balanceECoupon) {
+              firestoreMember.balanceECoupon = localMember.balanceECoupon;
+              memberUpdated = true;
+            }
+            
+            if (memberUpdated) {
+              hasMergedChanges = true;
+            }
           }
         }
       }
@@ -1914,11 +1948,16 @@ app.post('/api/member/kyc', (req, res) => {
 
 // BUY COUPON (EXCHANGE E-CASH TO E-COUPON)
 app.post('/api/member/buy-coupon', (req, res) => {
-  const { userId, amount, pin } = req.body;
+  const { userId, amount, pin, otp } = req.body;
   const db = readDb();
   
   const member = db.members.find(m => m.userId === userId);
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
+  
+  if (!db.otps || db.otps[userId] !== otp) {
+    return res.status(400).json({ success: false, message: "รหัส OTP ไม่ถูกต้องหรือหมดอายุการใช้งานแล้วค่ะ" });
+  }
+  delete db.otps[userId];
   
   if (member.statusKyc !== "Active") {
     return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
@@ -2003,11 +2042,16 @@ app.post('/api/member/topup', (req, res) => {
 
 // TRANSFER E-CASH TO OTHER MEMBER
 app.post('/api/member/transfer-e-cash', (req, res) => {
-  const { senderId, receiverPhoneOrUser, amount, pin } = req.body;
+  const { senderId, receiverPhoneOrUser, amount, pin, otp } = req.body;
   const db = readDb();
   
   const sender = db.members.find(m => m.userId === senderId);
   if (!sender) return res.status(404).json({ success: false, message: "ไม่พบผู้ส่ง" });
+  
+  if (!db.otps || db.otps[senderId] !== otp) {
+    return res.status(400).json({ success: false, message: "รหัส OTP ไม่ถูกต้องหรือหมดอายุการใช้งานแล้วค่ะ" });
+  }
+  delete db.otps[senderId];
   
   if (sender.statusKyc !== "Active") {
     return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
@@ -2091,11 +2135,17 @@ app.post('/api/member/verify-recipient', (req, res) => {
 
 // TRANSFER E-CASH TO E-MONEY (10% FEE: 5% ALL-SHARE, 5% COMPANY)
 app.post('/api/member/transfer-ecash-to-emoney', (req, res) => {
-  const { senderId, amount, pin } = req.body;
+  const { senderId, userId, amount, pin, otp } = req.body;
+  const senderIdActual = senderId || userId;
   const db = readDb();
   
-  const member = db.members.find(m => m.userId === senderId);
+  const member = db.members.find(m => m.userId === senderIdActual);
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
+  
+  if (!db.otps || db.otps[senderIdActual] !== otp) {
+    return res.status(400).json({ success: false, message: "รหัส OTP ไม่ถูกต้องหรือหมดอายุการใช้งานแล้วค่ะ" });
+  }
+  delete db.otps[senderIdActual];
   
   if (member.statusKyc !== "Active") {
     return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
@@ -2156,11 +2206,17 @@ app.post('/api/member/transfer-ecash-to-emoney', (req, res) => {
 
 // TRANSFER E-MONEY TO E-CASH (1:1, NO FEE)
 app.post('/api/member/transfer-emoney-to-ecash', (req, res) => {
-  const { senderId, amount, pin } = req.body;
+  const { senderId, userId, amount, pin, otp } = req.body;
+  const senderIdActual = senderId || userId;
   const db = readDb();
   
-  const member = db.members.find(m => m.userId === senderId);
+  const member = db.members.find(m => m.userId === senderIdActual);
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
+  
+  if (!db.otps || db.otps[senderIdActual] !== otp) {
+    return res.status(400).json({ success: false, message: "รหัส OTP ไม่ถูกต้องหรือหมดอายุการใช้งานแล้วค่ะ" });
+  }
+  delete db.otps[senderIdActual];
   
   if (member.statusKyc !== "Active") {
     return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
@@ -2211,11 +2267,17 @@ app.post('/api/member/transfer-emoney-to-ecash', (req, res) => {
 
 // TRANSFER E-MONEY TO E-COUPON (1:1, NO FEE)
 app.post('/api/member/transfer-emoney-to-ecoupon', (req, res) => {
-  const { senderId, amount, pin } = req.body;
+  const { senderId, userId, amount, pin, otp } = req.body;
+  const senderIdActual = senderId || userId;
   const db = readDb();
   
-  const member = db.members.find(m => m.userId === senderId);
+  const member = db.members.find(m => m.userId === senderIdActual);
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
+  
+  if (!db.otps || db.otps[senderIdActual] !== otp) {
+    return res.status(400).json({ success: false, message: "รหัส OTP ไม่ถูกต้องหรือหมดอายุการใช้งานแล้วค่ะ" });
+  }
+  delete db.otps[senderIdActual];
   
   if (member.statusKyc !== "Active") {
     return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
@@ -2266,11 +2328,16 @@ app.post('/api/member/transfer-emoney-to-ecoupon', (req, res) => {
 
 // WITHDRAW E-MONEY TO BANK
 app.post('/api/member/withdraw', (req, res) => {
-  const { userId, amount, pin } = req.body;
+  const { userId, amount, pin, otp } = req.body;
   const db = readDb();
   
   const member = db.members.find(m => m.userId === userId);
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
+  
+  if (!db.otps || db.otps[userId] !== otp) {
+    return res.status(400).json({ success: false, message: "รหัส OTP ไม่ถูกต้องหรือหมดอายุการใช้งานแล้วค่ะ" });
+  }
+  delete db.otps[userId];
   
   if (member.statusKyc !== "Active") {
     return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
@@ -2455,6 +2522,26 @@ app.post('/api/member/change-password', (req, res) => {
   member.password = newPassword;
   writeDb(db);
   res.json({ success: true, message: "เปลี่ยนรหัสผ่านสำเร็จเรียบร้อยแล้วค่ะ" });
+});
+
+// SEND TRANSACTION OTP
+app.post('/api/member/send-transaction-otp', (req, res) => {
+  const { userId } = req.body;
+  const db = readDb();
+  
+  const member = db.members.find(m => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
+  
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  if (!db.otps) db.otps = {};
+  db.otps[userId] = otpCode;
+  
+  writeDb(db);
+  res.json({ 
+    success: true, 
+    otp: otpCode,
+    message: `ระบบได้ส่งรหัส OTP 6 หลักไปยังอีเมล ${member.email} ของท่านเรียบร้อยแล้วค่ะ` 
+  });
 });
 
 // SEND PIN CHANGE OTP
@@ -3601,7 +3688,7 @@ app.get('/api/admin/deposit-queue', (req, res) => {
 
 // APPROVE DEPOSIT SLIP
 app.post('/api/admin/deposit-approve', (req, res) => {
-  const { txnId } = req.body;
+  const { txnId, approvedAmount } = req.body;
   const db = readDb();
   const txn = db.transactions.find(t => t.id === txnId);
   if (!txn) return res.status(404).json({ success: false, message: "ไม่พบรายการธุรกรรม" });
@@ -3610,7 +3697,13 @@ app.post('/api/admin/deposit-approve', (req, res) => {
   
   const member = db.members.find(m => m.userId === txn.userId);
   if (member) {
-    const creditAmt = txn.transferAmount || txn.amount || 0;
+    let creditAmt = txn.transferAmount || txn.amount || 0;
+    if (approvedAmount !== undefined && approvedAmount !== null) {
+      const parsedAmt = parseFloat(approvedAmount);
+      if (!isNaN(parsedAmt) && parsedAmt >= 0) {
+        creditAmt = parsedAmt;
+      }
+    }
     member.balanceECash = parseFloat(((member.balanceECash || 0) + creditAmt).toFixed(4));
     txn.details = `อนุมัติเติมเงิน E-Cash เข้าบัญชี ฿${creditAmt.toLocaleString()}`;
     
@@ -3939,6 +4032,7 @@ app.post('/api/admin/member-update', (req, res) => {
     bankName, bankAccount, bankAccountName, password, pin, 
     rank, role, balanceECash, balanceEMoney, balanceECoupon, sellerStatus, eligibleRights,
     sponsorId,
+    username,
     editorUserId
   } = req.body;
   
@@ -3957,6 +4051,19 @@ app.post('/api/admin/member-update', (req, res) => {
   const member = db.members.find(m => m.userId === userId);
   if (!member) {
     return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกที่ต้องการแก้ไข" });
+  }
+
+  // Validate username if changed
+  if (username !== undefined && username.toLowerCase().trim() !== member.username.toLowerCase()) {
+    const uClean = username.toLowerCase().trim();
+    if (uClean.length < 4) {
+      return res.status(400).json({ success: false, message: "ชื่อผู้ใช้ (Username) ต้องมีความยาวอย่างน้อย 4 ตัวอักษรค่ะ" });
+    }
+    const existing = db.members.find(m => m.username.toLowerCase() === uClean && m.userId !== userId);
+    if (existing) {
+      return res.status(400).json({ success: false, message: `ชื่อผู้ใช้ "${uClean}" นี้ถูกใช้งานไปแล้วโดยสมาชิกท่านอื่นในระบบ` });
+    }
+    member.username = uClean;
   }
 
   // Validate sponsorId existence if updated

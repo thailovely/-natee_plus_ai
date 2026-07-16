@@ -370,6 +370,7 @@ export default function App() {
   
   // Custom dialog states to replace window.confirm and window.prompt in iframe
   const [depositApproveId, setDepositApproveId] = useState<string | null>(null);
+  const [depositApproveAmount, setDepositApproveAmount] = useState<string>('');
   const [depositRejectId, setDepositRejectId] = useState<string | null>(null);
   const [depositRejectReason, setDepositRejectReason] = useState<string>('');
   const [kycRejectId, setKycRejectId] = useState<string | null>(null);
@@ -646,6 +647,16 @@ export default function App() {
     netAmount?: number;
   } | null>(null);
   const [isVerifyingRecipient, setIsVerifyingRecipient] = useState(false);
+  const [txnOtp, setTxnOtp] = useState('');
+  const [isSendingTxnOtp, setIsSendingTxnOtp] = useState(false);
+  const [sentTxnOtp, setSentTxnOtp] = useState('');
+  const [isTxnOtpSent, setIsTxnOtpSent] = useState(false);
+
+  useEffect(() => {
+    setTxnOtp('');
+    setSentTxnOtp('');
+    setIsTxnOtpSent(false);
+  }, [txnConfirm]);
 
   // Reset pagination pages to 1 when search queries or tabs change
   useEffect(() => {
@@ -1380,6 +1391,13 @@ export default function App() {
       const data = await res.json();
       if (data.success) {
         showNotif(data.message, 'success');
+        if (data.profile) {
+          setCurrentUser((prev: any) => {
+            const updated = { ...prev, username: data.profile.username };
+            localStorage.setItem('natee_user', JSON.stringify(updated));
+            return updated;
+          });
+        }
         fetchProfile(true); // Refresh profile state with sync
       } else {
         showNotif(data.message, 'error');
@@ -1444,6 +1462,32 @@ export default function App() {
       showNotif('เกิดข้อผิดพลาดในการเปลี่ยนรหัสผ่าน', 'error');
     } finally {
       setIsChangingPassword(false);
+    }
+  };
+
+  // Send transaction OTP handler
+  const handleSendTxnOtp = async () => {
+    if (!currentUser) return;
+    setIsSendingTxnOtp(true);
+    try {
+      const res = await fetch('/api/member/send-transaction-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser.userId })
+      });
+      const d = await res.json();
+      if (d.success) {
+        setSentTxnOtp(d.otp);
+        setIsTxnOtpSent(true);
+        showNotif(d.message, 'success');
+        alert(`📧 [จำลองการส่งอีเมล] รหัส OTP สำหรับยืนยันการทำธุรกรรมของคุณคือ: ${d.otp}`);
+      } else {
+        showNotif(d.message || 'เกิดข้อผิดพลาดในการส่ง OTP', 'error');
+      }
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเครือข่าย', 'error');
+    } finally {
+      setIsSendingTxnOtp(false);
     }
   };
 
@@ -2507,6 +2551,10 @@ export default function App() {
 
   const executeBuyCoupon = async () => {
     if (!txnConfirm) return;
+    if (!txnOtp) {
+      showNotif('กรุณากรอกรหัส OTP สำหรับยืนยันการทำธุรกรรมค่ะ', 'error');
+      return;
+    }
     try {
       const res = await fetch('/api/member/buy-coupon', {
         method: 'POST',
@@ -2514,7 +2562,8 @@ export default function App() {
         body: JSON.stringify({
           userId: currentUser.userId,
           amount: txnConfirm.amount,
-          pin: txnConfirm.pin
+          pin: txnConfirm.pin,
+          otp: txnOtp
         })
       });
       const d = await res.json();
@@ -2575,6 +2624,10 @@ export default function App() {
 
   const executeTransferECashMember = async () => {
     if (!txnConfirm) return;
+    if (!txnOtp) {
+      showNotif('กรุณากรอกรหัส OTP สำหรับยืนยันการทำธุรกรรมค่ะ', 'error');
+      return;
+    }
     try {
       const res = await fetch('/api/member/transfer-e-cash', {
         method: 'POST',
@@ -2583,7 +2636,8 @@ export default function App() {
           senderId: currentUser.userId,
           receiverPhoneOrUser: txnConfirm.recipientIdOrPhone,
           amount: txnConfirm.amount,
-          pin: txnConfirm.pin
+          pin: txnConfirm.pin,
+          otp: txnOtp
         })
       });
       const d = await res.json();
@@ -2630,6 +2684,10 @@ export default function App() {
 
   const executeWithdrawEMoney = async () => {
     if (!txnConfirm) return;
+    if (!txnOtp) {
+      showNotif('กรุณากรอกรหัส OTP สำหรับยืนยันการทำธุรกรรมค่ะ', 'error');
+      return;
+    }
     try {
       const res = await fetch('/api/member/withdraw', {
         method: 'POST',
@@ -2637,7 +2695,8 @@ export default function App() {
         body: JSON.stringify({
           userId: currentUser.userId,
           amount: txnConfirm.amount,
-          pin: txnConfirm.pin
+          pin: txnConfirm.pin,
+          otp: txnOtp
         })
       });
       const d = await res.json();
@@ -2683,6 +2742,10 @@ export default function App() {
 
   const executeTransferECashToEMoney = async () => {
     if (!txnConfirm) return;
+    if (!txnOtp) {
+      showNotif('กรุณากรอกรหัส OTP สำหรับยืนยันการทำธุรกรรมค่ะ', 'error');
+      return;
+    }
     try {
       const res = await fetch('/api/member/transfer-ecash-to-emoney', {
         method: 'POST',
@@ -2690,7 +2753,8 @@ export default function App() {
         body: JSON.stringify({
           userId: currentUser.userId,
           amount: txnConfirm.amount,
-          pin: txnConfirm.pin
+          pin: txnConfirm.pin,
+          otp: txnOtp
         })
       });
       const d = await res.json();
@@ -2734,6 +2798,10 @@ export default function App() {
 
   const executeTransferEMoneyToECash = async () => {
     if (!txnConfirm) return;
+    if (!txnOtp) {
+      showNotif('กรุณากรอกรหัส OTP สำหรับยืนยันการทำธุรกรรมค่ะ', 'error');
+      return;
+    }
     try {
       const res = await fetch('/api/member/transfer-emoney-to-ecash', {
         method: 'POST',
@@ -2741,7 +2809,8 @@ export default function App() {
         body: JSON.stringify({
           userId: currentUser.userId,
           amount: txnConfirm.amount,
-          pin: txnConfirm.pin
+          pin: txnConfirm.pin,
+          otp: txnOtp
         })
       });
       const d = await res.json();
@@ -2785,6 +2854,10 @@ export default function App() {
 
   const executeTransferEMoneyToECoupon = async () => {
     if (!txnConfirm) return;
+    if (!txnOtp) {
+      showNotif('กรุณากรอกรหัส OTP สำหรับยืนยันการทำธุรกรรมค่ะ', 'error');
+      return;
+    }
     try {
       const res = await fetch('/api/member/transfer-emoney-to-ecoupon', {
         method: 'POST',
@@ -2792,7 +2865,8 @@ export default function App() {
         body: JSON.stringify({
           userId: currentUser.userId,
           amount: txnConfirm.amount,
-          pin: txnConfirm.pin
+          pin: txnConfirm.pin,
+          otp: txnOtp
         })
       });
       const d = await res.json();
@@ -2944,12 +3018,12 @@ export default function App() {
     } catch (err) {}
   };
 
-  const handleDepositApprove = async (txnId: string) => {
+  const handleDepositApprove = async (txnId: string, approvedAmount?: string) => {
     try {
       const res = await fetch('/api/admin/deposit-approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ txnId })
+        body: JSON.stringify({ txnId, approvedAmount })
       });
       const d = await res.json();
       if (d.success) {
@@ -9013,7 +9087,10 @@ export default function App() {
                                       ปฏิเสธ
                                     </button>
                                     <button 
-                                      onClick={() => setDepositApproveId(item.id)}
+                                      onClick={() => {
+                                        setDepositApproveId(item.id);
+                                        setDepositApproveAmount((item.transferAmount || item.amount || 0).toString());
+                                      }}
                                       className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-white py-2 rounded-xl text-[11px] font-bold transition shadow-sm cursor-pointer text-center"
                                     >
                                       อนุมัติเติมเงิน
@@ -10047,6 +10124,16 @@ export default function App() {
 
                     <form onSubmit={handleUpdateMemberSubmit} className="p-6 space-y-4 text-xs text-slate-700">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="sm:col-span-2">
+                          <label className="block text-slate-700 font-bold mb-1">ชื่อผู้ใช้งาน (Username) *</label>
+                          <input 
+                            type="text" 
+                            required
+                            value={editingMember.username || ""}
+                            onChange={(e) => setEditingMember({ ...editingMember, username: e.target.value })}
+                            className="w-full bg-slate-50 border border-indigo-200 focus:border-indigo-500 rounded-xl px-3 py-2 font-mono text-indigo-700 font-bold"
+                          />
+                        </div>
                         <div>
                           <label className="block text-slate-700 font-bold mb-1">ชื่อ (First Name)</label>
                           <input 
@@ -10665,9 +10752,22 @@ export default function App() {
               <h3 className="text-sm font-bold text-slate-950 flex items-center gap-2 mb-2">
                 ✅ ยืนยันการอนุมัติเติมเงิน
               </h3>
-              <p className="text-xs text-slate-600 leading-relaxed mb-5">
-                คุณต้องการอนุมัติรายการเติมเงินนี้ใช่หรือไม่? ระบบจะทำการโอนสิทธิ์และเพิ่มยอด <strong className="text-emerald-600 font-bold">E-Cash</strong> ให้กับสมาชิกรายนี้โดยอัตโนมัติทันที
+              <p className="text-xs text-slate-600 leading-relaxed mb-4">
+                ระบบจะทำการอนุมัติและเติมยอดเงินสด <strong className="text-emerald-600 font-bold">E-Cash</strong> ให้กับสมาชิก กรุณาตรวจสอบหรือปรับแก้จำนวนเงินอนุมัติจริงให้ตรงกับยอดสลิป:
               </p>
+
+              <div className="mb-5 bg-slate-50 border border-slate-100 p-4 rounded-2xl space-y-2">
+                <label className="block text-[11px] text-slate-500 font-bold">จำนวนเงินที่ระบบจะเติมเข้าสู่กระเป๋า E-Cash (บาท) *</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={depositApproveAmount}
+                  onChange={(e) => setDepositApproveAmount(e.target.value)}
+                  placeholder="เช่น 1000"
+                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono font-bold text-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
               <div className="flex gap-2 justify-end">
                 <button
                   type="button"
@@ -10679,7 +10779,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    handleDepositApprove(depositApproveId);
+                    handleDepositApprove(depositApproveId, depositApproveAmount);
                     setDepositApproveId(null);
                   }}
                   className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-5 py-2 rounded-xl transition cursor-pointer shadow-md"
@@ -10825,6 +10925,43 @@ export default function App() {
                     ฿ {txnConfirm.netAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท
                   </span>
                 </div>
+              </div>
+
+              {/* OTP VERIFICATION FOR TRANSACTION */}
+              <div className="mb-6 bg-slate-50 border border-slate-100 p-4 rounded-2xl text-xs space-y-3">
+                <span className="font-bold text-slate-800 block">🔑 รหัส OTP ยืนยันการทำธุรกรรม</span>
+                {!isTxnOtpSent ? (
+                  <button
+                    type="button"
+                    disabled={isSendingTxnOtp}
+                    onClick={handleSendTxnOtp}
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-xl transition text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:bg-slate-300"
+                  >
+                    {isSendingTxnOtp ? 'กำลังส่งรหัส OTP...' : '📩 ขอรับรหัส OTP ทางอีเมลเพื่อทำธุรกรรม'}
+                  </button>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="text"
+                        maxLength={6}
+                        value={txnOtp}
+                        onChange={(e) => setTxnOtp(e.target.value.replace(/\D/g, ''))}
+                        placeholder="กรอกรหัส OTP 6 หลัก"
+                        className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-center font-mono font-bold tracking-widest text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <button
+                        type="button"
+                        disabled={isSendingTxnOtp}
+                        onClick={handleSendTxnOtp}
+                        className="text-[10px] text-indigo-600 hover:text-indigo-500 font-bold underline cursor-pointer"
+                      >
+                        {isSendingTxnOtp ? 'กำลังส่ง...' : 'ส่งอีกครั้ง'}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-emerald-600 font-semibold text-center">✓ ส่งรหัส OTP 6 หลักไปที่เมลของท่านแล้ว (กรณีจำลองรหัสจะแสดงในกล่อง Alert)</p>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2 justify-end">
