@@ -3222,7 +3222,11 @@ app.post('/api/seller/reset-status', (req, res) => {
 
 // ADD PRODUCT
 app.post('/api/seller/product', (req, res) => {
-  const { userId, productName, price, pv, imageFile, description, shortDescription, category, cost } = req.body;
+  const { 
+    userId, productName, price, pv, imageFile, description, shortDescription, category, cost,
+    subcategory, weight, width, length, height, volumetricWeight, chargeableWeight,
+    baseShippingCost, sellerCoPay, customerShippingFee, netPayout
+  } = req.body;
   const db = readDb();
   
   const member = db.members.find(m => m.userId === userId);
@@ -3253,13 +3257,24 @@ app.post('/api/seller/product', (req, res) => {
     sellerStoreName: member.sellerStoreName,
     name: productName,
     price: priceVal,
-    pv: parseFloat(pv),
+    pv: parseFloat(pv) || 0,
     cost: costVal,
     image: imageUrl,
     description,
     shortDescription: shortDescription || "",
     category,
-    status: "Pending" // Pending Admin approval
+    status: "Pending", // Pending Admin approval
+    subcategory: subcategory || "",
+    weight: parseFloat(weight) || 0,
+    width: parseFloat(width) || 0,
+    length: parseFloat(length) || 0,
+    height: parseFloat(height) || 0,
+    volumetricWeight: parseFloat(volumetricWeight) || 0,
+    chargeableWeight: parseFloat(chargeableWeight) || 0,
+    baseShippingCost: parseFloat(baseShippingCost) || 35,
+    sellerCoPay: parseFloat(sellerCoPay) || 0,
+    customerShippingFee: parseFloat(customerShippingFee) || 35,
+    netPayout: parseFloat(netPayout) || 0
   };
   
   db.sellerProducts.push(newProduct);
@@ -3495,7 +3510,18 @@ app.post('/api/admin/product-approve', (req, res) => {
     shortDescription: prod.shortDescription || "",
     category: prod.category || "General",
     sellerCode: prod.sellerCode,
-    sellerStoreName: prod.sellerStoreName
+    sellerStoreName: prod.sellerStoreName,
+    subcategory: prod.subcategory || "",
+    weight: prod.weight || 0,
+    width: prod.width || 0,
+    length: prod.length || 0,
+    height: prod.height || 0,
+    volumetricWeight: prod.volumetricWeight || 0,
+    chargeableWeight: prod.chargeableWeight || 0,
+    baseShippingCost: prod.baseShippingCost || 35,
+    sellerCoPay: prod.sellerCoPay || 0,
+    customerShippingFee: prod.customerShippingFee || 35,
+    netPayout: prod.netPayout || 0
   });
   
   writeDb(db);
@@ -3581,7 +3607,11 @@ app.get('/api/admin/all-products', (req, res) => {
 
 // EDIT SELLER PRODUCT (Every edit forces re-approval)
 app.post('/api/seller/product/edit', (req, res) => {
-  const { userId, productId, productName, price, pv, imageFile, description, shortDescription, category, cost } = req.body;
+  const { 
+    userId, productId, productName, price, pv, imageFile, description, shortDescription, category, cost,
+    subcategory, weight, width, length, height, volumetricWeight, chargeableWeight,
+    baseShippingCost, sellerCoPay, customerShippingFee, netPayout
+  } = req.body;
   const db = readDb();
   
   const member = db.members.find(m => m.userId === userId);
@@ -3611,12 +3641,24 @@ app.post('/api/seller/product/edit', (req, res) => {
   // Update properties
   prod.name = productName;
   prod.price = priceVal;
-  prod.pv = parseFloat(pv);
+  prod.pv = parseFloat(pv) || 0;
   prod.cost = costVal;
   prod.image = imageUrl;
   prod.description = description;
   prod.shortDescription = shortDescription || "";
   prod.category = category || "General";
+  
+  prod.subcategory = subcategory || "";
+  prod.weight = parseFloat(weight) || 0;
+  prod.width = parseFloat(width) || 0;
+  prod.length = parseFloat(length) || 0;
+  prod.height = parseFloat(height) || 0;
+  prod.volumetricWeight = parseFloat(volumetricWeight) || 0;
+  prod.chargeableWeight = parseFloat(chargeableWeight) || 0;
+  prod.baseShippingCost = parseFloat(baseShippingCost) || 35;
+  prod.sellerCoPay = parseFloat(sellerCoPay) || 0;
+  prod.customerShippingFee = parseFloat(customerShippingFee) || 35;
+  prod.netPayout = parseFloat(netPayout) || 0;
   
   // Every edit returns product to Pending (must re-approve)
   prod.status = "Pending";

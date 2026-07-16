@@ -462,8 +462,13 @@ export default function App() {
     description: '',
     shortDescription: '',
     category: 'General',
+    subcategory: '',
     imageFile: '',
-    cost: ''
+    cost: '',
+    weight: '',
+    width: '',
+    length: '',
+    height: ''
   });
   const [shopSubTab, setShopSubTab] = useState<'packages' | 'shop'>('packages');
   const [sellerProducts, setSellerProducts] = useState<any[]>([]);
@@ -630,7 +635,12 @@ export default function App() {
   const [orderSearchStatus, setOrderSearchStatus] = useState('');
   
   // Report States
-  const [reportSubTab, setReportSubTab] = useState<'ecash' | 'emoney' | 'ecoupon' | 'eshare' | 'referrals' | 'binary'>('ecash');
+  const [reportSubTab, setReportSubTab] = useState<'ecash' | 'emoney' | 'ecoupon' | 'eshare' | 'referrals' | 'binary' | 'memberTax' | 'sellerTax'>('ecash');
+  const [selectedTaxDoc, setSelectedTaxDoc] = useState<{ type: 'member' | 'seller'; data: any } | null>(null);
+  const [customPayeeTaxId, setCustomPayeeTaxId] = useState('');
+  const [customPayeeName, setCustomPayeeName] = useState('');
+  const [customPayeeAddress, setCustomPayeeAddress] = useState('');
+  const [customTaxYear, setCustomTaxYear] = useState('2569');
   const [memberOrders, setMemberOrders] = useState<any[]>([]);
   const [directReferrals, setDirectReferrals] = useState<any[]>([]);
   const [binaryDescendants, setBinaryDescendants] = useState<any[]>([]);
@@ -2346,6 +2356,85 @@ export default function App() {
     }
   };
 
+  const arabicToThaiBaht = (num: number): string => {
+    if (isNaN(num) || num === null) return "";
+    const thaiNums = ["ศูนย์", "หนึ่ง", "สอง", "สาม", "สี่", "ห้า", "หก", "เจ็ด", "แปด", "เก้า"];
+    const thaiPositions = ["", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน", "ล้าน"];
+    
+    // Round to 2 decimal places
+    const str = parseFloat(num.toFixed(2)).toString();
+    const parts = str.split(".");
+    const bahtStr = parts[0];
+    const satangStr = parts[1] || "";
+    
+    let bahtText = "";
+    const len = bahtStr.length;
+    for (let i = 0; i < len; i++) {
+      const digit = parseInt(bahtStr[i]);
+      const pos = len - 1 - i;
+      if (digit !== 0) {
+        if (pos === 1 && digit === 1) {
+          bahtText += "สิบ";
+        } else if (pos === 1 && digit === 2) {
+          bahtText += "ยี่สิบ";
+        } else if (pos === 0 && digit === 1 && len > 1) {
+          bahtText += "เอ็ด";
+        } else {
+          bahtText += thaiNums[digit] + thaiPositions[pos];
+        }
+      }
+    }
+    if (bahtText !== "") {
+      bahtText += "บาท";
+    } else {
+      bahtText = "ศูนย์บาท";
+    }
+    
+    let satangText = "";
+    if (satangStr && satangStr !== "0" && satangStr !== "00") {
+      const sLen = satangStr.length;
+      const satangVal = sLen === 1 ? parseInt(satangStr + "0") : parseInt(satangStr.substring(0, 2));
+      if (satangVal > 0) {
+        const sStr = satangVal.toString();
+        const sl = sStr.length;
+        for (let i = 0; i < sl; i++) {
+          const digit = parseInt(sStr[i]);
+          const pos = sl - 1 - i;
+          if (digit !== 0) {
+            if (pos === 1 && digit === 1) {
+              satangText += "สิบ";
+            } else if (pos === 1 && digit === 2) {
+              satangText += "ยี่สิบ";
+            } else if (pos === 0 && digit === 1 && sl > 1) {
+              satangText += "เอ็ด";
+            } else {
+              satangText += thaiNums[digit] + thaiPositions[pos];
+            }
+          }
+        }
+        satangText += "สตางค์";
+      }
+    } else {
+      satangText = "ถ้วน";
+    }
+    
+    return bahtText + satangText;
+  };
+
+  const openTaxDoc = (type: 'member' | 'seller', data: any) => {
+    setSelectedTaxDoc({ type, data });
+    if (type === 'member') {
+      setCustomPayeeName(`${profile?.name || ''} ${profile?.surname || ''}`);
+      setCustomPayeeTaxId(profile?.idCard || '');
+      setCustomPayeeAddress(profile?.address || profile?.kycAddress || 'จัดส่งตามที่อยู่โปรไฟล์ผู้ใช้งานหลัก');
+    } else {
+      setCustomPayeeName(profile?.sellerStoreName || profile?.name || '');
+      setCustomPayeeTaxId(profile?.idCard || '');
+      setCustomPayeeAddress(profile?.sellerAddress || 'ที่ตั้งคลังสินค้าและจัดส่งแบรนด์พาร์ทเนอร์');
+    }
+    setCustomTaxYear((new Date(data.createdAt || Date.now()).getFullYear() + 543).toString());
+  };
+
   const handleKycSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!kycForm.bankName || !kycForm.bankAccount) {
@@ -3308,9 +3397,82 @@ export default function App() {
     } catch (err) {}
   };
 
+  const calculateShippingAndPricing = (priceStr: string, weightStr: string, widthStr: string, lengthStr: string, heightStr: string) => {
+    const price = parseFloat(priceStr) || 0;
+    const weight = parseFloat(weightStr) || 0; // in grams
+    const width = parseFloat(widthStr) || 0; // in cm
+    const length = parseFloat(lengthStr) || 0; // in cm
+    const height = parseFloat(heightStr) || 0; // in cm
+
+    // 1. Volumetric weight: (width * length * height) / 5000 in kg
+    const volumetricWeight = (width * length * height) / 5000;
+    const actualWeightKg = weight / 1000;
+    const chargeableWeight = Math.max(actualWeightKg, volumetricWeight);
+
+    // 2. Base shipping cost using the tiered weight formula:
+    // - <= 2 kg: 40 Baht/kg
+    // - <= 5 kg: 35 Baht/kg
+    // - > 5 kg: 30 Baht/kg
+    // With a minimum base shipping cost of 35 Baht for parcel handling.
+    const baseShippingCost = (() => {
+      const w = chargeableWeight;
+      let cost = 0;
+      if (w <= 2) {
+        cost = w * 40;
+      } else if (w <= 5) {
+        cost = w * 35;
+      } else {
+        cost = w * 30;
+      }
+      return Math.max(35, Math.ceil(cost));
+    })();
+
+    // 3. Enhanced Seller co-pay: 15% of product price, capped at 40 Baht to reduce customer's burden
+    const sellerCoPay = Math.min(price * 0.15, 40);
+
+    // 4. Customer shipping fee: Remaining fee after seller co-pay (can go down to 0 Baht for FREE SHIPPING)
+    const customerShippingFee = Math.max(0, baseShippingCost - sellerCoPay);
+
+    // 5. VAT 7%
+    const vat = price - (price / 1.07);
+    const priceExVat = price / 1.07;
+
+    // 6. GP 20%
+    const gpAmount = price * 0.20;
+
+    // 7. GP difference and expenses, หักกำไรบริษัท 25% ของเงินที่เหลือ, ส่วนที่เหลือคือ PV (Saved in system, hidden from member view)
+    const remainingGp = Math.max(0, gpAmount - sellerCoPay);
+    const companyProfit = remainingGp * 0.25;
+    const pv = remainingGp * 0.75;
+
+    // 8. Net Payout for seller: Price - VAT 7% - GP 20% - Seller Co-pay Shipping
+    const netPayout = Math.max(0, price - vat - gpAmount - sellerCoPay);
+
+    return {
+      price,
+      weight,
+      width,
+      length,
+      height,
+      volumetricWeight,
+      chargeableWeight,
+      baseShippingCost,
+      sellerCoPay,
+      customerShippingFee,
+      vat,
+      priceExVat,
+      gpAmount,
+      remainingGp,
+      companyProfit,
+      pv,
+      netPayout
+    };
+  };
+
   const handleSellerProdSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const calc = calculateShippingAndPricing(newProd.price, newProd.weight, newProd.width, newProd.length, newProd.height);
       const res = await fetch('/api/seller/product', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3318,17 +3480,31 @@ export default function App() {
           userId: currentUser.userId,
           productName: newProd.name,
           price: newProd.price,
-          pv: newProd.pv,
+          pv: calc.pv.toFixed(2), // Auto-calculated PV according to user formula
           description: newProd.description,
           category: newProd.category,
+          subcategory: newProd.subcategory,
           imageFile: newProd.imageFile,
-          cost: newProd.cost
+          cost: newProd.cost,
+          weight: newProd.weight,
+          width: newProd.width,
+          length: newProd.length,
+          height: newProd.height,
+          volumetricWeight: calc.volumetricWeight.toFixed(3),
+          chargeableWeight: calc.chargeableWeight.toFixed(3),
+          baseShippingCost: calc.baseShippingCost,
+          sellerCoPay: calc.sellerCoPay,
+          customerShippingFee: calc.customerShippingFee,
+          netPayout: calc.netPayout
         })
       });
       const d = await res.json();
       if (d.success) {
         showNotif(d.message, 'success');
-        setNewProd({ name: '', price: '', pv: '', description: '', shortDescription: '', category: 'General', imageFile: '', cost: '' });
+        setNewProd({ 
+          name: '', price: '', pv: '', description: '', shortDescription: '', category: 'General', subcategory: '', imageFile: '', cost: '',
+          weight: '', width: '', length: '', height: '' 
+        });
         // Refresh products list for seller
         const r = await fetch(`/api/seller/products/${currentUser.userId}`);
         const data = await r.json();
@@ -3343,6 +3519,7 @@ export default function App() {
     e.preventDefault();
     if (!editingProduct) return;
     try {
+      const calc = calculateShippingAndPricing(editingProduct.price, editingProduct.weight, editingProduct.width, editingProduct.length, editingProduct.height);
       const res = await fetch('/api/seller/product/edit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3351,17 +3528,28 @@ export default function App() {
           productId: editingProduct.id,
           productName: editingProduct.name,
           price: editingProduct.price,
-          pv: editingProduct.pv,
+          pv: calc.pv.toFixed(2), // Auto-calculated PV according to user formula
           description: editingProduct.description,
           category: editingProduct.category,
+          subcategory: editingProduct.subcategory || '',
           imageFile: editingProduct.imageFile,
-          cost: editingProduct.cost
+          cost: editingProduct.cost,
+          weight: editingProduct.weight || '0',
+          width: editingProduct.width || '0',
+          length: editingProduct.length || '0',
+          height: editingProduct.height || '0',
+          volumetricWeight: calc.volumetricWeight.toFixed(3),
+          chargeableWeight: calc.chargeableWeight.toFixed(3),
+          baseShippingCost: calc.baseShippingCost,
+          sellerCoPay: calc.sellerCoPay,
+          customerShippingFee: calc.customerShippingFee,
+          netPayout: calc.netPayout
         })
       });
       const d = await res.json();
       if (d.success) {
         showNotif(d.message, 'success');
-        setShowProductEditModal(false);
+        setShowEditProductModal(false);
         setEditingProduct(null);
         // Refresh products list for seller
         const r = await fetch(`/api/seller/products/${currentUser.userId}`);
@@ -5537,12 +5725,16 @@ export default function App() {
                       <div className="flex flex-wrap gap-2 pb-2">
                         {[
                           { id: 'All', label: 'ทั้งหมด (All)' },
-                          { id: 'Electronics', label: '🔌 เครื่องใช้ไฟฟ้าและมือถือ' },
-                          { id: 'Fashion', label: '🧥 เสื้อผ้าแฟชั่น' },
-                          { id: 'Beauty', label: '🧴 สุขภาพและความงาม' },
-                          { id: 'Home', label: '☕ ของใช้ในบ้าน' },
-                          { id: 'Food', label: '🍜 อาหารและเครื่องดื่ม' },
-                          { id: 'General', label: '📦 หมวดหมู่อื่นๆ' }
+                          { id: 'Fashion', label: '👗 แฟชั่น' },
+                          { id: 'Electronics', label: '🔌 อุปกรณ์อิเล็กทรอนิกส์' },
+                          { id: 'Beauty', label: '💄 ความงามและของใช้ส่วนตัว' },
+                          { id: 'Health', label: '💊 สุขภาพ' },
+                          { id: 'Baby', label: '🍼 แม่และเด็ก' },
+                          { id: 'Home', label: '🏠 บ้านและที่อยู่อาศัย' },
+                          { id: 'Food', label: '🍎 อาหารและเครื่องดื่ม' },
+                          { id: 'Pets', label: '🐶 สัตว์เลี้ยง' },
+                          { id: 'Lifestyle', label: '🎨 ไลฟ์สไตล์และงานอดิเรก' },
+                          { id: 'General', label: '📦 ทั่วไป (General)' }
                         ].map(cat => (
                           <button
                             key={cat.id}
@@ -5571,23 +5763,48 @@ export default function App() {
                             const currentCat = (window as any)._shopCategory || 'All';
                             return currentCat === 'All' || p.category === currentCat;
                           })
-                          .map(p => {
-                            // Automatically calculate dynamic PV (50% of Price) if PV is empty/0
-                            const displayPv = p.pv || Math.floor(parseFloat(p.price) * 0.5);
-                            
-                            return (
-                              <div key={p.id} className="bg-white border border-slate-100 rounded-3xl p-4 shadow-sm flex flex-col justify-between group hover:shadow-md transition relative">
-                                {p.sellerStoreName && (
-                                  <span className="absolute top-3 left-3 bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded text-[9px] z-10 border border-indigo-100/60 shadow-sm">
-                                    🏪 {p.sellerStoreName}
-                                  </span>
-                                )}
+                           .map(p => {
+                             // Automatically calculate dynamic PV (50% of Price) if PV is empty/0
+                             const displayPv = p.pv || Math.floor(parseFloat(p.price) * 0.5);
+                             
+                             const catMap: Record<string, string> = {
+                               Fashion: '👗 แฟชั่น',
+                               Electronics: '🔌 อุปกรณ์อิเล็กทรอนิกส์',
+                               Beauty: '💄 ความงามและของใช้ส่วนตัว',
+                               Health: '💊 สุขภาพ',
+                               Baby: '🍼 แม่และเด็ก',
+                               Home: '🏠 บ้านและที่อยู่อาศัย',
+                               Food: '🍎 อาหารและเครื่องดื่ม',
+                               Pets: '🐶 สัตว์เลี้ยง',
+                               Lifestyle: '🎨 ไลฟ์สไตล์และงานอดิเรก',
+                               General: '📦 ทั่วไป'
+                             };
+                             const catLabel = catMap[p.category] || p.category || '📦 ทั่วไป';
 
-                                <div>
-                                  <div className="overflow-hidden rounded-2xl mb-3 h-40 relative">
-                                    <img src={p.image} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
-                                  </div>
-                                  <h4 className="text-xs font-bold text-slate-900 leading-snug group-hover:text-indigo-600 transition">{p.name}</h4>
+                             return (
+                               <div key={p.id} className="bg-white border border-slate-100 rounded-3xl p-4 shadow-sm flex flex-col justify-between group hover:shadow-md transition relative">
+                                 {p.sellerStoreName && (
+                                   <span className="absolute top-3 left-3 bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded text-[9px] z-10 border border-indigo-100/60 shadow-sm">
+                                     🏪 {p.sellerStoreName}
+                                   </span>
+                                 )}
+
+                                 <div>
+                                   <div className="overflow-hidden rounded-2xl mb-3 h-40 relative">
+                                     <img src={p.image} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                                   </div>
+                                   <h4 className="text-xs font-bold text-slate-900 leading-snug group-hover:text-indigo-600 transition">{p.name}</h4>
+                                   
+                                   <div className="flex flex-wrap gap-1 mt-1">
+                                     <span className="inline-block bg-slate-100 text-slate-600 text-[8px] font-bold px-1.5 py-0.5 rounded-md">
+                                       {catLabel}
+                                     </span>
+                                     {p.subcategory && (
+                                       <span className="inline-block bg-indigo-50 text-indigo-600 text-[8px] font-bold px-1.5 py-0.5 rounded-md">
+                                         🏷️ {p.subcategory}
+                                       </span>
+                                     )}
+                                   </div>
                                   
                                   {/* Short Description Field shown prominently */}
                                   <div className="bg-slate-50 border border-slate-100 p-2 rounded-xl text-[10px] text-slate-600 my-2 leading-relaxed">
@@ -6901,6 +7118,24 @@ export default function App() {
                   >
                     🕸️ ผังไบนารี
                   </button>
+                  <button 
+                    onClick={() => setReportSubTab('memberTax')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      reportSubTab === 'memberTax' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    📄 ภาษี & 50 ทวิ (สมาชิก)
+                  </button>
+                  {profile?.sellerStatus === 'Active' && (
+                    <button 
+                      onClick={() => setReportSubTab('sellerTax')}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                        reportSubTab === 'sellerTax' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      🏪 ภาษี & 50 ทวิ (ร้านค้า)
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -7536,6 +7771,253 @@ export default function App() {
                   </div>
                 </div>
               )}
+
+              {/* REPORT MEMBER TAX SUB-VIEW */}
+              {reportSubTab === 'memberTax' && (
+                <div className="space-y-6 animate-fadeIn">
+                  <div className="bg-gradient-to-br from-indigo-900 to-indigo-950 rounded-3xl p-6 text-white shadow-sm space-y-4">
+                    <div>
+                      <span className="text-xs text-indigo-300 font-bold uppercase tracking-wider">แผงรายงานภาษีบุคคลธรรมดา (มาตรา 40(2))</span>
+                      <h3 className="text-2xl font-extrabold mt-1">รายงานภาษี & หนังสือรับรอง 50 ทวิ สมาชิก 📄</h3>
+                      <p className="text-[11px] text-indigo-200 mt-1 leading-normal">
+                        สรุปรายการหักภาษี ณ ที่จ่าย 5% ที่ระบบหักนำส่งสรรพากรเมื่อท่านกดถอนเงินออกจากกระเป๋า E-Money (โบนัส/คอมมิชชัน)
+                      </p>
+                    </div>
+
+                    {(() => {
+                      const approvedWithdrawals = transactions.filter(t => t.userId === currentUser?.userId && t.type === 'WithdrawalRequest' && t.status === 'Approved');
+                      const grossIncome = approvedWithdrawals.reduce((sum, t) => sum + t.amount, 0);
+                      const platformFee = grossIncome * 0.15;
+                      const taxableIncome = grossIncome - platformFee;
+                      const totalWithholdingTax = taxableIncome * 0.05;
+                      const totalNetReceived = approvedWithdrawals.reduce((sum, t) => sum + (t.netAmount || 0), 0);
+
+                      return (
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 pt-2">
+                          <div className="bg-white/10 p-3.5 rounded-2xl border border-white/10">
+                            <span className="text-[10px] text-indigo-200 block">ยอดขอถอนรวม (Gross)</span>
+                            <strong className="text-base font-bold font-mono">฿ {grossIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                          </div>
+                          <div className="bg-white/10 p-3.5 rounded-2xl border border-white/10">
+                            <span className="text-[10px] text-indigo-200 block">ค่าธรรมเนียมระบบ 15%</span>
+                            <strong className="text-base font-bold font-mono text-amber-300">฿ {platformFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                          </div>
+                          <div className="bg-white/10 p-3.5 rounded-2xl border border-white/10 col-span-2 md:col-span-1">
+                            <span className="text-[10px] text-indigo-200 block">ฐานรายได้พิจารณาภาษี</span>
+                            <strong className="text-base font-bold font-mono text-sky-200">฿ {taxableIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                          </div>
+                          <div className="bg-white/10 p-3.5 rounded-2xl border border-white/10">
+                            <span className="text-[10px] text-indigo-200 block">ภาษีหัก ณ ที่จ่าย 5%</span>
+                            <strong className="text-base font-bold font-mono text-rose-300">฿ {totalWithholdingTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                          </div>
+                          <div className="bg-emerald-500/30 p-3.5 rounded-2xl border border-emerald-500/20">
+                            <span className="text-[10px] text-emerald-200 block">ยอดโอนสุทธิเข้ารับ</span>
+                            <strong className="text-base font-bold font-mono text-emerald-300">฿ {totalNetReceived.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Withdrawals Tax Table */}
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                    <h4 className="text-xs font-extrabold text-slate-800 uppercase flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                      📂 ประวัติการถอนโบนัสระบบและการยื่นหักภาษี ณ ที่จ่าย (50 ทวิ) ของคุณ
+                    </h4>
+
+                    {(() => {
+                      const userWithdrawals = transactions.filter(t => t.userId === currentUser?.userId && t.type === 'WithdrawalRequest');
+                      
+                      return (
+                        <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                          <table className="w-full text-left text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold text-[11px]">
+                                <th className="p-3">วันที่/เวลาโอนเงิน</th>
+                                <th className="p-3">รหัสบิล/Txn ID</th>
+                                <th className="p-3 text-right">ยอดเงินถอน (Gross)</th>
+                                <th className="p-3 text-right">หักค่าบริการ 15%</th>
+                                <th className="p-3 text-right">ฐานคำนวณภาษี</th>
+                                <th className="p-3 text-right">ภาษีหัก ณ ที่จ่าย (5%)</th>
+                                <th className="p-3 text-right">ยอดรับเงินสุทธิ (Net)</th>
+                                <th className="p-3 text-center">สถานะธุรกรรม</th>
+                                <th className="p-3 text-right">หนังสือ ทวิ 50</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-[11px] text-slate-700">
+                              {userWithdrawals.length === 0 ? (
+                                <tr>
+                                  <td colSpan={9} className="p-6 text-center italic text-slate-400">ยังไม่เคยทำรายการถอนเงินออกจากระบบ E-Money ค่ะ</td>
+                                </tr>
+                              ) : (
+                                userWithdrawals.map(txn => {
+                                  const fee = txn.amount * 0.15;
+                                  const taxable = txn.amount - fee;
+                                  const tax = taxable * 0.05;
+                                  
+                                  return (
+                                    <tr key={txn.id} className="hover:bg-slate-50/40 font-sans">
+                                      <td className="p-3">{new Date(txn.createdAt).toLocaleString('th-TH')}</td>
+                                      <td className="p-3 font-mono font-bold text-[10px]">{txn.id}</td>
+                                      <td className="p-3 text-right font-semibold text-slate-900">฿ {txn.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td className="p-3 text-right text-amber-600">฿ {fee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td className="p-3 text-right text-sky-700">฿ {taxable.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td className="p-3 text-right font-bold text-rose-600">฿ {tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td className="p-3 text-right font-extrabold text-emerald-600">฿ {(txn.netAmount || (txn.amount - fee - tax)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td className="p-3 text-center">
+                                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] font-bold ${
+                                          txn.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800 animate-pulse'
+                                        }`}>
+                                          {txn.status === 'Approved' ? '✓ สำเร็จแล้ว' : 'รอแอดมินอนุมัติ'}
+                                        </span>
+                                      </td>
+                                      <td className="p-3 text-right">
+                                        {txn.status === 'Approved' ? (
+                                          <button
+                                            onClick={() => openTaxDoc('member', txn)}
+                                            className="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer shadow-sm hover:shadow ml-auto"
+                                          >
+                                            <FileText size={12} /> ใบ 50 ทวิ
+                                          </button>
+                                        ) : (
+                                          <span className="text-[10px] text-slate-400 italic">พร้อมพิมพ์เมื่อสำเร็จ</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* REPORT SELLER TAX SUB-VIEW */}
+              {reportSubTab === 'sellerTax' && (
+                <div className="space-y-6 animate-fadeIn">
+                  <div className="bg-gradient-to-br from-indigo-950 to-slate-900 rounded-3xl p-6 text-white shadow-sm space-y-4">
+                    <div>
+                      <span className="text-xs text-indigo-300 font-bold uppercase tracking-wider">แผงรายงานภาษีร้านค้า/แบรนด์สินค้า (มาตรา 40(8))</span>
+                      <h3 className="text-2xl font-extrabold mt-1">รายงานภาษีและส่วนแบ่งกำไร ทวิ 50 ร้านค้า 🏪</h3>
+                      <p className="text-[11px] text-indigo-200 mt-1 leading-normal">
+                        สรุปข้อมูลรายได้และภาษีหัก ณ ที่จ่าย 3% ที่ระบบนทีพลัสออกหนังสือรับรองและหักนำส่งในนามบริษัทร่วมทุน สำหรับออเดอร์จัดส่งสินค้าที่อนุมัติสำเร็จ
+                      </p>
+                    </div>
+
+                    {(() => {
+                      const completedOrders = sellerOrders.filter(o => o.status === 'Completed');
+                      const grossSales = completedOrders.reduce((sum, o) => sum + o.totalPrice, 0);
+                      const vatAmount = grossSales * 7 / 107;
+                      const platformGpFee = grossSales * 0.2;
+                      const rawShopEarnings = grossSales * 0.8;
+                      const shopWithholdingTax = rawShopEarnings * 0.03;
+                      const netPayout = rawShopEarnings - shopWithholdingTax;
+
+                      return (
+                        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 pt-2">
+                          <div className="bg-white/10 p-3.5 rounded-2xl border border-white/10">
+                            <span className="text-[10px] text-indigo-200 block">ยอดขายสะสม (Gross)</span>
+                            <strong className="text-base font-bold font-mono">฿ {grossSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                          </div>
+                          <div className="bg-white/10 p-3.5 rounded-2xl border border-white/10">
+                            <span className="text-[10px] text-indigo-200 block">ภาษีมูลค่าเพิ่ม (VAT 7%)</span>
+                            <strong className="text-base font-bold font-mono text-amber-300">฿ {vatAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                          </div>
+                          <div className="bg-white/10 p-3.5 rounded-2xl border border-white/10">
+                            <span className="text-[10px] text-indigo-200 block">ค่าธรรมเนียม GP 20%</span>
+                            <strong className="text-base font-bold font-mono text-sky-200">฿ {platformGpFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                          </div>
+                          <div className="bg-white/10 p-3.5 rounded-2xl border border-white/10">
+                            <span className="text-[10px] text-indigo-200 block">ฐานรายรับร้านก่อนภาษี</span>
+                            <strong className="text-base font-bold font-mono text-indigo-100">฿ {rawShopEarnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                          </div>
+                          <div className="bg-white/10 p-3.5 rounded-2xl border border-white/10">
+                            <span className="text-[10px] text-indigo-200 block">ภาษีหัก ณ ที่จ่าย 3%</span>
+                            <strong className="text-base font-bold font-mono text-rose-300">฿ {shopWithholdingTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                          </div>
+                          <div className="bg-emerald-500/30 p-3.5 rounded-2xl border border-emerald-500/20 col-span-2 md:col-span-1">
+                            <span className="text-[10px] text-emerald-200 block">โอนจ่ายสุทธิเข้าธนาคาร</span>
+                            <strong className="text-base font-bold font-mono text-emerald-300">฿ {netPayout.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Shop Sales Tax Table */}
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                    <h4 className="text-xs font-extrabold text-slate-800 uppercase flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                      📂 รายละเอียดบิลพัสดุสินค้าจัดส่งนำส่งและภาษีสะสม 50 ทวิ (สำหรับแบรนด์ของคุณ)
+                    </h4>
+
+                    {(() => {
+                      const completedOrders = sellerOrders.filter(o => o.status === 'Completed');
+                      
+                      return (
+                        <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                          <table className="w-full text-left text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold text-[11px]">
+                                <th className="p-3">วันที่จัดส่งสำเร็จ</th>
+                                <th className="p-3">หมายเลขออเดอร์</th>
+                                <th className="p-3">รายการสินค้า</th>
+                                <th className="p-3 text-right">ยอดรวมบิล (Gross)</th>
+                                <th className="p-3 text-right">แวตในราคาสินค้า 7%</th>
+                                <th className="p-3 text-right">หัก GP 20%</th>
+                                <th className="p-3 text-right">รายรับร้านก่อนภาษี</th>
+                                <th className="p-3 text-right">ภาษีหัก ณ ที่จ่าย (3%)</th>
+                                <th className="p-3 text-right">รับโอนสุทธิ (Net)</th>
+                                <th className="p-3 text-right">หนังสือ ทวิ 50</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-[11px] text-slate-700">
+                              {completedOrders.length === 0 ? (
+                                <tr>
+                                  <td colSpan={10} className="p-6 text-center italic text-slate-400">ยังไม่มีรายการบิลจัดส่งพัสดุที่สำเร็จสมบูรณ์ในระบบนทีช็อปค่ะ</td>
+                                </tr>
+                              ) : (
+                                completedOrders.map(order => {
+                                  const vat = order.totalPrice * 7 / 107;
+                                  const gp = order.totalPrice * 0.2;
+                                  const rawEarnings = order.totalPrice * 0.8;
+                                  const tax = rawEarnings * 0.03;
+                                  const net = rawEarnings - tax;
+                                  
+                                  return (
+                                    <tr key={order.id} className="hover:bg-slate-50/40 font-sans">
+                                      <td className="p-3">{new Date(order.createdAt).toLocaleDateString('th-TH')}</td>
+                                      <td className="p-3 font-mono font-bold text-[10px]">{order.id}</td>
+                                      <td className="p-3 font-medium text-slate-900">{order.productName} (x{order.quantity})</td>
+                                      <td className="p-3 text-right font-semibold">฿ {order.totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td className="p-3 text-right text-slate-400">฿ {vat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td className="p-3 text-right text-amber-600">฿ {gp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td className="p-3 text-right text-sky-700">฿ {rawEarnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td className="p-3 text-right font-bold text-rose-600">฿ {tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td className="p-3 text-right font-extrabold text-emerald-600">฿ {net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td className="p-3 text-right">
+                                        <button
+                                          onClick={() => openTaxDoc('seller', order)}
+                                          className="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer shadow-sm hover:shadow ml-auto"
+                                        >
+                                          <FileText size={12} /> ใบ 50 ทวิ
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -7741,11 +8223,11 @@ export default function App() {
                         {/* Add Product Board */}
                         <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
                           <h4 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-1.5">
-                            <Plus size={16} /> ส่งสินค้าใหม่เข้าพิจารณาจัดขึ้นนทีช็อป (Shop Listing)
+                            <Plus size={16} /> ส่งสินค้าใหม่เข้าพิจารณาจัดขึ้นนทีช็อป (Shop Listing & Financial Logic)
                           </h4>
 
                           <form onSubmit={handleSellerProdSubmit} className="space-y-4 text-xs">
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               <div>
                                 <label className="block text-slate-700 font-semibold mb-1">ชื่อผลิตภัณฑ์ใหม่</label>
                                 <input 
@@ -7765,47 +8247,267 @@ export default function App() {
                                   value={newProd.price}
                                   onChange={(e) => setNewProd(prev => ({ ...prev, price: e.target.value }))}
                                   placeholder="ราคาขายสินค้า"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-indigo-600"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-slate-700 font-semibold mb-1">หมวดหมู่ผลิตภัณฑ์</label>
+                                <select 
+                                  value={newProd.category}
+                                  onChange={(e) => setNewProd(prev => ({ ...prev, category: e.target.value, subcategory: '' }))}
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800"
+                                >
+                                  <option value="Fashion">👗 แฟชั่น (Fashion)</option>
+                                  <option value="Electronics">🔌 อุปกรณ์อิเล็กทรอนิกส์ (Electronics)</option>
+                                  <option value="Beauty">💄 ความงามและของใช้ส่วนตัว (Beauty & Personal Care)</option>
+                                  <option value="Health">💊 สุขภาพ (Health)</option>
+                                  <option value="Baby">🍼 แม่และเด็ก (Baby & Kids)</option>
+                                  <option value="Home">🏠 บ้านและที่อยู่อาศัย (Home & Living)</option>
+                                  <option value="Food">🍎 อาหารและเครื่องดื่ม (Food & Beverage)</option>
+                                  <option value="Pets">🐶 สัตว์เลี้ยง (Pets)</option>
+                                  <option value="Lifestyle">🎨 ไลฟ์สไตล์และงานอดิเรก (Lifestyle & Hobbies)</option>
+                                  <option value="General">📦 ทั่วไป (General)</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-slate-700 font-semibold mb-1">ประเภทผลิตภัณฑ์ย่อย (Subcategory)</label>
+                                <input 
+                                  type="text" 
+                                  value={newProd.subcategory}
+                                  onChange={(e) => setNewProd(prev => ({ ...prev, subcategory: e.target.value }))}
+                                  placeholder="พิมพ์เอง หรือคลิกเลือกประเภทด้านล่าง"
                                   className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
                                 />
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-3 gap-3">
-                              <div>
-                                <label className="block text-slate-700 font-semibold mb-1">คะแนน PV สินค้า (ใช้จ่ายคอมมิชชัน)</label>
-                                <input 
-                                  type="number" 
-                                  required
-                                  value={newProd.pv}
-                                  onChange={(e) => setNewProd(prev => ({ ...prev, pv: e.target.value }))}
-                                  placeholder="คะแนน PV"
-                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-slate-700 font-semibold mb-1">ต้นทุนสินค้า (บาท)</label>
-                                <input 
-                                  type="number" 
-                                  required
-                                  value={newProd.cost}
-                                  onChange={(e) => setNewProd(prev => ({ ...prev, cost: e.target.value }))}
-                                  placeholder="ต้นทุนสินค้า เช่น 150"
-                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-slate-700 font-semibold mb-1">หมวดหมู่ผลิตภัณฑ์</label>
-                                <select 
-                                  value={newProd.category}
-                                  onChange={(e) => setNewProd(prev => ({ ...prev, category: e.target.value }))}
-                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                                >
-                                  <option value="General">ทั่วไป (General)</option>
-                                  <option value="Supplement">อาหารเสริมฟื้นฟูสุขภาพ</option>
-                                  <option value="Household">สินค้าอุปโภคครัวเรือน</option>
-                                </select>
+                            {/* Subcategory suggestions chips */}
+                            <div>
+                              <span className="block text-[10px] text-slate-400 mb-1">เลือกประเภทสินค้าด่วนตามหมวดหมู่:</span>
+                              <div className="flex flex-wrap gap-1">
+                                {newProd.category === 'Fashion' && ['เสื้อผ้าผู้หญิง/ผู้ชาย', 'รองเท้า', 'กระเป๋า', 'เครื่องประดับ', 'นาฬิกา'].map(chip => (
+                                  <button
+                                    key={chip}
+                                    type="button"
+                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
+                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                                  >
+                                    {chip}
+                                  </button>
+                                ))}
+                                {newProd.category === 'Electronics' && ['สมาร์ทโฟน', 'คอมพิวเตอร์', 'อุปกรณ์เกม', 'กล้อง', 'เครื่องใช้ไฟฟ้าภายในบ้าน'].map(chip => (
+                                  <button
+                                    key={chip}
+                                    type="button"
+                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
+                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                                  >
+                                    {chip}
+                                  </button>
+                                ))}
+                                {newProd.category === 'Beauty' && ['เครื่องสำอาง', 'ผลิตภัณฑ์บำรุงผิว', 'น้ำหอม', 'ของใช้ส่วนตัว'].map(chip => (
+                                  <button
+                                    key={chip}
+                                    type="button"
+                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
+                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                                  >
+                                    {chip}
+                                  </button>
+                                ))}
+                                {newProd.category === 'Health' && ['อาหารเสริม', 'อุปกรณ์ทางการแพทย์', 'วิตามิน', 'สินค้าสำหรับฟิตเนส'].map(chip => (
+                                  <button
+                                    key={chip}
+                                    type="button"
+                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
+                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                                  >
+                                    {chip}
+                                  </button>
+                                ))}
+                                {newProd.category === 'Baby' && ['เสื้อผ้าเด็ก', 'นมผง', 'ผ้าอ้อม', 'ของเล่น', 'รถเข็นเด็ก'].map(chip => (
+                                  <button
+                                    key={chip}
+                                    type="button"
+                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
+                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                                  >
+                                    {chip}
+                                  </button>
+                                ))}
+                                {newProd.category === 'Home' && ['อุปกรณ์ตกแต่งบ้าน', 'เครื่องครัว', 'เครื่องนอน', 'อุปกรณ์จัดเก็บ', 'ไฟแต่งบ้าน'].map(chip => (
+                                  <button
+                                    key={chip}
+                                    type="button"
+                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
+                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                                  >
+                                    {chip}
+                                  </button>
+                                ))}
+                                {newProd.category === 'Food' && ['ของว่าง', 'อาหารแห้ง', 'เครื่องดื่ม', 'วัตถุดิบทำอาหาร'].map(chip => (
+                                  <button
+                                    key={chip}
+                                    type="button"
+                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
+                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                                  >
+                                    {chip}
+                                  </button>
+                                ))}
+                                {newProd.category === 'Pets' && ['อาหารสัตว์', 'ขนม', 'แชมพู', 'อุปกรณ์ดูแลสัตว์เลี้ยง'].map(chip => (
+                                  <button
+                                    key={chip}
+                                    type="button"
+                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
+                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                                  >
+                                    {chip}
+                                  </button>
+                                ))}
+                                {newProd.category === 'Lifestyle' && ['อุปกรณ์เครื่องเขียน', 'หนังสือ', 'งานฝีมือ', 'ยานยนต์', 'อุปกรณ์กีฬา'].map(chip => (
+                                  <button
+                                    key={chip}
+                                    type="button"
+                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
+                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                                  >
+                                    {chip}
+                                  </button>
+                                ))}
+                                {newProd.category === 'General' && ['สินค้าทั่วไป', 'เครื่องเขียน', 'อุปกรณ์อเนกประสงค์', 'เบ็ดเตล็ด'].map(chip => (
+                                  <button
+                                    key={chip}
+                                    type="button"
+                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
+                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                                  >
+                                    {chip}
+                                  </button>
+                                ))}
                               </div>
                             </div>
+
+                            {/* Shipping Calculation Parameters */}
+                            <div className="bg-indigo-50/40 border border-indigo-100 p-4 rounded-2xl space-y-3">
+                              <h5 className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5 text-indigo-900">
+                                📦 ขนาดกล่องพัสดุและน้ำหนัก (เพื่อคำนวณค่าจัดส่ง Shippop Base)
+                              </h5>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                                <div>
+                                  <label className="block text-slate-600 text-[10px] font-semibold mb-0.5">น้ำหนักจริง (กรัม)</label>
+                                  <input 
+                                    type="number" 
+                                    required
+                                    value={newProd.weight}
+                                    onChange={(e) => setNewProd(prev => ({ ...prev, weight: e.target.value }))}
+                                    placeholder="เช่น 350"
+                                    className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-slate-600 text-[10px] font-semibold mb-0.5">กว้าง W (ซม.)</label>
+                                  <input 
+                                    type="number" 
+                                    required
+                                    value={newProd.width}
+                                    onChange={(e) => setNewProd(prev => ({ ...prev, width: e.target.value }))}
+                                    placeholder="W"
+                                    className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-slate-600 text-[10px] font-semibold mb-0.5">ยาว L (ซม.)</label>
+                                  <input 
+                                    type="number" 
+                                    required
+                                    value={newProd.length}
+                                    onChange={(e) => setNewProd(prev => ({ ...prev, length: e.target.value }))}
+                                    placeholder="L"
+                                    className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-slate-600 text-[10px] font-semibold mb-0.5">สูง H (ซม.)</label>
+                                  <input 
+                                    type="number" 
+                                    required
+                                    value={newProd.height}
+                                    onChange={(e) => setNewProd(prev => ({ ...prev, height: e.target.value }))}
+                                    placeholder="H"
+                                    className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Live Financial Calculator Widget */}
+                            {(() => {
+                              const calc = calculateShippingAndPricing(newProd.price, newProd.weight, newProd.width, newProd.length, newProd.height);
+                              return (
+                                <div className="bg-slate-900 text-slate-200 p-4 rounded-2xl space-y-3 font-sans shadow-md border border-slate-850">
+                                  <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                                    <span className="font-extrabold text-[11px] text-amber-400 uppercase tracking-wider">📊 สรุปผลลัพธ์สูตรการคำนวณอัตโนมัติ (Live Preview)</span>
+                                    <span className="text-[9px] text-slate-400 font-mono">Formula v1.2</span>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-3 text-[10px]">
+                                    <div className="space-y-1.5">
+                                      <div className="flex justify-between">
+                                        <span className="text-slate-400">สูตรน้ำหนักปริมาตร:</span>
+                                        <span className="font-mono text-slate-300">((W×L×H) / 5000) = <strong>{calc.volumetricWeight.toFixed(3)}</strong> kg</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-slate-400">น้ำหนักคิดค่าจัดส่งจริง:</span>
+                                        <span className="font-mono text-amber-300 font-bold">{calc.chargeableWeight.toFixed(3)} kg</span>
+                                      </div>
+                                      <div className="flex justify-between border-t border-slate-800 pt-1.5">
+                                        <span className="text-slate-400">ค่าขนส่งเบื้องต้น:</span>
+                                        <span className="font-mono text-slate-300">฿ {calc.baseShippingCost}</span>
+                                      </div>
+                                      <div className="flex justify-between text-rose-400">
+                                        <span>ร้านค้าช่วยจ่ายขนส่ง (15% สูงสุด 40):</span>
+                                        <span className="font-mono font-bold">- ฿ {calc.sellerCoPay.toFixed(2)}</span>
+                                      </div>
+                                      <div className="flex justify-between text-emerald-400 font-semibold border-t border-slate-800 pt-1">
+                                        <span>ลูกค้าจ่ายค่าจัดส่งเริ่มต้น:</span>
+                                        <span className="font-mono font-bold">฿ {calc.customerShippingFee.toFixed(2)}</span>
+                                      </div>
+                                    </div>
+
+                                    <div className="space-y-1.5 border-l border-slate-800 pl-3">
+                                      <div className="flex justify-between text-rose-400">
+                                        <span>หัก VAT 7%:</span>
+                                        <span className="font-mono">- ฿ {calc.vat.toFixed(2)}</span>
+                                      </div>
+                                      {currentUser?.role === 'admin' && (
+                                        <>
+                                          <div className="flex justify-between text-rose-400">
+                                            <span>หักพอร์ทัล GP 20%:</span>
+                                            <span className="font-mono">- ฿ {calc.gpAmount.toFixed(2)}</span>
+                                          </div>
+                                          <div className="flex justify-between text-slate-400">
+                                            <span>กำไรบริษัท (25% GP):</span>
+                                            <span className="font-mono">฿ {calc.companyProfit.toFixed(2)}</span>
+                                          </div>
+                                        </>
+                                      )}
+                                      <div className="flex justify-between text-purple-400 font-bold border-t border-slate-800 pt-1.5">
+                                        <span>คะแนน PV ที่จัดสรรให้สินค้า:</span>
+                                        <span className="font-mono text-purple-300 font-extrabold">{calc.pv.toFixed(2)} PV</span>
+                                      </div>
+                                      <div className="flex justify-between text-indigo-400 font-bold border-t border-slate-800 pt-1">
+                                        <span>ยอดรับสุทธิร้านค้า (หลังหักค่าฟีด):</span>
+                                        <span className="font-mono text-indigo-300 font-extrabold">฿ {calc.netPayout.toFixed(2)}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
 
                             <div>
                               <label className="block text-slate-700 font-semibold mb-1">คำอธิบายรายละเอียดสรรพคุณ</label>
@@ -7813,13 +8515,13 @@ export default function App() {
                                 rows={2}
                                 value={newProd.description}
                                 onChange={(e) => setNewProd(prev => ({ ...prev, description: e.target.value }))}
-                                placeholder="อธิบายสรรพคุณสินค้าสั้นๆ"
-                                className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:outline-none"
+                                placeholder="อธิบายสรรพคุณสินค้าสั้นๆ และวิธีการใช้งานเบื้องต้น"
+                                className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
                               />
                             </div>
 
                             <div>
-                              <label className="block text-slate-700 font-semibold mb-1">📷 รูปภาพสินค้า</label>
+                              <label className="block text-slate-700 font-semibold mb-1">📷 รูปภาพหลักของสินค้า</label>
                               <input 
                                 type="file" 
                                 accept="image/*"
@@ -7835,14 +8537,7 @@ export default function App() {
                               />
                             </div>
 
-                            <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-[10px] space-y-1 text-slate-500">
-                              <p>✓ หักค่าบริการพอร์ทัล GP 20% เผื่อย้อนกลับมาจ่ายโบนัส MLM ในองค์กรสมาชิก</p>
-                              {newProd.price && (
-                                <p className="font-bold text-slate-800">ยอดเงินโอนเข้าบัญชีผู้จัดส่งสุทธิ: ฿ {(parseFloat(newProd.price) * 0.80).toFixed(2)} บาทต่อชิ้น</p>
-                              )}
-                            </div>
-
-                            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs shadow-lg cursor-pointer">
+                            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs shadow-lg cursor-pointer transition active:scale-95">
                               เพิ่มรายการและส่งแอดมินอนุมัติผลิตภัณฑ์
                             </button>
                           </form>
@@ -9454,6 +10149,21 @@ export default function App() {
                                           <td className="py-3">
                                             <h5 className="font-bold text-slate-800">{item.name}</h5>
                                             <p className="text-[10px] text-slate-400">ร้านค้า: {item.sellerStoreName || 'ไม่ระบุ'} ({item.sellerCode || item.sellerId})</p>
+                                            {item.category && (
+                                              <span className="inline-block bg-slate-100 text-slate-600 text-[8px] font-bold px-1.5 py-0.5 rounded-md mr-1 mt-0.5">
+                                                🗂️ {item.category} {item.subcategory ? `> ${item.subcategory}` : ''}
+                                              </span>
+                                            )}
+                                            {item.weight !== undefined && item.weight > 0 && (
+                                              <div className="mt-1 text-[9px] text-slate-500 bg-slate-50 p-1 rounded-xl border border-slate-100/50 flex gap-1.5 flex-wrap font-mono max-w-[280px]">
+                                                <span>⚖️ {item.weight}g</span>
+                                                <span>📦 {item.width}x{item.length}x{item.height}cm</span>
+                                                <span>🚚 ค่าส่ง ฿{item.baseShippingCost}</span>
+                                                <span className="text-rose-500 font-semibold">ร้านช่วย ฿{item.sellerCoPay}</span>
+                                                <span className="text-emerald-600 font-semibold">ลูกค้าจ่าย ฿{item.customerShippingFee}</span>
+                                                <span className="text-indigo-600 font-bold">รับสุทธิ ฿{item.netPayout}</span>
+                                              </div>
+                                            )}
                                           </td>
                                           <td className="py-3 text-center font-bold">฿{item.price?.toLocaleString()}</td>
                                           <td className="py-3 text-center font-semibold text-indigo-600">{item.pv} PV</td>
@@ -10638,6 +11348,313 @@ export default function App() {
           </div>
         )}
 
+        {/* ADMIN/SELLER PRODUCT EDIT MODAL WITH LIVE CALCULATIONS */}
+        {showEditProductModal && editingProduct && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto animate-fadeIn">
+            <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] overflow-y-auto my-8">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-850 flex items-center gap-2">
+                    ✏️ แก้ไขรายละเอียดสินค้าและสูตรคำนวณ (Product Setup Console)
+                  </h3>
+                  <p className="text-[10px] text-slate-400 mt-0.5">แก้ไขรายละเอียดสินค้า และระบบจะจัดสรรปันส่วนตามเงื่อนไขอัตโนมัติ</p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setShowEditProductModal(false);
+                    setEditingProduct(null);
+                  }}
+                  className="text-slate-400 hover:text-slate-600 font-bold text-base cursor-pointer transition p-1.5 hover:bg-slate-50 rounded-lg"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSellerProdEditSubmit} className="space-y-4 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">ชื่อผลิตภัณฑ์</label>
+                    <input 
+                      type="text" 
+                      required
+                      value={editingProduct.name || ''}
+                      onChange={(e) => setEditingProduct(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">ราคาตั้งขาย (บาท)</label>
+                    <input 
+                      type="number" 
+                      required
+                      value={editingProduct.price || ''}
+                      onChange={(e) => setEditingProduct(prev => ({ ...prev, price: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-indigo-600"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">หมวดหมู่</label>
+                    <select 
+                      value={editingProduct.category || 'General'}
+                      onChange={(e) => setEditingProduct(prev => ({ ...prev, category: e.target.value, subcategory: '' }))}
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                    >
+                      <option value="Fashion">👗 แฟชั่น (Fashion)</option>
+                      <option value="Electronics">🔌 อุปกรณ์อิเล็กทรอนิกส์ (Electronics)</option>
+                      <option value="Beauty">💄 ความงามและของใช้ส่วนตัว (Beauty & Personal Care)</option>
+                      <option value="Health">💊 สุขภาพ (Health)</option>
+                      <option value="Baby">🍼 แม่และเด็ก (Baby & Kids)</option>
+                      <option value="Home">🏠 บ้านและที่อยู่อาศัย (Home & Living)</option>
+                      <option value="Food">🍎 อาหารและเครื่องดื่ม (Food & Beverage)</option>
+                      <option value="Pets">🐶 สัตว์เลี้ยง (Pets)</option>
+                      <option value="Lifestyle">🎨 ไลฟ์สไตล์และงานอดิเรก (Lifestyle & Hobbies)</option>
+                      <option value="General">📦 ทั่วไป (General)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">ประเภทผลิตภัณฑ์ย่อย (Subcategory)</label>
+                    <input 
+                      type="text" 
+                      value={editingProduct.subcategory || ''}
+                      onChange={(e) => setEditingProduct(prev => ({ ...prev, subcategory: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Subcategory suggestion chips in modal */}
+                <div>
+                  <span className="block text-[10px] text-slate-400 mb-1">เลือกประเภทสินค้าด่วน:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {editingProduct.category === 'Fashion' && ['เสื้อผ้าผู้หญิง/ผู้ชาย', 'รองเท้า', 'กระเป๋า', 'เครื่องประดับ', 'นาฬิกา'].map(chip => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setEditingProduct(prev => ({ ...prev, subcategory: chip }))}
+                        className={`px-2 py-0.5 rounded-lg border text-[9px] cursor-pointer transition ${editingProduct.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                    {editingProduct.category === 'Electronics' && ['สมาร์ทโฟน', 'คอมพิวเตอร์', 'อุปกรณ์เกม', 'กล้อง', 'เครื่องใช้ไฟฟ้าภายในบ้าน'].map(chip => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setEditingProduct(prev => ({ ...prev, subcategory: chip }))}
+                        className={`px-2 py-0.5 rounded-lg border text-[9px] cursor-pointer transition ${editingProduct.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                    {editingProduct.category === 'Beauty' && ['เครื่องสำอาง', 'ผลิตภัณฑ์บำรุงผิว', 'น้ำหอม', 'ของใช้ส่วนตัว'].map(chip => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setEditingProduct(prev => ({ ...prev, subcategory: chip }))}
+                        className={`px-2 py-0.5 rounded-lg border text-[9px] cursor-pointer transition ${editingProduct.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                    {editingProduct.category === 'Health' && ['อาหารเสริม', 'อุปกรณ์ทางการแพทย์', 'วิตามิน', 'สินค้าสำหรับฟิตเนส'].map(chip => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setEditingProduct(prev => ({ ...prev, subcategory: chip }))}
+                        className={`px-2 py-0.5 rounded-lg border text-[9px] cursor-pointer transition ${editingProduct.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                    {editingProduct.category === 'Baby' && ['เสื้อผ้าเด็ก', 'นมผง', 'ผ้าอ้อม', 'ของเล่น', 'รถเข็นเด็ก'].map(chip => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setEditingProduct(prev => ({ ...prev, subcategory: chip }))}
+                        className={`px-2 py-0.5 rounded-lg border text-[9px] cursor-pointer transition ${editingProduct.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                    {editingProduct.category === 'Home' && ['อุปกรณ์ตกแต่งบ้าน', 'เครื่องครัว', 'เครื่องนอน', 'อุปกรณ์จัดเก็บ', 'ไฟแต่งบ้าน'].map(chip => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setEditingProduct(prev => ({ ...prev, subcategory: chip }))}
+                        className={`px-2 py-0.5 rounded-lg border text-[9px] cursor-pointer transition ${editingProduct.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                    {editingProduct.category === 'Food' && ['ของว่าง', 'อาหารแห้ง', 'เครื่องดื่ม', 'วัตถุดิบทำอาหาร'].map(chip => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setEditingProduct(prev => ({ ...prev, subcategory: chip }))}
+                        className={`px-2 py-0.5 rounded-lg border text-[9px] cursor-pointer transition ${editingProduct.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                    {editingProduct.category === 'Pets' && ['อาหารสัตว์', 'ขนม', 'แชมพู', 'อุปกรณ์ดูแลสัตว์เลี้ยง'].map(chip => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setEditingProduct(prev => ({ ...prev, subcategory: chip }))}
+                        className={`px-2 py-0.5 rounded-lg border text-[9px] cursor-pointer transition ${editingProduct.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                    {editingProduct.category === 'Lifestyle' && ['อุปกรณ์เครื่องเขียน', 'หนังสือ', 'งานฝีมือ', 'ยานยนต์', 'อุปกรณ์กีฬา'].map(chip => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setEditingProduct(prev => ({ ...prev, subcategory: chip }))}
+                        className={`px-2 py-0.5 rounded-lg border text-[9px] cursor-pointer transition ${editingProduct.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                    {(editingProduct.category === 'General' || !editingProduct.category) && ['สินค้าทั่วไป', 'เครื่องเขียน', 'อุปกรณ์อเนกประสงค์', 'เบ็ดเตล็ด'].map(chip => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setEditingProduct(prev => ({ ...prev, subcategory: chip }))}
+                        className={`px-2 py-0.5 rounded-lg border text-[9px] cursor-pointer transition ${editingProduct.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">ต้นทุนประเมินร้านค้า (บาท)</label>
+                    <input 
+                      type="number" 
+                      value={editingProduct.cost || ''}
+                      onChange={(e) => setEditingProduct(prev => ({ ...prev, cost: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">น้ำหนักสินค้า (กรัม)</label>
+                    <input 
+                      type="number" 
+                      value={editingProduct.weight || ''}
+                      onChange={(e) => setEditingProduct(prev => ({ ...prev, weight: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-indigo-50/20"
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-indigo-50/40 border border-indigo-100 p-3.5 rounded-2xl space-y-2">
+                  <span className="font-extrabold text-[11px] text-indigo-900 block">📦 ขนาดกล่องแพ็กเกจจิ้งภายนอก (เซนติเมตร)</span>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-slate-600 text-[10px]">กว้าง W</label>
+                      <input 
+                        type="number" 
+                        value={editingProduct.width || ''}
+                        onChange={(e) => setEditingProduct(prev => ({ ...prev, width: e.target.value }))}
+                        className="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-600 text-[10px]">ยาว L</label>
+                      <input 
+                        type="number" 
+                        value={editingProduct.length || ''}
+                        onChange={(e) => setEditingProduct(prev => ({ ...prev, length: e.target.value }))}
+                        className="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-600 text-[10px]">สูง H</label>
+                      <input 
+                        type="number" 
+                        value={editingProduct.height || ''}
+                        onChange={(e) => setEditingProduct(prev => ({ ...prev, height: e.target.value }))}
+                        className="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Real-time Calculation Preview */}
+                {(() => {
+                  const calc = calculateShippingAndPricing(
+                    editingProduct.price?.toString() || '0', 
+                    editingProduct.weight?.toString() || '0', 
+                    editingProduct.width?.toString() || '0', 
+                    editingProduct.length?.toString() || '0', 
+                    editingProduct.height?.toString() || '0'
+                  );
+                  return (
+                    <div className="bg-slate-900 text-slate-200 p-4 rounded-2xl space-y-3 font-mono text-[10px] border border-slate-800 shadow-lg">
+                      <div className="flex justify-between border-b border-slate-800 pb-1.5 font-sans font-extrabold text-amber-400">
+                        <span>📊 สรุปสูตรชิปปิ้ง & คะแนนคอมมิชชันใหม่</span>
+                        <span>LIVE</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <div>ปริมาตรพัสดุ: {calc.volumetricWeight.toFixed(3)} kg</div>
+                          <div>น้ำหนักคิดค่าจัดส่ง: <strong className="text-amber-300">{calc.chargeableWeight.toFixed(3)} kg</strong></div>
+                          <div>ค่าจัดส่งทั้งหมด: ฿ {calc.baseShippingCost}</div>
+                          <div className="text-rose-400">ร้านร่วมจ่ายช่วย (15%): -฿ {calc.sellerCoPay.toFixed(2)}</div>
+                          <div className="text-emerald-400 font-sans font-semibold">ลูกค้าชำระค่าส่ง: ฿ {calc.customerShippingFee.toFixed(2)}</div>
+                        </div>
+                        <div className="space-y-1 border-l border-slate-800 pl-3">
+                          <div>ภาษี VAT 7%: ฿ {calc.vat.toFixed(2)}</div>
+                          {currentUser?.role === 'admin' && (
+                            <div>หัก GP 20%: ฿ {calc.gpAmount.toFixed(2)}</div>
+                          )}
+                          <div className="text-purple-300 font-bold">คอมมิชชันสินค้า: {calc.pv.toFixed(2)} PV</div>
+                          <div className="text-indigo-300 font-sans font-bold">โอนเข้าบัญชีผู้จัดส่งสุทธิ: ฿ {calc.netPayout.toFixed(2)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">คำอธิบายรายละเอียด</label>
+                  <textarea 
+                    rows={3}
+                    value={editingProduct.description || ''}
+                    onChange={(e) => setEditingProduct(prev => ({ ...prev, description: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setShowEditProductModal(false);
+                      setEditingProduct(null);
+                    }}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition active:scale-95"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button 
+                    type="submit"
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition shadow-md shadow-indigo-600/20 cursor-pointer active:scale-95"
+                  >
+                    💾 บันทึกการแก้ไข (ส่งตรวจสอบใหม่)
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {/* PRINTABLE RECEIPT MODAL */}
         {selectedReceiptOrder && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
@@ -10750,6 +11767,219 @@ export default function App() {
                   <Printer size={14} /> สั่งปริ๊นใบเสร็จ
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* WITHHOLDING TAX (ทวิ 50) MODAL */}
+        {selectedTaxDoc && (
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto no-print">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-5xl w-full shadow-2xl flex flex-col md:flex-row gap-6 my-8 animate-fadeIn text-xs text-slate-300">
+              
+              {/* Left Settings Panel: Inline Editing */}
+              <div className="w-full md:w-80 bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4 flex-shrink-0 no-print">
+                <div className="border-b border-slate-800 pb-3">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    ⚙️ ตั้งค่าการพิมพ์ 50 ทวิ
+                  </h3>
+                  <p className="text-[10px] text-slate-400 mt-0.5">ปรับแต่งรายละเอียดก่อนสั่งพิมพ์หรือเซฟ PDF</p>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-slate-400 text-[10px] font-bold mb-1 uppercase">ปีภาษี (พ.ศ.)</label>
+                    <input 
+                      type="text"
+                      value={customTaxYear}
+                      onChange={(e) => setCustomTaxYear(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 text-[10px] font-bold mb-1 uppercase">เลขประจำตัวผู้เสียภาษี (ผู้ถูกหัก)</label>
+                    <input 
+                      type="text"
+                      maxLength={13}
+                      value={customPayeeTaxId}
+                      onChange={(e) => setCustomPayeeTaxId(e.target.value.replace(/\D/g, ''))}
+                      placeholder="เลขประจำตัวผู้เสียภาษี 13 หลัก"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 text-[10px] font-bold mb-1 uppercase">ชื่อผู้รับเงิน / ผู้ถูกหักภาษี</label>
+                    <input 
+                      type="text"
+                      value={customPayeeName}
+                      onChange={(e) => setCustomPayeeName(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 text-[10px] font-bold mb-1 uppercase">ที่อยู่ผู้รับเงิน (ระบุในเอกสาร)</label>
+                    <textarea 
+                      rows={3}
+                      value={customPayeeAddress}
+                      onChange={(e) => setCustomPayeeAddress(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-800 space-y-2">
+                  <button 
+                    onClick={() => window.print()}
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition shadow-md shadow-indigo-600/10 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Printer size={14} /> พิมพ์เอกสาร (Print / PDF)
+                  </button>
+                  <button 
+                    onClick={() => setSelectedTaxDoc(null)}
+                    className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 px-4 rounded-xl text-xs transition cursor-pointer"
+                  >
+                    ปิดหน้าต่าง
+                  </button>
+                </div>
+              </div>
+
+              {/* Right Panel: Official Thai withholding tax certificate form layout (50 Tawi) */}
+              <div className="flex-grow bg-white text-slate-800 p-8 rounded-2xl shadow-inner overflow-y-auto max-h-[80vh] printable-area font-sans border border-slate-200">
+                
+                {/* Certificate Header */}
+                <div className="border border-slate-800 p-4 space-y-1 text-center relative">
+                  <div className="absolute top-2 right-2 border border-slate-800 px-2 py-0.5 text-[8px] font-bold text-slate-500">
+                    ฉบับที่ 1 (สำหรับผู้ถูกหักภาษี ณ ที่จ่าย)
+                  </div>
+                  <h2 className="text-sm font-extrabold text-slate-900 uppercase tracking-tight">หนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)</h2>
+                  <p className="text-[10px] text-slate-600">ตามมาตรา 50 ทวิ แห่งประมวลรัษฎากร</p>
+                  <p className="text-[9px] text-slate-400">ปีภาษี พ.ศ. {customTaxYear}</p>
+                </div>
+
+                {/* Sender/Receiver Details Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 border-x border-b border-slate-800 text-[10px] divide-y md:divide-y-0 md:divide-x divide-slate-800">
+                  
+                  {/* Payer (ผู้มีหน้าที่หัก) */}
+                  <div className="p-3 space-y-1.5">
+                    <span className="font-extrabold text-slate-900 block border-b border-slate-100 pb-1">1. ผู้มีหน้าที่หักภาษี ณ ที่จ่าย (ผู้จ่ายเงิน):</span>
+                    <div className="space-y-1 text-slate-700">
+                      <div>ชื่อ: <strong className="text-slate-900 font-bold">บริษัท นที พลัส จำกัด (NATEE PLUS CO., LTD.)</strong></div>
+                      <div>เลขประจำตัวผู้เสียภาษีอากร: <strong className="text-slate-900 font-mono font-bold">0105565123456</strong></div>
+                      <div>ที่อยู่: <span className="text-slate-600">123/45 ถนนพระราม 9 แขวงห้วยขวาง เขตห้วยขวาง กรุงเทพมหานคร 10310</span></div>
+                    </div>
+                  </div>
+
+                  {/* Payee (ผู้ถูกหัก) */}
+                  <div className="p-3 space-y-1.5">
+                    <span className="font-extrabold text-slate-900 block border-b border-slate-100 pb-1">2. ผู้ถูกหักภาษี ณ ที่จ่าย (ผู้รับเงิน):</span>
+                    <div className="space-y-1 text-slate-700">
+                      <div>ชื่อ: <strong className="text-slate-900 font-bold">{customPayeeName || "______________________________"}</strong></div>
+                      <div>เลขประจำตัวผู้เสียภาษีอากร/บัตรประชาชน: <strong className="text-slate-900 font-mono font-bold">{customPayeeTaxId || "_________________"}</strong></div>
+                      <div>ที่อยู่: <span className="text-slate-600">{customPayeeAddress || "_________________________________"}</span></div>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Table of Income Details */}
+                <div className="mt-4 border border-slate-800 text-[10px] overflow-hidden">
+                  <div className="grid grid-cols-12 bg-slate-50 border-b border-slate-800 text-slate-900 font-bold text-center">
+                    <div className="col-span-6 p-2 text-left border-r border-slate-800">ประเภทเงินได้ที่จ่าย (Type of Income)</div>
+                    <div className="col-span-2 p-2 border-r border-slate-800">วัน เดือน หรือปี ที่จ่าย</div>
+                    <div className="col-span-2 p-2 border-r border-slate-800">จำนวนเงินที่จ่าย (บาท)</div>
+                    <div className="col-span-2 p-2">ภาษีที่หักและนำส่ง (บาท)</div>
+                  </div>
+
+                  {/* Row 1 */}
+                  {selectedTaxDoc.type === 'member' ? (
+                    <div className="grid grid-cols-12 border-b border-slate-200 text-slate-800 font-medium">
+                      <div className="col-span-6 p-2.5 border-r border-slate-800 leading-normal">
+                        <strong>เงินได้ประเภทที่ 2 (ตามมาตรา 40(2))</strong>
+                        <span className="block text-[9px] text-slate-500 mt-0.5">ค่าแนะนำผู้รับสิทธิ์, ค่าคอมมิชชันทีม, โบนัสสะสม และส่วนแบ่งปันผลระบบออลแชร์ นทีพลัส</span>
+                      </div>
+                      <div className="col-span-2 p-2.5 text-center border-r border-slate-800 flex items-center justify-center font-mono">
+                        {new Date(selectedTaxDoc.data.createdAt).toLocaleDateString('th-TH')}
+                      </div>
+                      <div className="col-span-2 p-2.5 text-right border-r border-slate-800 flex items-center justify-end font-mono font-bold">
+                        {parseFloat((selectedTaxDoc.data.amount * 0.85).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </div>
+                      <div className="col-span-2 p-2.5 text-right flex items-center justify-end font-mono font-bold text-rose-600">
+                        {parseFloat(((selectedTaxDoc.data.amount * 0.85) * 0.05).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-12 border-b border-slate-200 text-slate-800 font-medium">
+                      <div className="col-span-6 p-2.5 border-r border-slate-800 leading-normal">
+                        <strong>เงินได้ประเภทที่ 8 (ตามมาตรา 40(8))</strong>
+                        <span className="block text-[9px] text-slate-500 mt-0.5">รายได้จากการจำหน่ายพัสดุสินค้าออนไลน์, ค่าบริการฝากขาย, และจัดส่งคลังสินค้านทีช็อป</span>
+                      </div>
+                      <div className="col-span-2 p-2.5 text-center border-r border-slate-800 flex items-center justify-center font-mono">
+                        {new Date(selectedTaxDoc.data.createdAt).toLocaleDateString('th-TH')}
+                      </div>
+                      <div className="col-span-2 p-2.5 text-right border-r border-slate-800 flex items-center justify-end font-mono font-bold">
+                        {parseFloat((selectedTaxDoc.data.totalPrice * 0.8).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </div>
+                      <div className="col-span-2 p-2.5 text-right flex items-center justify-end font-mono font-bold text-rose-600">
+                        {parseFloat(((selectedTaxDoc.data.totalPrice * 0.8) * 0.03).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Summary Rows */}
+                  <div className="grid grid-cols-12 bg-slate-50/50 font-bold border-t border-slate-800">
+                    <div className="col-span-6 p-2.5 text-right border-r border-slate-800 text-slate-950">
+                      รวมเงินได้และภาษีที่นำส่งทั้งสิ้น (Total):
+                    </div>
+                    <div className="col-span-2 p-2.5 text-center border-r border-slate-800">
+                      -
+                    </div>
+                    <div className="col-span-2 p-2.5 text-right border-r border-slate-800 font-mono">
+                      {selectedTaxDoc.type === 'member' 
+                        ? parseFloat((selectedTaxDoc.data.amount * 0.85).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })
+                        : parseFloat((selectedTaxDoc.data.totalPrice * 0.8).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })
+                      }
+                    </div>
+                    <div className="col-span-2 p-2.5 text-right font-mono text-rose-700">
+                      {selectedTaxDoc.type === 'member'
+                        ? parseFloat(((selectedTaxDoc.data.amount * 0.85) * 0.05).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })
+                        : parseFloat(((selectedTaxDoc.data.totalPrice * 0.8) * 0.03).toFixed(2)).toLocaleString(undefined, { minimumFractionDigits: 2 })
+                      }
+                    </div>
+                  </div>
+                </div>
+
+                {/* Thai Baht text representation */}
+                <div className="mt-2 border border-slate-800 p-2 text-[10px] flex items-center justify-between font-bold text-slate-900">
+                  <span>รวมเงินภาษีหัก ณ ที่จ่ายนำส่ง (ตัวอักษร):</span>
+                  <span className="text-indigo-900">
+                    ( {arabicToThaiBaht(selectedTaxDoc.type === 'member' 
+                      ? ((selectedTaxDoc.data.amount * 0.85) * 0.05)
+                      : ((selectedTaxDoc.data.totalPrice * 0.8) * 0.03)
+                    )} )
+                  </span>
+                </div>
+
+                {/* Official Declaration Footer */}
+                <div className="mt-6 border border-slate-800 p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-[10px] text-slate-600 leading-relaxed">
+                  <div className="space-y-1">
+                    <p className="font-bold text-slate-800">คำเตือนและข้อตกลง:</p>
+                    <p>1. ผู้มีหน้าที่หักภาษี ณ ที่จ่าย มีหน้าที่นำส่งภาษีหัก ณ ที่จ่ายแก่กรมสรรพากร ภายในวันที่ 7 ของเดือนถัดไป</p>
+                    <p>2. การระบุข้อมูลเท็จเพื่อหลบเลี่ยงหรือยื่นแบบเท็จมีความผิดตามประมวลรัษฎากร</p>
+                    <p>3. เอกสารฉบับนี้ใช้สำหรับแนบประกอบการยื่นแบบ ภ.ง.ด.90/91 ประจำปีภาษี</p>
+                  </div>
+                  <div className="text-center space-y-4 pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-800 flex flex-col justify-between">
+                    <div>
+                      <p>ขอรับรองว่าข้อความและตัวเลขดังกล่าวข้างต้นถูกต้องตรงตามความเป็นจริงทุกประการ</p>
+                    </div>
+                    <div className="space-y-1 pt-4">
+                      <p>ลงชื่อ ..................................................................... ผู้จ่ายเงิน</p>
+                      <p className="font-extrabold text-slate-800">( บริษัท นที พลัส จำกัด )</p>
+                      <p className="text-[9px] text-slate-400">ตัวแทนผู้มีหน้าที่หักภาษี ณ ที่จ่าย</p>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
             </div>
           </div>
         )}
