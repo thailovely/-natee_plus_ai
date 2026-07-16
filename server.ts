@@ -1845,11 +1845,11 @@ app.get('/api/member/profile/:userId', (req, res) => {
 
   const transactions = db.transactions || [];
   const totalEarnings = transactions
-    .filter((t: any) => t.userId === member.userId && t.status === "Approved" && (t.currency === "E-Cash" || t.currency === "E-Money") && (t.type === "Bonus" || t.type === "EShare"))
+    .filter((t: any) => t.userId === member.userId && (!t.status || t.status === "Approved") && (t.currency === "E-Cash" || t.currency === "E-Money") && (t.type === "Bonus" || t.type === "EShare"))
     .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
     
   const totalCouponsEarned = transactions
-    .filter((t: any) => t.userId === member.userId && t.status === "Approved" && t.currency === "E-Coupon" && (t.amount || 0) > 0)
+    .filter((t: any) => t.userId === member.userId && (!t.status || t.status === "Approved") && t.currency === "E-Coupon" && (t.amount || 0) > 0)
     .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
   
   // Return safe profile summary data
@@ -3925,14 +3925,14 @@ app.get('/api/admin/members', (req, res) => {
   const transactions = db.transactions || [];
   
   const enrichedMembers = members.map((member: any) => {
-    // Sum of approved transaction amounts where currency is E-Cash and type is Bonus or EShare
+    // Sum of approved transaction amounts where currency is E-Money or E-Cash and type is Bonus or EShare
     const totalEarnings = transactions
-      .filter((t: any) => t.userId === member.userId && t.status === "Approved" && t.currency === "E-Cash" && (t.type === "Bonus" || t.type === "EShare"))
+      .filter((t: any) => t.userId === member.userId && (!t.status || t.status === "Approved") && (t.currency === "E-Money" || t.currency === "E-Cash") && (t.type === "Bonus" || t.type === "EShare"))
       .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
       
     // Sum of all approved transactions where currency is E-Coupon and amount is positive (accumulated coupons)
     const totalCouponsEarned = transactions
-      .filter((t: any) => t.userId === member.userId && t.status === "Approved" && t.currency === "E-Coupon" && (t.amount || 0) > 0)
+      .filter((t: any) => t.userId === member.userId && (!t.status || t.status === "Approved") && t.currency === "E-Coupon" && (t.amount || 0) > 0)
       .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
 
     return {
