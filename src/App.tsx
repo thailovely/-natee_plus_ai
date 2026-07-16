@@ -7567,7 +7567,7 @@ export default function App() {
                     />
                   </div>
                 </div>
-              ) : profile?.sellerStatus === 'NotApplied' ? (
+              ) : (profile?.sellerStatus === 'NotApplied' || !profile?.sellerStatus) ? (
                 <div className="bg-white border border-slate-100 rounded-3xl p-8 shadow-sm max-w-2xl">
                   <h3 className="text-base font-bold text-indigo-950 mb-2">สมัครเป็นพาร์ทเนอร์ร้านค้าเปิดขายของกับ นที พลัส</h3>
                   <p className="text-xs text-slate-500 leading-relaxed mb-6">
@@ -7637,7 +7637,7 @@ export default function App() {
                     </button>
                   </form>
                 </div>
-              ) : (
+              ) : profile?.sellerStatus === 'Active' ? (
                 <div className="space-y-6">
                   {/* Navigation Tabs inside Seller Center */}
                   <div className="flex border-b border-slate-200 gap-4 mb-4">
@@ -8012,6 +8012,41 @@ export default function App() {
                     </div>
                   )}
 
+                </div>
+              ) : (
+                <div className="bg-white border border-slate-100 rounded-3xl p-8 shadow-sm text-center max-w-2xl space-y-6 animate-fadeIn">
+                  <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center shadow-sm mx-auto mb-4">
+                    <AlertCircle size={32} />
+                  </div>
+                  <h3 className="text-base font-bold text-rose-600">❌ คำขอเปิดร้านค้าไม่ได้รับการอนุมัติ</h3>
+                  <p className="text-xs text-slate-500 leading-relaxed max-w-md mx-auto mt-2">
+                    ขออภัยค่ะ คำขอเปิดร้านค้าออนไลน์ของท่านไม่ผ่านเกณฑ์การตรวจสอบจากผู้ดูแลระบบ เนื่องจากข้อมูลพิกัดคลังสินค้าหรือที่อยู่จัดส่งยังไม่ครบถ้วนหรือไม่สอดคล้องตามเกณฑ์ความปลอดภัยค่ะ
+                  </p>
+                  <p className="text-xs text-slate-500 font-bold bg-slate-50 p-3 rounded-xl border border-slate-100/50 max-w-md mx-auto">
+                    ท่านสามารถติดต่อฝ่ายบริการลูกค้า หรือปรับปรุงข้อมูลพิกัด/ที่อยู่คลังสินค้าใหม่ และกดยื่นคำสมัครเปิดร้านค้าใหม่อีกครั้งได้ทันทีค่ะ
+                  </p>
+                  <button 
+                    onClick={async () => {
+                      try {
+                        const res = await fetch('/api/seller/reset-status', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ userId: currentUser.userId })
+                        });
+                        const d = await res.json();
+                        if (d.success) {
+                          setProfile((prev: any) => ({ ...prev, sellerStatus: 'NotApplied' }));
+                        } else {
+                          alert(d.message);
+                        }
+                      } catch (err) {
+                        console.error("Error resetting seller status:", err);
+                      }
+                    }}
+                    className="mt-4 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-md transition cursor-pointer"
+                  >
+                    ปรับปรุงที่อยู่และสมัครใหม่อีกครั้ง
+                  </button>
                 </div>
               )}
             </div>

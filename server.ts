@@ -3202,6 +3202,18 @@ app.post('/api/seller/apply', (req, res) => {
   res.json({ success: true, message: "ยื่นใบสมัครเปิดร้านค้าออนไลน์สำเร็จ! รหัสร้านค้าของคุณคือ " + code });
 });
 
+// RESET SELLER STATUS FOR RE-APPLY
+app.post('/api/seller/reset-status', (req, res) => {
+  const { userId } = req.body;
+  const db = readDb();
+  const member = db.members.find(m => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
+  
+  member.sellerStatus = "NotApplied";
+  writeDb(db);
+  res.json({ success: true, message: "รีเซ็ตสถานะการสมัครเรียบร้อย สามารถกรอกข้อมูลยื่นใบสมัครใหม่ได้ทันทีค่ะ" });
+});
+
 // ADD PRODUCT
 app.post('/api/seller/product', (req, res) => {
   const { userId, productName, price, pv, imageFile, description, shortDescription, category, cost } = req.body;
@@ -4382,9 +4394,27 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     console.log("📁 Serving production build files from dist...");
-    app.use(express.static(path.join(appDir, 'dist')));
+    
+    // Resolve distPath robustly to handle various execution environments (Firebase App Hosting, Cloud Run)
+    let distPath = path.join(appDir, 'dist');
+    if (typeof __dirname !== 'undefined') {
+      const dirHtml = path.join(__dirname, 'index.html');
+      if (fs.existsSync(dirHtml)) {
+        distPath = __dirname;
+      } else if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
+        distPath = path.join(__dirname, 'dist');
+      }
+    } else {
+      const cwdHtml = path.join(process.cwd(), 'index.html');
+      if (fs.existsSync(cwdHtml)) {
+        distPath = process.cwd();
+      }
+    }
+    
+    console.log(`📁 Resolved dist path for static serving: ${distPath}`);
+    app.use(express.static(distPath));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(appDir, 'dist', 'index.html'));
+      res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
