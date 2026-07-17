@@ -151,41 +151,8 @@ async function loadDbFromFirestore() {
             console.log(`📦 Merging local member into Firestore: ${localMember.userId} / ${localMember.username}`);
             mergedMembers.push(localMember);
             hasMergedChanges = true;
-          } else {
-            // If exists, compare critical fields (like rank, status, balances) and if they are different, let local override to prevent stale overwrite on upload
-            const firestoreMember = mergedMembers[idx];
-            let memberUpdated = false;
-            
-            if (localMember.rank && localMember.rank !== firestoreMember.rank) {
-              console.log(`🔄 Updating member ${localMember.userId} rank from Firestore "${firestoreMember.rank}" to local "${localMember.rank}"`);
-              firestoreMember.rank = localMember.rank;
-              memberUpdated = true;
-            }
-            if (localMember.role && localMember.role !== firestoreMember.role) {
-              firestoreMember.role = localMember.role;
-              memberUpdated = true;
-            }
-            if (localMember.sellerStatus && localMember.sellerStatus !== firestoreMember.sellerStatus) {
-              firestoreMember.sellerStatus = localMember.sellerStatus;
-              memberUpdated = true;
-            }
-            if (localMember.balanceECash !== undefined && localMember.balanceECash !== firestoreMember.balanceECash) {
-              firestoreMember.balanceECash = localMember.balanceECash;
-              memberUpdated = true;
-            }
-            if (localMember.balanceEMoney !== undefined && localMember.balanceEMoney !== firestoreMember.balanceEMoney) {
-              firestoreMember.balanceEMoney = localMember.balanceEMoney;
-              memberUpdated = true;
-            }
-            if (localMember.balanceECoupon !== undefined && localMember.balanceECoupon !== firestoreMember.balanceECoupon) {
-              firestoreMember.balanceECoupon = localMember.balanceECoupon;
-              memberUpdated = true;
-            }
-            
-            if (memberUpdated) {
-              hasMergedChanges = true;
-            }
           }
+          // If already exists in Firestore, we DO NOT let local stale data override it. Firestore is the absolute source of truth!
         }
       }
 
@@ -1959,10 +1926,6 @@ app.post('/api/member/buy-coupon', (req, res) => {
   }
   delete db.otps[userId];
   
-  if (member.statusKyc !== "Active") {
-    return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
-  }
-  
   if (member.pin !== pin) {
     return res.status(400).json({ success: false, message: "รหัส PIN ธุรกรรม 6 หลักไม่ถูกต้อง" });
   }
@@ -2147,10 +2110,6 @@ app.post('/api/member/transfer-ecash-to-emoney', (req, res) => {
   }
   delete db.otps[senderIdActual];
   
-  if (member.statusKyc !== "Active") {
-    return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
-  }
-  
   if (member.pin !== pin) {
     return res.status(400).json({ success: false, message: "รหัส PIN ธุรกรรม 6 หลักไม่ถูกต้อง" });
   }
@@ -2218,10 +2177,6 @@ app.post('/api/member/transfer-emoney-to-ecash', (req, res) => {
   }
   delete db.otps[senderIdActual];
   
-  if (member.statusKyc !== "Active") {
-    return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
-  }
-  
   if (member.pin !== pin) {
     return res.status(400).json({ success: false, message: "รหัส PIN ธุรกรรม 6 หลักไม่ถูกต้อง" });
   }
@@ -2278,10 +2233,6 @@ app.post('/api/member/transfer-emoney-to-ecoupon', (req, res) => {
     return res.status(400).json({ success: false, message: "รหัส OTP ไม่ถูกต้องหรือหมดอายุการใช้งานแล้วค่ะ" });
   }
   delete db.otps[senderIdActual];
-  
-  if (member.statusKyc !== "Active") {
-    return res.status(400).json({ success: false, message: "กรุณาผ่านการยืนยันตัวตน (KYC) ให้สมบูรณ์ก่อนทำธุรกรรม" });
-  }
   
   if (member.pin !== pin) {
     return res.status(400).json({ success: false, message: "รหัส PIN ธุรกรรม 6 หลักไม่ถูกต้อง" });
@@ -3945,17 +3896,47 @@ app.post('/api/admin/sandbox-toggle', async (req, res) => {
     if (isSandboxActive) {
       if (resetFromProduction || !fs.existsSync(DB_FILE_SANDBOX)) {
         console.log("🔄 Resetting sandbox from production snapshot...");
-        // Read production file directly
-        let prodData: any = null;
-        if (fs.existsSync(DB_FILE)) {
-          prodData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        
+        let prodData: any = {};
+        let hasProdData = false;
+        
+        // 1. Try to pull the absolute latest live production data directly from Firestore "app_sections"
+        if (dbFirestore) {
+          try {
+            console.log("📥 Pulling latest production data directly from Firestore 'app_sections' for sandbox reset...");
+            const keys = ['members', 'products', 'sellerProducts', 'orders', 'transactions', 'planB_Tree', 'csrFund', 'systemStats', 'otps', 'packageProductChoices', 'bankSettings'];
+            for (const key of keys) {
+              const docRef = doc(dbFirestore, 'app_sections', key);
+              const snap = await getDoc(docRef);
+              if (snap.exists()) {
+                prodData[key] = snap.data().data;
+                hasProdData = true;
+              }
+            }
+            if (hasProdData) {
+              console.log("✅ Successfully retrieved production data from Firestore.");
+            }
+          } catch (e: any) {
+            console.error("⚠️ Failed to pull production data from Firestore:", e);
+          }
         }
         
-        if (prodData) {
+        // 2. Fallback to local db.json if Firestore did not have any production data
+        if (!hasProdData && fs.existsSync(DB_FILE)) {
+          try {
+            console.log("⚠️ Production Firestore collection empty or offline. Falling back to local db.json...");
+            prodData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+            hasProdData = true;
+          } catch (e) {
+            console.error("⚠️ Failed to parse local db.json:", e);
+          }
+        }
+        
+        if (hasProdData && Object.keys(prodData).length > 0) {
           cacheDb = JSON.parse(JSON.stringify(prodData));
           fs.writeFileSync(DB_FILE_SANDBOX, JSON.stringify(cacheDb, null, 2), 'utf8');
           await saveDbToFirestore(cacheDb);
-          console.log("✅ Sandbox database overwritten with production snapshot.");
+          console.log("✅ Sandbox database overwritten with latest production snapshot.");
         } else {
           // Initialize fresh sandbox database
           cacheDb = null;

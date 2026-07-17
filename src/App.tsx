@@ -262,6 +262,7 @@ export default function App() {
   // Pagination states for reports
   const [eCashPage, setECashPage] = useState<number>(1);
   const [eMoneyPage, setEMoneyPage] = useState<number>(1);
+  const [eCouponPage, setECouponPage] = useState<number>(1);
   const [allSharePage, setESharePage] = useState<number>(1);
   const [referralsPage, setReferralsPage] = useState<number>(1);
   const [binaryPage, setBinaryPage] = useState<number>(1);
@@ -635,7 +636,7 @@ export default function App() {
   const [orderSearchStatus, setOrderSearchStatus] = useState('');
   
   // Report States
-  const [reportSubTab, setReportSubTab] = useState<'ecash' | 'emoney' | 'ecoupon' | 'eshare' | 'referrals' | 'binary' | 'memberTax' | 'sellerTax'>('ecash');
+  const [reportSubTab, setReportSubTab] = useState<'ecash' | 'emoney' | 'ecoupon' | 'eshare' | 'referrals' | 'binary' | 'memberTax' | 'sellerTax'>('emoney');
   const [selectedTaxDoc, setSelectedTaxDoc] = useState<{ type: 'member' | 'seller'; data: any } | null>(null);
   const [customPayeeTaxId, setCustomPayeeTaxId] = useState('');
   const [customPayeeName, setCustomPayeeName] = useState('');
@@ -672,6 +673,7 @@ export default function App() {
   useEffect(() => {
     setECashPage(1);
     setEMoneyPage(1);
+    setECouponPage(1);
     setESharePage(1);
     setReferralsPage(1);
     setBinaryPage(1);
@@ -4493,11 +4495,13 @@ export default function App() {
 
           <button 
             onClick={() => { setActiveTab('shop'); setSidebarOpen(false); }}
-            className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition ${
-              activeTab === 'shop' ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
+            className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition ${
+              activeTab === 'shop' 
+                ? 'bg-orange-500/20 text-orange-400 border-l-4 border-orange-400' 
+                : 'text-orange-400 bg-orange-500/5 hover:bg-orange-500/15'
             }`}
           >
-            <ShoppingBag size={16} /> ร้านค้าแพ็กเกจ (Shop)
+            <ShoppingBag size={16} className={activeTab === 'shop' ? 'text-orange-400' : 'text-orange-400'} /> นที พลัส ช็อป
           </button>
 
           <button 
@@ -4519,7 +4523,15 @@ export default function App() {
           </button>
 
           <button 
-            onClick={() => { setActiveTab('report'); setSidebarOpen(false); }}
+            onClick={() => { 
+              setActiveTab('report'); 
+              if (profile?.role === 'Admin' || profile?.role === 'Manager') {
+                setReportSubTab('ecash');
+              } else {
+                setReportSubTab('emoney');
+              }
+              setSidebarOpen(false); 
+            }}
             className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition ${
               activeTab === 'report' ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
             }`}
@@ -4735,12 +4747,14 @@ export default function App() {
                   <span className="text-xs text-indigo-100 font-medium">E-Cash (บาท)</span>
                   <h3 className="text-3xl font-extrabold tracking-tight mt-3">{profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
                   <p className="text-[10px] text-indigo-200 mt-4">กระเป๋าเงินฝากเข้าจากภายนอก สำหรับซื้อแพ็กเกจหรือโอนเปลี่ยน</p>
-                  <button 
-                    onClick={() => { setActiveTab('report'); setReportSubTab('ecash'); }}
-                    className="mt-4 text-[9px] bg-white text-indigo-700 font-bold px-3 py-1 rounded-lg hover:bg-indigo-50 transition"
-                  >
-                    ดูรายงาน E-Cash
-                  </button>
+                  {(profile?.role === 'Admin' || profile?.role === 'Manager') && (
+                    <button 
+                      onClick={() => { setActiveTab('report'); setReportSubTab('ecash'); }}
+                      className="mt-4 text-[9px] bg-white text-indigo-700 font-bold px-3 py-1 rounded-lg hover:bg-indigo-50 transition"
+                    >
+                      ดูรายงาน E-Cash
+                    </button>
+                  )}
                 </div>
 
                 <div className="bg-gradient-to-br from-purple-600 to-indigo-800 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden">
@@ -6208,10 +6222,7 @@ export default function App() {
                       </div>
 
                       <p className="text-xs text-slate-500 leading-relaxed">
-                        {planBSelectedTier === 1 
-                          ? 'กองทุนรันระบบขั้นต้นสำหรับผู้สมัครสมาชิกทุกระดับ มอบสิทธิ์ในการปันผลเมื่อคิวสายงาน Global ขยายถึง 100% ระบบจ่ายรับคอมมิชชั่น E-Cash สุทธิ = 850.00 บาท ต่อรอบปันผล +คูปอง + E-Share + สิทธิ์ระดับถัดไป จะโอนโดยอัตโนมัติ'
-                          : `กองทุนอัปเกรดออโต้รันระดับสูง ผู้ร่วมสายงานจะได้รับสิทธิ์ปันผลเมื่อสายงาน Global ขยายตัวครบตามรอบระบบ และจะโอนสิทธิ์ไปสู่ระดับถัดไปโดยอัตโนมัติเมื่อปันผลครบถ้วน`
-                        }
+                        กองทุนรันระบบขั้นต้นสำหรับผู้สมัครสมาชิกทุกระดับ มอบสิทธิ์ในการปันผลเมื่อคิวสายงาน Global ขยายถึง 100% ระบบจ่ายรับคอมมิชชั่น E-Money จ่ายครั้งเดียวต่อรอบปันผล +คูปอง + E-Share + สิทธิ์ระดับถัดไป จะโอนโดยอัตโนมัติ
                       </p>
 
                       {planBSelectedTier === 1 && (
@@ -6371,14 +6382,16 @@ export default function App() {
                         return (
                           <>
                             <div className="space-y-3">
+                              {(currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
+                                <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-50 bg-rose-50/50 px-2.5 py-1.5 rounded-xl border border-rose-100">
+                                  <span className="text-rose-600 font-bold">ยอดเงินสะสมในระบบ (ก่อนหัก) ★</span>
+                                  <span className="font-extrabold text-rose-600 text-sm">
+                                    ฿ {details.totalPayout.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                </div>
+                              )}
                               <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-50">
-                                <span className="text-slate-500 font-medium">ยอดเงินสะสมในระบบ (ก่อนหัก)</span>
-                                <span className="font-bold text-slate-700 text-sm">
-                                  ฿ {details.totalPayout.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
-                              </div>
-                              <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-50">
-                                <span className="text-slate-500 font-medium">ยอดสุทธิเข้า E-Cash (หลังหัก 20%)</span>
+                                <span className="text-slate-500 font-medium">ยอดสุทธิเข้า E-Money (หลังหัก 20%)</span>
                                 <span className="font-extrabold text-emerald-600 text-sm">
                                   ฿ {details.eCashNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / รอบ
                                 </span>
@@ -6410,9 +6423,9 @@ export default function App() {
                                 </span>
                               </div>
                               {(currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
-                                <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-50">
-                                  <span className="text-slate-500">ส่วนรายได้ของบริษัท</span>
-                                  <span className="font-bold text-slate-800">
+                                <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-50 bg-rose-50/50 px-2.5 py-1.5 rounded-xl border border-rose-100">
+                                  <span className="text-rose-600 font-bold">ส่วนรายได้ของบริษัท ★</span>
+                                  <span className="font-extrabold text-rose-600">
                                     ฿ {details.company.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </span>
                                 </div>
@@ -6428,7 +6441,7 @@ export default function App() {
                             </div>
 
                             <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 text-[10px] text-amber-700 leading-relaxed">
-                              📌 <b>หมายเหตุเงื่อนไข:</b> เมื่อสายงานของคุณได้รับการเติมเต็ม {planBSelectedTier === 1 ? '8 ชั้นลึก (510 รหัส)' : '5 ชั้นลึก (62 รหัส)'} ระบบจะตัดรอบจ่ายและโอนสิทธิ์คุณไปขึ้นระดับถัดไปโดยอัตโนมัติ ไม่ต้องกดทำรายการใดๆ ค่ะ
+                              📌 <b>หมายเหตุเงื่อนไข:</b> เมื่อสายงานของคุณได้รับการเติมเต็มอัตโนมัติ เมื่อครบ 100% ระบบจะตัดรอบจ่ายและโอนสิทธิ์คุณไปขึ้นระดับถัดไปโดยอัตโนมัติ ไม่ต้องกดทำรายการใดๆ
                             </div>
                           </>
                         );
@@ -7128,14 +7141,16 @@ export default function App() {
 
                 {/* Report Sub-tabs Selector */}
                 <div className="flex flex-wrap gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200">
-                  <button 
-                    onClick={() => setReportSubTab('ecash')}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                      reportSubTab === 'ecash' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    💳 รายงาน E-Cash
-                  </button>
+                  {(profile?.role === 'Admin' || profile?.role === 'Manager') && (
+                    <button 
+                      onClick={() => setReportSubTab('ecash')}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                        reportSubTab === 'ecash' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      💳 รายงาน E-Cash
+                    </button>
+                  )}
                   <button 
                     onClick={() => setReportSubTab('emoney')}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
@@ -7176,14 +7191,16 @@ export default function App() {
                   >
                     🕸️ ผังไบนารี
                   </button>
-                  <button 
-                    onClick={() => setReportSubTab('memberTax')}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                      reportSubTab === 'memberTax' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    📄 ภาษี & 50 ทวิ (สมาชิก)
-                  </button>
+                  {(profile?.role === 'Admin' || profile?.role === 'Manager') && (
+                    <button 
+                      onClick={() => setReportSubTab('memberTax')}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                        reportSubTab === 'memberTax' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      📄 ภาษี & 50 ทวิ (สมาชิก)
+                    </button>
+                  )}
                   {profile?.sellerStatus === 'Active' && (
                     <button 
                       onClick={() => setReportSubTab('sellerTax')}
@@ -7198,7 +7215,7 @@ export default function App() {
               </div>
 
               {/* REPORT E-CASH SUB-VIEW */}
-              {reportSubTab === 'ecash' && (
+              {reportSubTab === 'ecash' && (profile?.role === 'Admin' || profile?.role === 'Manager') && (
                 <div className="space-y-6">
                   {/* Ledger Balance Card */}
                   <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-3xl p-6 text-white shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -7238,7 +7255,8 @@ export default function App() {
 
                       const itemsPerPage = 20;
                       const startIndex = (eCashPage - 1) * itemsPerPage;
-                      const paginatedTxns = eCashTxns.slice(startIndex, startIndex + itemsPerPage);
+                      const sortedECashTxns = [...eCashTxns].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+                      const paginatedTxns = sortedECashTxns.slice(startIndex, startIndex + itemsPerPage);
 
                       return (
                         <>
@@ -7363,7 +7381,8 @@ export default function App() {
 
                       const itemsPerPage = 20;
                       const startIndex = (eMoneyPage - 1) * itemsPerPage;
-                      const paginatedTxns = eMoneyTxns.slice(startIndex, startIndex + itemsPerPage);
+                      const sortedEMoneyTxns = [...eMoneyTxns].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+                      const paginatedTxns = sortedEMoneyTxns.slice(startIndex, startIndex + itemsPerPage);
 
                       return (
                         <>
@@ -7463,6 +7482,90 @@ export default function App() {
                       <div>• ใช้เสมือนเงินสดสำหรับการแลกซื้อสินค้าและตำแหน่งภายในร้านค้าพอร์ทัล</div>
                     </div>
                   </div>
+
+                  {/* Transaction Ledger Table */}
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                      <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                        <Coins size={16} className="text-purple-500" /> สมุดบันทึกรายการบัญชี E-Coupon Ledger
+                      </h4>
+                      <span className="text-[10px] text-slate-400 font-medium">อัปเดตข้อมูลล่าสุดเมื่อ: {new Date().toLocaleTimeString()}</span>
+                    </div>
+
+                    {(() => {
+                      const eCouponTxns = transactions.filter((t) => {
+                        return (
+                          t.currency === 'E-Coupon' ||
+                          t.type === 'Coupon' ||
+                          (t.details && (t.details.includes('คูปอง') || t.details.includes('Coupon')))
+                        );
+                      });
+
+                      const sortedECouponTxns = [...eCouponTxns].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+                      const itemsPerPage = 20;
+                      const startIndex = (eCouponPage - 1) * itemsPerPage;
+                      const paginatedTxns = sortedECouponTxns.slice(startIndex, startIndex + itemsPerPage);
+
+                      return (
+                        <>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-100">
+                                  <th className="px-4 py-3">รหัสรายการ</th>
+                                  <th className="px-4 py-3">วัน-เวลาทำรายการ</th>
+                                  <th className="px-4 py-3">ประเภทรายการ</th>
+                                  <th className="px-4 py-3">จำนวนเงิน/คะแนน (คูปอง)</th>
+                                  <th className="px-4 py-3">รายละเอียดบัญชี</th>
+                                  <th className="px-4 py-3">สถานะรายการ</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-slate-700">
+                                {paginatedTxns.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={6} className="p-6 text-center text-slate-400">ยังไม่มีรายงานประวัติทำธุรกรรม E-Coupon ในขณะนี้</td>
+                                  </tr>
+                                ) : (
+                                  paginatedTxns.map((t) => {
+                                    const isCredit = t.type === 'Deposit' || t.type === 'Receive' || t.type === 'Bonus' || t.type === 'Deposit_System' || (t.details && t.details.includes('ได้รับ'));
+                                    const detailsText = t.details || t.description || t.remarks || '';
+                                    return (
+                                      <tr key={t.id} className="hover:bg-slate-50/50">
+                                        <td className="px-4 py-3 font-mono text-[10px] font-bold text-indigo-600">{t.id}</td>
+                                        <td className="px-4 py-3 text-slate-500">{new Date(t.createdAt).toLocaleString()}</td>
+                                        <td className="px-4 py-3">
+                                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                            isCredit ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+                                          }`}>
+                                            {isCredit ? '💵 รับคะแนนคูปอง' : '🛍️ ใช้คะแนนคูปอง'}
+                                          </span>
+                                        </td>
+                                        <td className={`px-4 py-3 font-bold ${isCredit ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                          {isCredit ? '+' : '-'}{(t.amount || t.transferAmount)?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บ.
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-500 text-[11px] max-w-xs truncate" title={detailsText || '-'}>
+                                          {detailsText || '-'}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span className="flex items-center gap-1.5">
+                                            <span className={`w-2 h-2 rounded-full ${t.status === 'Approved' || t.status === 'Completed' || !t.status ? 'bg-emerald-500' : t.status === 'Pending' ? 'bg-amber-400' : 'bg-rose-500'}`} />
+                                            <span className="text-[11px]">
+                                              {t.status === 'Approved' || t.status === 'Completed' || !t.status ? 'เสร็จสมบูรณ์' : t.status === 'Pending' ? 'รอดำเนินการอนุมัติ' : 'ปฏิเสธ/ยกเลิก'}
+                                            </span>
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                          <TablePagination currentPage={eCouponPage} totalItems={sortedECouponTxns.length} itemsPerPage={itemsPerPage} onPageChange={setECouponPage} />
+                        </>
+                      );
+                    })()}
+                  </div>
                 </div>
               )}
 
@@ -7474,7 +7577,7 @@ export default function App() {
                     <div className="bg-gradient-to-br from-amber-500 to-amber-700 rounded-3xl p-6 text-white shadow-sm space-y-1">
                       <span className="text-xs text-amber-100 font-medium">ยอดรายรับสะสม E-Share สุทธิ (฿) (หักแล้ว 50%)</span>
                       <h3 className="text-3xl font-extrabold tracking-tight">฿ {((profile?.balanceEShare || 0) * 0.50).toFixed(6)}</h3>
-                      <p className="text-[10px] text-amber-200 pt-2">• ยอดสุทธิหลังจากหักแบ่งจัดสรรเข้าระบบ Plan B แล้ว 50% และโอนเข้ากระเป๋า E-Cash ของคุณ</p>
+                      <p className="text-[10px] text-amber-200 pt-2">• ยอดสุทธิหลังจากหักแบ่งจัดสรรเข้าระบบ Plan B แล้ว 50% และโอนเข้ากระเป๋า E-Money ของคุณ</p>
                     </div>
 
                     <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
@@ -7505,7 +7608,8 @@ export default function App() {
                       const allShareTxns = transactions.filter(t => t.type === 'EShare');
                       const itemsPerPage = 20;
                       const startIndex = (allSharePage - 1) * itemsPerPage;
-                      const paginatedTxns = allShareTxns.slice(startIndex, startIndex + itemsPerPage);
+                      const sortedAllShareTxns = [...allShareTxns].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+                      const paginatedTxns = sortedAllShareTxns.slice(startIndex, startIndex + itemsPerPage);
 
                       return (
                         <>
@@ -7516,7 +7620,7 @@ export default function App() {
                                   <th className="px-4 py-3">เลขอ้างอิงรายการ</th>
                                   <th className="px-4 py-3">วันเวลาประมวลผล</th>
                                   <th className="px-4 py-3">คำอธิบายโบนัสออลแชร์</th>
-                                  <th className="px-4 py-3">ยอดได้รับเข้ารายได้ E-Cash (50%)</th>
+                                  <th className="px-4 py-3">ยอดได้รับเข้ารายได้ E-Money (50%)</th>
                                   <th className="px-4 py-3">ยอดสะสมคะแนนรันระบบ Plan B (50%)</th>
                                 </tr>
                               </thead>
@@ -7831,7 +7935,7 @@ export default function App() {
               )}
 
               {/* REPORT MEMBER TAX SUB-VIEW */}
-              {reportSubTab === 'memberTax' && (
+              {reportSubTab === 'memberTax' && (profile?.role === 'Admin' || profile?.role === 'Manager') && (
                 <div className="space-y-6 animate-fadeIn">
                   <div className="bg-gradient-to-br from-indigo-900 to-indigo-950 rounded-3xl p-6 text-white shadow-sm space-y-4">
                     <div>
@@ -7876,7 +7980,8 @@ export default function App() {
                     </h4>
 
                     {(() => {
-                      const userWithdrawals = transactions.filter(t => t.userId === currentUser?.userId && t.type === 'WithdrawalRequest');
+                      const rawUserWithdrawals = transactions.filter(t => t.userId === currentUser?.userId && t.type === 'WithdrawalRequest');
+                      const userWithdrawals = [...rawUserWithdrawals].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
                       const approvedWithdrawals = userWithdrawals.filter(t => t.status === 'Approved');
                       
                       return (
@@ -10681,6 +10786,71 @@ export default function App() {
 
               {adminSubTab === 'systemReset' && (
                 <div className="space-y-6 max-w-2xl mx-auto animate-fadeIn">
+                  {/* Sandbox Mode / Live Data Management Card */}
+                  <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
+                    <div className="text-center space-y-2">
+                      <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-rose-50 text-rose-600 mb-2 border border-rose-100">
+                        <Settings size={24} />
+                      </div>
+                      <h3 className="text-lg font-black text-slate-800">🧪 ระบบทดสอบจำลอง (Sandbox Mode)</h3>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        ระบบของเราแยกฐานข้อมูลออกเป็น 2 กล่องโดยเด็ดขาด: <strong>โหมดทดสอบ (Sandbox)</strong> และ <strong>โหมดข้อมูลจริง (Production)</strong> 
+                        เพื่อป้องกันความเสียหายต่อตัวเลขเงินหรือผังสายงานจริงในขณะที่ท่านกำลังทำการปรับจูนหรือคำนวณจำลอง MLM แผนธุรกิจค่ะ
+                      </p>
+                    </div>
+
+                    <div className="border border-slate-100 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-center gap-3 bg-slate-50/50">
+                      <div className="space-y-1 text-center sm:text-left">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">สถานะฐานข้อมูลปัจจุบัน:</span>
+                        <div className="flex items-center gap-2 justify-center sm:justify-start">
+                          <span className={`inline-block w-2.5 h-2.5 rounded-full ${isSandboxActive ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500 animate-pulse'}`}></span>
+                          <span className="text-xs font-black text-slate-700">
+                            {isSandboxActive ? 'กำลังใช้: ฐานข้อมูลจำลอง (Sandbox Database)' : 'กำลังใช้: ฐานข้อมูลจริง (Production Database)'}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <button
+                        onClick={() => handleToggleSandbox(!isSandboxActive, false)}
+                        disabled={togglingSandbox}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          isSandboxActive 
+                            ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-md' 
+                            : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md'
+                        }`}
+                      >
+                        {togglingSandbox ? (
+                          <RefreshCw size={14} className="animate-spin" />
+                        ) : isSandboxActive ? (
+                          '🏠 สลับกลับสู่โหมดข้อมูลจริง'
+                        ) : (
+                          '🧪 เปิดใช้งานโหมดทดสอบ'
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="bg-indigo-50 border border-indigo-100/50 rounded-2xl p-4 space-y-3">
+                      <h4 className="text-xs font-black text-indigo-900 flex items-center gap-1.5">
+                        📥 ดึงข้อมูลจริงเข้ามาทดสอบ (Clone Real Firestore to Sandbox)
+                      </h4>
+                      <p className="text-[11px] text-indigo-700 leading-relaxed">
+                        เมื่อต้องการนำข้อมูลสมาชิกล่าสุด, โครงสร้างสายงาน และธุรกรรมล่าสุดจากฐานข้อมูลระบบจริงบน Cloud มาจำลองทดสอบ 
+                        ท่านสามารถกดปุ่มด้านล่างเพื่อทำการดึงข้อมูลล่าสุดจากเซิร์ฟเวอร์จริงมาบันทึกทับใน Sandbox ได้อย่างปลอดภัยโดยไม่มีผลกระทบใด ๆ ต่อฐานข้อมูลจริงค่ะ
+                      </p>
+                      <button
+                        onClick={() => handleToggleSandbox(true, true)}
+                        disabled={togglingSandbox}
+                        className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-200 text-white font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-md"
+                      >
+                        {togglingSandbox ? (
+                          <RefreshCw size={14} className="animate-spin" />
+                        ) : (
+                          '📥 ดึงข้อมูลระบบจริงล่าสุดมาเป็นชุดทดสอบ (Clone Production to Sandbox)'
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Firestore Manual Sync Card */}
                   <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
                     <div className="text-center space-y-2">

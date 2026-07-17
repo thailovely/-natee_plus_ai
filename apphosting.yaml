@@ -21,3 +21,5 @@ env:
     value: "indigo-brand-j6rpq.firebasestorage.app"
   - variable: FIREBASE_API_KEY
     value: "AIzaSyBWdkOphH9pzJQuL1vZ3ujo_GxO5D-ViMs"
+  - variable: NODE_ENV
+    value: "production"
