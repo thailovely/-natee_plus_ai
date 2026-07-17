@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Gradients for the shopping bag -->
+    <linearGradient id="bagGrad" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#2172FF" />
+      <stop offset="35%" stop-color="#024DD8" />
+      <stop offset="100%" stop-color="#001C66" />
+    </linearGradient>
+    <linearGradient id="bagFoldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#002D9C" />
+      <stop offset="100%" stop-color="#000E33" />
+    </linearGradient>
+    
+    <!-- Gradients for the gold/orange swoosh -->
+    <linearGradient id="goldSwooshGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFD200" />
+      <stop offset="50%" stop-color="#FF8E00" />
+      <stop offset="100%" stop-color="#FF3E00" />
+    </linearGradient>
+
+    <!-- Gradients for the blue swoosh -->
+    <linearGradient id="blueSwooshGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00E5FF" />
+      <stop offset="50%" stop-color="#0072FF" />
+      <stop offset="100%" stop-color="#001C66" />
+    </linearGradient>
+
+    <!-- Gradient for the orange plus sign -->
+    <linearGradient id="plusGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFA800" />
+      <stop offset="100%" stop-color="#FF5D00" />
+    </linearGradient>
+
+    <filter id="dropShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000" flood-opacity="0.35" />
+    </filter>
+    <filter id="glow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#FFF" flood-opacity="0.2" />
+    </filter>
+  </defs>
+
+  <g transform="translate(0, 45)" filter="url(#dropShadow)">
+    
+    <!-- Left Blue Swoosh (Behind the bag) -->
+    <path d="M 80 270 C 60 210, 110 160, 180 150 C 200 148, 170 175, 150 200 C 120 238, 100 280, 120 320 C 130 340, 100 310, 80 270 Z" fill="url(#blueSwooshGrad)" opacity="0.85" />
+
+    <!-- Gold Swoosh (Behind the bag) -->
+    <path d="M 330 110 C 440 100, 480 200, 410 280 C 390 300, 420 260, 430 220 C 445 160, 395 125, 330 110 Z" fill="url(#goldSwooshGrad)" />
+
+    <!-- Bag Handles -->
+    <g stroke="#EAF2FF" stroke-width="14" fill="none" stroke-linecap="round" filter="url(#glow)">
+      <path d="M 200 130 C 200 50, 300 50, 300 130" stroke="#FFFFFF" />
+      <path d="M 195 128 C 195 55, 295 55, 295 128" stroke="#D1E2FF" opacity="0.8" />
+    </g>
+
+    <!-- Main Shopping Bag -->
+    <path d="M 185 130 L 315 130 C 335 130, 345 142, 341 162 L 305 322 C 301 342, 281 350, 260 350 L 140 350 C 119 350, 105 342, 101 322 L 159 162 C 163 142, 170 130, 185 130 Z" fill="url(#bagGrad)" />
+    <path d="M 315 130 L 350 142 C 365 147, 362 165, 357 185 L 321 340 C 317 355, 300 350, 260 350 C 281 350, 301 342, 305 322 L 341 162 C 345 142, 335 130, 315 130 Z" fill="url(#bagFoldGrad)" />
+
+    <path d="M 182 135 L 310 135 C 315 135, 318 138, 317 143 L 311 170 C 310 173, 305 175, 300 175 L 185 175 C 180 175, 176 172, 177 167 L 180 143 C 181 138, 182 135, 182 135 Z" fill="#FFFFFF" opacity="0.15" />
+    <path d="M 112 315 L 122 270 C 124 260, 128 250, 134 240 L 155 195" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.25" />
+
+    <!-- Grommets -->
+    <circle cx="200" cy="130" r="10" fill="#D5E4FF" stroke="#0C2D7A" stroke-width="3" />
+    <circle cx="300" cy="130" r="10" fill="#D5E4FF" stroke="#0C2D7A" stroke-width="3" />
+
+    <!-- Stylized "N" -->
+    <path d="M 188 285 L 210 175 C 212 165, 219 158, 227 158 L 242 158 C 251 158, 258 163, 260 172 L 285 272 L 305 175 C 307 165, 314 158, 322 158 L 332 158 C 341 158, 348 165, 346 175 L 325 285 C 323 295, 316 302, 308 302 L 293 302 C 284 302, 277 297, 275 288 L 248 185 L 228 285 C 226 295, 219 302, 211 302 L 205 302 C 196 302, 189 295, 188 285 Z" fill="#FFFFFF" filter="url(#glow)" />
+
+    <!-- Plus Sign (+) -->
+    <g transform="translate(285, 140)">
+      <path d="M 28 6 L 40 6 C 44 6, 46 8, 46 12 L 46 24 L 58 24 C 62 24, 64 26, 64 30 L 64 42 C 64 46, 62 48, 58 48 L 46 48 L 46 60 C 46 64, 44 66, 40 66 L 28 66 C 24 66, 22 64, 22 60 L 22 48 L 10 48 C 6 48, 4 46, 4 42 L 4 30 C 4 26, 6 24, 10 24 L 22 24 L 22 12 C 22 8, 24 6, 28 6 Z" fill="#000000" stroke="#FFFFFF" stroke-width="5" stroke-linejoin="round" />
+      <path d="M 28 6 L 40 6 C 44 6, 46 8, 46 12 L 46 24 L 58 24 C 62 24, 64 26, 64 30 L 64 42 C 64 46, 62 48, 58 48 L 46 48 L 46 60 C 46 64, 44 66, 40 66 L 28 66 C 24 66, 22 64, 22 60 L 22 48 L 10 48 C 6 48, 4 46, 4 42 L 4 30 C 4 26, 6 24, 10 24 L 22 24 L 22 12 C 22 8, 24 6, 28 6 Z" fill="url(#plusGrad)" />
+    </g>
+
+    <!-- Golden Swoosh (Front) -->
+    <path d="M 80 270 C 130 350, 310 380, 430 250 C 450 228, 435 255, 415 270 C 320 340, 160 330, 100 280 C 90 272, 82 268, 80 270 Z" fill="url(#goldSwooshGrad)" />
+
+  </g>
+</svg>

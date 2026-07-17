@@ -988,6 +988,20 @@ export default function App() {
 
     const setupRealTimeSync = async () => {
       try {
+        // Check if quota-exceeded local cache is active and not expired (valid for 4 hours)
+        const localQuotaExceededTime = localStorage.getItem('firestore_quota_exceeded_timestamp');
+        if (localQuotaExceededTime) {
+          const hoursPassed = (Date.now() - parseInt(localQuotaExceededTime, 10)) / (1000 * 60 * 60);
+          if (hoursPassed < 4) {
+            console.warn("⚠️ Firestore quota was recently exceeded. Bypassing Firestore connection to prevent console errors and using secure local HTTP polling fallback.");
+            setIsUsingPollingFallback(true);
+            activateFallbackPolling("Firestore write quota exceeded (Cached client-side)");
+            return;
+          } else {
+            localStorage.removeItem('firestore_quota_exceeded_timestamp');
+          }
+        }
+
         const resConfig = await fetch('/api/firebase-config');
         const dConfig = await resConfig.json();
         if (!dConfig.success || !dConfig.config) {
@@ -996,6 +1010,7 @@ export default function App() {
 
         if (dConfig.isFirestoreQuotaExceeded) {
           console.warn("⚠️ Firestore daily write quota is exceeded on the server. Activating local polling fallback directly!");
+          localStorage.setItem('firestore_quota_exceeded_timestamp', Date.now().toString());
           setIsUsingPollingFallback(true);
           activateFallbackPolling("Firestore write quota exceeded on server");
           return;
@@ -1022,6 +1037,7 @@ export default function App() {
               error.message.includes("exhausted")
             );
             if (isQuota) {
+              localStorage.setItem('firestore_quota_exceeded_timestamp', Date.now().toString());
               fetch('/api/report-quota-exceeded', { method: 'POST' }).catch(() => {});
             }
             activateFallbackPolling(`${docName} failed: ${error.message}`);
@@ -3825,9 +3841,13 @@ export default function App() {
 
         <div className="w-full max-w-md bg-slate-900/40 backdrop-blur-md border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
           {/* Logo Brand heading */}
-          <div className="text-center mb-8 relative">
+          <div className="text-center mb-8 relative flex flex-col items-center">
+            {/* White bold 'N' with orange plus sign vector logo */}
+            <div className="relative w-20 h-20 select-none mb-4">
+              <img src="/favicon.svg" alt="Natee Plus Logo" className="w-full h-full object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)]" referrerPolicy="no-referrer" />
+            </div>
             <h1 className="text-3xl font-extrabold tracking-wider text-white">
-              เปิดร้านค้า <span className="text-sky-400">นที</span> <span className="text-amber-500">พลัส</span>
+              เปิดร้านค้า <span className="text-sky-400">นที</span> <span className="text-orange-500">พลัส</span>
             </h1>
             <p className="text-slate-400 text-xs mt-2 font-medium">
               ระบบร้านค้าอัจฉริยะ สัญชาติไทย
@@ -4468,9 +4488,14 @@ export default function App() {
         sidebarOpen ? 'translate-x-0' : '-translate-x-0 md:translate-x-0 hidden md:flex flex-col'
       }`}>
         <div className="flex items-center justify-between mb-8">
-          <h2 className="text-xl font-extrabold tracking-wider text-white">
-            นที <span className="text-sky-400">พลัส</span>
-          </h2>
+          <div className="flex items-center gap-2">
+            <div className="relative w-9 h-9 shrink-0 flex items-center justify-center select-none">
+              <img src="/favicon.svg" alt="Natee Plus Logo" className="w-full h-full object-contain filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)]" referrerPolicy="no-referrer" />
+            </div>
+            <h2 className="text-xl font-extrabold tracking-wider text-white">
+              <span className="text-sky-400">นที</span> <span className="text-orange-500">พลัส</span>
+            </h2>
+          </div>
           <button onClick={() => setSidebarOpen(false)} className="md:hidden text-slate-400 hover:text-white">✕</button>
         </div>
 

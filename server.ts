@@ -22,6 +22,7 @@ const SANDBOX_STATE_FILE = path.join(appDir, 'sandbox_state.json');
 const UPLOADS_DIR = path.join(appDir, 'uploads');
 
 let isSandboxActive = false;
+let isFirestoreQuotaExceeded = false;
 
 // Load sandbox state at boot
 try {
@@ -326,13 +327,33 @@ async function loadDbFromFirestore() {
         console.log(`⚠️ No local file ${currentDbFile} found to seed Firestore.`);
       }
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error("❌ Error loading database from Firestore:", err);
+    const isQuotaExceeded = err.message && (
+      err.message.includes("RESOURCE_EXHAUSTED") ||
+      err.message.includes("quota") ||
+      err.message.includes("Quota limit exceeded")
+    );
+    if (isQuotaExceeded) {
+      isFirestoreQuotaExceeded = true;
+      console.warn("⚠️ [Server Startup] Firestore daily write/read quota has been exceeded. The application will initialize from the local db.json file.");
+    }
+    // Fallback to load local db.json to ensure cacheDb is initialized
+    try {
+      if (fs.existsSync(currentDbFile)) {
+        cacheDb = JSON.parse(fs.readFileSync(currentDbFile, 'utf8'));
+        console.log(`💾 [Local Fallback] Successfully loaded database from local file ${currentDbFile} after Firestore error.`);
+      } else if (isSandboxActive && fs.existsSync(DB_FILE)) {
+        cacheDb = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        console.log("💾 [Local Fallback] Successfully loaded database from production local file db.json for sandbox after Firestore error.");
+      }
+    } catch (localErr) {
+      console.error("❌ [Local Fallback] Failed to load local database backup:", localErr);
+    }
   }
 }
 
 let isSavingToFirestore = false;
-let isFirestoreQuotaExceeded = false;
 let pendingSaveData: any = null;
 let saveTimeout: NodeJS.Timeout | null = null;
 let retryCount = 0;
