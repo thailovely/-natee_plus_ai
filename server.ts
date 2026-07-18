@@ -3197,8 +3197,8 @@ app.post('/api/seller/apply', (req, res) => {
   const member = db.members.find(m => m.userId === userId);
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
   
-  // 1. สมาชิกที่จะเปิดร้านค้าได้ต้องมีตำแหน่ง M ขึ้นไป
-  const allowedRanks = ["M", "L", "XL", "XXL"];
+  // 1. สมาชิกที่จะเปิดร้านค้าได้ต้องมีตำแหน่ง Member ขึ้นไป
+  const allowedRanks = ["Member", "S", "M", "L", "XL", "XXL"];
   if (!member.rank || !allowedRanks.includes(member.rank)) {
     return res.status(400).json({ 
       success: false, 
