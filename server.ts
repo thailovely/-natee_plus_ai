@@ -3190,24 +3190,157 @@ app.get('/api/csr/feed', (req, res) => {
 // SELLER REGISTER AND SELLER CENTER
 // -------------------------------------------------------------
 
-app.post('/api/seller/apply', (req, res) => {
-  const { userId, storeName, storeAddress, warehouseLat, warehouseLng } = req.body;
+// Generate unique running Seller Code: A260001, A260002... up to A269999, then B260001...
+function generateSellerCode(db: any) {
+  const now = new Date();
+  const yearSuffix = now.getFullYear().toString().substring(2); // e.g. "26"
+  let activeAlpha = 'A';
+  
+  while (true) {
+    const prefix = activeAlpha + yearSuffix;
+    const codesOfThisPrefix = db.members
+      .map((m: any) => m.sellerCode)
+      .filter((code: any) => code && code.startsWith(prefix) && code.length === prefix.length + 4);
+      
+    let maxNum = 0;
+    for (const code of codesOfThisPrefix) {
+      const numStr = code.substring(prefix.length);
+      const num = parseInt(numStr, 10);
+      if (!isNaN(num) && num > maxNum) {
+        maxNum = num;
+      }
+    }
+    
+    if (maxNum < 9999) {
+      const nextNum = maxNum + 1;
+      const paddedNum = ("0000" + nextNum).slice(-4);
+      return prefix + paddedNum;
+    } else {
+      // This letter suffix is full (e.g. A269999 reached), increment alphabet to B, C...
+      const charCode = activeAlpha.charCodeAt(0);
+      activeAlpha = String.fromCharCode(charCode + 1);
+    }
+  }
+}
+
+// 1. Seller Login API (logs in with existing username and password)
+app.post('/api/seller/login', (req, res) => {
+  const { username, password } = req.body;
   const db = readDb();
   
-  const member = db.members.find(m => m.userId === userId);
-  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
+  if (!username || !password) {
+    return res.status(400).json({ success: false, message: "กรุณากรอกชื่อผู้ใช้และรหัสผ่านให้ครบถ้วน" });
+  }
   
-  // 1. สมาชิกที่จะเปิดร้านค้าได้ต้องมีตำแหน่ง Member ขึ้นไป
+  const member = db.members.find((m: any) => 
+    m.username.toLowerCase() === username.toLowerCase() || m.userId === username
+  );
+  
+  if (!member || member.password !== password) {
+    return res.status(401).json({ success: false, message: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" });
+  }
+
+  if (!member.sellerStatus || member.sellerStatus !== 'Active') {
+    return res.status(403).json({ success: false, message: "บัญชีของคุณยังไม่ได้ผ่านการสมัครหรืออนุมัติเปิดร้านค้าในระบบ กรุณาลงทะเบียนสมัครใหม่ หรือติดต่อแอดมินเพื่ออนุมัติร้านค้าก่อนเข้าสู่ระบบนะคะ" });
+  }
+  
+  res.json({ success: true, member });
+});
+
+// 2. Request OTP for Seller Registration
+app.post('/api/seller/send-otp', (req, res) => {
+  const { username } = req.body;
+  const db = readDb();
+  
+  if (!username) {
+    return res.status(400).json({ success: false, message: "กรุณาระบุชื่อผู้ใช้งาน" });
+  }
+  
+  const member = db.members.find((m: any) => 
+    m.username.toLowerCase() === username.toLowerCase() || m.userId === username
+  );
+  
+  if (!member) {
+    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกในระบบ" });
+  }
+  
+  if (!member.email || !member.email.includes('@')) {
+    return res.status(400).json({ success: false, message: "สมาชิกท่านนี้ยังไม่ได้กรอกอีเมลที่ถูกต้องในระบบประวัติ ไม่สามารถรับ OTP ได้ค่ะ" });
+  }
+  
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  if (!db.otps) {
+    db.otps = {};
+  }
+  db.otps[member.userId] = otpCode;
+  writeDb(db);
+  
+  res.json({
+    success: true,
+    otpSimulated: otpCode,
+    email: member.email,
+    message: `ระบบได้ส่งรหัส OTP ไปยังอีเมล ${member.email} เรียบร้อยแล้วค่ะ (รหัสจำลองสำหรับทดสอบคือ ${otpCode})`
+  });
+});
+
+// 3. Confirm Seller Application with OTP and transaction PIN
+app.post('/api/seller/apply-with-otp', (req, res) => {
+  const { username, storeName, storeAddress, warehouseLat, warehouseLng, otp, pin } = req.body;
+  const db = readDb();
+  
+  if (!username || !storeName || !storeAddress || !otp || !pin) {
+    return res.status(400).json({ success: false, message: "กรุณากรอกข้อมูลและรหัสยืนยันต่าง ๆ ให้ครบถ้วนค่ะ" });
+  }
+  
+  const member = db.members.find((m: any) => 
+    m.username.toLowerCase() === username.toLowerCase() || m.userId === username
+  );
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกในระบบ" });
+  
+  // A. Validate Rank (Member status/Rank Member or S/M/L/XL/XXL allowed)
   const allowedRanks = ["Member", "S", "M", "L", "XL", "XXL"];
   if (!member.rank || !allowedRanks.includes(member.rank)) {
     return res.status(400).json({ 
       success: false, 
-      message: "สำหรับการสมัครเปิดบัญชีร้านค้า Natee Plus Seller Center ท่านต้องมีตำแหน่งสมาชิกตั้งแต่ระดับ M ขึ้นไปเท่านั้นค่ะ" 
+      message: "สำหรับการสมัครเปิดบัญชีร้านค้า Natee Plus Seller Centre ท่านต้องมีตำแหน่งสมาชิกตั้งแต่ระดับ Member ขึ้นไปเท่านั้นค่ะ" 
     });
   }
-
-  const sellerCodeNum = db.members.filter(m => m.sellerStatus === "Active").length + 1;
-  const code = `A26${("0000" + sellerCodeNum).slice(-4)}`;
+  
+  // B. Validate Store Name Special Characters
+  const specialCharRegex = /[^\u0E00-\u0E7Fa-zA-Z0-9\s\-]/;
+  if (specialCharRegex.test(storeName)) {
+    return res.status(400).json({
+      success: false,
+      message: "ชื่อร้านค้าต้องไม่มีสัญลักษณ์หรือเครื่องหมายพิเศษใด ๆ ค่ะ (อนุญาตเฉพาะ ตัวอักษรไทย อังกฤษ ตัวเลข ช่องว่าง และขีดกลางเท่านั้น)"
+    });
+  }
+  
+  // C. Validate Store Name Uniqueness
+  const isDuplicate = db.members.some((m: any) => 
+    m.sellerStoreName && 
+    m.sellerStoreName.trim().toLowerCase() === storeName.trim().toLowerCase() &&
+    m.userId !== member.userId
+  );
+  if (isDuplicate) {
+    return res.status(400).json({
+      success: false,
+      message: "ชื่อร้านค้านี้มีผู้ใช้งานแล้วในระบบ กรุณาเลือกใช้ชื่ออื่นในการเปิดร้านค้านะคะ"
+    });
+  }
+  
+  // D. Validate OTP
+  const savedOtp = db.otps ? db.otps[member.userId] : null;
+  if (!savedOtp || savedOtp !== otp) {
+    return res.status(400).json({ success: false, message: "รหัส OTP ไม่ถูกต้อง กรุณาตรวจสอบหรือส่งคำขอรหัสอีกครั้งค่ะ" });
+  }
+  
+  // E. Validate Transaction PIN
+  if (member.pin !== pin) {
+    return res.status(400).json({ success: false, message: "รหัสธุรกรรม (PIN) ไม่ถูกต้อง กรุณากรอกใหมู่อีกครั้ง" });
+  }
+  
+  // All checks passed! Apply with unique code
+  const code = generateSellerCode(db);
   
   member.sellerStatus = "Pending"; // Pending admin approval
   member.sellerCode = code;
@@ -3215,9 +3348,159 @@ app.post('/api/seller/apply', (req, res) => {
   member.sellerAddress = storeAddress;
   member.warehouseLat = warehouseLat ? parseFloat(warehouseLat) : null;
   member.warehouseLng = warehouseLng ? parseFloat(warehouseLng) : null;
+  member.sellerFirstLoginShown = false; // reset for the approved welcome popup
+  
+  // Clean OTP
+  delete db.otps[member.userId];
+  
+  writeDb(db);
+  res.json({ 
+    success: true, 
+    code,
+    message: "ข้อมูลของท่านสมบูรณ์ระบบความปลอดภัยเรียบร้อย การขอเปิดร้านค้าอยู่ระหว่างการขออนุมัติโดยแอดมินค่ะ" 
+  });
+});
+
+// Legacy Seller Apply endpoint for backward compatibility
+app.post('/api/seller/apply', (req, res) => {
+  const { userId, storeName, storeAddress, warehouseLat, warehouseLng } = req.body;
+  const db = readDb();
+  
+  const member = db.members.find(m => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
+  
+  const allowedRanks = ["Member", "S", "M", "L", "XL", "XXL"];
+  if (!member.rank || !allowedRanks.includes(member.rank)) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "สำหรับการสมัครเปิดบัญชีร้านค้า Natee Plus Seller Centre ท่านต้องมีตำแหน่งสมาชิกตั้งแต่ระดับ Member ขึ้นไปเท่านั้นค่ะ" 
+    });
+  }
+
+  // Validate Store Name Special Characters
+  const specialCharRegex = /[^\u0E00-\u0E7Fa-zA-Z0-9\s\-]/;
+  if (specialCharRegex.test(storeName)) {
+    return res.status(400).json({
+      success: false,
+      message: "ชื่อร้านค้าต้องไม่มีสัญลักษณ์หรือเครื่องหมายพิเศษใด ๆ ค่ะ"
+    });
+  }
+  
+  // Validate Store Name Uniqueness
+  const isDuplicate = db.members.some((m: any) => 
+    m.sellerStoreName && 
+    m.sellerStoreName.trim().toLowerCase() === storeName.trim().toLowerCase() &&
+    m.userId !== member.userId
+  );
+  if (isDuplicate) {
+    return res.status(400).json({
+      success: false,
+      message: "ชื่อร้านค้านี้มีผู้ใช้งานแล้วในระบบ"
+    });
+  }
+
+  const code = generateSellerCode(db);
+  
+  member.sellerStatus = "Pending";
+  member.sellerCode = code;
+  member.sellerStoreName = storeName;
+  member.sellerAddress = storeAddress;
+  member.warehouseLat = warehouseLat ? parseFloat(warehouseLat) : null;
+  member.warehouseLng = warehouseLng ? parseFloat(warehouseLng) : null;
+  member.sellerFirstLoginShown = false;
   
   writeDb(db);
   res.json({ success: true, message: "ยื่นใบสมัครเปิดร้านค้าออนไลน์สำเร็จ! รหัสร้านค้าของคุณคือ " + code });
+});
+
+// Mark that Seller welcome popup has been shown once
+app.post('/api/seller/mark-first-login', (req, res) => {
+  const { userId } = req.body;
+  const db = readDb();
+  const member = db.members.find(m => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
+  
+  member.sellerFirstLoginShown = true;
+  writeDb(db);
+  res.json({ success: true, message: "บันทึกสถานะการยินดีต้อนรับเรียบร้อยแล้วค่ะ" });
+});
+
+// Get Seller Regulations text
+app.get('/api/seller/regulations', (req, res) => {
+  const db = readDb();
+  const regulations = db.bankSettings?.sellerRegulations || `กฎระเบียบและข้อบังคับ Natee Plus Seller Centre
+
+1. ผู้สมัครร้านค้าต้องเป็นสมาชิกในระบบ Natee Plus และมีสถานะตั้งแต่ระดับ S/M ขึ้นไป
+2. ร้านค้าต้องระบุข้อมูลชื่อร้านและที่ตั้งคลังสินค้าจริงเพื่อใช้ในการบริการจัดการและรับส่งคืนสินค้า
+3. ห้ามตั้งชื่อร้านค้าที่ซ้ำกับแบรนด์อื่น หรือมีอักขระพิเศษ (@, #, $, %, ^, &, *)
+4. สินค้าที่จำหน่ายในร้านต้องเป็นสินค้าที่ถูกต้องตามกฎหมาย และไม่ละเมิดลิขสิทธิ์
+5. การหักค่าธรรมเนียมระบบ (GP) จะคำนวณที่อัตรา 20% โดย 50% ของ GP จะถูกปันผลกลับคืนสายงาน MLM ของท่าน
+6. ปฏิบัติตามนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) อย่างเคร่งครัด`;
+  res.json({ success: true, regulations });
+});
+
+// Save Seller Regulations text (Admin with Manager/Admin role only)
+app.post('/api/seller/regulations', (req, res) => {
+  const { regulations, editorId } = req.body;
+  const db = readDb();
+  
+  const editor = db.members.find((m: any) => m.userId === editorId);
+  if (!editor || (editor.role !== 'Admin' && editor.role !== 'Manager')) {
+    return res.status(403).json({ success: false, message: "ขออภัยค่ะ เฉพาะแอดมินหรือผู้จัดการระบบที่มีสิทธิ์แก้ไขกฎระเบียบนี้" });
+  }
+  
+  if (!db.bankSettings) {
+    db.bankSettings = {
+      bankName: "ธนาคารไทยพาณิชย์",
+      bankAccount: "111-222-3333",
+      bankAccountName: "บริษัท นที พลัส จำกัด",
+      qrCodeUrl: ""
+    };
+  }
+  
+  db.bankSettings.sellerRegulations = regulations;
+  writeDb(db);
+  res.json({ success: true, message: "บันทึกกฎระเบียบและข้อบังคับร้านค้าเรียบร้อยแล้วค่ะ", regulations });
+});
+
+// Admin Update Seller Profile Directly
+app.post('/api/admin/seller-update-profile', (req, res) => {
+  const { userId, sellerCode, sellerStoreName, sellerStatus, name, surname, phone, email, rank, role } = req.body;
+  const db = readDb();
+  
+  const member = db.members.find((m: any) => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิกร้านค้าคนนี้" });
+  
+  // Validate duplicate store name if changed
+  if (sellerStoreName && sellerStoreName.trim().toLowerCase() !== (member.sellerStoreName || '').trim().toLowerCase()) {
+    const isDuplicate = db.members.some((m: any) => 
+      m.sellerStoreName && 
+      m.sellerStoreName.trim().toLowerCase() === sellerStoreName.trim().toLowerCase() &&
+      m.userId !== userId
+    );
+    if (isDuplicate) {
+      return res.status(400).json({ success: false, message: "ชื่อร้านค้านี้มีผู้อื่นใช้งานแล้วในระบบ กรุณาใช้ชื่ออื่นค่ะ" });
+    }
+    
+    const specialCharRegex = /[^\u0E00-\u0E7Fa-zA-Z0-9\s\-]/;
+    if (specialCharRegex.test(sellerStoreName)) {
+      return res.status(400).json({ success: false, message: "ชื่อร้านค้าต้องไม่มีเครื่องหมายหรือสัญลักษณ์พิเศษใด ๆ ค่ะ" });
+    }
+  }
+
+  // Edit fields
+  if (sellerCode !== undefined) member.sellerCode = sellerCode;
+  if (sellerStoreName !== undefined) member.sellerStoreName = sellerStoreName;
+  if (sellerStatus !== undefined) member.sellerStatus = sellerStatus;
+  if (name !== undefined) member.name = name;
+  if (surname !== undefined) member.surname = surname;
+  if (phone !== undefined) member.phone = phone;
+  if (email !== undefined) member.email = email;
+  if (rank !== undefined) member.rank = rank;
+  if (role !== undefined) member.role = role;
+  
+  writeDb(db);
+  res.json({ success: true, message: "ปรับปรุงข้อมูลสมาชิกร้านค้าเรียบร้อยแล้วค่ะ", member });
 });
 
 // RESET SELLER STATUS FOR RE-APPLY
@@ -3228,6 +3511,7 @@ app.post('/api/seller/reset-status', (req, res) => {
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
   
   member.sellerStatus = "NotApplied";
+  member.sellerFirstLoginShown = false;
   writeDb(db);
   res.json({ success: true, message: "รีเซ็ตสถานะการสมัครเรียบร้อย สามารถกรอกข้อมูลยื่นใบสมัครใหม่ได้ทันทีค่ะ" });
 });
@@ -3694,6 +3978,41 @@ app.post('/api/admin/store-reject', (req, res) => {
   member.sellerStatus = "Rejected";
   writeDb(db);
   res.json({ success: true, message: `ปฏิเสธการขอเปิดร้านร่วมเสร็จสิ้น` });
+});
+
+// UPDATE STORE STATUS (Active / Rejected / Suspended / NotApplied)
+app.post('/api/admin/store-update-status', (req, res) => {
+  const { userId, status } = req.body;
+  const db = readDb();
+  const member = db.members.find(m => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
+
+  const validStatuses = ["Active", "Rejected", "Suspended", "NotApplied", "Pending"];
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ success: false, message: "สถานะไม่ถูกต้อง" });
+  }
+
+  member.sellerStatus = status;
+
+  if (status === "Active" && !member.sellerCode) {
+    member.sellerCode = generateSellerCode(db);
+  }
+
+  // If set to NotApplied, we can clean up code or preserve it as a record
+  if (status === "NotApplied") {
+    // Optionally clean or keep
+  }
+
+  writeDb(db);
+
+  let statusMsg = "";
+  if (status === "Active") statusMsg = "อนุมัติร้านค้าเรียบร้อยแล้วค่ะ";
+  else if (status === "Rejected") statusMsg = "ปฏิเสธการขออนุมัติร้านค้าเรียบร้อยแล้วค่ะ";
+  else if (status === "Suspended") statusMsg = "ระงับการใช้งานร้านค้าชั่วคราวเรียบร้อยแล้วค่ะ";
+  else if (status === "NotApplied") statusMsg = "ยกเลิกร้านค้ากลับสู่สถานะยังไม่สมัครเรียบร้อยแล้วค่ะ";
+  else statusMsg = `เปลี่ยนสถานะร้านค้าเป็น ${status} เรียบร้อยแล้วค่ะ`;
+
+  res.json({ success: true, message: statusMsg, sellerStatus: status });
 });
 
 // ADMIN EDIT PRODUCT PRICE & DETAILS
