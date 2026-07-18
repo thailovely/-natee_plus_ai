@@ -1267,10 +1267,6 @@ export default function App() {
     if (profile?.role === 'Manager' || profile?.role === 'Admin') return 999999999;
     if (profile?.rank === 'Member') return 0;
 
-    if (profile?.eligibleRights !== undefined) {
-      return profile.eligibleRights;
-    }
-
     let basePackage = 0;
     const r = profile?.rank || 'S';
     if (r === 'S') basePackage = 100;
@@ -1280,16 +1276,11 @@ export default function App() {
     else if (r === 'XXL') basePackage = 5000;
     else basePackage = 100;
 
-    const maxRights = basePackage * 10;
-    const totalWithdrawn = transactions
-      .filter(t => t.type === 'Withdrawal' && t.status === 'Approved')
-      .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+    const maxRights = profile?.eligibleRights !== undefined ? profile.eligibleRights : (basePackage * 10);
+    const ecash = profile?.balanceECash || 0;
+    const ecoupon = profile?.balanceECoupon || 0;
     
-    // Remaining rights decreases based on withdrawals. 
-    // To match user's explicit example: XXL (5000) -> 10x is 50000. 
-    // If withdrawn 500, remaining rights displays 45500.
-    // Formula matches: maxRights - (totalWithdrawn * 9)
-    const remaining = maxRights - (totalWithdrawn * 9);
+    const remaining = maxRights - (ecash + ecoupon);
     return Math.max(0, remaining);
   };
 
@@ -4733,23 +4724,20 @@ export default function App() {
           </button>
 
           <div className="flex-1 flex flex-wrap md:flex-nowrap items-center justify-between gap-4">
-            {/* Left Front Group: ข้อมูลบริษัท, Kyc, รหัสสมาชิก, Username, ตำแหน่ง */}
+            {/* Left Front Group: ชื่อสมาชิก & KYC, รหัสสมาชิก, Username, ตำแหน่ง */}
             <div className="flex flex-wrap items-center gap-2">
-              {/* ชื่อบริษัท */}
+              {/* ชื่อสมาชิก (สวยงามด้วย Gradient ไล่โทนสี) */}
               <div className="flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-indigo-600 px-3 py-1.5 rounded-xl text-white font-extrabold text-[11px] shadow-sm shrink-0">
-                <span>🏢</span>
-                <span>บริษัท นที พลัส จำกัด</span>
+                <span>👤</span>
+                <span>{profile?.name} {profile?.surname}</span>
               </div>
 
-              {/* ชื่อสมาชิก & KYC */}
-              <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200/60 px-3 py-1.5 rounded-xl shrink-0">
-                <span className="text-xs font-bold text-slate-800 shrink-0">{profile?.name} {profile?.surname}</span>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase shrink-0 ${
-                  profile?.statusKyc === 'Active' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
-                }`}>
-                  {profile?.statusKyc === 'Active' ? '✓ KYC APPROVED' : '⌛ WAITING KYC'}
-                </span>
-              </div>
+              {/* KYC Status Badge */}
+              <span className={`text-[9px] px-2 py-1.5 rounded-xl font-bold uppercase shrink-0 shadow-sm border ${
+                profile?.statusKyc === 'Active' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
+              }`}>
+                {profile?.statusKyc === 'Active' ? '✓ KYC APPROVED' : '⌛ WAITING KYC'}
+              </span>
 
               {/* รหัสสมาชิก */}
               <div className="bg-slate-50 text-slate-700 font-bold px-3 py-1.5 rounded-xl text-[11px] border border-slate-200/60 shrink-0">
@@ -4767,7 +4755,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Right Group: ยอด E-Cash, ยอด E-Money, ยอดสิทธิ์คงเหลือ, ยอดสะสม Plan */}
+            {/* Right Group: ยอด E-Cash, ยอด E-Money, ยอด E-Coupon, ยอดสิทธิ์คงเหลือ, ยอดสะสม Plan */}
             <div className="flex items-center gap-2 shrink-0 md:ml-auto">
               {/* ยอด E-Cash */}
               <div className="bg-emerald-50 text-emerald-700 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-emerald-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
@@ -4782,6 +4770,14 @@ export default function App() {
                 <span className="text-[9px] text-amber-600 uppercase tracking-wider block font-medium leading-none mb-0.5">ยอด E-Money</span>
                 <span className="font-mono text-[11px]">
                   ฿{profile?.balanceEMoney?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                </span>
+              </div>
+
+              {/* ยอด E-Coupon */}
+              <div className="bg-rose-50 text-rose-700 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-rose-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
+                <span className="text-[9px] text-rose-500 uppercase tracking-wider block font-medium leading-none mb-0.5">ยอด E-Coupon</span>
+                <span className="font-mono text-[11px]">
+                  ฿{profile?.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
                 </span>
               </div>
 
@@ -9927,14 +9923,14 @@ export default function App() {
                                   <td className="px-4 py-3 text-right font-semibold">
                                     <div className="mb-1.5">
                                       <span className="text-[9px] text-slate-400 block font-bold uppercase leading-none mb-0.5">คงเหลือ</span>
-                                      <span className="block text-emerald-600 font-bold text-xs">E-Cash: ฿{member.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                      <span className="block text-purple-600 font-bold text-[10px]">E-Money: ฿{(member.balanceEMoney || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                      <span className="block text-indigo-500 font-bold text-[10px]">Coupon: ฿{member.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                      <span className="block text-emerald-600 font-bold text-xs">E-Cash: {member.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                      <span className="block text-purple-600 font-bold text-[10px]">E-Money: {(member.balanceEMoney || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                      <span className="block text-indigo-500 font-bold text-[10px]">Coupon: {member.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                     </div>
                                     <div className="pt-1 border-t border-slate-100">
                                       <span className="text-[9px] text-slate-400 block font-bold uppercase leading-none mb-0.5">สะสมทั้งหมด</span>
-                                      <span className="block text-emerald-700 font-bold text-[11px]">รายได้สะสม: ฿{(member.totalEarnings || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                      <span className="block text-indigo-600 font-bold text-[10px]">คูปองสะสม: ฿{(member.totalCouponsEarned || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                      <span className="block text-emerald-700 font-bold text-[11px]">รายได้สะสม: {(member.totalEarnings || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                      <span className="block text-indigo-600 font-bold text-[10px]">คูปองสะสม: {(member.totalCouponsEarned || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                     </div>
                                   </td>
                                   <td className="px-4 py-3 text-center">
@@ -10316,9 +10312,9 @@ export default function App() {
                                       <span className="block text-[10px] text-slate-400 font-bold">สิทธิ์: {member.role || "Member"}</span>
                                     </td>
                                     <td className="px-4 py-3 text-right font-semibold">
-                                      <span className="block text-emerald-600 font-bold" title="E-Cash">💵 ฿ {member.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                      <span className="block text-[10px] text-amber-600 font-bold" title="E-Money">💰 ฿ {(member.balanceEMoney || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                      <span className="block text-[10px] text-indigo-500 font-bold" title="E-Coupon">🎟️ ฿ {member.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                      <span className="block text-emerald-600 font-bold" title="E-Cash">💵 {member.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                      <span className="block text-[10px] text-amber-600 font-bold" title="E-Money">💰 {(member.balanceEMoney || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                      <span className="block text-[10px] text-indigo-500 font-bold" title="E-Coupon">🎟️ {member.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                       <div className="flex flex-col gap-1 items-center justify-center">
