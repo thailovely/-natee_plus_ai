@@ -3428,14 +3428,24 @@ app.post('/api/seller/mark-first-login', (req, res) => {
 // Get Seller Regulations text
 app.get('/api/seller/regulations', (req, res) => {
   const db = readDb();
-  const regulations = db.bankSettings?.sellerRegulations || `กฎระเบียบและข้อบังคับ Natee Plus Partner
+  let regulations = db.bankSettings?.sellerRegulations || `กฎระเบียบและข้อบังคับ Natee Plus Partner
 
-1. ผู้สมัครร้านค้าต้องเป็นสมาชิกในระบบ Natee Plus และมีสถานะตั้งแต่ระดับ S/M ขึ้นไป
+1. ผู้สมัครร้านค้าสามารถเข้าร่วมเป็น Partner ได้ตั้งแต่ตำแหน่ง Manager ขึ้นไป (หรือตามที่ผู้ดูแลระบบอนุมัติเป็นกรณีพิเศษ)
 2. ร้านค้าต้องระบุข้อมูลชื่อร้านและที่ตั้งคลังสินค้าจริงเพื่อใช้ในการบริการจัดการและรับส่งคืนสินค้า
 3. ห้ามตั้งชื่อร้านค้าที่ซ้ำกับแบรนด์อื่น หรือมีอักขระพิเศษ (@, #, $, %, ^, &, *)
 4. สินค้าที่จำหน่ายในร้านต้องเป็นสินค้าที่ถูกต้องตามกฎหมาย และไม่ละเมิดลิขสิทธิ์
 5. การหักค่าธรรมเนียมระบบ (GP) จะคำนวณที่อัตรา 20% โดย 50% ของ GP จะถูกปันผลกลับคืนสายงาน MLM ของท่าน
 6. ปฏิบัติตามนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) อย่างเคร่งครัด`;
+
+  // Migration: If it contains the old term "ระดับ S/M ขึ้นไป" or "มีสถานะตั้งแต่ระดับ S/M ขึ้นไป", replace it or force update
+  if (regulations.includes("ระดับ S/M ขึ้นไป") || regulations.includes("มีสถานะตั้งแต่ระดับ S/M ขึ้นไป")) {
+    regulations = regulations.replace("มีสถานะตั้งแต่ระดับ S/M ขึ้นไป", "สามารถเข้าร่วมเป็น Partner ได้ตั้งแต่ตำแหน่ง Manager ขึ้นไป (หรือตามที่ผู้ดูแลระบบอนุมัติเป็นกรณีพิเศษ)")
+                             .replace("ระดับ S/M ขึ้นไป", "ตำแหน่ง Manager ขึ้นไป");
+    if (db.bankSettings) {
+      db.bankSettings.sellerRegulations = regulations;
+      writeDb(db);
+    }
+  }
   res.json({ success: true, regulations });
 });
 

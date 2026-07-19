@@ -6,7 +6,8 @@ import {
   Trash2, Plus, Star, AlertCircle, RefreshCw, Layers, MapPin,
   Eye, EyeOff, X, ClipboardList, Printer, Lock, FileSpreadsheet,
   Coins, FileText, Store, Bell, Truck, UserX, RotateCcw, 
-  MessageSquare, BookOpen, BarChart2, Home, ShoppingCart, ChevronRight
+  MessageSquare, BookOpen, BarChart2, Home, ShoppingCart, ChevronRight,
+  Binary, Award, Heart, ArrowLeftRight, Receipt, Calculator
 } from 'lucide-react';
 import { thaiAddressData } from './thaiAddressData';
 import { NateeWarehouseMap } from './components/NateeWarehouseMap';
@@ -6596,7 +6597,7 @@ export default function App() {
                         </div>
                         <p className="text-slate-600 leading-relaxed font-medium">
                           แหล่งศูนย์รวมสินค้าคุณภาพที่ผ่านการคัดสรรจากระบบร้านร่วมค้า ซึ่งลงทะเบียนและสมัครวางจำหน่ายโดยสมาชิกผ่านระบบเว็บ 
-                          <span className="font-extrabold text-indigo-600"> "Natee Plus Partner"</span> (สงวนสิทธิ์เฉพาะสมาชิกที่อัปเกรดตำแหน่งร้านค้าระดับ M ขึ้นไปเท่านั้น ถึงจะมีสิทธิ์สมัครเปิดร้านเพื่อลงขายสินค้าและรับยอดขายได้)
+                          <span className="font-extrabold text-indigo-600"> "Natee Plus Partner"</span> (สามารถสมัครเข้าร่วมเป็น Partner ได้ตั้งแต่ตำแหน่ง Manager ขึ้นไป เพื่อสิทธิ์ในการเปิดร้านค้าลงขายสินค้าและรับยอดขายได้)
                         </p>
                         <div className="flex flex-wrap items-center gap-3 pt-2 text-[11px] text-amber-900/95 font-bold border-t border-amber-200/40 mt-1">
                           <span className="flex items-center gap-1">
@@ -8406,7 +8407,7 @@ export default function App() {
                             {profile?.rank || "Member"}
                           </span>
                           <span className="text-xs font-bold text-slate-700">
-                            {profile?.rank === 'XXL' ? 'คุณสมบัติรับออลแชร์สูงสุด (Active)' : 'ต้องการแพ็กเกจระดับสูงเพื่อสิทธิ์เต็มจำนวน'}
+                            {(profile?.eligibleRights || 0) > 0 ? 'คุณสมบัติรับออลแชร์ปันสุข (Active)' : 'กรุณาซื้อแพ็กเกจเปิดสิทธิ์รับออลแชร์'}
                           </span>
                         </div>
                       </div>
@@ -13750,7 +13751,7 @@ export default function App() {
                             <div className="bg-emerald-50/60 border border-emerald-100 rounded-2xl p-4 text-xs text-emerald-950">
                               <p className="font-bold flex items-center gap-1">🔄 ระบบบีบสายงานขึ้นด้านบน (Dynamic Compression):</p>
                               <p className="leading-relaxed mt-1">
-                                เมื่อรหัสใดในโครงสร้างไม่มีสิทธิ์รับรายได้ (วงเงินสะสมเต็ม 10 เท่า หรือยังไม่ยืนยัน KYC หรือไม่ได้อยู่ในระดับตำแหน่งที่จะได้รับสิทธิ์ลึกชั้นนั้น) ระบบของ NaTee Plus จะใช้กลไก <strong>"Low-up Bypass"</strong> ข้ามขยับรหัสนั้นออกไป และมองหาอัพไลน์ในชั้นบนถัดขึ้นไปที่มีคุณสมบัติครบแทน เพื่อให้การจ่ายเงินในบิลนั้นสมบูรณ์ครอบคลุมและจ่ายครบจริงเต็มจำนวน 20 ชั้นที่กำหนด โดยคะแนนผลตอบแทนจะไม่สูญหายไปในระบบ
+                                เมื่อรหัสใดในโครงสร้างไม่มีสิทธิ์รับรายได้ (วงเงินสะสมเต็ม 10 เท่า หรือไม่ได้อยู่ในระดับตำแหน่งที่จะได้รับสิทธิ์ลึกชั้นนั้น) ระบบของ NaTee Plus จะใช้กลไก <strong>"Low-up Bypass"</strong> ข้ามขยับรหัสนั้นออกไป และมองหาอัพไลน์ในชั้นบนถัดขึ้นไปที่มีคุณสมบัติครบแทน โดยไม่บังคับให้ยืนยันตัวตน KYC ก่อนในการรับปันผลสะสม (แต่ทางระบบจะบังคับให้ต้องยืนยันตัวตน KYC ก็ต่อเมื่อสมาชิกต้องการดำเนินธุรกรรมโอนเงินหรือถอนเงินออกจากระบบเท่านั้น) ทั้งนี้เพื่อให้การจ่ายเงินในบิลนั้นสมบูรณ์ครอบคลุมและจ่ายครบจริงเต็มจำนวน 20 ชั้นที่กำหนด โดยคะแนนผลตอบแทนจะไม่สูญหายไปในระบบ
                               </p>
                             </div>
                           </div>
@@ -14026,8 +14027,8 @@ export default function App() {
                             <div className="bg-indigo-50/60 border border-indigo-100 p-4 rounded-2xl space-y-2.5 text-xs text-indigo-950 leading-relaxed">
                               <p className="font-bold flex items-center gap-1">📋 เกณฑ์คุณสมบัติผู้รับ (Eligible Members):</p>
                               <p>
-                                1. สมาชิกผู้ผ่านการลงทะเบียนจัดซื้อแพ็กเกจระดับสูงสุด <strong>XXL</strong> เท่านั้น <br />
-                                2. สมาชิกที่มีสิทธิ์ในการรับรายได้คงเหลือสะสม (Eligible Rights &gt; 0)
+                                1. สมาชิกผู้ผ่านการลงทะเบียนเปิดสิทธิ์รับรายได้ (แพ็กเกจอัปเกรดใดก็ได้ตั้งแต่ S ขึ้นไป) <br />
+                                2. มีสิทธิ์การรับรายได้คงเหลือสะสมไม่เท่ากับศูนย์ (Eligible Rights &gt; 0) ทั่วถึงอย่างเท่าเทียมกัน
                               </p>
                               <p className="font-bold border-t border-indigo-200/60 pt-2 flex items-center gap-1">💰 วิธีปันส่วนและการจ่ายออก:</p>
                               <p>
@@ -14168,7 +14169,7 @@ export default function App() {
                               <li className="flex items-start gap-2">
                                 <span className="text-amber-500 font-bold">●</span>
                                 <div>
-                                  <strong>ระดับตำแหน่งขั้นต่ำ:</strong> ผู้ขายในนามพาร์ทเนอร์ร้านค้า (Partner Merchant) ต้องสะสมแพ็กเกจตำแหน่งของตนเองให้อยู่ในระดับ <strong>S</strong> หรือ <strong>M</strong> ขึ้นไปเท่านั้น เพื่อรักษาระเบียบการใช้บริการ
+                                  <strong>ระดับตำแหน่งขั้นต่ำ:</strong> ผู้ขายในนามพาร์ทเนอร์ร้านค้า (Partner Merchant) สามารถเข้าเป็น Partner ได้ตั้งแต่ตำแหน่ง <strong>Manager</strong> ขึ้นไป เพื่อรักษาระเบียบการใช้บริการ
                                 </div>
                               </li>
                               <li className="flex items-start gap-2">
