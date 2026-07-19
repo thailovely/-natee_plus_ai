@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import jsQR from 'jsqr';
 import { 
   Users, Wallet, ShoppingBag, CreditCard, LayoutDashboard, 
   UserCheck, ShieldCheck, Settings, LogOut, Copy, Check, 
@@ -424,6 +425,8 @@ export default function App() {
   const [selectedChoiceId, setSelectedChoiceId] = useState<string>('');
   const [showPackageChoiceModal, setShowPackageChoiceModal] = useState<boolean>(false);
   const [pendingPurchaseProductId, setPendingPurchaseProductId] = useState<string>('');
+  const [showInsufficientFundsModal, setShowInsufficientFundsModal] = useState<boolean>(false);
+  const [insufficientFundsMessage, setInsufficientFundsMessage] = useState<string>('');
   const [showPurchaseConfirmModal, setShowPurchaseConfirmModal] = useState<boolean>(false);
   const [confirmProduct, setConfirmProduct] = useState<any>(null);
   const [confirmChoice, setConfirmChoice] = useState<any>(null);
@@ -443,6 +446,9 @@ export default function App() {
   const [topupSlip, setTopupSlip] = useState<string>('');
   const [topupSlipBase64, setTopupSlipBase64] = useState<string>('');
   const [topupActualAmount, setTopupActualAmount] = useState<string>('');
+  const [detectedQrCode, setDetectedQrCode] = useState<string>('');
+  const [isScanningQr, setIsScanningQr] = useState<boolean>(false);
+  const [qrScanMessage, setQrScanMessage] = useState<string>('');
   
   // System Bank Settings State
   const [bankSettings, setBankSettings] = useState<any>({
@@ -1073,12 +1079,21 @@ export default function App() {
               if (currentMember) {
                 setProfile((prevProfile: any) => {
                   if (prevProfile) {
+                    // Check E-Cash (No audio sound per request, just notification)
                     const prevB = prevProfile.balanceECash;
                     const newBalance = currentMember.balanceECash;
                     if (newBalance > prevB && prevB > 0) {
                       const diff = parseFloat((newBalance - prevB).toFixed(4));
                       showNotif(`ยอดเงิน E-Cash ของคุณเพิ่มขึ้น +${diff.toLocaleString()} บาท`, 'success');
-                      playMoneySound(diff, 'general');
+                    }
+
+                    // Check E-Money (Play income sound only for E-Money additions!)
+                    const prevEMoney = prevProfile.balanceEMoney || 0;
+                    const newEMoney = currentMember.balanceEMoney || 0;
+                    if (newEMoney > prevEMoney && prevEMoney > 0) {
+                      const diffEMoney = parseFloat((newEMoney - prevEMoney).toFixed(4));
+                      showNotif(`ได้รับรายได้ปันผล/โบนัส E-Money! +${diffEMoney.toLocaleString()} บาท`, 'success');
+                      playMoneySound(diffEMoney, 'bonus');
                     }
                   }
                   return currentMember;
@@ -1222,6 +1237,7 @@ export default function App() {
             if (currentMember) {
               setProfile((prevProfile: any) => {
                 if (prevProfile) {
+                  // Check E-Cash (No audio sound per request, just notification)
                   const prevBalance = prevProfile.balanceECash;
                   const newBalance = currentMember.balanceECash;
                   if (newBalance > prevBalance && prevBalance > 0) {
@@ -1250,16 +1266,22 @@ export default function App() {
 
                         if (isDeposit) {
                           showNotif(`เติมเงิน E-Cash สำเร็จแล้ว! +${depositAmount.toLocaleString()} บาท (ได้รับยอดจริงครบถ้วนแล้วค่ะ)`, 'success');
-                          playMoneySound(depositAmount, 'deposit');
                         } else {
                           showNotif(`ได้รับปันผลสำเร็จ! +${diff.toLocaleString()} บาท จาก Bonus/E-Share`, 'success');
-                          playMoneySound(diff, 'bonus');
                         }
                       })
                       .catch(() => {
                         showNotif(`ยอดเงิน E-Cash ของคุณเพิ่มขึ้น +${diff.toLocaleString()} บาท`, 'success');
-                        playMoneySound(diff, 'general');
                       });
+                  }
+
+                  // Check E-Money (Play income sound only for E-Money additions!)
+                  const prevEMoney = prevProfile.balanceEMoney || 0;
+                  const newEMoney = currentMember.balanceEMoney || 0;
+                  if (newEMoney > prevEMoney && prevEMoney > 0) {
+                    const diffEMoney = parseFloat((newEMoney - prevEMoney).toFixed(4));
+                    showNotif(`ได้รับรายได้ปันผล/โบนัส E-Money! +${diffEMoney.toLocaleString()} บาท`, 'success');
+                    playMoneySound(diffEMoney, 'bonus');
                   }
                 }
                 return currentMember;
@@ -2767,13 +2789,76 @@ export default function App() {
     }
   };
 
+  const scanQRFromBase64 = (base64: string): Promise<string | null> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = base64;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxDim = 1024; // Limit size for fast scanning
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        try {
+          const imageData = ctx.getImageData(0, 0, width, height);
+          const code = jsQR(imageData.data, width, height);
+          if (code) {
+            resolve(code.data);
+          } else {
+            resolve(null);
+          }
+        } catch (err) {
+          console.error("Error decoding QR", err);
+          resolve(null);
+        }
+      };
+      img.onerror = () => {
+        resolve(null);
+      };
+    });
+  };
+
   const handleSlipFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setTopupSlip(file.name);
+      setDetectedQrCode('');
+      setQrScanMessage('กำลังตรวจสอบความถูกต้องของสลิป...');
+      setIsScanningQr(true);
+
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setTopupSlipBase64(reader.result as string);
+      reader.onloadend = async () => {
+        const base64 = reader.result as string;
+        setTopupSlipBase64(base64);
+        
+        // Scan QR
+        const qrCodeData = await scanQRFromBase64(base64);
+        setIsScanningQr(false);
+        if (qrCodeData) {
+          setDetectedQrCode(qrCodeData);
+          setQrScanMessage('✓ ตรวจพบรหัสสแกน QR Code ในสลิปของคุณเรียบร้อยแล้วค่ะ ระบบจะประมวลผลเติมเงินแบบอัตโนมัติทันทีเมื่อกดยืนยัน! ⚡');
+          showNotif('พบ QR Code ในสลิปแล้ว! ระบบจะตรวจสอบความถูกต้องอัตโนมัติเมื่อกดแจ้งโอนค่ะ', 'success');
+        } else {
+          setDetectedQrCode('');
+          setQrScanMessage('⚠️ ไม่พบรหัสสแกน QR Code บนสลิปนี้ (ระบบจะทำการส่งข้อมูลให้แอดมินหลังบ้านเป็นผู้อนุมัติแบบปกติหลังกดแจ้งโอนค่ะ)');
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -2809,16 +2894,23 @@ export default function App() {
           amount: topupAmount,
           transferAmount: topupActualAmount,
           transferDate: `${topupTransferDate} ${topupTransferHour}:${topupTransferMinute}`,
-          slipFile: topupSlipBase64
+          slipFile: topupSlipBase64,
+          qrCode: detectedQrCode
         })
       });
       const d = await res.json();
       if (d.success) {
-        showNotif('ส่งหลักฐานสลิปเรียบร้อยแล้วค่ะ รอการตรวจสอบและอนุมัติยอด E-Cash จากแอดมินหลังบ้าน!', 'success');
+        if (d.isAutoApproved) {
+          showNotif(d.message || 'ระบบตรวจสอบสลิปโอนเงินสำเร็จเรียบร้อย! เติมเงิน E-Cash ให้คุณอัตโนมัติแล้วค่ะ ⚡', 'success');
+        } else {
+          showNotif(d.message || 'ส่งหลักฐานสลิปเรียบร้อยแล้วค่ะ รอการตรวจสอบและอนุมัติยอด E-Cash จากแอดมินหลังบ้าน!', 'success');
+        }
         setTopupSlip('');
         setTopupSlipBase64('');
         setTopupDecimal('');
         setTopupActualAmount('');
+        setDetectedQrCode('');
+        setQrScanMessage('');
         fetchProfile();
         fetchTransactions();
       } else {
@@ -3211,6 +3303,55 @@ export default function App() {
     }
   };
 
+  // Get package choices with robust fallbacks for all packages (S, M, L, XL, XXL)
+  const getPackageChoicesForId = (pkgId: string) => {
+    const list = packageChoices.filter(c => c.packageId === pkgId);
+    if (list.length > 0) return list;
+    
+    // Hardcoded fallback for any package that has no database choices defined yet
+    if (pkgId === 'pack_s') {
+      return [
+        { id: "pc_s1_fallback", packageId: "pack_s", name: "S-Set A: สบู่สมุนไพรนทีพลัส ขนาดทดลอง 1 ชิ้น" },
+        { id: "pc_s2_fallback", packageId: "pack_s", name: "S-Set B: ยาสีฟันสมุนไพรนทีพลัส ขนาดพกพา 1 ชิ้น" }
+      ];
+    }
+    if (pkgId === 'pack_m') {
+      return [
+        { id: "pc_m1_fallback", packageId: "pack_m", name: "M-Set A: ชุดของใช้สบู่สมุนไพรนทีพลัส 3 ชิ้น" },
+        { id: "pc_m2_fallback", packageId: "pack_m", name: "M-Set B: ชุดยาสีฟันสมุนไพรสูตรลดการเสียวเหงือก 2 ชิ้น" }
+      ];
+    }
+    if (pkgId === 'pack_l') {
+      return [
+        { id: "pc_l1_fallback", packageId: "pack_l", name: "L-Set A: ชุดกาแฟเอสเพรสโซ่พรีเมียม + ถ้วยกาแฟนทีพลัส" },
+        { id: "pc_l2_fallback", packageId: "pack_l", name: "L-Set B: เซ็ตสบู่สมุนไพรและยาสีฟันสูตรกู้เหงือก (รวม 5 ชิ้น)" },
+        { id: "pc_l3_fallback", packageId: "pack_l", name: "L-Set C: อาหารเสริมบำรุงสายตานวัตกรรม (Lutein Plus) 1 กล่อง" }
+      ];
+    }
+    if (pkgId === 'pack_xl') {
+      return [
+        { id: "pc_xl1_fallback", packageId: "pack_xl", name: "XL-Set A: เซ็ตอาหารเสริมฟื้นฟูร่างกายแบบองค์รวม (Multivitamin + Eye care)" },
+        { id: "pc_xl2_fallback", packageId: "pack_xl", name: "XL-Set B: เครื่องชงกาแฟเอสเพรสโซ่แรงดันสูงสำหรับใช้ในบ้าน" },
+        { id: "pc_xl3_fallback", packageId: "pack_xl", name: "XL-Set C: เซ็ตเครื่องสำอางและเซรั่ม Gliss-Serum บำรุงลึก 3 ขวด" }
+      ];
+    }
+    if (pkgId === 'pack_xxl') {
+      return [
+        { id: "pc_xxl1_fallback", packageId: "pack_xxl", name: "XXL-Set A: ชุดเปิดศูนย์จุดกระจายสินค้า (สินค้าอุปโภคบริโภคครบครัน 20 ชิ้น)" },
+        { id: "pc_xxl2_fallback", packageId: "pack_xxl", name: "XXL-Set B: เซ็ตเครื่องใช้ไฟฟ้าพรีเมียม (เครื่องชงกาแฟเอสเพรสโซ่ + พาวเวอร์แบงค์ชาร์จเร็ว)" },
+        { id: "pc_xxl3_fallback", packageId: "pack_xxl", name: "XXL-Set C: เซ็ตสกินแคร์กู้หน้าใสหน้าเด็กสูตรเคาน์เตอร์แบรนด์นที (ครบชุด 5 ชิ้น)" }
+      ];
+    }
+    return [];
+  };
+
+  const triggerInsufficientFundsModal = (required: number, current: number) => {
+    setInsufficientFundsMessage(`ขออภัยค่ะ ยอดเงินคงเหลือในกระเป๋า E-Cash ของท่านไม่เพียงพอสำหรับชำระเงินค่าแพ็กเกจนี้ (ราคาสินค้า ฿${required.toLocaleString()} แต่คุณมี E-Cash เพียง ฿${current.toLocaleString()} เท่านั้นค่ะ)`);
+    setShowInsufficientFundsModal(true);
+    setShowPackageChoiceModal(false);
+    setShowPurchaseConfirmModal(false);
+  };
+
   // Purchase Package or General Product
   const handlePurchaseProduct = async (prodId: string, bypassChoice = false, customChoiceId?: string) => {
     const product = products.find(p => p.id === prodId);
@@ -3232,32 +3373,31 @@ export default function App() {
       cashToUse = product.price - couponToUse;
     }
 
+    // Since we unlock product lists for all positions, we show the choice modal first even if insufficient balance!
+    if (isPkg && !bypassChoice) {
+      const filteredChoices = getPackageChoicesForId(prodId);
+      setPendingPurchaseProductId(prodId);
+      setSelectedChoiceId(filteredChoices[0]?.id || ''); // default select the first one
+      setShowPackageChoiceModal(true);
+      return;
+    }
+
+    // Now if they bypass/confirm from choice modal, we run the real balance check and trigger the Red Pop-up if insufficient!
     if (isPkg) {
-      if (profile?.balanceECash < product.price) {
-        showNotif('ยอดเงินคงเหลือในกระเป๋า E-Cash ไม่เพียงพอสำหรับชำระเงินค่าแพ็กเกจ กรุณาเติมเงินก่อนทำรายการค่ะ', 'error');
+      if ((profile?.balanceECash || 0) < product.price) {
+        triggerInsufficientFundsModal(product.price, profile?.balanceECash || 0);
         return;
       }
     } else {
-      if (profile?.balanceECash < cashToUse) {
-        showNotif(`ยอดเงินคงเหลือไม่พอสำหรับชำระเงิน (ราคารวม ฿${product.price?.toLocaleString()} • หักจ่ายด้วย E-Coupon ฿${couponToUse?.toLocaleString()} • ต้องใช้ E-Cash ชำระส่วนต่าง ฿${cashToUse?.toLocaleString()} แต่ท่านมี E-Cash เพียง ฿${profile?.balanceECash?.toLocaleString()})`, 'error');
-        return;
-      }
-    }
-
-    // Since position M and above require selecting a product set
-    if (isPkg && prodId !== 'pack_s' && !bypassChoice) {
-      // Find package choices for this package ID
-      const filteredChoices = packageChoices.filter(c => c.packageId === prodId);
-      if (filteredChoices.length > 0) {
-        setPendingPurchaseProductId(prodId);
-        setSelectedChoiceId(filteredChoices[0].id); // default select the first one
-        setShowPackageChoiceModal(true);
+      if ((profile?.balanceECash || 0) < cashToUse) {
+        triggerInsufficientFundsModal(product.price, profile?.balanceECash || 0);
         return;
       }
     }
 
     const choiceToUse = customChoiceId || selectedChoiceId;
-    const choiceObj = isPkg ? packageChoices.find(c => c.id === choiceToUse) : null;
+    const choicesList = getPackageChoicesForId(prodId);
+    const choiceObj = isPkg ? choicesList.find(c => c.id === choiceToUse) : null;
     
     // Set the product and choices to confirm
     setConfirmProduct(product);
@@ -3268,6 +3408,14 @@ export default function App() {
 
   const handleFinalizePackagePurchase = async () => {
     if (!confirmProduct) return;
+
+    // Double check balance right before writing to DB
+    const isPkg = confirmProduct.category === 'Package';
+    if (isPkg && (profile?.balanceECash || 0) < confirmProduct.price) {
+      triggerInsufficientFundsModal(confirmProduct.price, profile?.balanceECash || 0);
+      return;
+    }
+
     try {
       const res = await fetch('/api/shop/purchase', {
         method: 'POST',
@@ -7559,6 +7707,18 @@ export default function App() {
                           </label>
                         </div>
                       </div>
+                      
+                      {qrScanMessage && (
+                        <div className={`p-3 rounded-2xl text-[11px] leading-normal font-semibold text-left ${
+                          detectedQrCode 
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                            : isScanningQr 
+                            ? 'bg-indigo-50 text-indigo-700 border border-indigo-100 animate-pulse' 
+                            : 'bg-amber-50 text-amber-700 border border-amber-100'
+                        }`}>
+                          {qrScanMessage}
+                        </div>
+                      )}
                       
                       <button 
                         onClick={handleTopupSubmit}
@@ -15010,11 +15170,11 @@ export default function App() {
             <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100">
               <h3 className="text-sm font-bold text-slate-900 mb-2">🎁 เลือกชุดเซ็ตสินค้าของแพ็กเกจ</h3>
               <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                ตั้งแต่แพ็กเกจตำแหน่ง M ขึ้นไป สมาชิกสามารถระบุเซ็ตสินค้าที่ท่านต้องการได้รับจากระบบได้ที่นี่ โดยแอดมินจะดำเนินการจัดส่งตามรายการที่เลือกค่ะ
+                ตั้งแต่แพ็กเกจตำแหน่ง M ขึ้นไป สมาชิกสามารถเลือก"กล่องสุ่ม" ระบุเซ็ตสินค้าที่ท่านต้องการได้รับจากระบบได้ที่นี่ โดยจะถูกจัดส่งตามรายการที่เลือก (ราคานี้รวมค่าจัดส่งแล้ว)
               </p>
               
               <div className="space-y-3 mb-6">
-                {packageChoices.filter(c => c.packageId === pendingPurchaseProductId).map((choice) => (
+                {getPackageChoicesForId(pendingPurchaseProductId).map((choice) => (
                   <label 
                     key={choice.id} 
                     className={`flex items-start gap-3 p-3 border rounded-2xl cursor-pointer transition ${
@@ -15038,7 +15198,7 @@ export default function App() {
                   </label>
                 ))}
                 
-                {packageChoices.filter(c => c.packageId === pendingPurchaseProductId).length === 0 && (
+                {getPackageChoicesForId(pendingPurchaseProductId).length === 0 && (
                   <p className="text-xs text-amber-600 text-center py-4 bg-amber-50 rounded-xl font-bold">
                     ⚠️ แอดมินยังไม่ได้กำหนดเซ็ตสินค้าสำหรับแพ็กเกจนี้ กรุณาติดต่อแอดมินหรือเลือกสั่งซื้อภายหลังค่ะ
                   </p>
@@ -15064,6 +15224,45 @@ export default function App() {
                   className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-5 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
                 >
                   ยืนยันการเลือกของแถม
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL FOR INSUFFICIENT FUNDS */}
+        {showInsufficientFundsModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
+            <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-red-150 text-center space-y-4">
+              <div className="w-14 h-14 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto text-3xl animate-pulse font-bold">
+                ⚠️
+              </div>
+              <h3 className="text-sm font-bold text-rose-600">❌ ยอดเงิน E-Cash ไม่เพียงพอ</h3>
+              <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                {insufficientFundsMessage}
+              </p>
+              <div className="flex gap-2 justify-center pt-2">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setShowInsufficientFundsModal(false);
+                    setInsufficientFundsMessage('');
+                  }}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-xs font-bold cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setShowInsufficientFundsModal(false);
+                    setInsufficientFundsMessage('');
+                    setActiveTab('txn'); // switch to financial transactions tab
+                    setSidebarOpen(false);
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+                >
+                  เติมเงิน
                 </button>
               </div>
             </div>

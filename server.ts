@@ -843,6 +843,8 @@ function readDb() {
   }
   if (db && !db.packageProductChoices) {
     db.packageProductChoices = [
+      { id: "pc_s1", packageId: "pack_s", name: "S-Set A: สบู่สมุนไพรนทีพลัส ขนาดทดลอง 1 ชิ้น" },
+      { id: "pc_s2", packageId: "pack_s", name: "S-Set B: ยาสีฟันสมุนไพรนทีพลัส ขนาดพกพา 1 ชิ้น" },
       { id: "pc_m1", packageId: "pack_m", name: "M-Set A: ชุดของใช้สบู่สมุนไพรนทีพลัส 3 ชิ้น" },
       { id: "pc_m2", packageId: "pack_m", name: "M-Set B: ชุดยาสีฟันสมุนไพรสูตรลดการเสียวเหงือก 2 ชิ้น" },
       { id: "pc_l1", packageId: "pack_l", name: "L-Set A: ชุดกาแฟเอสเพรสโซ่พรีเมียม + ถ้วยกาแฟนทีพลัส" },
@@ -856,12 +858,21 @@ function readDb() {
       { id: "pc_xxl3", packageId: "pack_xxl", name: "XXL-Set C: เซ็ตสกินแคร์กู้หน้าใสหน้าเด็กสูตรเคาน์เตอร์แบรนด์นที (ครบชุด 5 ชิ้น)" }
     ];
     hasPopulatedMissing = true;
+  } else if (db && db.packageProductChoices) {
+    const hasS = db.packageProductChoices.some((c: any) => c.packageId === 'pack_s');
+    if (!hasS) {
+      db.packageProductChoices.unshift(
+        { id: "pc_s1", packageId: "pack_s", name: "S-Set A: สบู่สมุนไพรนทีพลัส ขนาดทดลอง 1 ชิ้น" },
+        { id: "pc_s2", packageId: "pack_s", name: "S-Set B: ยาสีฟันสมุนไพรนทีพลัส ขนาดพกพา 1 ชิ้น" }
+      );
+      hasPopulatedMissing = true;
+    }
   }
-  if (db && !db.bankSettings) {
+  if (db && (!db.bankSettings || db.bankSettings.bankAccount === "111-222-3333" || db.bankSettings.bankName === "ธนาคารไทยพาณิชย์")) {
     db.bankSettings = {
-      bankName: "ธนาคารไทยพาณิชย์",
-      bankAccount: "111-222-3333",
-      bankAccountName: "บริษัท นที พลัส จำกัด",
+      bankName: "ธนาคาร กรุงเทพ",
+      bankAccount: "7420037223",
+      bankAccountName: "นาย กฤศวัฒน์ เลิศวิริยาภรณ์",
       qrCodeUrl: ""
     };
     hasPopulatedMissing = true;
@@ -1975,8 +1986,8 @@ app.post('/api/member/buy-coupon', (req, res) => {
 });
 
 // SUBMIT DEPOSIT/TOPUP REQUEST
-app.post('/api/member/topup', (req, res) => {
-  const { userId, amount, transferAmount, transferDate, slipFile } = req.body;
+app.post('/api/member/topup', async (req, res) => {
+  const { userId, amount, transferAmount, transferDate, slipFile, qrCode } = req.body;
   const db = readDb();
   
   const member = db.members.find(m => m.userId === userId);
@@ -1996,6 +2007,112 @@ app.post('/api/member/topup', (req, res) => {
     return res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการบันทึกเอกสารรูปภาพสลิป" });
   }
 
+  let isAutoApproved = false;
+  let autoApproveMessage = "";
+  let slipRef = "";
+  let verifiedAmount = parseFloat(transferAmount);
+  let debugApiResult = "";
+
+  if (qrCode) {
+    try {
+      console.log(`[SlipOK] Verifying QR Code: ${qrCode.substring(0, 40)}...`);
+      debugApiResult = "กำลังเรียก API...";
+      const apiResponse = await fetch('https://connect.slip2go.com/api/verify-slip/qr-code/info', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer zK5fmJRcipAaYORrhuqxN4XqOrSyq+wCy92gsFBag94='
+        },
+        body: JSON.stringify({
+          payload: {
+            qrCode: qrCode
+          }
+        })
+      });
+
+      if (apiResponse.ok) {
+        const resJson = await apiResponse.json();
+        console.log("[SlipOK] Response JSON:", JSON.stringify(resJson, null, 2));
+
+        if (resJson.success || (resJson.data && resJson.data.success !== false) || resJson.code === "200000") {
+          const payload = resJson.data || resJson;
+          
+          const slipAmount = parseFloat(payload.amount);
+          
+          // Parse receiver name from possible nested paths
+          const receiverName = (
+            payload.receiver?.account?.name ||
+            payload.receiver?.displayName ||
+            payload.receiver?.name ||
+            ""
+          ).toString();
+          
+          // Parse receiver account from possible nested paths
+          let receiverAccount = "";
+          if (payload.receiver?.account) {
+            if (typeof payload.receiver.account === "object") {
+              receiverAccount = (
+                payload.receiver.account.bank?.account ||
+                payload.receiver.account.value ||
+                payload.receiver.account.no ||
+                JSON.stringify(payload.receiver.account)
+              ).toString();
+            } else {
+              receiverAccount = payload.receiver.account.toString();
+            }
+          }
+
+          slipRef = payload.transRef || payload.ref || payload.transactionId || `REF_${Date.now()}`;
+
+          console.log(`[SlipOK] Parsed details: Amount=${slipAmount}, ReceiverName=${receiverName}, ReceiverAccount=${receiverAccount}, Ref=${slipRef}`);
+
+          // Anti-fraud: Check duplication
+          const isDuplicate = db.transactions?.some(t => t.slipRef === slipRef && t.status === "Approved");
+          if (isDuplicate) {
+            return res.status(400).json({ success: false, message: "สลิปโอนเงินนี้เคยถูกใช้งานและอนุมัติในระบบไปแล้ว ไม่สามารถใช้ซ้ำได้ค่ะ" });
+          }
+
+          // Recipient verification (either matches Bank settings or นาย กฤศวัฒน์ / บริษัท นที พลัส)
+          const targetAccount = db.bankSettings?.bankAccount || "7420037223";
+          const targetAccountName = db.bankSettings?.bankAccountName || "นาย กฤศวัฒน์ เลิศวิริยาภรณ์";
+          
+          const cleanString = (str: string) => str.replace(/[^0-9]/g, '');
+          const cleanTargetAcc = cleanString(targetAccount);
+          const cleanSlipAcc = cleanString(receiverAccount);
+
+          const isCorrectReceiver = 
+            receiverName.includes("กฤศวัฒน์") || 
+            receiverName.toLowerCase().includes("krisawat") ||
+            receiverName.includes("นที") || 
+            receiverName.toLowerCase().includes("natee") ||
+            (cleanSlipAcc.length > 0 && cleanTargetAcc.includes(cleanSlipAcc)) ||
+            (cleanTargetAcc.length > 0 && cleanSlipAcc.includes(cleanTargetAcc));
+
+          if (isCorrectReceiver && slipAmount > 0) {
+            isAutoApproved = true;
+            verifiedAmount = slipAmount;
+            member.balanceECash = parseFloat((member.balanceECash + slipAmount).toFixed(2));
+            autoApproveMessage = `✓ ระบบอัตโนมัติ (SlipOK) ตรวจสอบสำเร็จ! สลิปมียอดเงินจริง ฿${slipAmount.toLocaleString()} ตรงตามเงื่อนไข ระบบจึงเติมเงิน E-Cash ให้คุณทันทีแล้วค่ะ ⚡`;
+          } else {
+            debugApiResult = `ไม่ผ่านเงื่อนไขผู้รับโอน (ผู้รับในสลิป: ${receiverName || 'ไม่ระบุ'}, บัญชี: ${receiverAccount || 'ไม่ระบุ'}, ยอดเงิน: ฿${slipAmount || 0})`;
+            console.warn(`[SlipOK] Verification failed matching receiver. Receiver in slip: ${receiverName} / Account: ${receiverAccount}`);
+          }
+        } else {
+          debugApiResult = `API แจ้งว่าไม่สำเร็จ (ข้อความ: ${resJson.message || resJson.error || 'ไม่มีรายละเอียด'})`;
+        }
+      } else {
+        const errText = await apiResponse.text().catch(() => "");
+        debugApiResult = `HTTP Error Status: ${apiResponse.status} (รายละเอียด: ${errText.substring(0, 100)})`;
+        console.error("[SlipOK] API HTTP Error Status:", apiResponse.status);
+      }
+    } catch (apiErr: any) {
+      debugApiResult = `เกิดข้อผิดพลาดในการเชื่อมต่อ: ${apiErr.message || apiErr}`;
+      console.error("[SlipOK] Exception raised during request:", apiErr);
+    }
+  } else {
+    debugApiResult = "ไม่พบรหัสสแกน QR Code บนสลิป (สแกนจากสลิปไม่สำเร็จ)";
+  }
+
   const txnId = "DEP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
   if (!db.transactions) db.transactions = [];
   
@@ -2006,17 +2123,30 @@ app.post('/api/member/topup', (req, res) => {
     name: `${member.name} ${member.surname}`,
     type: "Deposit",
     amount: parseFloat(amount),
-    transferAmount: parseFloat(transferAmount),
+    transferAmount: verifiedAmount,
     transferDate: transferDate,
     slipImgUrl: slipImgUrl,
     currency: "E-Cash",
-    details: `แจ้งเติมเงิน E-Cash ยอดแจ้งโอน ฿${parseFloat(transferAmount).toLocaleString()} (จากยอดขอคำนวณ ฿${parseFloat(amount).toLocaleString()})`,
-    status: "Pending",
+    details: isAutoApproved 
+      ? `เติมเงิน E-Cash สำเร็จโดยอัตโนมัติ (ระบบตรวจสอบสลิป SlipOK เรียบร้อย • อ้างอิง: ${slipRef})`
+      : `แจ้งเติมเงิน E-Cash ยอดแจ้งโอน ฿${parseFloat(transferAmount).toLocaleString()} (จากยอดขอคำนวณ ฿${parseFloat(amount).toLocaleString()}) [ผลการตรวจสอบอัตโนมัติ: ${debugApiResult}]`,
+    status: isAutoApproved ? "Approved" : "Pending",
+    slipRef: slipRef || undefined,
+    approvedAt: isAutoApproved ? new Date().toISOString() : undefined,
+    approvedBy: isAutoApproved ? "System (Auto-SlipOK)" : undefined,
     createdAt: new Date().toISOString()
   });
   
   writeDb(db);
-  res.json({ success: true, message: "ส่งคำขอเติมเงินและหลักฐานสลิปเรียบร้อยแล้วค่ะ รอแอดมินอนุมัติ", txnId });
+  
+  res.json({ 
+    success: true, 
+    isAutoApproved,
+    message: isAutoApproved 
+      ? autoApproveMessage 
+      : "ส่งคำขอเติมเงินและหลักฐานสลิปเรียบร้อยแล้วค่ะ รอแอดมินอนุมัติ", 
+    txnId 
+  });
 });
 
 // TRANSFER E-CASH TO OTHER MEMBER
