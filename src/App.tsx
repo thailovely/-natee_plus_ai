@@ -516,6 +516,13 @@ export default function App() {
   const [warehouseLat, setWarehouseLat] = useState<number | null>(13.7563);
   const [warehouseLng, setWarehouseLng] = useState<number | null>(100.5018);
   const [pdpaAgreed, setPdpaAgreed] = useState(false);
+  const [showPdpaModal, setShowPdpaModal] = useState(false);
+  const [newProdTargetPayout, setNewProdTargetPayout] = useState('');
+  const [editProdTargetPayout, setEditProdTargetPayout] = useState('');
+  const [simMarketPrice, setSimMarketPrice] = useState('1000');
+  const [simMlmCommission, setSimMlmCommission] = useState('10000');
+  const [simPartnerPrice, setSimPartnerPrice] = useState('1000');
+  const [systemCondTab, setSystemCondTab] = useState('registration');
   const [newProd, setNewProd] = useState({
     name: '',
     price: '',
@@ -540,7 +547,7 @@ export default function App() {
   const [showSellerNotifs, setShowSellerNotifs] = useState<boolean>(false);
   const [sellerOrderFilter, setSellerOrderFilter] = useState<string>('All');
   const [sellerNotifs, setSellerNotifs] = useState<any[]>([
-    { id: 1, title: "สมัครร้านค้าได้รับการอนุมัติแล้ว", desc: "ยินดีต้อนรับสู่ระบบ Natee Plus Seller Centre ของคุณค่ะ เริ่มลงสินค้าชิ้นแรกของคุณเลย!", time: "เมื่อสักครู่", read: false },
+    { id: 1, title: "สมัครร้านค้าได้รับการอนุมัติแล้ว", desc: "ยินดีต้อนรับสู่ระบบ Natee Plus Partner ของคุณค่ะ เริ่มลงสินค้าชิ้นแรกของคุณเลย!", time: "เมื่อสักครู่", read: false },
     { id: 2, title: "อัพเดทค่าจัดส่ง Shippop", desc: "ระบบเชื่อมต่อ Shippop สำเร็จ คำนวณค่าส่งอัตโนมัติ 80% เป็นยอดโอนของร้านค้า", time: "1 ชั่วโมงที่แล้ว", read: false }
   ]);
   const [sellerMockChatMessages, setSellerMockChatMessages] = useState<any[]>([
@@ -4950,7 +4957,7 @@ export default function App() {
                 : 'text-orange-400 bg-orange-500/5 hover:bg-orange-500/15'
             }`}
           >
-            <ShoppingBag size={16} className={activeTab === 'shop' ? 'text-orange-400' : 'text-orange-400'} /> นที พลัส ช็อป
+            <ShoppingBag size={16} className={activeTab === 'shop' ? 'text-orange-400' : 'text-orange-400'} /> นที พลัส มาร์เก็ต
           </button>
 
           <button 
@@ -4995,7 +5002,7 @@ export default function App() {
                 activeTab === 'seller' ? 'bg-indigo-500/20 text-indigo-400 border-l-4 border-indigo-400' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
               }`}
             >
-              <Star size={16} /> ระบบ Seller
+              <Star size={16} /> ระบบ Partner
             </button>
           )}
 
@@ -5215,7 +5222,7 @@ export default function App() {
                     }}
                     className="bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-bold px-6 py-3 rounded-2xl text-sm shadow-md shadow-orange-500/20 active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
                   >
-                    <span>🛍️</span> นที พลัส ช็อป
+                    <span>🛍️</span> นที พลัส มาร์เก็ต
                   </button>
                   <button 
                     onClick={() => setActiveTab('txn')}
@@ -5321,7 +5328,7 @@ export default function App() {
                     <span className="font-extrabold text-yellow-300 bg-white/10 px-2 py-0.5 rounded-md">฿{(profile?.totalCouponsEarned || profile?.balanceECoupon || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
 
-                  <p className="text-[10px] text-emerald-200 mt-3">ใช้เป็นส่วนลดหรือชำระค่าสินค้าหลักบนเว็ปนทีช็อป</p>
+                  <p className="text-[10px] text-emerald-200 mt-3">ใช้เป็นส่วนลดหรือชำระค่าสินค้าหลักบนเว็บนทีมาร์เก็ต</p>
                   <button 
                     onClick={() => { setActiveTab('report'); setReportSubTab('ecoupon'); }}
                     className="mt-4 text-[9px] bg-white text-emerald-700 font-bold px-3 py-1 rounded-lg hover:bg-emerald-50 transition"
@@ -5966,7 +5973,7 @@ export default function App() {
                           <div className="space-y-2">
                             <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3 text-amber-800 text-[11px] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                               <div>
-                                <p className="font-bold">⏳ สัญญาณเตือน: อยู่ระหว่างแอดมิน (Admin Shop) ตรวจสอบอนุมัติพิกัดใหม่</p>
+                                <p className="font-bold">⏳ สัญญาณเตือน: อยู่ระหว่างแอดมิน (Admin Market) ตรวจสอบอนุมัติพิกัดใหม่</p>
                                 <p className="font-mono text-[10px] mt-0.5 text-slate-500">พิกัดใหม่ที่ส่งขอ: {profile?.pendingShippingLat?.toFixed(6)}, {profile?.pendingShippingLng?.toFixed(6)}</p>
                               </div>
                               <button
@@ -6388,7 +6395,7 @@ export default function App() {
                   <div className="space-y-3">
                     <div className="inline-flex items-center justify-center gap-3 bg-indigo-50 px-6 py-2 rounded-full border border-indigo-100">
                       <img src="/favicon.svg" alt="Natee Plus Logo" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
-                      <span className="text-xs font-extrabold text-indigo-900 tracking-wider">NATEE PLUS SHOP PORTAL</span>
+                      <span className="text-xs font-extrabold text-indigo-900 tracking-wider">NATEE PLUS MARKET PORTAL</span>
                     </div>
                     <h2 className="text-3xl font-black text-indigo-950 tracking-tight">
                       เลือกบริการของ <span className="text-indigo-950 font-bold">นที</span> <span className="text-orange-500 font-bold">พลัส</span>
@@ -6399,7 +6406,7 @@ export default function App() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
-                    {/* BUTTON 1: NATEE PLUS SHOP */}
+                    {/* BUTTON 1: NATEE PLUS MARKET */}
                     <button 
                       onClick={() => {
                         setShopPortalView('store');
@@ -6409,11 +6416,11 @@ export default function App() {
                     >
                       <div className="flex-1 flex flex-col items-center justify-center space-y-4 w-full">
                         <div className="w-20 h-20 bg-indigo-50 rounded-2xl flex items-center justify-center p-3 group-hover:scale-105 transition-transform duration-300">
-                          <img src="/favicon.svg" alt="Natee Plus Shop Logo" className="w-full h-full object-contain filter drop-shadow-sm" referrerPolicy="no-referrer" />
+                          <img src="/favicon.svg" alt="Natee Plus Market Logo" className="w-full h-full object-contain filter drop-shadow-sm" referrerPolicy="no-referrer" />
                         </div>
                         <div className="space-y-1">
                           <h3 className="text-sm font-extrabold text-slate-900 group-hover:text-indigo-600 transition-colors">
-                            นทีพลัส ข็อป
+                            นทีพลัส มาร์เก็ต
                           </h3>
                           <p className="text-[10px] text-slate-400 leading-normal">
                             เข้าสู่หน้าร้านค้าออนไลน์เพื่อเลือกซื้อสินค้าทั่วไปของ นที พลัส คัดสรรสิ่งดีๆ เพื่อชีวิตคุณ
@@ -6451,7 +6458,7 @@ export default function App() {
                       </span>
                     </button>
 
-                    {/* BUTTON 3: NATEE PLUS SELL CENTER */}
+                    {/* BUTTON 3: NATEE PLUS PARTNER */}
                     <button 
                       onClick={() => {
                         setActiveTab('seller');
@@ -6464,7 +6471,7 @@ export default function App() {
                         </div>
                         <div className="space-y-1">
                           <h3 className="text-sm font-extrabold text-slate-900 group-hover:text-emerald-600 transition-colors">
-                            Natee Plus Sell Center
+                            Natee Plus Partner
                           </h3>
                           <p className="text-[10px] text-slate-400 leading-normal">
                             พอร์ทัลร้านค้าร่วมพันธมิตร สำหรับจัดส่งและบริหารร้านค้าคู่ค้ารายย่อยและพาร์ทเนอร์
@@ -6472,7 +6479,7 @@ export default function App() {
                         </div>
                       </div>
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 mt-6 bg-emerald-50 px-4 py-2 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition-all w-full justify-center shadow-sm">
-                        เข้าสู่ระบบหลังบ้านผู้ขาย →
+                        เข้าสู่พอร์ทัลพาร์ทเนอร์ →
                       </span>
                     </button>
                   </div>
@@ -6490,9 +6497,9 @@ export default function App() {
                       </button>
                       <div>
                         <h2 className="text-sm font-bold text-indigo-950">
-                          {shopSubTab === 'packages' ? "📦 แพ็กเกจอัปเกรดตำแหน่ง" : "🏪 เว็บร้านค้า Natee Plus Shop"}
+                          {shopSubTab === 'packages' ? "📦 แพ็กเกจอัปเกรดตำแหน่ง" : "🏪 เว็บร้านค้า Natee Plus Market"}
                         </h2>
-                        <p className="text-[10px] text-slate-400">ระบบ นที พลัส ช็อป</p>
+                        <p className="text-[10px] text-slate-400">ระบบ นที พลัส มาร์เก็ต</p>
                       </div>
                     </div>
 
@@ -6517,7 +6524,7 @@ export default function App() {
                           shopSubTab === 'shop' ? 'bg-white text-amber-700 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        🏪 เว็บร้านค้า Natee Plus Shop
+                        🏪 เว็บร้านค้า Natee Plus Market
                       </button>
                     </div>
                   </div>
@@ -6570,7 +6577,7 @@ export default function App() {
                       </div>
                       <h3 className="text-sm font-bold text-slate-800">🔒 สำหรับสมาชิก นที พลัส เท่านั้น</h3>
                       <p className="text-xs text-slate-500 leading-relaxed">
-                        ระบบร้านค้าช้อปปิ้งจำกัดสิทธิ์การเข้าใช้งานเฉพาะสมาชิกที่สมัครเปิดสิทธิ์อัปเกรดรหัสเรียบร้อยแล้วเท่านั้นค่ะ โปรดทำการซื้อแพ็กเกจ S, M, L, XL หรือ XXL ของท่านก่อนเปิดเข้าช็อปปิ้งสินค้าร้านร่วมค่ะ
+                        ระบบมาร์เก็ตจำกัดสิทธิ์การเข้าใช้งานเฉพาะสมาชิกที่สมัครเปิดสิทธิ์อัปเกรดรหัสเรียบร้อยแล้วเท่านั้นค่ะ โปรดทำการซื้อแพ็กเกจ S, M, L, XL หรือ XXL ของท่านก่อนเปิดเลือกซื้อสินค้ามาร์เก็ตสินค้าร่วมค่ะ
                       </p>
                       <button 
                         onClick={() => setShopSubTab('packages')}
@@ -6585,11 +6592,11 @@ export default function App() {
                       <div className="bg-gradient-to-r from-amber-50 to-orange-50/50 border border-amber-200/60 p-5 rounded-3xl space-y-2 text-xs shadow-sm">
                         <div className="flex items-center gap-2">
                           <span className="p-1.5 bg-amber-500 text-white rounded-xl text-sm font-bold shadow-sm">🏪</span>
-                          <h3 className="text-sm font-extrabold text-amber-950">เว็บร้านค้า "Natee Plus Shop"</h3>
+                          <h3 className="text-sm font-extrabold text-amber-950">เว็บร้านค้า "Natee Plus Market"</h3>
                         </div>
                         <p className="text-slate-600 leading-relaxed font-medium">
                           แหล่งศูนย์รวมสินค้าคุณภาพที่ผ่านการคัดสรรจากระบบร้านร่วมค้า ซึ่งลงทะเบียนและสมัครวางจำหน่ายโดยสมาชิกผ่านระบบเว็บ 
-                          <span className="font-extrabold text-indigo-600"> "Natee Plus Seller Center"</span> (สงวนสิทธิ์เฉพาะสมาชิกที่อัปเกรดตำแหน่งร้านค้าระดับ M ขึ้นไปเท่านั้น ถึงจะมีสิทธิ์สมัครเปิดร้านเพื่อลงขายสินค้าและรับยอดขายได้)
+                          <span className="font-extrabold text-indigo-600"> "Natee Plus Partner"</span> (สงวนสิทธิ์เฉพาะสมาชิกที่อัปเกรดตำแหน่งร้านค้าระดับ M ขึ้นไปเท่านั้น ถึงจะมีสิทธิ์สมัครเปิดร้านเพื่อลงขายสินค้าและรับยอดขายได้)
                         </p>
                         <div className="flex flex-wrap items-center gap-3 pt-2 text-[11px] text-amber-900/95 font-bold border-t border-amber-200/40 mt-1">
                           <span className="flex items-center gap-1">
@@ -6788,7 +6795,7 @@ export default function App() {
                         onClick={() => { setActiveTab('shop'); setShopPortalView('packages'); setShopSubTab('packages'); }}
                         className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
                       >
-                        🛍️ ไปที่หน้าซื้อแพ็กเกจ (Shop)
+                        🛍️ ไปที่หน้าซื้อแพ็กเกจ (Market)
                       </button>
                     </div>
                   </div>
@@ -8966,7 +8973,7 @@ export default function App() {
                             <tbody className="divide-y divide-slate-100 text-[11px] text-slate-700">
                               {completedOrders.length === 0 ? (
                                 <tr>
-                                  <td colSpan={10} className="p-6 text-center italic text-slate-400">ยังไม่มีรายการบิลจัดส่งพัสดุที่สำเร็จสมบูรณ์ในระบบนทีช็อปค่ะ</td>
+                                  <td colSpan={10} className="p-6 text-center italic text-slate-400">ยังไม่มีรายการบิลจัดส่งพัสดุที่สำเร็จสมบูรณ์ในระบบนทีมาร์เก็ตค่ะ</td>
                                 </tr>
                               ) : (
                                 completedOrders.map(order => {
@@ -9015,8 +9022,8 @@ export default function App() {
             <div className="space-y-6 animate-fadeIn max-w-5xl">
               <div className="flex justify-between items-center">
                 <div>
-                  <h2 className="text-2xl font-bold text-indigo-950">Natee Plus Seller Centre 🛒</h2>
-                  <p className="text-xs text-slate-400 mt-1">แผงควบคุมคลังสินค้าและการค้าปลีก-ส่ง นที เซลเลอร์ เซ็นเตอร์</p>
+                  <h2 className="text-2xl font-bold text-indigo-950">Natee Plus Partner 🤝</h2>
+                  <p className="text-xs text-slate-400 mt-1">แผงควบคุมคลังสินค้าและการค้าปลีก-ส่ง นที พาร์ทเนอร์</p>
                 </div>
               </div>
 
@@ -9030,7 +9037,7 @@ export default function App() {
                     <div className="space-y-2">
                       <h3 className="text-lg font-bold text-slate-950">🎉 อนุมัติการเปิดร้านค้าเรียบร้อยแล้ว!</h3>
                       <p className="text-xs text-slate-500 leading-normal">
-                        ยินดีต้อนรับ สู่ระบบ Seller Centre รหัสร้านค้าของคุณคือ:
+                        ยินดีต้อนรับ สู่ระบบ Partner รหัสร้านค้าของคุณคือ:
                       </p>
                       <div className="inline-block bg-indigo-50 border border-indigo-100 px-4 py-2 rounded-2xl">
                         <span className="font-mono font-extrabold text-indigo-700 text-lg tracking-wider">
@@ -9055,9 +9062,9 @@ export default function App() {
                     // 1. SELLER CENTRE LOGIN SCREEN
                     <div className="bg-white border border-slate-100 rounded-3xl p-8 shadow-md space-y-6">
                       <div className="text-center space-y-2">
-                        <img src="/logo.svg" className="w-48 h-48 mx-auto object-contain mb-2" alt="Natee Plus Logo" referrerPolicy="no-referrer" />
-                        <h3 className="text-xl font-bold text-slate-900">Natee Plus Seller Centre</h3>
-                        <p className="text-xs text-slate-400">เข้าสู่พอร์ทัลผู้ขายด้วยรหัสสมาชิกนทีพลัสของท่าน</p>
+                        <img src="/logo.svg?v=2" className="w-48 h-48 mx-auto object-contain mb-2" alt="Natee Plus Logo" referrerPolicy="no-referrer" />
+                        <h3 className="text-xl font-bold text-slate-900">Natee Plus Partner</h3>
+                        <p className="text-xs text-slate-400">เข้าสู่พอร์ทัลพาร์ทเนอร์ด้วยรหัสสมาชิกนทีพลัสของท่าน</p>
                       </div>
 
                       <form onSubmit={handleSellerLogin} className="space-y-4">
@@ -9132,7 +9139,7 @@ export default function App() {
                             }}
                             className="text-indigo-600 hover:text-indigo-500 hover:underline font-bold text-xs cursor-pointer"
                           >
-                            เพิ่งเคยเข้าระบบ Seller Centre / สมัครใหม่
+                            เพิ่งเคยเข้าระบบ Partner / สมัครใหม่
                           </button>
                         )}
                       </div>
@@ -9168,15 +9175,25 @@ export default function App() {
                               <span>ข้าพเจ้าได้อ่านระเบียบดีแล้ว</span>
                             </label>
 
-                            <label className="flex items-start gap-2.5 text-xs text-slate-700 font-bold cursor-pointer">
+                            <div className="flex items-start gap-2.5 text-xs text-slate-700 font-bold">
                               <input 
+                                id="pdpa-checkbox"
                                 type="checkbox"
                                 checked={sellerPdpaAgreed}
                                 onChange={(e) => setSellerPdpaAgreed(e.target.checked)}
-                                className="rounded text-indigo-600 focus:ring-indigo-500 mt-0.5"
+                                className="rounded text-indigo-600 focus:ring-indigo-500 mt-0.5 cursor-pointer"
                               />
-                              <span>ข้าพเจ้ากดยอมรับนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) ตามกฎหมาย</span>
-                            </label>
+                              <label htmlFor="pdpa-checkbox" className="cursor-pointer">
+                                ข้าพเจ้ากดยอมรับนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) ตามกฎหมาย 
+                                <button 
+                                  type="button"
+                                  onClick={(e) => { e.preventDefault(); setShowPdpaModal(true); }}
+                                  className="ml-1 text-indigo-600 hover:text-indigo-500 hover:underline font-extrabold inline-block"
+                                >
+                                  [คลิกอ่านนโยบายความปลอดภัยข้อมูลผู้ขาย บริษัท นที พลัส จำกัด]
+                                </button>
+                              </label>
+                            </div>
                           </div>
 
                           <div className="flex gap-3 justify-end">
@@ -9384,7 +9401,7 @@ export default function App() {
                       {/* Logo 100% untreated frame */}
                       <div className="w-16 h-16 rounded-full bg-white border-2 border-indigo-500/30 flex items-center justify-center p-1.5 overflow-hidden shadow-inner group">
                         <img 
-                          src="/logo.svg" 
+                          src="/logo.svg?v=2" 
                           alt="Natee Plus Seller Logo" 
                           className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-110"
                           referrerPolicy="no-referrer"
@@ -9590,7 +9607,7 @@ export default function App() {
                     {/* Title */}
                     <div className="flex justify-between items-center border-b border-slate-800 pb-3">
                       <span className="text-[11px] font-extrabold text-indigo-400 uppercase tracking-widest flex items-center gap-1">
-                        🎮 เมนูจัดการร้านค้า Natee Seller Centre
+                        🎮 เมนูจัดการร้านค้า Natee Partner
                       </span>
                       <span className="text-[9px] text-slate-500 font-mono">Control Panel v2.0</span>
                     </div>
@@ -9884,7 +9901,7 @@ export default function App() {
                         {/* Add New Product Form */}
                         <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
                           <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
-                            ➕ ขอยื่นอนุมัติเพิ่มรายการสินค้าแบรนด์คุณ (Submit New Product to Natee Shop)
+                            ➕ ขอยื่นอนุมัติเพิ่มรายการสินค้าแบรนด์คุณ (Submit New Product to Natee Market)
                           </h4>
                           <form onSubmit={handleSellerProdSubmit} className="space-y-4 text-xs">
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -9905,9 +9922,18 @@ export default function App() {
                                   type="number" 
                                   required
                                   value={newProd.price}
-                                  onChange={(e) => setNewProd(prev => ({ ...prev, price: e.target.value }))}
+                                  onChange={(e) => {
+                                    setNewProd(prev => ({ ...prev, price: e.target.value }));
+                                    // Keep target payout synced if manually edited
+                                    const p = parseFloat(e.target.value) || 0;
+                                    if (p > 0) {
+                                      setNewProdTargetPayout((p * 0.80).toString());
+                                    } else {
+                                      setNewProdTargetPayout('');
+                                    }
+                                  }}
                                   placeholder="เช่น 390"
-                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-indigo-600"
                                 />
                               </div>
                               <div>
@@ -9920,6 +9946,53 @@ export default function App() {
                                   placeholder="เช่น 150"
                                   className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
                                 />
+                              </div>
+                            </div>
+
+                            {/* Auto-Calculate helper container */}
+                            <div className="bg-amber-50/70 border border-amber-100 rounded-2xl p-3 space-y-2 font-sans">
+                              <div className="flex justify-between items-center">
+                                <span className="font-bold text-amber-900 text-[11px] flex items-center gap-1">
+                                  💡 ระบบคำนวณราคาขายอัตโนมัติ (รวม GP 20% และ VAT 7%)
+                                </span>
+                                <span className="text-[10px] text-amber-700 font-semibold bg-amber-100/50 px-2 py-0.5 rounded-full">
+                                  เพื่อป้องกันพาร์ทเนอร์ขาดทุนสุทธิ
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                                <div>
+                                  <label className="block text-slate-600 text-[10px] font-bold mb-1">ระบุ รายรับที่พาร์ทเนอร์ต้องการได้รับจริง (ก่อนหักภาษี ณ ที่จ่าย 3%):</label>
+                                  <div className="relative">
+                                    <input 
+                                      type="number"
+                                      placeholder="เช่น ใส่ 800 หากต้องการรับ 800 บาท"
+                                      value={newProdTargetPayout}
+                                      onChange={(e) => {
+                                        const inputVal = e.target.value;
+                                        setNewProdTargetPayout(inputVal);
+                                        const targetVal = parseFloat(inputVal) || 0;
+                                        if (targetVal > 0) {
+                                          // Formula: Price = Target / 0.80
+                                          const calculatedPrice = Math.ceil(targetVal / 0.80);
+                                          setNewProd(prev => ({ ...prev, price: calculatedPrice.toString() }));
+                                        } else {
+                                          setNewProd(prev => ({ ...prev, price: '' }));
+                                        }
+                                      }}
+                                      className="w-full bg-white border border-amber-200 rounded-xl pl-3 pr-10 py-2 text-xs text-amber-950 placeholder-amber-400 font-extrabold focus:ring-2 focus:ring-amber-300 outline-none"
+                                    />
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-600 font-bold text-[10px]">บาท</span>
+                                  </div>
+                                </div>
+                                <div className="bg-amber-100/30 p-2.5 rounded-xl border border-amber-200/50 text-[11px] text-amber-900 space-y-1">
+                                  <p className="font-bold text-amber-950 flex justify-between">
+                                    <span>ราคาจำหน่ายหน้าเว็บที่จะตั้งให้:</span>
+                                    <span className="text-sm font-extrabold text-amber-700 font-mono">฿ {newProd.price || 0}</span>
+                                  </p>
+                                  <p className="text-[10px] text-amber-700/80 leading-relaxed">
+                                    คำนวณจากสูตร: ยอดรับ {newProdTargetPayout || 0} ÷ 0.80 = ราคาขายจริง <strong>{newProd.price || 0} บาท</strong> (หัก GP 20% แล้วจะได้ยอดรับตามต้องการพอดี โดยราคาหน้าเว็บนี้รวมภาษีมูลค่าเพิ่ม VAT 7% เรียบร้อยแล้ว)
+                                  </p>
+                                </div>
                               </div>
                             </div>
 
@@ -10543,7 +10616,7 @@ export default function App() {
                     {sellerPortalSubTab === 'learning' && (
                       <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
                         <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                          <h4 className="text-sm font-bold text-slate-800">📖 ศูนย์การเรียนรู้สำหรับผู้ขาย (Seller Learning Centre)</h4>
+                          <h4 className="text-sm font-bold text-slate-800">📖 ศูนย์การเรียนรู้สำหรับพาร์ทเนอร์ (Partner Learning Centre)</h4>
                           <span className="text-xs text-slate-400">บทเรียนอัพเดทใหม่ล่าสุด</span>
                         </div>
 
@@ -10732,7 +10805,7 @@ export default function App() {
                       <ShieldCheck size={20} />
                     </div>
                     <div>
-                      <h3 className="font-extrabold text-sm">จัดการระบบ Natee Seller Center</h3>
+                      <h3 className="font-extrabold text-sm">จัดการระบบ Natee Partner</h3>
                       <p className={`text-[10px] mt-0.5 ${
                         adminSection === 'seller_system' ? 'text-indigo-100' : 'text-slate-400'
                       }`}>จัดการร้าน, จัดส่ง, สถานะสินค้า & สรุปยอดจ่าย</p>
@@ -12329,7 +12402,7 @@ export default function App() {
                   {/* New Seller Store Approval Queue */}
                   <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
                     <h4 className="text-xs font-bold text-rose-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      🏪 ตารางคำขออนุมัติเปิดร้านค้าผู้ขายรายใหม่ (New Seller Store Approval Queue)
+                      🏪 ตารางคำขออนุมัติเปิดร้านค้าพาร์ทเนอร์รายใหม่ (New Partner Store Approval Queue)
                       {adminMembersList.filter((m: any) => m.sellerStatus === 'Pending').length > 0 && (
                         <span className="bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse">
                           {adminMembersList.filter((m: any) => m.sellerStatus === 'Pending').length}
@@ -12917,7 +12990,7 @@ export default function App() {
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
                       <div>
                         <h4 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                          👥 รายชื่อและข้อมูลสมาชิกร้านค้าในระบบ (Member Shop Database)
+                          👥 รายชื่อและข้อมูลสมาชิกร้านค้าในระบบ (Member Partner Database)
                         </h4>
                         <p className="text-xs text-slate-400 mt-0.5">
                           แสดงข้อมูลและจัดการสถานะของพาร์ทเนอร์ร้านค้า (อนุมัติ / ปฏิเสธคำขอ / ระงับชั่วคราว / ยกเลิก) รวมถึงแก้ไขที่ตั้งพิกัดคลังสินค้า
@@ -13215,7 +13288,7 @@ export default function App() {
                         📝 จัดการระเบียบข้อบังคับร้านค้าผู้ขายรายใหม่ (Admin Console)
                       </h4>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        พิมพ์หรือแก้ไขกฎระเบียบของทางระบบ Natee Plus Seller Centre เพื่อกำหนดให้สมาชิกใหม่ต้องกดยอมรับก่อนสมัครเปิดร้านค้าออนไลน์ได้
+                        พิมพ์หรือแก้ไขกฎระเบียบของทางระบบ Natee Plus Partner เพื่อกำหนดให้สมาชิกใหม่ต้องกดยอมรับก่อนสมัครเปิดร้านค้าออนไลน์ได้
                       </p>
                     </div>
 
@@ -13452,132 +13525,1041 @@ export default function App() {
               )}
 
               {adminSubTab === 'systemConditions' && (
-                <div className="space-y-6 animate-fadeIn max-w-5xl mx-auto">
-                  <div className="bg-slate-900 text-white rounded-3xl p-8 shadow-xl border border-slate-800 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 -mt-12 -mr-12 w-48 h-48 rounded-full bg-indigo-600/10 blur-3xl"></div>
-                    <div className="absolute bottom-0 left-0 -mb-12 -ml-12 w-48 h-48 rounded-full bg-rose-600/10 blur-3xl"></div>
+                <div className="space-y-6 animate-fadeIn max-w-5xl mx-auto text-slate-850">
+                  {/* Header Banner */}
+                  <div className="bg-slate-950 text-white rounded-3xl p-8 shadow-xl border border-slate-800 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 -mt-12 -mr-12 w-48 h-48 rounded-full bg-indigo-600/15 blur-3xl"></div>
+                    <div className="absolute bottom-0 left-0 -mb-12 -ml-12 w-48 h-48 rounded-full bg-emerald-600/10 blur-3xl"></div>
                     
                     <div className="relative space-y-3">
                       <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs font-bold text-indigo-400">
-                        📋 แผงข้อมูลเงื่อนไขระบบ
+                        ⚖️ ศูนย์กำกับดูแลและตรวจสอบเงื่อนไขระบบ (NaTee Plus System Integrity & Audits)
                       </div>
-                      <h3 className="text-xl font-black tracking-tight text-white flex items-center gap-2">
-                        📋 เงื่อนไขการจ่ายค่าคอมมิชชั่น & โครงสร้างระบบ นที พลัส
+                      <h3 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
+                        📋 ข้อกำหนด เงื่อนไข และระเบียบปฏิบัติด้านการคำนวณภาษีและคอมมิชชันทั้งระบบ
                       </h3>
                       <p className="text-xs text-slate-400 max-w-3xl leading-relaxed">
-                        ศูนย์ข้อมูลกลางเพื่อแสดงข้อกำหนด อัตราการคำนวณ GP และรูปแบบการปันผลคอมมิชชั่นทั้งหมดภายในแพลตฟอร์ม เพื่อความโปร่งใสและการบริหารจัดการที่ราบรื่น
+                        เอกสารควบคุมโครงสร้างระบบความโปร่งใสทางบัญชี การจัดเก็บค่า GP การคำนวณคอมมิชชันแผนงาน แผน A แผน B กองทุนส่วนแบ่ง All-Share กองทุนปันสุข CSR การหักภาษีมูลค่าเพิ่ม VAT 7% และการหักภาษี ณ ที่จ่าย 3% ตามประมวลรัษฎากรแห่งประเทศไทย
                       </p>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* CARD 1: SELLER GP */}
-                    <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm hover:shadow transition space-y-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-lg shadow-inner">
-                          🏪
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-slate-800">ระบบหัก GP ร้านค้าผู้ขาย (Seller Gross Profit)</h4>
-                          <p className="text-[10px] text-slate-400">อัตราการเรียกเก็บค่าบริการร้านค้าพันธมิตร</p>
-                        </div>
-                      </div>
-                      <div className="border-t border-slate-100 pt-3 space-y-2.5 text-xs text-slate-600">
-                        <div className="flex justify-between items-center bg-indigo-50/40 p-2.5 rounded-xl border border-indigo-50">
-                          <span className="font-bold text-indigo-950">หักค่าธรรมเนียมการขาย (GP Rate)</span>
-                          <span className="font-mono font-extrabold text-sm text-indigo-700">20.00 %</span>
-                        </div>
-                        <p className="text-[11px] leading-relaxed text-slate-500">
-                          เมื่อสินค้าของร้านค้าถูกจำหน่ายผ่านระบบ แพลตฟอร์มจะหักค่าธรรมเนียมบริการ 20% ของยอดขายทันที โดยค่าธรรมเนียมนี้จะถูกจัดสรรเข้ากองทุนพูลคอมมิชชั่นเพื่อจ่ายปันผลคืนให้แก่สมาชิกในแผนรับรายได้
-                        </p>
-                        <div className="flex justify-between items-center text-[11px] text-slate-500 pt-1 border-t border-dashed border-slate-100">
-                          <span>การคิดภาษี ณ ที่จ่ายร้านค้า</span>
-                          <span className="font-bold text-slate-700">หัก 7% (ภาษีสรรพากร)</span>
-                        </div>
-                      </div>
-                    </div>
+                  {/* SUB TAB CONTROLS FOR SYSTEM CONDITIONS */}
+                  <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+                    {[
+                      { id: 'registration', label: '👤 สมัครสมาชิก & แพ็กเกจ', icon: <UserCheck size={14} /> },
+                      { id: 'plana', label: '📊 แผน A ไบนารี่', icon: <Binary size={14} /> },
+                      { id: 'planb', label: '🏆 แผน B B1-B15', icon: <Award size={14} /> },
+                      { id: 'allshare', label: '💎 All-Share & ปันสุข', icon: <Heart size={14} /> },
+                      { id: 'transfers', label: '💸 การโอน & การถอนเงิน', icon: <ArrowLeftRight size={14} /> },
+                      { id: 'partner', label: '🤝 พาร์ทเนอร์ร้านค้า & GP', icon: <Store size={14} /> },
+                      { id: 'accounting', label: '🏦 บัญชีแยกประเภท & ภาษี', icon: <Receipt size={14} /> },
+                      { id: 'simulators', label: '🧮 เครื่องคิดเลขจำลอง', icon: <Calculator size={14} /> },
+                      { id: 'pdpa', label: '🛡️ นโยบาย PDPA (นที พลัส)', icon: <ShieldCheck size={14} /> },
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setSystemCondTab(tab.id)}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          systemCondTab === tab.id
+                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/10'
+                            : 'bg-white hover:bg-slate-150 text-slate-700 border border-slate-200'
+                        }`}
+                      >
+                        {tab.icon}
+                        <span>{tab.label}</span>
+                      </button>
+                    ))}
+                  </div>
 
-                    {/* CARD 2: BINARY PLAN A */}
-                    <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm hover:shadow transition space-y-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-lg shadow-inner">
-                          📊
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-slate-800">ค่าคอมมิชชั่นแผน A (Binary Matching)</h4>
-                          <p className="text-[10px] text-slate-400">การจับคู่จ่ายแบบสายงานสองสาย 20 ชั้นลึก</p>
-                        </div>
-                      </div>
-                      <div className="border-t border-slate-100 pt-3 space-y-2.5 text-xs text-slate-600">
-                        <div className="grid grid-cols-2 gap-2 text-center text-[11px] font-bold">
-                          <div className="bg-emerald-50/40 p-2 rounded-xl border border-emerald-50 text-emerald-800">
-                            <span>ยอดคะแนนฝั่งอ่อน</span>
-                            <span className="block text-sm font-extrabold font-mono text-emerald-600">50 % - 100 %</span>
+                  {/* TAB CONTENTS */}
+                  <div className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-sm min-h-[400px]">
+                    
+                    {/* 1. REGISTRATION & PACKAGES */}
+                    {systemCondTab === 'registration' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg shadow-inner">
+                            👤
                           </div>
-                          <div className="bg-emerald-50/40 p-2 rounded-xl border border-emerald-50 text-emerald-800">
-                            <span>ความลึกสูงสุด</span>
-                            <span className="block text-sm font-extrabold font-mono text-emerald-600">20 ชั้นลึก</span>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">เงื่อนไขการสมัครสมาชิกและแพ็กเกจตำแหน่ง (Membership Rules & Rank Matrix)</h4>
+                            <p className="text-xs text-slate-400">ระบบคัดกรอง ข้อมูลการยืนยันตัวตน และสิทธิ์รับรายได้สูงสุด 10 เท่าตามมูลค่าแพ็กเกจที่ลงทะเบียน</p>
                           </div>
                         </div>
-                        <p className="text-[11px] leading-relaxed text-slate-500">
-                          ระบบจับคู่คำนวณโบนัสรายวันจากยอดคะแนน PV สะสมฝั่งอ่อนและฝั่งแข็ง คะแนนที่ผ่านการจับคู่แล้วจะถูกตัดไป ส่วนคะแนนฝั่งแข็งที่เหลือจะถูกยกยอดสะสมเพื่อคำนวณในวันถัดไปโดยไม่มีการล้างคะแนนทิ้ง
-                        </p>
-                      </div>
-                    </div>
 
-                    {/* CARD 3: SPECIAL POOL PLAN B */}
-                    <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm hover:shadow transition space-y-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold text-lg shadow-inner">
-                          🏆
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-slate-800">ค่าคอมมิชชั่นแผน B (Fast-start & Special Pool)</h4>
-                          <p className="text-[10px] text-slate-400">ระบบเงินสำรองกองทุนและปันผลพิเศษ</p>
-                        </div>
-                      </div>
-                      <div className="border-t border-slate-100 pt-3 space-y-2.5 text-xs text-slate-600">
-                        <div className="flex justify-between items-center bg-amber-50/40 p-2.5 rounded-xl border border-amber-50">
-                          <span className="font-bold text-amber-950">โบนัสสปอนเซอร์สมาชิกร้านค้าตรง</span>
-                          <span className="font-mono font-extrabold text-sm text-amber-700">10.00 % ของ PV</span>
-                        </div>
-                        <p className="text-[11px] leading-relaxed text-slate-500">
-                          ค่าคอมมิชชั่นพิเศษที่หัก 10% จากราคาขายสุทธิเพื่อจัดสรรเป็นกองทุนแผน B (Special Pool) สำหรับจ่ายปันผลรายวัน/รายเดือนให้แก่สมาชิกที่มีคุณสมบัติครบถ้วนตามเกณฑ์ขับเคลื่อนองค์กร
-                        </p>
-                        <div className="flex justify-between items-center text-[11px] text-slate-500 pt-1 border-t border-dashed border-slate-100">
-                          <span>ค่าฟีบริษัทสะสมเป็นโบนัสคลังพิเศษ</span>
-                          <span className="font-bold text-slate-700">คำนวณและปันผลอัตโนมัติ</span>
-                        </div>
-                      </div>
-                    </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">📝 ข้อกำหนดข้อมูลการลงทะเบียน (KYC Prerequisites)</h5>
+                            <ul className="space-y-2.5 text-xs text-slate-600">
+                              <li className="flex items-start gap-2">
+                                <span className="text-emerald-500 font-bold">✓</span>
+                                <div>
+                                  <strong>รหัสผู้แนะนำ (Sponsor ID):</strong> จำเป็นต้องมีผู้แนะนำในระบบเสมอเพื่อใช้วางสายงานในโครงสร้าง MLM ไบนารี่ (หากไม่มี จะถูกส่งให้ Admin เป็นผู้ดูแลหลัก)
+                                </div>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span className="text-emerald-500 font-bold">✓</span>
+                                <div>
+                                  <strong>ข้อมูลยืนยันตัวตน (KYC):</strong> ชื่อ-นามสกุลจริง, เลขบัตรประชาชน 13 หลัก, และรูปถ่ายหน้าบัตรประชาชน (ต้องผ่านการอนุมัติโดยระบบเพื่อรับสิทธิ์ทำรายการถอนเงิน)
+                                </div>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span className="text-emerald-500 font-bold">✓</span>
+                                <div>
+                                  <strong>บัญชีธนาคารรับเงินโอน:</strong> เลขที่บัญชี, ชื่อบัญชีธนาคาร (ชื่อผู้ถือบัญชีต้องตรงกับชื่อที่ลงทะเบียนในบัตรประชาชน 100% เพื่อความปลอดภัยจากการฟอกเงิน)
+                                </div>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span className="text-emerald-500 font-bold">✓</span>
+                                <div>
+                                  <strong>รหัสผ่านธุรกรรม (PIN 6 หลัก):</strong> ตั้งค่าเพื่อใช้ยืนยันตนในทุกขั้นตอนการทำรายการโอนและถอนเงิน เสริมทัพด้วยรหัสผ่าน OTP ส่งตรงทาง SMS โทรศัพท์มือถือ
+                                </div>
+                              </li>
+                            </ul>
 
-                    {/* CARD 4: FINANCIAL WITHDRAWALS */}
-                    <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm hover:shadow transition space-y-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-lg shadow-inner">
-                          💳
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-slate-800">การเบิกถอนและกองทุนสาธารณประโยชน์ (CSR)</h4>
-                          <p className="text-[10px] text-slate-400">ข้อกำหนดการโอนยอดรายได้ E-Money เข้าบัญชี</p>
+                            <div className="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-4 space-y-2 text-xs text-indigo-950">
+                              <p className="font-bold flex items-center gap-1">⚡ กฎการซื้อครั้งแรก (First Purchase rule):</p>
+                              <p className="leading-relaxed">
+                                สำหรับผู้สมัครใหม่ทุกคนที่เริ่มต้นจากสถานะ <strong>Member (ทั่วไป)</strong> หากต้องการเปิดสิทธิ์การขายสินค้าหรือวางสายงาน ระบบจะบังคับให้สั่งซื้อ <strong>แพ็กเกจ S (100 บาท)</strong> ซึ่งถือเป็นค่าสมัครใช้ระบบร้านค้าออนไลน์ก่อนเป็นลำดับแรก จากนั้นจึงจะสามารถซื้อสินค้าทั่วไปหรืออัพเกรดแพ็กเกจตำแหน่งที่สูงขึ้นได้
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">💎 รายละเอียดโครงสร้างแพ็กเกจ (Rank Specification Table)</h5>
+                            
+                            <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-sm">
+                              <table className="w-full text-left text-xs">
+                                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                                  <tr>
+                                    <th className="px-3 py-2.5">ตำแหน่ง</th>
+                                    <th className="px-3 py-2.5 text-right">ราคา (บาท)</th>
+                                    <th className="px-3 py-2.5 text-right">คะแนน PV</th>
+                                    <th className="px-3 py-2.5 text-right">เพดานรับ (บาท)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 text-slate-600 font-mono">
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-sans font-bold text-indigo-600">S (เปิดร้าน)</td>
+                                    <td className="px-3 py-2.5 text-right font-bold">100</td>
+                                    <td className="px-3 py-2.5 text-right">50 PV</td>
+                                    <td className="px-3 py-2.5 text-right text-emerald-600 font-bold">1,000 (10x)</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-sans font-bold text-amber-600">M</td>
+                                    <td className="px-3 py-2.5 text-right font-bold">500</td>
+                                    <td className="px-3 py-2.5 text-right">250 PV</td>
+                                    <td className="px-3 py-2.5 text-right text-emerald-600 font-bold">5,000 (10x)</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-sans font-bold text-teal-600">L</td>
+                                    <td className="px-3 py-2.5 text-right font-bold">1,000</td>
+                                    <td className="px-3 py-2.5 text-right">500 PV</td>
+                                    <td className="px-3 py-2.5 text-right text-emerald-600 font-bold">10,000 (10x)</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-sans font-bold text-rose-600">XL</td>
+                                    <td className="px-3 py-2.5 text-right font-bold">3,000</td>
+                                    <td className="px-3 py-2.5 text-right">1,500 PV</td>
+                                    <td className="px-3 py-2.5 text-right text-emerald-600 font-bold">30,000 (10x)</td>
+                                  </tr>
+                                  <tr className="bg-amber-50/20">
+                                    <td className="px-3 py-2.5 font-sans font-bold text-purple-600">XXL (สูงสุด)</td>
+                                    <td className="px-3 py-2.5 text-right font-bold">5,000</td>
+                                    <td className="px-3 py-2.5 text-right">2,500 PV</td>
+                                    <td className="px-3 py-2.5 text-right text-emerald-600 font-bold">50,000 (10x)</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+
+                            <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 space-y-2 text-[11px] text-slate-500 leading-relaxed">
+                              <p className="font-bold text-slate-700">⚠️ สิทธิ์การรับรายได้สูงสุด (Income Quota Limit):</p>
+                              <p>
+                                ระบบคิดเกณฑ์ความมั่งคั่งสูงสุดโดยจำกัดยอดการรับผลตอบแทนคอมมิชชันและโบนัสทุกประเภทรวมกันไว้ที่ <strong>10 เท่า (1,000%)</strong> ของราคาแพ็กเกจที่ได้ซื้อสะสมล่าสุด (เรียกว่าสิทธิ์ <strong>Eligible Rights</strong>)
+                              </p>
+                              <p>
+                                หากสิทธิ์ดังกล่าวหมดลงจนเหลือ 0 (เรียกว่ายอดเต็มเพดาน) รหัสผ่านนั้นจะถูกเปลี่ยนสถานะเป็นสิทธิ์ขาดคราว ระบบจะทำการระงับจ่ายโบนัสใหม่ของรหัสนั้น และทำธุรกรรมบีบอัดข้ามไปจ่ายให้อัพไลน์ข้างบนแทน จนกว่าสมาชิกรหัสนั้นจะสั่งซื้อสินค้าหรืออัพเกรดแพ็กเกจเพิ่มเติมเพื่อเติมวงเงินสิทธิ์ให้กลับมาใช้งานได้อีกครั้ง
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="border-t border-slate-100 pt-3 space-y-2.5 text-xs text-slate-600">
-                        <div className="grid grid-cols-2 gap-2 text-center text-[11px] font-bold">
-                          <div className="bg-rose-50/40 p-2 rounded-xl border border-rose-50 text-rose-800">
-                            <span>เบิกถอนขั้นต่ำ</span>
-                            <span className="block text-sm font-extrabold font-mono text-rose-600">฿ 100.00</span>
+                    )}
+
+                    {/* 2. PLAN A BINARY */}
+                    {systemCondTab === 'plana' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg shadow-inner">
+                            📊
                           </div>
-                          <div className="bg-rose-50/40 p-2 rounded-xl border border-rose-50 text-rose-800">
-                            <span>ค่าธรรมเนียมเบิกถอน</span>
-                            <span className="block text-sm font-extrabold font-mono text-rose-600">฿ 10.00 / ครั้ง</span>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">แผนงานรายได้ผังองค์กร แผน A ไบนารี่ (Plan A Binary Matching Rules)</h4>
+                            <p className="text-xs text-slate-400">ระบบจัดลำดับชั้นองค์กรซ้าย-ขวา การหักปันส่วนยอดสะสมและเงื่อนไขการบีบสายงานแบบเรียลไทม์</p>
                           </div>
                         </div>
-                        <p className="text-[11px] leading-relaxed text-slate-500">
-                          ทุกยอดเบิกถอนคอมมิชชันของสมาชิกจะหักค่าธรรมเนียมธุรกรรมธนาคาร 10 บาท โดยเงินกองทุนและค่าธรรมเนียมบางส่วนจะถูกแบ่งเข้ากองทุนช่วยเหลือสังคม (CSR Fund) เพื่อนำไปช่วยเหลือผู้ยากไร้และชุมชนตามปณิธานของ นทีพลัส
-                        </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">📐 โครงสร้างการจ่ายผลตอบแทน (Commissions & Level Depth)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              ทุกยอดการสั่งซื้อสินค้าใดๆ บนระบบ Natee Plus Market จะนำพาคะแนน PV มาด้วยเสมอ โดยคะแนน PV นี้จะถูกวิ่งส่งตรงขึ้นสายงานอัพไลน์ขึ้นไปสูงสุดถึง <strong>20 ชั้นสายงาน</strong> ในอัตราผลตอบแทน <strong>2.5% ต่อชั้น</strong> ของคะแนน PV (1 PV = 1 บาท)
+                            </p>
+
+                            <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-sm">
+                              <table className="w-full text-left text-xs">
+                                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                                  <tr>
+                                    <th className="px-3 py-2.5">ตำแหน่ง</th>
+                                    <th className="px-3 py-2.5 text-center">สิทธิ์การรับรายได้ชั้นลึกองค์กร</th>
+                                    <th className="px-3 py-2.5 text-right">ยอดรับสูงสุด (%)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 text-slate-600">
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-bold text-indigo-600">S</td>
+                                    <td className="px-3 py-2.5 text-center font-mono">1 ชั้นองค์กรลึก</td>
+                                    <td className="px-3 py-2.5 text-right font-mono">2.50%</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-bold text-amber-600">M</td>
+                                    <td className="px-3 py-2.5 text-center font-mono">5 ชั้นองค์กรลึก</td>
+                                    <td className="px-3 py-2.5 text-right font-mono">12.50%</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-bold text-teal-600">L</td>
+                                    <td className="px-3 py-2.5 text-center font-mono">10 ชั้นองค์กรลึก</td>
+                                    <td className="px-3 py-2.5 text-right font-mono">25.00%</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-bold text-rose-600">XL</td>
+                                    <td className="px-3 py-2.5 text-center font-mono">15 ชั้นองค์กรลึก</td>
+                                    <td className="px-3 py-2.5 text-right font-mono">37.50%</td>
+                                  </tr>
+                                  <tr className="bg-amber-50/20">
+                                    <td className="px-3 py-2.5 font-bold text-purple-600">XXL</td>
+                                    <td className="px-3 py-2.5 text-center font-mono">20 ชั้นองค์กรลึก (สูงสุด)</td>
+                                    <td className="px-3 py-2.5 text-right font-mono">50.00%</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+
+                            <div className="bg-emerald-50/60 border border-emerald-100 rounded-2xl p-4 text-xs text-emerald-950">
+                              <p className="font-bold flex items-center gap-1">🔄 ระบบบีบสายงานขึ้นด้านบน (Dynamic Compression):</p>
+                              <p className="leading-relaxed mt-1">
+                                เมื่อรหัสใดในโครงสร้างไม่มีสิทธิ์รับรายได้ (วงเงินสะสมเต็ม 10 เท่า หรือยังไม่ยืนยัน KYC หรือไม่ได้อยู่ในระดับตำแหน่งที่จะได้รับสิทธิ์ลึกชั้นนั้น) ระบบของ NaTee Plus จะใช้กลไก <strong>"Low-up Bypass"</strong> ข้ามขยับรหัสนั้นออกไป และมองหาอัพไลน์ในชั้นบนถัดขึ้นไปที่มีคุณสมบัติครบแทน เพื่อให้การจ่ายเงินในบิลนั้นสมบูรณ์ครอบคลุมและจ่ายครบจริงเต็มจำนวน 20 ชั้นที่กำหนด โดยคะแนนผลตอบแทนจะไม่สูญหายไปในระบบ
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">✂️ โครงสร้างการแบ่งหักคอมมิชชันแบนด์ 20% (Flat Deduction Split)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              เพื่อนำไปค้ำจุนสภาพคล่อง ปันสุขสู่สังคม และหล่อเลี้ยงระบบออโต้รันแบบเดี่ยวทั่วโลก (Plan B) คอมมิชชันผังไบนารี่ทุกยอดที่เกิดขึ้นจริง จะโดนหักปันส่วนเป็นอัตราส่วนคงที่ <strong>20% (Flat Rate)</strong> ดังรายละเอียดต่อไปนี้:
+                            </p>
+
+                            <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 space-y-3 text-xs">
+                              <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                                <span className="font-bold text-slate-700">รายได้เข้ากระเป๋า E-Money (ถอนเงินได้)</span>
+                                <span className="font-bold text-emerald-600 font-mono text-sm">80.00%</span>
+                              </div>
+                              <div className="space-y-1.5 text-slate-600 text-[11px] pl-1">
+                                <div className="flex justify-between">
+                                  <span>• เงินคูปองส่วนลดซื้อสินค้า (E-Coupon Wallet):</span>
+                                  <span className="font-mono text-slate-800">9.00% (สุทธิหลังส่งคืนกลาง 1%)</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>• เงินทุนกองทุนกลางเฉลี่ยจ่ายรอบพาร์ทเนอร์ (All-Share Pool):</span>
+                                  <span className="font-mono text-indigo-600">3.00% + หักคืน E-Coupon 1%</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>• คะแนนสะสมออโต้รันขึ้นผังเดี่ยวโลก (Plan B Points):</span>
+                                  <span className="font-mono text-amber-600">5.00% (เพื่อนำไปจำลองรหัสเดี่ยว B1)</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>• เงินทุนสังคมสงเคราะห์พัฒนาชุมชน (CSR Fund - กองทุนปันสุข):</span>
+                                  <span className="font-mono text-teal-600">1.00% (จ่ายคืนในนามสมาชิกที่ทำผลงาน)</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>• ค่ารักษาความปลอดภัยและกำไรดำเนินงานระบบ (Company Profit):</span>
+                                  <span className="font-mono text-purple-600">1.00%</span>
+                                </div>
+                              </div>
+                              <div className="pt-2 border-t border-slate-200 flex justify-between text-slate-700 font-bold">
+                                <span>ยอดหักจัดเก็บรวมเพื่อหมุนเวียนระบบนิเวศน์:</span>
+                                <span className="font-mono text-rose-600">20.00%</span>
+                              </div>
+                            </div>
+
+                            <div className="bg-amber-50/20 border border-amber-200/80 rounded-2xl p-4 text-[11px] text-amber-950 space-y-1.5 leading-relaxed">
+                              <p className="font-bold">📄 ตัวอย่างการคำนวณ:</p>
+                              <p>
+                                ยอดซื้อสินค้าของทีมใต้สายงานมีคะแนนสะสม <strong>10,000 PV</strong> <br />
+                                • ค่าคอมมิชชันรวม (2.5%) = <strong>250 บาท</strong> <br />
+                                • ยอดจ่ายจริงเข้ากระเป๋า <strong>E-Money</strong> สมาชิก = 250 x 80% = <strong>200.00 บาท</strong> <br />
+                                • ยอดคะแนนสะสมอัพขึ้น <strong>Plan B Points</strong> = 250 x 5% = <strong>12.50 คะแนน</strong> (เมื่อสะสมคะแนนครบ 100 ระบบจะทำการสร้างรหัสวิ่งไปลงผังเดี่ยวระดับโลกให้อัตโนมัติทันที)
+                              </p>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    )}
+
+                    {/* 3. PLAN B AUTOMATION B1-B15 */}
+                    {systemCondTab === 'planb' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg shadow-inner">
+                            🏆
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">ระบบแผนกองทุนพิเศษออโต้รันเดี่ยวทั่วโลก Plan B1-B15 (Plan B Global Auto-run & Cycle Payouts)</h4>
+                            <p className="text-xs text-slate-400">โครงสร้างจ่ายปันผลจากการเรียงคิวระดับสากล ไม่ขึ้นกับสายงานตรง และการแบ่งสัดส่วนเงินทุนข้ามระดับ 15 ชั้น</p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">🧬 หลักการสร้างรหัสและการคำนวณวงรอบ (Auto-run Queuing & Spawn Mechanism)</h5>
+                          <div className="text-xs text-slate-600 space-y-2.5 leading-relaxed">
+                            <p>
+                              ทุกครั้งที่สมาชิกสะสมคะแนนจากโบนัส Plan A ครบทุก <strong>100 Plan B Points</strong> ระบบจะทำการโคลนนิ่งรหัสออโต้รัน 1 รหัส นำไปเสียบต่อท้ายระบบแถวเดียวระดับโลก (Global Single Tree Line) โดยไล่ลำดับจากซ้ายไปขวาและบนลงล่างอย่างเสมอภาค ไม่เลือกผู้แนะนำหรือสายงานตรงใดๆ ทั้งสิ้น
+                            </p>
+                            <p>
+                              เมื่อมีรหัสในแถวมาต่อท้ายจนเต็มโครงสร้างไบนารี่ 5 ชั้นเต็ม (ครบจำนวน <strong>62 รหัส</strong> ด้านใต้รหัสนั้น) ระบบจะตัดยอดความสำเร็จของรอบ (Cycle Completed) และคิดมูลค่าการจ่ายเงินกองทุนคืนกลับดังนี้:
+                            </p>
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150 font-mono text-[11px] text-slate-700 space-y-2">
+                              <p className="font-bold text-slate-850">📊 สูตรคำนวณเงินกองทุนระบบแชร์พูลต่อหนึ่งระดับ:</p>
+                              <p>• ยอดจ่ายรวมกองทุนของโครงสร้าง (Total Payout) = <strong>62 x (มูลค่าหน่วยระดับ Node Value ÷ 5)</strong></p>
+                              <p>• แบ่งปันจ่ายส่วนได้เสียในองค์ประกอบระบบนิเวศน์ออกเป็น <strong>6 ส่วนเท่าๆ กัน (6 Parts)</strong> (ส่วนละ 12.4x ของ Node Value) ดังนี้:</p>
+                              <ul className="list-decimal pl-5 space-y-1 text-slate-600 text-[10px]">
+                                <li><strong>กระเป๋าเงิน E-Cash (รายได้ปันผล):</strong> เพื่อนำไปหัก Flat 20% จ่ายเป็น E-Money และเติมเข้าส่วนอื่นๆ อีก 5 ทิศทาง</li>
+                                <li><strong>กระเป๋าเงิน E-Coupon:</strong> เพื่อกลับไปใช้เป็นคะแนนส่วนลดสั่งซื้อสินค้าคุณภาพประหยัดค่าครองชีพ</li>
+                                <li><strong>ทุนสะสมขยับขึ้นระดับถัดไป (Spawn Reserve):</strong> ออมทุนเพื่อสร้างรหัสถัดขึ้นไป (ระดับ N+1) เช่น สำเร็จ B1 อัพเกรดขึ้นระดับ B2 อัตโนมัติ</li>
+                                <li><strong>เงินโบนัส All-Share (แชร์ยอดขายทั่วโลก):</strong> มอบคืนกลับสู่พูลโบนัสพิเศษในพาร์ทสมาชิกระดับนำ</li>
+                                <li><strong>กองทุนสังคมสงเคราะห์ปันสุข (CSR Fund):</strong> เสริมสร้างความอบอุ่นแบ่งปันสู่กลุ่มผู้ขาดแคลนและสังคมพาร์ทเนอร์</li>
+                                <li><strong>ค่าบริหารจัดการและสิทธิ์ใช้เซิร์ฟเวอร์บริษัท (Company Profit):</strong> เพื่อพัฒนาระบบเทคโนโลยีอย่างยั่งยืน</li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4 pt-2">
+                          <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">📋 ตารางผลตอบแทน Plan B1 - B15 (All Tiers Revenue Matrix)</h5>
+                          
+                          <div className="border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left text-xs font-mono">
+                                <thead className="bg-slate-900 text-slate-100 font-bold font-sans">
+                                  <tr>
+                                    <th className="px-3 py-3">รหัสระดับ</th>
+                                    <th className="px-3 py-3 text-right">ค่ารหัสตั้งต้น (Node Value)</th>
+                                    <th className="px-3 py-3 text-right">ยอดรวมที่เกิดขึ้น (Total Payout)</th>
+                                    <th className="px-3 py-3 text-right">ปันส่วนละ 1 ใน 6 (บาท)</th>
+                                    <th className="px-3 py-3 text-right">ยอดเงินรับโอนจริง (E-Money)</th>
+                                    <th className="px-3 py-3 text-right">คูปองที่รับจริง (E-Coupon)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200 text-slate-600 text-[11px] bg-white">
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-indigo-50/20">🏆 B1</td>
+                                    <td className="px-3 py-2 text-right">100.00</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">1,240.00</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">140.00</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">112.00 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">140.00</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-indigo-50/20">🏆 B2</td>
+                                    <td className="px-3 py-2 text-right">140.00</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">1,736.00</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">289.33</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">231.46 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">289.33</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-indigo-50/20">🏆 B3</td>
+                                    <td className="px-3 py-2 text-right">289.33</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">3,587.73</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">597.96</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">478.36 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">597.96</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-indigo-50/20">🏆 B4</td>
+                                    <td className="px-3 py-2 text-right">597.96</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">7,414.65</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">1,235.78</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">988.62 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">1,235.78</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-indigo-50/20">🏆 B5</td>
+                                    <td className="px-3 py-2 text-right">1,235.78</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">15,323.61</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">2,553.93</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">2,043.15 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">2,553.93</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700">🏆 B6</td>
+                                    <td className="px-3 py-2 text-right">2,553.93</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">31,668.79</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">5,278.13</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">4,222.50 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">5,278.13</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700">🏆 B7</td>
+                                    <td className="px-3 py-2 text-right">5,278.13</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">65,448.84</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">10,908.14</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">8,726.51 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">10,908.14</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700">🏆 B8</td>
+                                    <td className="px-3 py-2 text-right">10,908.14</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">135,260.94</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">22,543.49</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">18,034.79 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">22,543.49</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700">🏆 B9</td>
+                                    <td className="px-3 py-2 text-right">22,543.49</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">279,539.27</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">46,589.88</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">37,271.90 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">46,589.88</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700">🏆 B10</td>
+                                    <td className="px-3 py-2 text-right">46,589.88</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">577,714.49</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">96,285.75</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">77,028.60 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">96,285.75</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-amber-50/10">🏆 B11</td>
+                                    <td className="px-3 py-2 text-right">96,285.75</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">1,193,943.28</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">198,990.55</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">159,192.44 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">198,990.55</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-amber-50/10">🏆 B12</td>
+                                    <td className="px-3 py-2 text-right">198,990.55</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">2,467,482.78</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">411,247.13</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">328,997.70 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">411,247.13</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-amber-50/10">🏆 B13</td>
+                                    <td className="px-3 py-2 text-right">411,247.13</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">5,099,464.41</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">849,910.74</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">679,928.59 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">849,910.74</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-amber-50/10">🏆 B14</td>
+                                    <td className="px-3 py-2 text-right">849,910.74</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">10,538,893.18</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">1,756,482.20</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">1,405,185.76 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">1,756,482.20</td>
+                                  </tr>
+                                  <tr className="bg-amber-100/25">
+                                    <td className="px-3 py-2.5 font-sans font-black text-purple-800">🏆 B15 (สูงสุด)</td>
+                                    <td className="px-3 py-2.5 text-right font-bold">1,756,482.20</td>
+                                    <td className="px-3 py-2.5 text-right text-slate-900 font-bold">21,780,379.24</td>
+                                    <td className="px-3 py-2.5 text-right font-black text-purple-700">4,356,075.85</td>
+                                    <td className="px-3 py-2.5 text-right text-emerald-600 font-black">3,484,860.68 (Net)</td>
+                                    <td className="px-3 py-2.5 text-right font-black">4,356,075.85</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                          
+                          <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl text-[11px] text-slate-500 leading-relaxed">
+                            <p className="font-bold text-slate-700">📌 หมายเหตุพิเศษระดับ B15:</p>
+                            <p>
+                              สำหรับระดับสูงสุดคือ <strong>B15</strong> ระบบจะไม่ต้องแบ่งปันเงินส่วนทุนสะสมส่งต่อไปยังชั้นถัดไปอีก (เนื่องจากไม่มีสระระดับ B16) ยอดปันส่วนทั้งหมดจะถูกตัดหารด้วย <strong>5 ส่วน</strong> (แทนที่จะหาร 6 เหมือนระดับ 1-14) เพื่อจ่ายคืนผลตอบแทนให้เต็มพูลและไม่มีเศษค้างทิ้งไว้ในระบบ ทำให้สมาชิกที่สำเร็จวงรอบ B15 ได้รับมูลค่าต่อส่วนสูงมากถึง <strong>4,356,075.85 บาทต่อรหัสความสำเร็จ</strong>
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 4. ALL SHARE & PUNSOOK */}
+                    {systemCondTab === 'allshare' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg shadow-inner">
+                            💎
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">โบนัสยอดรวมหุ้นระบบ All-Share & กองทุนช่วยเหลือปันสุข (All-Share & Social CSR Rules)</h4>
+                            <p className="text-xs text-slate-400">หลักเกณฑ์การระดมทุนและการจัดสรรผลประโยชน์ส่วนรวมคืนสู่สมาชิกระดับพรีเมียมและกลุ่มสังคมรอบด้าน</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">🌟 ระบบปันผล All-Share (Global Sharing Pool)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              พูลเงินกองกลางที่รวบรวมเพื่อแบ่งปันยอดขายของแพลตฟอร์มทั้งหมด คัดสรรทุนมาสนับสนุนจาก:
+                            </p>
+                            <ul className="list-disc list-inside text-xs text-slate-600 space-y-1.5 pl-1 leading-relaxed">
+                              <li><strong>3.00%</strong> ของทุกคะแนน PV ของคอมมิชชัน Plan A ทั่วแพลตฟอร์ม</li>
+                              <li><strong>1.00%</strong> ของคะแนน PV ส่วน E-Coupon ของบิลพาส</li>
+                              <li><strong>5.00%</strong> จากค่าธรรมเนียมธุรกรรมแปลงเงิน E-Cash เป็น E-Money</li>
+                            </ul>
+                            
+                            <div className="bg-indigo-50/60 border border-indigo-100 p-4 rounded-2xl space-y-2.5 text-xs text-indigo-950 leading-relaxed">
+                              <p className="font-bold flex items-center gap-1">📋 เกณฑ์คุณสมบัติผู้รับ (Eligible Members):</p>
+                              <p>
+                                1. สมาชิกผู้ผ่านการลงทะเบียนจัดซื้อแพ็กเกจระดับสูงสุด <strong>XXL</strong> เท่านั้น <br />
+                                2. สมาชิกที่มีสิทธิ์ในการรับรายได้คงเหลือสะสม (Eligible Rights &gt; 0)
+                              </p>
+                              <p className="font-bold border-t border-indigo-200/60 pt-2 flex items-center gap-1">💰 วิธีปันส่วนและการจ่ายออก:</p>
+                              <p>
+                                ทุกครั้งที่เงินไหลเข้าพูล All-Share ระบบจะแบ่งแยกปันส่วนให้สมาชิกผู้มีสิทธิ์เท่าๆ กันในแบบเรียลไทม์ โดยจ่ายเป็น <strong>50% เข้ากระเป๋า E-Money</strong> (ถอนออกได้ทันที) และอีก <strong>50% ถูกสะสมเข้า Plan B Points</strong> (เพื่อดันรหัสของสมาชิกให้ออโต้รันทำวงรอบสำเร็จและกินปันผลรอบเร็วขึ้น)
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">❤️ กองทุนช่วยเหลือปันสุข (Natee Plus CSR Welfare Fund)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              เป็นระบบสะสมเงินกองทุนการกุศลเพื่อช่วยเหลือพาร์ทเนอร์ ผู้ขาดแคลน สมาชิกที่ประสบภัย และกิจกรรมช่วยเหลือสังคมในนามของสมาชิกร่วมกัน โดยระบบจัดสรรยอดสะสมเข้ากระเป๋าปันสุข 100% จากแหล่งที่มาดังนี้:
+                            </p>
+                            
+                            <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-sm text-xs">
+                              <div className="bg-slate-50 px-3 py-2 font-bold text-slate-700 border-b border-slate-200">
+                                แหล่งสนับสนุนกระเป๋ากองทุนปันสุข
+                              </div>
+                              <div className="p-3 space-y-2 text-slate-600">
+                                <div className="flex justify-between items-center">
+                                  <span>• สมัครสมาชิกแพ็กเกจ S บิลแรก:</span>
+                                  <span className="font-mono text-emerald-600 font-bold">5.00 บาท / รหัส</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span>• การสำเร็จบิลคอมมิชชันไบนารี่ (Plan A):</span>
+                                  <span className="font-mono text-emerald-600 font-bold">1.00% ของยอด PV</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span>• วงรอบความสำเร็จของ Plan B ทุกรอบ:</span>
+                                  <span className="font-mono text-emerald-600 font-bold">1 ใน 6 ส่วน (16.66%)</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              ระบบจะมีการเปิดเผยสถิติกองทุนปันสุข (CSR Fund Balance) พร้อมบอร์ดบันทึกประวัติการปันส่วนอย่างตรงไปตรงมาหน้าเว็บบอร์ด เพื่อแสดงความโปร่งใสและร่วมอนุโมทนาบุญของครอบครัว นที พลัส ทุกรหัส
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 5. TRANSFERS & WITHDRAWALS */}
+                    {systemCondTab === 'transfers' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg shadow-inner">
+                            💸
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">ระบบการโอนแต้มภายใน และกฎเกณฑ์การถอนเงินสดเข้าธนาคาร (Fund Transfers & Withdrawals)</h4>
+                            <p className="text-xs text-slate-400">กฎความมั่นคงปลอดภัยในการทำธุรกรรม อัตราค่าธรรมเนียม และข้อบังคับการหักภาษี ณ ที่จ่ายตามระเบียบกรมสรรพากร</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">🔄 ระบบการแลกเปลี่ยนโอนภายใน (Internal Transfers)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              สมาชิกผู้ได้รับอนุมัติ KYC แล้ว สามารถสลับแลกเปลี่ยนคะแนนในกระเป๋าเงินประเภทต่างๆ ได้ เพื่อเพิ่มสภาพคล่องในการจัดซื้อสินค้าและสิทธิประโยชน์ทางธุรกิจ ภายใต้เงื่อนไขดังนี้:
+                            </p>
+
+                            <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2.5 text-xs text-slate-700">
+                              <div className="flex justify-between font-bold border-b border-slate-200 pb-1.5">
+                                <span>รายการแลกเปลี่ยนกระเป๋า</span>
+                                <span>อัตราหักค่าธรรมเนียม / เกณฑ์จำกัด</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="font-bold text-slate-800">E-Cash โอนให้สมาชิกอื่น</span>
+                                <span className="text-emerald-600 font-bold font-mono">0% (ฟรี) • บังคับ KYC + PIN + OTP</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="font-bold text-slate-850">E-Cash แปลงเป็น E-Money</span>
+                                <span className="text-rose-500 font-bold font-mono">หักค่าธรรมเนียม 10% *</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="font-bold text-slate-800">E-Money แปลงกลับเป็น E-Cash</span>
+                                <span className="text-emerald-600 font-bold font-mono">0% (ฟรี) • อัตราส่วน 1:1</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="font-bold text-slate-800">E-Money แปลงเป็น E-Coupon</span>
+                                <span className="text-emerald-600 font-bold font-mono">0% (ฟรี) • อัตราส่วน 1:1</span>
+                              </div>
+                            </div>
+
+                            <p className="text-[10px] text-slate-500 leading-tight">
+                              * หมายเหตุค่าธรรมเนียมแลก E-Cash เป็น E-Money (10%) ระบบจะปันแยกนำส่ง <strong>5% เข้าพูล All-Share</strong> ทั่วโลกเพื่อสมทบสมาชิกร่วม และอีก <strong>5% เข้าบัญชีกำไรบริษัท (Company Profit)</strong>
+                            </p>
+                          </div>
+
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">🏦 ระบบการถอนเงินออกจากระบบคอมมิชชั่น (E-Money Cash Out rules)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              ระบบจะหักปันส่วนยอดเงินเพื่อค้ำประกันระบบ จัดส่งภาษีอย่างโปร่งใส และค่าบริการธุรกรรมธนาคารโดยอิงสูตรคำนวณที่เข้มงวด ดังนี้:
+                            </p>
+
+                            <div className="bg-slate-900 text-slate-200 p-4 rounded-2xl space-y-3 text-xs font-mono border border-slate-800">
+                              <p className="font-bold text-white font-sans text-xs">📊 สูตรการคำนวณโอนเงินถอนพาสสุทธิ:</p>
+                              <div className="space-y-1.5 text-slate-400 text-[11px]">
+                                <div>• ยอดถอนขั้นต่ำ: <strong>300 บาท</strong> (ยอดคงเหลือหลังถอนต้องไม่น้อยกว่า 300)</div>
+                                <div>• <strong>หักสำรองกองทุนระบบหมุนเวียน (Auto-Reserve): 20.00%</strong> (นำกลับเข้าพูลแผนงานเพื่อหมุนเวียนยอด) ทำให้คิดฐานคำนวณภาษีสุทธิที่ 80%</div>
+                                <div>• <strong>หักภาษี ณ ที่จ่ายตามกฎหมาย (Withholding Tax): 3.00%</strong> ของยอดฐานคำนวณ (2.4% ของยอดถอน)</div>
+                                <div>• <strong>หักค่าดูแลโครงข่ายแพลตฟอร์ม (Platform Fee): 2.00%</strong> ของยอดฐานคำนวณ (1.6% ของยอดถอน)</div>
+                              </div>
+                              <div className="border-t border-slate-800 pt-2 text-white font-bold font-sans flex justify-between">
+                                <span>💵 ยอดรับเงินโอนสุทธิโอนเข้าธนาคาร:</span>
+                                <span className="text-emerald-400">76.00% ของยอดสั่งถอน</span>
+                              </div>
+                            </div>
+
+                            <div className="bg-rose-50 border border-rose-100 p-3 rounded-2xl text-[10px] text-rose-950 font-medium leading-relaxed">
+                              <strong>⚠️ ปลั๊กอินควบคุมความปลอดภัยธุรกรรมทางการเงิน:</strong> <br />
+                              1. สมาชิกต้องผ่านการอนุมัติ <strong>บัตรประชาชนและข้อมูล KYC เป็น Active</strong> จึงจะเปิดปุ่มทำธุรกรรมถอนเงิน <br />
+                              2. ยึดมาตรการป้องกันความปลอดภัยระดับธนาคารพาณิชย์ ด้วยการส่งรหัสผ่าน OTP ยืนยันรหัสส่งเข้าเบอร์โทรศัพท์ และบังคับกรอกรหัส PIN 6 หลักทุกครั้ง
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 6. PARTNER GP SYSTEM */}
+                    {systemCondTab === 'partner' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg shadow-inner">
+                            🤝
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">เงื่อนไขการนำสินค้าเข้าร่วมฝากขายและค่าฟีดระบบร้านค้าพาร์ทเนอร์ (Natee Plus Partner Terms)</h4>
+                            <p className="text-xs text-slate-400">ระเบียบปฏิบัติสำหรับพาร์ทเนอร์ร้านค้าชุมชน แฟรนไชส์ และการปันค่าส่วนแบ่งส่งเสริมการตลาด GP คืนกลับสายเครือข่าย</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">🏢 คุณสมบัติและการลงทะเบียนร้านค้า (Merchant Onboarding Checklist)</h5>
+                            <ul className="space-y-2 text-xs text-slate-600">
+                              <li className="flex items-start gap-2">
+                                <span className="text-amber-500 font-bold">●</span>
+                                <div>
+                                  <strong>ระดับตำแหน่งขั้นต่ำ:</strong> ผู้ขายในนามพาร์ทเนอร์ร้านค้า (Partner Merchant) ต้องสะสมแพ็กเกจตำแหน่งของตนเองให้อยู่ในระดับ <strong>S</strong> หรือ <strong>M</strong> ขึ้นไปเท่านั้น เพื่อรักษาระเบียบการใช้บริการ
+                                </div>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span className="text-amber-500 font-bold">●</span>
+                                <div>
+                                  <strong>ข้อมูลรายละเอียดร้านค้า:</strong> ชื่อร้านค้า (ห้ามใช้อักษรพิเศษเพื่อป้องกันความคลาดเคลื่อนทางระบบ), เบอร์ติดต่อตรง, อีเมลจริง, ที่อยู่ตั้งคลังสินค้า และพิกัดแผนที่ละติจูด-ลองจิจูด (Latitude / Longitude) สำหรับพินตำแหน่งพาร์ทเนอร์ออฟไลน์
+                                </div>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span className="text-amber-500 font-bold">●</span>
+                                <div>
+                                  <strong>การอนุมัติคลังสินค้า (Stock Approval):</strong> ทุกรายการสินค้าพาร์ทเนอร์ที่เพิ่มเข้ามาใหม่ในคลังระบบ จะต้องผ่านการพิจารณาตรวจสอบราคา คุณภาพ มาตรฐานอย./มอก. และวงคะแนน PV ปันกลับโดยคณะกรรมการบริษัท ก่อนเปิดแสดงผลจำหน่ายจริงหน้าร้าน
+                                </div>
+                              </li>
+                            </ul>
+
+                            <div className="bg-amber-50/40 border border-amber-200/60 p-4 rounded-2xl space-y-2 text-xs text-amber-950">
+                              <p className="font-bold">🤝 อัตราหักค่าบริการ GP แพลตฟอร์ม:</p>
+                              <p className="leading-relaxed">
+                                แพลตฟอร์มกำหนดค่าสนับสนุนส่งเสริมการตลาดและการบริหารส่วนแบ่งแบบคงที่อยู่ที่ <strong>20.00% (GP 20%)</strong> ของมูลค่าราคาสินค้าที่ขายได้สำเร็จจริง และพาร์ทเนอร์สามารถถอนส่วนรายได้สุทธิได้เมื่อสถานะจัดส่งสินค้าปรับสมบูรณ์เป็นเรียบร้อย
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">🔄 การแชร์ปันส่วน GP คืนกลับสู่ผังเครือข่าย MLM (GP Shared Commissions)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              ความพิเศษของ NaTee Plus คือการดึงส่วนค่าบริการ GP 20% ที่จัดเก็บจากคู่ค้ามาหมุนเวียนกระจายความมั่งคั่งกลับคืนสู่สมาชิกองค์กร โดยระบบกำหนดการจ่ายเงินช่วยเหลือกลับสายงานดังนี้:
+                            </p>
+
+                            <div className="bg-slate-900 text-slate-100 p-4 rounded-2xl space-y-3 text-xs font-mono border border-slate-800">
+                              <p className="font-bold text-amber-400 font-sans text-xs">📊 สูตรคำนวณคะแนนกระจายผังไบนารี่พาร์ทเนอร์:</p>
+                              <div className="space-y-1.5 text-slate-400 text-[11px]">
+                                <div>• คะแนน PV ปันกลับระบบ = <strong>50% ของยอด GP ที่จัดเก็บได้</strong></div>
+                                <div>• คิดเป็นสัดส่วนเท่ากับ <strong>10.00%</strong> ของราคาสินค้าหน้าเว็บ (1 PV = 1 บาท)</div>
+                                <div>• ยอดคะแนน PV นี้จะถูกส่งเข้าไปคำนวณใน <strong>แผน A ไบนารี่ลึก 20 ชั้น</strong> ทันทีที่ทำรายการบิลสำเร็จ</div>
+                              </div>
+                              <div className="border-t border-slate-800 pt-2 text-white text-[10px] font-sans">
+                                <strong>💡 ข้อดีพาร์ทเนอร์:</strong> สินค้าของคุณจะได้รับการสนับสนุนกระตุ้นยอดขายอย่างหนักจากสมาชิก MLM ทั่วไทย เนื่องจากยอดซื้อของพวกเขาสร้างรายได้กลับคืนสู่สายทีมอย่างต่อเนื่อง
+                              </div>
+                            </div>
+
+                            <div className="bg-slate-50 border border-slate-150 p-3 rounded-2xl text-[10px] text-slate-500 leading-relaxed">
+                              <strong>📄 ตัวอย่างการปันส่วน:</strong> <br />
+                              สินค้าพาร์ทเนอร์ตั้งราคาขายปลีกหน้าร้าน <strong>1,000 บาท</strong> <br />
+                              • ยอดค่า GP จัดเก็บเข้าแพลตฟอร์ม (20%) = <strong>200 บาท</strong> <br />
+                              • ยอดรายรับของพาร์ทเนอร์คู่ค้าก่อนเสียภาษี = <strong>800 บาท</strong> <br />
+                              • ยอดปันกลับเข้าพูลคะแนนไบนารี่เครือข่าย (50% ของ GP) = <strong>100 PV</strong> (จัดแบ่งปันส่วน 2.5% ต่อชั้นละ 2.50 บาท ขึ้นไปจ่ายสูงสุด 20 อัพไลน์)
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 7. ACCOUNTING SEPARATIONS */}
+                    {systemCondTab === 'accounting' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg shadow-inner">
+                            🏦
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">ระบบกฎเกณฑ์จัดสรรบัญชีแยกประเภทและการหักภาษีเข้ารัฐ (Accounting Separations & Tax Compliance)</h4>
+                            <p className="text-xs text-slate-400">ระบบบริหารความปลอดภัยทางการเงินแยกถังเงิน และกระบวนการออกเอกสารภาษีตามแบบประมวลรัษฎากร</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">🗂️ การแยกสิทธิ์บัญชีกองทุนกระเป๋าเงิน (Secure Wallet Ledgers)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              เพื่อป้องการความสับสนของการรับเข้าและจ่ายออกเงินหมุนเวียนในบริษัท ระบบได้สร้างกองบัญชีแยกประเภทขาดจากกันอย่างสมบูรณ์ในชั้นฐานข้อมูล:
+                            </p>
+                            
+                            <div className="space-y-2 text-xs">
+                              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 flex justify-between">
+                                <div>
+                                  <strong className="text-slate-800">1. บัญชี E-Cash Ledger:</strong>
+                                  <p className="text-[10px] text-slate-400 mt-0.5">รับยอดจากการโอนสแกนเงินสดตรงของลูกค้าเพื่อใช้ซื้อสิทธิ์ตำแหน่ง</p>
+                                </div>
+                                <span className="text-indigo-600 font-bold font-mono">Prepaid Wallet</span>
+                              </div>
+                              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 flex justify-between">
+                                <div>
+                                  <strong className="text-slate-800">2. บัญชี E-Money Ledger:</strong>
+                                  <p className="text-[10px] text-slate-400 mt-0.5">ยอดรับคอมมิชชันความสำเร็จ 80% หรือปันผลโบนัส สมาชิกสามารถสั่งโอนถอนได้</p>
+                                </div>
+                                <span className="text-emerald-600 font-bold font-mono">Commission Earnings</span>
+                              </div>
+                              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 flex justify-between">
+                                <div>
+                                  <strong className="text-slate-800">3. บัญชี E-Coupon Ledger:</strong>
+                                  <p className="text-[10px] text-slate-400 mt-0.5">พูลคะแนนสำหรับซื้อสินค้าใน Market เท่านั้น ไม่สามารถแลกเปลี่ยนถอนเป็นเงินสดได้</p>
+                                </div>
+                                <span className="text-amber-600 font-bold font-mono">Voucher Credits</span>
+                              </div>
+                              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 flex justify-between">
+                                <div>
+                                  <strong className="text-slate-800">4. บัญชี Tax & VAT Reserves:</strong>
+                                  <p className="text-[10px] text-slate-400 mt-0.5">สำรองภาษีมูลค่าเพิ่ม 7% และหัก ณ ที่จ่าย 3% ปลายบิล นำส่งสรรพากรเป็นรายเดือน</p>
+                                </div>
+                                <span className="text-rose-600 font-bold font-mono">Tax Escrows</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">📄 ข้อปฏิบัติกฎหมายภาษีรายจ่ายและรายรับ (Tax Invoicing Specifications)</h5>
+                            <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
+                              <div>
+                                <strong className="text-indigo-600">🛒 Natee Plus Market (B2C Retail):</strong>
+                                <p className="mt-1">
+                                  บริษัท นที พลัส จำกัด จดทะเบียนภาษีมูลค่าเพิ่มถูกต้องตามกฎหมาย (VAT 7%) ทุกรายการขายปลีกตรงสู่ผู้บริโภค ระบบจะคำนวณแยกภาษีมูลค่าเพิ่มพาสไว้ เพื่อออก <strong>"ใบกำกับภาษีเต็มรูป / ใบเสร็จรับเงิน (Receipt / Tax Invoice)"</strong> ส่งมอบให้ผู้ซื้อใช้หักลดหย่อนภาษี
+                                </p>
+                              </div>
+                              <div>
+                                <strong className="text-emerald-600">📊 การจ่ายเงินคอมมิชชันและโบนัสสมาชิก (MLM Payouts):</strong>
+                                <p className="mt-1">
+                                  รายได้ค่าคอมมิชชันจากการขยายตลาด ถือเป็นเงินได้ตามมาตรา 40(2) แห่งประมวลรัษฎากร บริษัททำการหักภาษี ณ ที่จ่ายไว้ในอัตรา <strong>3.00% ทุกยอดการสั่งถอนจริง</strong> และออกเอกสาร <strong>"หนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)"</strong> ส่งมอบให้แก่สมาชิกปลายปีเพื่อยื่นกรอก ภ.ง.ด.90/91
+                                </p>
+                              </div>
+                              <div>
+                                <strong className="text-amber-600">🤝 ระบบร้านค้าพาร์ทเนอร์ (B2B Consignment GP):</strong>
+                                <p className="mt-1">
+                                  การหัก GP 20% ระบบจะถือเป็นค่าบริการระบบ แนะนำให้พาร์ทเนอร์ร้านค้าใช้บริการผ่านธนาคารเข้าร่วม <strong>e-Withholding Tax</strong> เพื่อจัดส่งและหักบัญชีภาษี ณ ที่จ่าย 3% สะดวกและลดภาระเอกสารของทางพาร์ทเนอร์ปลายทาง
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 8. INTERACTIVE SIMULATORS */}
+                    {systemCondTab === 'simulators' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-950 text-white flex items-center justify-center text-lg shadow-inner">
+                            🧮
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">เครื่องคำนวณและประมวลผลจำลองภาษีรายได้จริง (Interactive Tax & GP Simulator)</h4>
+                            <p className="text-xs text-slate-400">ระบบจำลองสถานการณ์ตัวเลขทางธุรกรรมเพื่อสอบทานสูตรคำนวณของระบบให้ตรงตามเกณฑ์ทางบัญชี 100%</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                          
+                          {/* SIMULATOR 1 */}
+                          <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 space-y-4">
+                            <div className="flex justify-between items-center border-b border-slate-850 pb-2">
+                              <span className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">
+                                🛒 Natee Plus Market Retail
+                              </span>
+                              <span className="text-[9px] text-slate-400 font-mono">VAT 7%</span>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <label className="block text-[10px] text-slate-300 font-bold">ป้อน ราคาขายปลีกหน้าเว็บ (บาท):</label>
+                              <div className="relative">
+                                <input 
+                                  type="number"
+                                  value={simMarketPrice}
+                                  onChange={(e) => setSimMarketPrice(e.target.value)}
+                                  placeholder="1000"
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono font-bold focus:border-indigo-500 outline-none"
+                                />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-[10px]">บาท</span>
+                              </div>
+                            </div>
+
+                            {(() => {
+                              const p = parseFloat(simMarketPrice) || 0;
+                              const net = p / 1.07;
+                              const vat = p - net;
+                              return (
+                                <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-850 space-y-2 text-[11px] font-mono">
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>ราคาสินค้าก่อน VAT:</span>
+                                    <span className="text-white">฿ {net.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>ภาษีมูลค่าเพิ่ม (VAT 7%):</span>
+                                    <span className="text-indigo-400 font-bold">฿ {vat.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-300 border-t border-slate-800/80 pt-1.5">
+                                    <span className="font-bold">ราคารวมภาษีมูลค่าเพิ่ม:</span>
+                                    <span className="text-emerald-400 font-extrabold">฿ {p.toFixed(2)}</span>
+                                  </div>
+                                  <div className="text-[9px] text-slate-500 mt-1 italic leading-tight">
+                                    * บริษัทออกเอกสาร <strong>ใบส่งมอบ/ใบกำกับภาษีเต็มรูป</strong> ยอดส่งมอบตรงครบถ้วน
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+
+                          {/* SIMULATOR 2 */}
+                          <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 space-y-4">
+                            <div className="flex justify-between items-center border-b border-slate-850 pb-2">
+                              <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                                📊 MLM Commission Withdraw
+                              </span>
+                              <span className="text-[9px] text-slate-400 font-mono">หัก 3% (40(2))</span>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <label className="block text-[10px] text-slate-300 font-bold">ป้อน ยอดสั่งถอนตั้งต้น (บาท):</label>
+                              <div className="relative">
+                                <input 
+                                  type="number"
+                                  value={simMlmCommission}
+                                  onChange={(e) => setSimMlmCommission(e.target.value)}
+                                  placeholder="10000"
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono font-bold focus:border-emerald-500 outline-none"
+                                />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-[10px]">บาท</span>
+                              </div>
+                            </div>
+
+                            {(() => {
+                              const comm = parseFloat(simMlmCommission) || 0;
+                              const reserve = comm * 0.20;
+                              const baseTaxable = comm - reserve;
+                              const wht = baseTaxable * 0.03;
+                              const fee = baseTaxable * 0.02;
+                              const net = Math.max(0, baseTaxable - wht - fee);
+                              return (
+                                <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-850 space-y-2 text-[11px] font-mono">
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>ยอดถอนสั่งตั้งต้น:</span>
+                                    <span className="text-white">฿ {comm.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-450 text-[10px] pl-1 text-slate-400">
+                                    <span>• หักกองทุนสะสมสำรอง (20%):</span>
+                                    <span className="text-amber-500">- ฿ {reserve.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-450 text-[10px] pl-1 text-slate-400">
+                                    <span>• ยอดฐานคำนวณภาษี (80%):</span>
+                                    <span className="text-indigo-300 font-bold">฿ {baseTaxable.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>หักภาษี ณ ที่จ่าย 3% (ของฐาน):</span>
+                                    <span className="text-rose-400 font-bold">฿ {wht.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>ค่าบริการดูแลระบบ 2% (ของฐาน):</span>
+                                    <span className="text-slate-400">฿ {fee.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-300 border-t border-slate-800/80 pt-1.5">
+                                    <span className="font-bold">โอนเข้าบัญชีธนาคารสุทธิ:</span>
+                                    <span className="text-emerald-400 font-extrabold">฿ {net.toFixed(2)}</span>
+                                  </div>
+                                  <div className="text-[9px] text-slate-500 mt-1 italic leading-tight">
+                                    * โอนสุทธิคิดเป็นสัดส่วนคงที่เท่ากับ <strong>76.00%</strong> ของเงินถอนตั้งต้นพาส
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+
+                          {/* SIMULATOR 3 */}
+                          <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 space-y-4">
+                            <div className="flex justify-between items-center border-b border-slate-850 pb-2">
+                              <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                                🤝 Partner GP & Settlement
+                              </span>
+                              <span className="text-[9px] text-slate-400 font-mono">GP 20% + หัก ณ ที่จ่าย 3%</span>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <label className="block text-[10px] text-slate-300 font-bold">ป้อน ราคาสินค้าตั้งขายหน้าร้าน (บาท):</label>
+                              <div className="relative">
+                                <input 
+                                  type="number"
+                                  value={simPartnerPrice}
+                                  onChange={(e) => setSimPartnerPrice(e.target.value)}
+                                  placeholder="1000"
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono font-bold focus:border-amber-500 outline-none"
+                                />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-[10px]">บาท</span>
+                              </div>
+                            </div>
+
+                            {(() => {
+                              const p = parseFloat(simPartnerPrice) || 0;
+                              const gp = p * 0.20;
+                              const receivableBeforeTax = p - gp;
+                              const wht = receivableBeforeTax * 0.03;
+                              const netTransfer = receivableBeforeTax - wht;
+                              return (
+                                <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-850 space-y-2 text-[11px] font-mono">
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>ราคาสินค้าหน้าร้าน:</span>
+                                    <span className="text-white">฿ {p.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>หักค่าบริการ GP (20%):</span>
+                                    <span className="text-rose-400">- ฿ {gp.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-indigo-300 font-bold">
+                                    <span>ยอดรับก่อนภาษี:</span>
+                                    <span>฿ {receivableBeforeTax.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>หักภาษี ณ ที่จ่าย 3% (ของยอดรับ):</span>
+                                    <span className="text-rose-400 font-bold">฿ {wht.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-300 border-t border-slate-800/80 pt-1.5">
+                                    <span className="font-bold">ยอดโอนสุทธิให้พาร์ทเนอร์:</span>
+                                    <span className="text-emerald-400 font-extrabold">฿ {netTransfer.toFixed(2)}</span>
+                                  </div>
+                                  <div className="text-[9px] text-slate-500 mt-1 italic leading-tight">
+                                    * คู่ค้าชุมชนจัดเตรียมเอกสาร <strong>ใบเสร็จรับเงินยอด {receivableBeforeTax.toFixed(2)} บาท</strong> ให้แก่ นที พลัส
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 9. PDPA POLICY PAGE */}
+                    {systemCondTab === 'pdpa' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg shadow-inner">
+                            🛡️
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">นโยบายความเป็นส่วนตัวและการคุ้มครองข้อมูลส่วนบุคคล (PDPA Privacy Policy)</h4>
+                            <p className="text-xs text-slate-400">มาตราฐานความปลอดภัยทางกฎหมายเกี่ยวกับข้อมูลผู้จัดจำหน่ายและคู่ค้าร่วม บริษัท นที พลัส จำกัด</p>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-50 border border-slate-150 rounded-2xl p-6 space-y-6 text-xs text-slate-700 leading-relaxed max-w-4xl font-sans">
+                          <div className="bg-indigo-600 text-white p-5 rounded-2xl border border-indigo-500 shadow-sm space-y-1">
+                            <p className="text-[10px] uppercase font-bold tracking-wider text-indigo-200">🛡️ ผู้ควบคุมข้อมูลส่วนบุคคลตามกฎหมาย (Data Controller)</p>
+                            <h5 className="font-black text-base">บริษัท นที พลัส จำกัด (Natee Plus Co., Ltd.)</h5>
+                            <p className="text-[11px] text-indigo-150 leading-relaxed">
+                              จัดเก็บข้อมูลและประมวลผลเพื่อวัตถุประสงค์ในการจัดทำเอกสารทางการเงิน การนำส่งภาษีหัก ณ ที่จ่าย และการโอนเงินเข้าบัญชีอย่างถูกต้องโปร่งใสตามกฎหมาย
+                            </p>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                            <div className="space-y-3">
+                              <h5 className="font-extrabold text-slate-800 text-sm border-b border-slate-200 pb-1 flex items-center gap-2">
+                                📌 1. ข้อมูลที่มีการรวบรวมจัดเก็บ (Collected Data)
+                              </h5>
+                              <p className="text-[11px] text-slate-600">
+                                เนื่องจากเว็บ <strong>Natee Plus Partner (พอร์ทัลร้านค้าร่วมพันธมิตร)</strong> มีหน้าที่ทางกฎหมายและสัญญาการเงิน ระบบจึงมีความจำเป็นต้องเก็บรวบรวมข้อมูลส่วนบุคคลของท่าน ดังนี้:
+                              </p>
+                              <ul className="list-disc list-inside space-y-1.5 pl-1.5 text-slate-500 text-[11px]">
+                                <li><strong>ข้อมูลระบุตัวตนทางราชการ:</strong> ชื่อจริง, นามสกุลจริง, หมายเลขบัตรประจำตัวประชาชน 13 หลัก, หรือภาพถ่ายหน้าบัตรประชาชน (KYC) เพื่อยืนยันตัวตนถูกต้องตามกฎหมาย ป้องกันสิทธิ์และการฉ้อโกง</li>
+                                <li><strong>ข้อมูลสมุดบัญชีธนาคาร (Bookbank):</strong> เลขที่บัญชี, ชื่อบัญชี และภาพถ่ายหน้าสมุดบัญชี เพื่อความปลอดภัยในการรับโอนผลตอบแทน</li>
+                                <li><strong>ข้อมูลติดต่อส่วนบุคคล:</strong> เบอร์โทรศัพท์เคลื่อนที่สำหรับรับ OTP ยืนยันรหัส และที่ตั้งคลังสินค้าจริง</li>
+                              </ul>
+                            </div>
+
+                            <div className="space-y-3">
+                              <h5 className="font-extrabold text-slate-800 text-sm border-b border-slate-200 pb-1 flex items-center gap-2">
+                                ⚙️ 2. วัตถุประสงค์เพื่อความโปร่งใส (Processing Purpose)
+                              </h5>
+                              <p className="text-[11px] text-slate-600">
+                                การจัดเก็บข้อมูลของทางพาร์ทเนอร์ร้านค้าพันธมิตร มีวัตถุประสงค์ที่ชัดเจนเพื่อใช้ดำเนินกิจกรรมดังต่อไปนี้:
+                              </p>
+                              <ul className="list-disc list-inside space-y-1.5 pl-1.5 text-slate-500 text-[11px]">
+                                <li><strong>เพื่อยืนยันสิทธิ์ถอนเงิน:</strong> บังคับใช้ระบบ KYC ในบัญชีที่มีความประสงค์ในการถอนเงินออกจากระบบหรือดำเนินธุรกรรมระดับสูง</li>
+                                <li><strong>เพื่อส่งภาษีสรรพากร:</strong> จัดทำและส่งเอกสารหักภาษี ณ ที่จ่าย 3% (Withholding Tax) ตามฐานข้อมูลรายได้สุทธิเพื่อนำส่งกรมสรรพากรแห่งประเทศไทยอย่างถูกต้อง</li>
+                                <li><strong>เพื่อบริหารงานโอนจ่ายพาสเวิร์ดปลอดภัย:</strong> ควบคุมความปลอดภัยของเงินด้วย OTP และรหัสธุรกรรม PIN 6 หลัก</li>
+                              </ul>
+                            </div>
+                          </div>
+
+                          <div className="space-y-3 bg-white p-5 rounded-2xl border border-slate-150">
+                            <h5 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
+                              ⏳ 3. ระยะเวลาการเก็บรักษาและการเปิดเผยข้อมูลแก่บุคคลภายนอก (Data Retention & Sharing)
+                            </h5>
+                            <p className="text-[11px] text-slate-600 leading-relaxed">
+                              บริษัทจะทำระบบจัดเก็บรักษาข้อมูลส่วนบุคคลเป็นความลับสูงสุดไว้ในคลังข้อมูลที่ปลอดภัย <strong>เป็นระยะเวลาขั้นต่ำ 10 ปี</strong> ตามระเบียบข้อบังคับทางบัญชีและการตรวจสอบย้อนหลังของภาครัฐ ทั้งนี้ จะไม่มีการเปิดเผยหรือจำหน่ายจ่ายแจกข้อมูลของท่านให้แก่หน่วยงานภายนอกใดๆ ทั้งสิ้น ยกเว้นแต่เพื่อดำเนินการนำส่งข้อมูลภาษีอากรให้แก่ <strong>กรมสรรพากร ประเทศไทย</strong> และส่งข้อมูลปลายทางคลังผู้ส่งพัสดุให้แก่ระบบขนส่งโลจิสติกส์ที่ได้รับการแต่งตั้งจากแพลตฟอร์มอย่างเป็นทางการเท่านั้น
+                            </p>
+                            <p className="text-[11px] text-indigo-600 font-bold leading-relaxed">
+                              * สมาชิกผู้ใช้บริการของ นที พลัส พาร์ทเนอร์ มีสิทธิ์ยื่นเรื่องขอดูข้อมูล แก้ไขข้อมูล หรือระงับการจัดเก็บข้อมูลได้ตามขอบเขต พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล (PDPA) ทุกประการ ผ่านทางผู้จัดดูแลระบบแอดมินกลาง
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                   </div>
                 </div>
               )}
@@ -14096,7 +15078,7 @@ export default function App() {
                   {confirmProduct.category === 'Package' ? '📦' : '🛍️'}
                 </div>
                 <h3 className="text-base font-extrabold text-slate-900 pt-2">
-                  {confirmProduct.category === 'Package' ? 'ยืนยันสรุปการสั่งซื้อแพ็กเกจ' : 'ยืนยันสรุปการสั่งซื้อสินค้า Natee Plus Shop'}
+                  {confirmProduct.category === 'Package' ? 'ยืนยันสรุปการสั่งซื้อแพ็กเกจ' : 'ยืนยันสรุปการสั่งซื้อสินค้า Natee Plus Market'}
                 </h3>
                 <p className="text-[11px] text-slate-400">
                   {confirmProduct.category === 'Package' 
@@ -14268,9 +15250,58 @@ export default function App() {
                       type="number" 
                       required
                       value={editingProduct.price || ''}
-                      onChange={(e) => setEditingProduct(prev => ({ ...prev, price: e.target.value }))}
+                      onChange={(e) => {
+                        setEditingProduct(prev => ({ ...prev, price: e.target.value }));
+                        // Keep target payout synced if manually edited
+                        const p = parseFloat(e.target.value) || 0;
+                        if (p > 0) {
+                          setEditProdTargetPayout((p * 0.80).toString());
+                        } else {
+                          setEditProdTargetPayout('');
+                        }
+                      }}
                       className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-indigo-600"
                     />
+                  </div>
+                </div>
+
+                {/* Edit Product Auto-Calculate helper container */}
+                <div className="bg-amber-50/70 border border-amber-100 rounded-2xl p-3 space-y-2 font-sans">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-amber-900 text-[11px] flex items-center gap-1">
+                      💡 ระบบคำนวณราคาขายอัตโนมัติ (รวม GP 20% และ VAT 7%)
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                    <div>
+                      <label className="block text-slate-600 text-[10px] font-bold mb-1">รายรับที่พาร์ทเนอร์ต้องการได้รับจริง (฿):</label>
+                      <div className="relative">
+                        <input 
+                          type="number"
+                          placeholder="เช่น 800"
+                          value={editProdTargetPayout}
+                          onChange={(e) => {
+                            const inputVal = e.target.value;
+                            setEditProdTargetPayout(inputVal);
+                            const targetVal = parseFloat(inputVal) || 0;
+                            if (targetVal > 0) {
+                              const calculatedPrice = Math.ceil(targetVal / 0.80);
+                              setEditingProduct(prev => ({ ...prev, price: calculatedPrice.toString() }));
+                            } else {
+                              setEditingProduct(prev => ({ ...prev, price: '' }));
+                            }
+                          }}
+                          className="w-full bg-white border border-amber-200 rounded-xl pl-3 pr-10 py-1.5 text-xs text-amber-950 placeholder-amber-400 font-extrabold focus:ring-2 focus:ring-amber-300 outline-none"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-600 font-bold text-[10px]">บาท</span>
+                      </div>
+                    </div>
+                    <div className="bg-amber-100/30 p-2 rounded-xl border border-amber-200/50 text-[10px] text-amber-900 leading-relaxed">
+                      ราคาจำหน่ายหน้าเว็บแนะนำ: <strong className="text-amber-950 font-mono text-xs">฿ {editingProduct.price || 0}</strong>
+                      <p className="text-[9px] text-amber-700/80 mt-0.5">
+                        หัก GP 20% แล้วจะได้ยอดรับ {editProdTargetPayout || 0} บาทพอดี (รวมภาษีมูลค่าเพิ่ม VAT 7% เรียบร้อยแล้ว)
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -14860,7 +15891,7 @@ export default function App() {
                           <div className="grid grid-cols-12 border-b border-slate-200 text-slate-800 font-medium">
                             <div className="col-span-6 p-2.5 border-r border-slate-800 leading-normal">
                               <strong>เงินได้ประเภทที่ 8 (ตามมาตรา 40(8))</strong>
-                              <span className="block text-[9px] text-slate-500 mt-0.5">รายได้จากการจำหน่ายพัสดุสินค้าออนไลน์, ค่าบริการฝากขาย, และจัดส่งคลังสินค้านทีช็อป</span>
+                              <span className="block text-[9px] text-slate-500 mt-0.5">รายได้จากการจำหน่ายพัสดุสินค้าออนไลน์, ค่าบริการฝากขาย, และจัดส่งคลังสินค้านทีมาร์เก็ต</span>
                             </div>
                             <div className="col-span-2 p-2.5 text-center border-r border-slate-800 flex items-center justify-center font-mono">
                               {new Date(selectedTaxDoc.data.createdAt).toLocaleDateString('th-TH')}
@@ -15242,11 +16273,122 @@ export default function App() {
           </div>
         )}
 
+        {/* PDPA Privacy Policy Modal for Natee Plus Partner */}
+        {showPdpaModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-100 overflow-hidden flex flex-col my-8 animate-scaleUp">
+              {/* Header */}
+              <div className="bg-slate-950 text-white p-6 relative overflow-hidden flex-shrink-0">
+                <div className="absolute top-0 right-0 -mt-6 -mr-6 w-24 h-24 rounded-full bg-indigo-600/20 blur-xl"></div>
+                <div className="relative flex justify-between items-center">
+                  <div className="space-y-1">
+                    <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-extrabold px-2 py-0.5 rounded-full border border-indigo-500/30 uppercase tracking-widest">
+                      PDPA Privacy Policy
+                    </span>
+                    <h3 className="text-base font-black tracking-tight text-white flex items-center gap-1.5">
+                      🛡️ นโยบายคุ้มครองข้อมูลส่วนบุคคลสำหรับผู้ขายร้านค้าร่วมพันธมิตร
+                    </h3>
+                  </div>
+                  <button 
+                    onClick={() => setShowPdpaModal(false)}
+                    className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-4 text-xs text-slate-600 leading-relaxed max-h-[60vh] font-sans">
+                <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50 space-y-1">
+                  <p className="font-bold text-indigo-950">ผู้ควบคุมข้อมูลส่วนบุคคล (Data Controller):</p>
+                  <p className="font-extrabold text-indigo-700 text-sm">บริษัท นที พลัส จำกัด (Natee Plus Co., Ltd.)</p>
+                  <p className="text-[10px] text-slate-500">สำนักงานใหญ่จดทะเบียนอย่างถูกต้องตามกฎหมายแห่งประเทศไทย</p>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-1">
+                    1. ประเภทของข้อมูลส่วนบุคคลที่มีการจัดเก็บรวบรวม
+                  </h4>
+                  <p>
+                    เนื่องจากระบบ <strong>Natee Plus Partner (พอร์ทัลร้านค้าร่วมพันธมิตร)</strong> มีความจำเป็นในการประมวลผลธุรกรรมทางการเงินและยืนยันตัวตนคู่ค้าเพื่อส่งภาษีสรรพากร บริษัท นที พลัส จำกัด จึงจัดเก็บข้อมูลส่วนบุคคลของท่าน ดังต่อไปนี้:
+                  </p>
+                  <ul className="list-disc list-inside pl-2 space-y-1 text-slate-500">
+                    <li><strong>ข้อมูลระบุตัวตนจริง:</strong> ชื่อ-นามสกุลจริง, หมายเลขบัตรประจำตัวประชาชนไทย, หรือหมายเลขหนังสือเดินทาง (Passport) พร้อมทั้งรูปถ่ายหน้าบัตรประจำตัวประชาชนเพื่อการยืนยันตัวตนทางกฎหมาย</li>
+                    <li><strong>ข้อมูลการติดต่อ:</strong> หมายเลขโทรศัพท์มือถือ, ที่อยู่อาศัยจริง, และที่อยู่คลังสินค้าจัดส่งพัสดุ</li>
+                    <li><strong>ข้อมูลทางการเงินและบัญชี:</strong> ชื่อบัญชีธนาคาร, หมายเลขบัญชีธนาคาร และภาพถ่ายหน้าสมุดบัญชีเงินฝาก (Bookbank) สำหรับรับโอนเงินคอมมิชชั่นหรือยอดขายสุทธิหลังหัก GP</li>
+                    <li><strong>ข้อมูลร้านค้า:</strong> ชื่อร้านร่วมคู่ค้า, ข้อมูลตำแหน่งพิกัดแผนที่คลังสินค้า (Latitude / Longitude)</li>
+                  </ul>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-1">
+                    2. วัตถุประสงค์ในการจัดเก็บและประมวลผลข้อมูล
+                  </h4>
+                  <p>
+                    บริษัทจัดเก็บข้อมูลดังกล่าวภายใต้ฐานความจำเป็นทางกฎหมาย สัญญา และความยินยอม เพื่อวัตถุประสงค์ดังนี้:
+                  </p>
+                  <ul className="list-disc list-inside pl-2 space-y-1 text-slate-500">
+                    <li>ตรวจสอบความถูกต้องของตัวตนเจ้าของร้านค้า ป้องกันการลงทะเบียนแอบอ้างสิทธิ์หรือการฉ้อโกง</li>
+                    <li>จัดทำใบเสร็จรับเงิน/ใบกำกับภาษี และเอกสารทางการเงินตามกฎหมาย</li>
+                    <li>คำนวณและหักภาษี ณ ที่จ่าย (Withholding Tax 3%) เพื่อนำส่งสรรพากรในนามผู้รับเงินอย่างถูกต้องตามประเภทรายได้</li>
+                    <li>ดำเนินการโอนยอดเงินผลตอบแทนสุทธิ (หลังหักค่าธรรมเนียม GP และภาษี) เข้าบัญชีธนาคารที่กำหนดอย่างปลอดภัย</li>
+                    <li>ใช้ติดต่อประสานงาน แจ้งข้อมูลข่าวสารที่เกี่ยวข้องกับการให้บริการแพลตฟอร์ม Natee Plus Partner</li>
+                  </ul>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-1">
+                    3. ระยะเวลาการจัดเก็บข้อมูลส่วนบุคคล
+                  </h4>
+                  <p>
+                    บริษัทจะทำการเก็บรักษาข้อมูลส่วนบุคคลของท่านไว้ตราบเท่าที่ท่านยังคงมีสถานะเป็นสมาชิกร้านค้าพันธมิตรในระบบ และจะจัดเก็บต่อเนื่องต่อไปเป็นระยะเวลา <strong>อย่างน้อย 10 ปี</strong> นับจากวันที่สิ้นสุดสัญญาคู่ค้า เพื่อการดำเนินการตรวจสอบย้อนหลังทางบัญชี ภาษีอากร และการปฏิบัติตามกฎหมายที่เกี่ยวข้องของรัฐ
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-1">
+                    4. การส่งต่อหรือเปิดเผยข้อมูลส่วนบุคคล
+                  </h4>
+                  <p>
+                    บริษัท นที พลัส จำกัด จะรักษาความลับของข้อมูลเป็นอย่างดีที่สุด โดยจะจำกัดการเปิดเผยเฉพาะกรณีจำเป็นตามกฎหมาย ได้แก่:
+                  </p>
+                  <ul className="list-disc list-inside pl-2 space-y-1 text-slate-500">
+                    <li>ส่งข้อมูลภาษีและรายได้แก่ <strong>กรมสรรพากร ประเทศไทย</strong> ตามหน้าที่ทางกฎหมายภาษี</li>
+                    <li>ส่งข้อมูลชื่อและที่อยู่คลังส่งมอบสินค้าให้แก่บริษัทพาร์ทเนอร์ด้านโลจิสติกส์การจัดส่งพัสดุ (เช่น Shippop)</li>
+                    <li>สถาบันการเงินหรือธนาคารผู้ให้บริการระบบโอนเงินปลายทาง</li>
+                  </ul>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-1">
+                    5. สิทธิของท่านภายใต้ พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล (PDPA)
+                  </h4>
+                  <p>
+                    ท่านมีสิทธิทางกฎหมายอย่างครบถ้วนในการขอเข้าถึงข้อมูล, ขอสำเนาข้อมูลส่วนบุคคล, ขอให้ดำเนินการแก้ไขให้ถูกต้องสมบูรณ์เป็นปัจจุบัน, ขอระงับการใช้, ขอคัดค้านการประมวลผล หรือขอถอนความยินยอมในการจัดเก็บ โดยสามารถแจ้งความประสงค์ผ่านแผนกคุ้มครองข้อมูลของบริษัท ทั้งนี้ การถอนความยินยอมที่จำเป็นต่อการใช้ระบบทางการเงินอาจส่งผลให้บริษัทไม่สามารถเปิดให้บริการพอร์ทัลร้านค้าแก่ท่านได้
+                  </p>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="bg-slate-50 p-4 border-t border-slate-100 flex justify-end gap-3 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowPdpaModal(false)}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-6 py-2.5 rounded-xl text-xs transition cursor-pointer shadow-md"
+                >
+                  ข้าพเจ้ารับทราบและตกลง (Close)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         </div>
 
         {/* Global Footer */}
         <footer className="bg-white border-t border-slate-100 px-6 py-4 text-center text-[10px] text-slate-400">
-          © {new Date().getFullYear()} NaTee Plus (นที พลัส) • โครงสร้างเครือข่ายธุรกิจร้านค้านวัตกรรมอย่างโปร่งใส มั่งคั่ง มั่นคง ยั่งยืน
+          © {new Date().getFullYear()} NaTee Plus (นที พลัส) • โครงสร้างเครือข่ายธุรกิจร้านค้านวัตกรรมอย่างโปร่งใส มั่งคั่ง มั่นคง ยั่งยืน • <button onClick={() => setShowPdpaModal(true)} className="text-indigo-600 hover:underline cursor-pointer">นโยบายความเป็นส่วนตัว (PDPA)</button>
         </footer>
       </main>
     </div>

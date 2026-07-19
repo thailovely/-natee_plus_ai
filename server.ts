@@ -2509,7 +2509,7 @@ app.post('/api/member/update-shipping-pin', (req, res) => {
     writeDb(db);
     return res.json({ 
       success: true, 
-      message: "ส่งคำขอแก้ไขหมุดพิกัดเรียบร้อยแล้วค่ะ! อยู่ระหว่างรอให้แอดมิน (Admin Shop) อนุมัติการแก้ไข", 
+      message: "ส่งคำขอแก้ไขหมุดพิกัดเรียบร้อยแล้วค่ะ! อยู่ระหว่างรอให้แอดมิน (Admin Market) อนุมัติการแก้ไข", 
       profile: member 
     });
   }
@@ -3302,7 +3302,7 @@ app.post('/api/seller/apply-with-otp', (req, res) => {
   if (!member.rank || !allowedRanks.includes(member.rank)) {
     return res.status(400).json({ 
       success: false, 
-      message: "สำหรับการสมัครเปิดบัญชีร้านค้า Natee Plus Seller Centre ท่านต้องมีตำแหน่งสมาชิกตั้งแต่ระดับ Member ขึ้นไปเท่านั้นค่ะ" 
+      message: "สำหรับการสมัครเปิดบัญชีร้านค้า Natee Plus Partner ท่านต้องมีตำแหน่งสมาชิกตั้งแต่ระดับ Member ขึ้นไปเท่านั้นค่ะ" 
     });
   }
   
@@ -3373,7 +3373,7 @@ app.post('/api/seller/apply', (req, res) => {
   if (!member.rank || !allowedRanks.includes(member.rank)) {
     return res.status(400).json({ 
       success: false, 
-      message: "สำหรับการสมัครเปิดบัญชีร้านค้า Natee Plus Seller Centre ท่านต้องมีตำแหน่งสมาชิกตั้งแต่ระดับ Member ขึ้นไปเท่านั้นค่ะ" 
+      message: "สำหรับการสมัครเปิดบัญชีร้านค้า Natee Plus Partner ท่านต้องมีตำแหน่งสมาชิกตั้งแต่ระดับ Member ขึ้นไปเท่านั้นค่ะ" 
     });
   }
 
@@ -3428,7 +3428,7 @@ app.post('/api/seller/mark-first-login', (req, res) => {
 // Get Seller Regulations text
 app.get('/api/seller/regulations', (req, res) => {
   const db = readDb();
-  const regulations = db.bankSettings?.sellerRegulations || `กฎระเบียบและข้อบังคับ Natee Plus Seller Centre
+  const regulations = db.bankSettings?.sellerRegulations || `กฎระเบียบและข้อบังคับ Natee Plus Partner
 
 1. ผู้สมัครร้านค้าต้องเป็นสมาชิกในระบบ Natee Plus และมีสถานะตั้งแต่ระดับ S/M ขึ้นไป
 2. ร้านค้าต้องระบุข้อมูลชื่อร้านและที่ตั้งคลังสินค้าจริงเพื่อใช้ในการบริการจัดการและรับส่งคืนสินค้า
