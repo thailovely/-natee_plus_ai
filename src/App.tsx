@@ -433,6 +433,52 @@ export default function App() {
   const [activeSlipModal, setActiveSlipModal] = useState<string | null>(null);
   
   // Custom dialog states to replace window.confirm and window.prompt in iframe
+  const [confirmDialog, setConfirmDialog] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    isPrompt?: boolean;
+    promptValue?: string;
+    placeholder?: string;
+    onConfirm: (val?: string) => void;
+  }>({
+    show: false,
+    title: '',
+    message: '',
+    isPrompt: false,
+    promptValue: '',
+    placeholder: '',
+    onConfirm: () => {},
+  });
+
+  const triggerConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmDialog({
+      show: true,
+      title,
+      message,
+      isPrompt: false,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmDialog((prev) => ({ ...prev, show: false }));
+      },
+    });
+  };
+
+  const triggerPrompt = (title: string, message: string, placeholder: string, defaultValue: string, onConfirm: (val: string) => void) => {
+    setConfirmDialog({
+      show: true,
+      title,
+      message,
+      isPrompt: true,
+      promptValue: defaultValue,
+      placeholder,
+      onConfirm: (val) => {
+        onConfirm(val || '');
+        setConfirmDialog((prev) => ({ ...prev, show: false }));
+      },
+    });
+  };
+
   const [depositApproveId, setDepositApproveId] = useState<string | null>(null);
   const [depositApproveAmount, setDepositApproveAmount] = useState<string>('');
   const [depositRejectId, setDepositRejectId] = useState<string | null>(null);
@@ -3563,43 +3609,55 @@ export default function App() {
   };
 
   const handleStoreApprove = async (userId: string) => {
-    if (!window.confirm("คุณต้องการอนุมัติเปิดร้านค้าให้กับสมาชิกรายนี้ใช่หรือไม่?")) return;
-    try {
-      const res = await fetch('/api/admin/store-approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId })
-      });
-      const d = await res.json();
-      if (d.success) {
-        showNotif(d.message, 'success');
-        fetchAdminQueues();
-      } else {
-        showNotif(d.message, 'error');
+    triggerConfirm(
+      "อนุมัติเปิดร้านค้า",
+      "คุณต้องการอนุมัติเปิดร้านค้าให้กับสมาชิกรายนี้ใช่หรือไม่?",
+      async () => {
+        try {
+          const res = await fetch('/api/admin/store-approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId })
+          });
+          const d = await res.json();
+          if (d.success) {
+            showNotif(d.message, 'success');
+            fetchAdminMembers();
+            fetchAdminQueues();
+          } else {
+            showNotif(d.message, 'error');
+          }
+        } catch (err) {
+          showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+        }
       }
-    } catch (err) {
-      showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
-    }
+    );
   };
 
   const handleStoreReject = async (userId: string) => {
-    if (!window.confirm("คุณต้องการปฏิเสธคำขอเปิดร้านค้าของสมาชิกรายนี้ใช่หรือไม่?")) return;
-    try {
-      const res = await fetch('/api/admin/store-reject', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId })
-      });
-      const d = await res.json();
-      if (d.success) {
-        showNotif(d.message, 'info');
-        fetchAdminQueues();
-      } else {
-        showNotif(d.message, 'error');
+    triggerConfirm(
+      "ปฏิเสธคำขอเปิดร้านค้า",
+      "คุณต้องการปฏิเสธคำขอเปิดร้านค้าของสมาชิกรายนี้ใช่หรือไม่?",
+      async () => {
+        try {
+          const res = await fetch('/api/admin/store-reject', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId })
+          });
+          const d = await res.json();
+          if (d.success) {
+            showNotif(d.message, 'info');
+            fetchAdminMembers();
+            fetchAdminQueues();
+          } else {
+            showNotif(d.message, 'error');
+          }
+        } catch (err) {
+          showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+        }
       }
-    } catch (err) {
-      showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
-    }
+    );
   };
 
   const handleUpdateStoreStatus = async (userId: string, status: string) => {
@@ -3609,46 +3667,58 @@ export default function App() {
     else if (status === 'Suspended') confirmMsg = "คุณต้องการระงับการใช้งานร้านค้าของสมาชิกรายนี้ชั่วคราวใช่หรือไม่?";
     else if (status === 'NotApplied') confirmMsg = "คุณต้องการยกเลิกการสมัครร้านค้าของสมาชิกรายนี้ใช่หรือไม่?";
 
-    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    if (!confirmMsg) return;
 
-    try {
-      const res = await fetch('/api/admin/store-update-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, status })
-      });
-      const d = await res.json();
-      if (d.success) {
-        showNotif(d.message, 'success');
-        fetchAdminMembers();
-        fetchAdminQueues();
-      } else {
-        showNotif(d.message, 'error');
+    triggerConfirm(
+      "ยืนยันการเปลี่ยนสถานะร้านค้า",
+      confirmMsg,
+      async () => {
+        try {
+          const res = await fetch('/api/admin/store-update-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, status })
+          });
+          const d = await res.json();
+          if (d.success) {
+            showNotif(d.message, 'success');
+            fetchAdminMembers();
+            fetchAdminQueues();
+          } else {
+            showNotif(d.message, 'error');
+          }
+        } catch (err) {
+          showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+        }
       }
-    } catch (err) {
-      showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
-    }
+    );
   };
 
   const handleProductReject = async (productId: string) => {
-    const reason = prompt('กรุณาระบุสาเหตุที่ปฏิเสธสินค้าชิ้นนี้:');
-    if (reason === null) return;
-    try {
-      const res = await fetch('/api/admin/product-reject', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId, reason: reason || 'ข้อมูลสินค้าไม่ชัดเจนหรือไม่ครบถ้วน' })
-      });
-      const d = await res.json();
-      if (d.success) {
-        showNotif(d.message, 'info');
-        fetchAdminQueues();
-      } else {
-        showNotif(d.message, 'error');
+    triggerPrompt(
+      "ปฏิเสธการอนุมัติสินค้า",
+      "กรุณาระบุสาเหตุที่ปฏิเสธสินค้าชิ้นนี้:",
+      "ระบุสาเหตุ เช่น ข้อมูลไม่ครบถ้วน, ราคาไม่เหมาะสม...",
+      "ข้อมูลสินค้าไม่ชัดเจนหรือไม่ครบถ้วน",
+      async (reason) => {
+        try {
+          const res = await fetch('/api/admin/product-reject', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productId, reason: reason || 'ข้อมูลสินค้าไม่ชัดเจนหรือไม่ครบถ้วน' })
+          });
+          const d = await res.json();
+          if (d.success) {
+            showNotif(d.message, 'info');
+            fetchAdminQueues();
+          } else {
+            showNotif(d.message, 'error');
+          }
+        } catch (err) {
+          showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+        }
       }
-    } catch (err) {
-      showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
-    }
+    );
   };
 
   const handleProductUpdatePrice = async (productId: string, price: number, pv: number, cost: number) => {
@@ -3671,23 +3741,28 @@ export default function App() {
   };
 
   const handleProductDeleteImage = async (productId: string) => {
-    if (!window.confirm("คุณต้องการลบรูปภาพผลิตภัณฑ์ชิ้นนี้ใช่หรือไม่?")) return;
-    try {
-      const res = await fetch('/api/admin/product-delete-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId })
-      });
-      const d = await res.json();
-      if (d.success) {
-        showNotif(d.message, 'success');
-        fetchAdminQueues();
-      } else {
-        showNotif(d.message, 'error');
+    triggerConfirm(
+      "ลบรูปภาพผลิตภัณฑ์",
+      "คุณต้องการลบรูปภาพผลิตภัณฑ์ชิ้นนี้ใช่หรือไม่?",
+      async () => {
+        try {
+          const res = await fetch('/api/admin/product-delete-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productId })
+          });
+          const d = await res.json();
+          if (d.success) {
+            showNotif(d.message, 'success');
+            fetchAdminQueues();
+          } else {
+            showNotif(d.message, 'error');
+          }
+        } catch (err) {
+          showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+        }
       }
-    } catch (err) {
-      showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
-    }
+    );
   };
 
   const handleAddPackageChoice = async (e: React.FormEvent) => {
@@ -3720,19 +3795,24 @@ export default function App() {
   };
 
   const handleDeletePackageChoice = async (choiceId: string) => {
-    if (!window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบตัวเลือกชุดสินค้านี้?')) return;
-    try {
-      const res = await fetch(`/api/admin/package-choices/${choiceId}`, {
-        method: 'DELETE'
-      });
-      const d = await res.json();
-      if (d.success) {
-        showNotif(d.message, 'success');
-        fetchProducts();
-      } else {
-        showNotif(d.message, 'error');
+    triggerConfirm(
+      "ลบตัวเลือกชุดสินค้า",
+      "คุณแน่ใจหรือไม่ว่าต้องการลบตัวเลือกชุดสินค้านี้?",
+      async () => {
+        try {
+          const res = await fetch(`/api/admin/package-choices/${choiceId}`, {
+            method: 'DELETE'
+          });
+          const d = await res.json();
+          if (d.success) {
+            showNotif(d.message, 'success');
+            fetchProducts();
+          } else {
+            showNotif(d.message, 'error');
+          }
+        } catch (err) {}
       }
-    } catch (err) {}
+    );
   };
 
   const handleCompleteOrder = async (orderId: string, customCompany?: string, customTrackingNo?: string, customNote?: string) => {
@@ -15404,6 +15484,55 @@ export default function App() {
                   className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition shadow-md shadow-indigo-600/20 cursor-pointer active:scale-95"
                 >
                   💳 ยืนยันและชำระเงิน
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* CUSTOM NON-BLOCKING CONFIRM / PROMPT DIALOG */}
+        {confirmDialog.show && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn text-xs">
+            <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-100 space-y-4">
+              <div className="text-center space-y-2">
+                <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto text-xl">
+                  {confirmDialog.isPrompt ? '✏️' : '❓'}
+                </div>
+                <h3 className="text-sm font-extrabold text-slate-900 pt-1">
+                  {confirmDialog.title}
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  {confirmDialog.message}
+                </p>
+              </div>
+
+              {confirmDialog.isPrompt && (
+                <div className="space-y-1">
+                  <input
+                    type="text"
+                    value={confirmDialog.promptValue || ''}
+                    placeholder={confirmDialog.placeholder}
+                    onChange={(e) => setConfirmDialog(prev => ({ ...prev, promptValue: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:ring-2 focus:ring-indigo-500/25 outline-none font-medium bg-slate-50/50"
+                    autoFocus
+                  />
+                </div>
+              )}
+
+              <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDialog((prev) => ({ ...prev, show: false }))}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition active:scale-95"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={() => confirmDialog.onConfirm(confirmDialog.promptValue)}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition shadow-md shadow-indigo-600/20 cursor-pointer active:scale-95"
+                >
+                  ตกลง
                 </button>
               </div>
             </div>
