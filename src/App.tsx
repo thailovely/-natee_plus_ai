@@ -1524,7 +1524,19 @@ export default function App() {
         safeSubscribe('packageProductChoices', (snapshot) => {
           if (snapshot.exists()) {
             const data = snapshot.data().data || [];
-            setPackageChoices(data);
+            setPackageChoices((prev: any[]) => {
+              if (prev && prev.length === data.length) {
+                let hasChanged = false;
+                for (let i = 0; i < data.length; i++) {
+                  if (JSON.stringify(data[i]) !== JSON.stringify(prev[i])) {
+                    hasChanged = true;
+                    break;
+                  }
+                }
+                if (!hasChanged) return prev; // SKIP RE-RENDER!
+              }
+              return data;
+            });
           }
         });
 
@@ -1533,7 +1545,17 @@ export default function App() {
           if (snapshot.exists()) {
             const data = snapshot.data().data || null;
             if (data) {
-              setBankSettings(data);
+              setBankSettings((prev: any) => {
+                if (prev &&
+                    prev.bankName === data.bankName &&
+                    prev.bankAccount === data.bankAccount &&
+                    prev.bankAccountName === data.bankAccountName &&
+                    prev.qrCodeUrl === data.qrCodeUrl &&
+                    prev.maintenanceMode === data.maintenanceMode) {
+                  return prev; // SKIP RE-RENDER!
+                }
+                return data;
+              });
             }
           }
         });
@@ -1560,7 +1582,7 @@ export default function App() {
         currentDbFirestore = null;
       }
     };
-  }, [currentUser, isSandboxActive]);
+  }, [currentUser?.userId, currentUser?.role, isSandboxActive]);
 
   const getRemainingRights = () => {
     if (profile?.role === 'Manager' || profile?.role === 'Admin') return 999999999;
