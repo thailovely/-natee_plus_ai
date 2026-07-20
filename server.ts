@@ -90,44 +90,6 @@ try {
 let cacheDb: any = null;
 let isDatabaseLoadedFromFirestore = false;
 let activeServerSubscriptions: any[] = [];
-let activeSandboxSubscription: any = null;
-
-function setupServerSandboxStateSync() {
-  if (!dbFirestore) return;
-  
-  try {
-    if (activeSandboxSubscription) {
-      activeSandboxSubscription();
-    }
-  } catch (e) {}
-  
-  console.log("📡 [Server] Setting up real-time listener for Sandbox State (system_config/sandbox_state)...");
-  try {
-    activeSandboxSubscription = onSnapshot(doc(dbFirestore, 'system_config', 'sandbox_state'), (snapshot) => {
-      if (snapshot.exists()) {
-        const val = snapshot.data();
-        const active = !!val.active;
-        if (active !== isSandboxActive) {
-          console.log(`📡 [Server Real-Time Sandbox Sync] Sandbox mode changed from ${isSandboxActive} to ${active}`);
-          isSandboxActive = active;
-          try {
-            fs.writeFileSync(SANDBOX_STATE_FILE, JSON.stringify({ active: isSandboxActive }, null, 2), 'utf8');
-          } catch (err) {}
-          
-          // Switch local DB cache and reload database
-          cacheDb = null;
-          loadDbFromFirestore().catch(err => {
-            console.error("❌ Failed to reload database after real-time sandbox state change:", err);
-          });
-        }
-      }
-    }, (err) => {
-      console.error("❌ [Server Real-Time Sandbox Sync] Subscription error:", err);
-    });
-  } catch (err) {
-    console.error("❌ [Server Real-Time Sandbox Sync] Failed to subscribe:", err);
-  }
-}
 
 function setupServerRealTimeSync() {
   if (!dbFirestore) return;
@@ -4848,19 +4810,6 @@ app.post('/api/admin/sandbox-toggle', async (req, res) => {
     // Save to status file
     fs.writeFileSync(SANDBOX_STATE_FILE, JSON.stringify({ active: isSandboxActive }, null, 2), 'utf8');
     
-    // Save to Firestore so that all other server instances receive the state change in real-time
-    if (dbFirestore) {
-      try {
-        const docRef = doc(dbFirestore, 'system_config', 'sandbox_state');
-        const batch = writeBatch(dbFirestore);
-        batch.set(docRef, { active: isSandboxActive });
-        await batch.commit();
-        console.log(`📤 Successfully saved sandbox state to Firestore ('system_config/sandbox_state')`);
-      } catch (fErr) {
-        console.error("❌ Failed to save sandbox state to Firestore:", fErr);
-      }
-    }
-    
     if (isSandboxActive) {
       if (resetFromProduction || !fs.existsSync(DB_FILE_SANDBOX)) {
         console.log("🔄 Resetting sandbox from production snapshot...");
@@ -5454,7 +5403,6 @@ function ensurePizzaoneUser() {
 
 async function startServer() {
   console.log("🚀 Booting NaTee Plus Full-Stack Server...");
-  setupServerSandboxStateSync(); // Start real-time sandbox status sync across all cluster instances
   await loadDbFromFirestore();
   readDb(); // Ensure any missing sections like packageProductChoices or bankSettings are seeded and written to Firestore immediately!
   ensurePizzaoneUser();
