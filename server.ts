@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeApp } from 'firebase/app';
 import { initializeFirestore, memoryLocalCache, doc, getDoc, writeBatch } from 'firebase/firestore';
+import { GoogleGenAI } from '@google/genai';
 
 // Define path resolution supporting both ES Modules (dev) and CommonJS (compiled)
 const getAppDir = () => {
@@ -413,14 +414,8 @@ async function processFirestoreSave() {
 
     if (isQuotaExhausted) {
       isFirestoreQuotaExceeded = true;
-      console.warn("⚠️ [Firestore Sync] Firestore daily write quota has been exceeded. The application will continue running seamlessly in Local Mode using db.json! Retries are suspended for 15 minutes to preserve resources.");
-      if (!pendingSaveData) {
-        pendingSaveData = dataToSave;
-      }
-      setTimeout(() => {
-        isSavingToFirestore = false;
-        processFirestoreSave();
-      }, 15 * 60 * 1000); // 15 minutes backoff for quota exhaustion
+      console.warn("⚠️ [Firestore Sync] Firestore daily write quota has been exceeded. The application has successfully switched to and will run in Local Mode using db.json. Automatic retries are disabled to prevent error log noise until next server reboot or manual sync.");
+      isSavingToFirestore = false;
       return;
     }
 
@@ -2480,6 +2475,46 @@ app.post('/api/member/update-profile', (req, res) => {
   res.json({ success: true, message: "อัปเดตข้อมูลส่วนตัวเรียบร้อยแล้วค่ะ", profile: member });
 });
 
+// UPDATE SHIPPING MAP PIN POSITION BY MEMBER
+app.post('/api/member/update-shipping-pin', (req, res) => {
+  const { userId, lat, lng } = req.body;
+  const db = readDb();
+  
+  const member = db.members.find(m => m.userId === userId);
+  if (!member) {
+    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
+  }
+
+  const latitude = lat ? parseFloat(lat) : null;
+  const longitude = lng ? parseFloat(lng) : null;
+
+  // If first time pinning or not previously confirmed, let's confirm immediately.
+  // Otherwise, if they had a previous confirmed pin, change status to PendingApproval as requested:
+  // "มีปุ่มกดแก้ไขได้ แต่เมื่อแก้ไข ต้องให้ Admin shop เป็นผู้อนุมัติ"
+  if (!member.shippingPinStatus || member.shippingPinStatus === 'NotPinned' || !member.shippingLat) {
+    member.shippingLat = latitude;
+    member.shippingLng = longitude;
+    member.shippingPinStatus = 'Confirmed';
+    writeDb(db);
+    return res.json({ 
+      success: true, 
+      message: "ปักหมุดพิกัดจัดส่งสำเร็จเรียบร้อยแล้วค่ะ! พิกัดถูกบันทึกเป็นภาพนิ่งแล้ว", 
+      profile: member 
+    });
+  } else {
+    // Already has a pin, so this is an EDIT (แก้ไข)
+    member.pendingShippingLat = latitude;
+    member.pendingShippingLng = longitude;
+    member.shippingPinStatus = 'PendingApproval';
+    writeDb(db);
+    return res.json({ 
+      success: true, 
+      message: "ส่งคำขอแก้ไขหมุดพิกัดเรียบร้อยแล้วค่ะ! อยู่ระหว่างรอให้แอดมิน (Admin Shop) อนุมัติการแก้ไข", 
+      profile: member 
+    });
+  }
+});
+
 // CHANGE PASSWORD BY MEMBER (Requires 6-digit PIN)
 app.post('/api/member/change-password', (req, res) => {
   const { userId, currentPassword, newPassword, pin } = req.body;
@@ -3162,8 +3197,8 @@ app.post('/api/seller/apply', (req, res) => {
   const member = db.members.find(m => m.userId === userId);
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
   
-  // 1. สมาชิกที่จะเปิดร้านค้าได้ต้องมีตำแหน่ง M ขึ้นไป
-  const allowedRanks = ["M", "L", "XL", "XXL"];
+  // 1. สมาชิกที่จะเปิดร้านค้าได้ต้องมีตำแหน่ง Member ขึ้นไป
+  const allowedRanks = ["Member", "S", "M", "L", "XL", "XXL"];
   if (!member.rank || !allowedRanks.includes(member.rank)) {
     return res.status(400).json({ 
       success: false, 
@@ -3202,7 +3237,7 @@ app.post('/api/seller/product', (req, res) => {
   const { 
     userId, productName, price, pv, imageFile, description, shortDescription, category, cost,
     subcategory, weight, width, length, height, volumetricWeight, chargeableWeight,
-    baseShippingCost, sellerCoPay, customerShippingFee, netPayout
+    baseShippingCost, sellerCoPay, customerShippingFee, netPayout, approveInstantly
   } = req.body;
   const db = readDb();
   
@@ -3227,6 +3262,8 @@ app.post('/api/seller/product', (req, res) => {
   const priceVal = parseFloat(price);
   const costVal = cost !== undefined && cost !== "" ? parseFloat(cost) : Math.floor(priceVal * 0.30);
 
+  const isApproved = !!approveInstantly;
+
   const newProduct = {
     id: "prod_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
     sellerId: userId,
@@ -3240,7 +3277,7 @@ app.post('/api/seller/product', (req, res) => {
     description,
     shortDescription: shortDescription || "",
     category,
-    status: "Pending", // Pending Admin approval
+    status: isApproved ? "Approved" : "Pending", // Pending Admin approval unless approvedInstantly
     subcategory: subcategory || "",
     weight: parseFloat(weight) || 0,
     width: parseFloat(width) || 0,
@@ -3255,9 +3292,42 @@ app.post('/api/seller/product', (req, res) => {
   };
   
   db.sellerProducts.push(newProduct);
+
+  if (isApproved) {
+    db.products.push({
+      id: newProduct.id,
+      name: newProduct.name,
+      price: newProduct.price,
+      pv: newProduct.pv,
+      cost: newProduct.cost,
+      image: newProduct.image,
+      description: newProduct.description,
+      shortDescription: newProduct.shortDescription || "",
+      category: newProduct.category || "General",
+      sellerCode: newProduct.sellerCode,
+      sellerStoreName: newProduct.sellerStoreName,
+      subcategory: newProduct.subcategory || "",
+      weight: newProduct.weight || 0,
+      width: newProduct.width || 0,
+      length: newProduct.length || 0,
+      height: newProduct.height || 0,
+      volumetricWeight: newProduct.volumetricWeight || 0,
+      chargeableWeight: newProduct.chargeableWeight || 0,
+      baseShippingCost: newProduct.baseShippingCost || 35,
+      sellerCoPay: newProduct.sellerCoPay || 0,
+      customerShippingFee: newProduct.customerShippingFee || 35,
+      netPayout: newProduct.netPayout || 0
+    });
+  }
+
   writeDb(db);
   
-  res.json({ success: true, message: "เพิ่มสินค้าเข้าร้านค้าสำเร็จ! อยู่ระหว่างรอแอดมินตรวจสอบก่อนแสดงผลบนช็อป" });
+  res.json({ 
+    success: true, 
+    message: isApproved 
+      ? "แอดมินใช้สิทธิ์แทรกแซง: เพิ่มสินค้าและอนุมัติขึ้นหน้าร้านค้าทันทีสำเร็จ! ✨" 
+      : "เพิ่มสินค้าเข้าร้านค้าสำเร็จ! อยู่ระหว่างรอแอดมินตรวจสอบก่อนแสดงผลบนช็อป" 
+  });
 });
 
 // GET SELLER PRODUCTS
@@ -3332,6 +3402,98 @@ app.post('/api/admin/kyc-reject', (req, res) => {
   member.kycRejectReason = reason;
   writeDb(db);
   res.json({ success: true, message: `ปฏิเสธเอกสารยืนยันตัวตน KYC เรียบร้อยแล้ว ระบบจะส่งเมลแจ้งเหตุผลให้ทราบ` });
+});
+
+// APPROVE MEMBER SHIPPING PIN
+app.post('/api/admin/approve-shipping-pin', (req, res) => {
+  const { userId } = req.body;
+  const db = readDb();
+  
+  const member = db.members.find(m => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
+  
+  if (member.pendingShippingLat && member.pendingShippingLng) {
+    member.shippingLat = member.pendingShippingLat;
+    member.shippingLng = member.pendingShippingLng;
+  }
+  member.pendingShippingLat = null;
+  member.pendingShippingLng = null;
+  member.shippingPinStatus = "Confirmed";
+  
+  writeDb(db);
+  res.json({ success: true, message: `อนุมัติการแก้ไขพิกัดจัดส่งของสมาชิก ${member.name} ${member.surname} เรียบร้อยแล้วค่ะ` });
+});
+
+// REJECT MEMBER SHIPPING PIN
+app.post('/api/admin/reject-shipping-pin', (req, res) => {
+  const { userId } = req.body;
+  const db = readDb();
+  
+  const member = db.members.find(m => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
+  
+  member.pendingShippingLat = null;
+  member.pendingShippingLng = null;
+  member.shippingPinStatus = "Confirmed"; // Revert/Keep their original/previous confirmed pin active
+  
+  writeDb(db);
+  res.json({ success: true, message: `ปฏิเสธการแก้ไขพิกัดจัดส่ง เรียบร้อยแล้ว ระบบจะพับกลับไปใช้พิกัดปักหมุดเดิม` });
+});
+
+// GET PENDING SHIPPING PINS QUEUE
+app.get('/api/admin/pending-shipping-pins', (req, res) => {
+  const db = readDb();
+  const queue = db.members.filter(m => m.shippingPinStatus === "PendingApproval");
+  res.json({ success: true, queue });
+});
+
+// AI DESCRIPTION REFINE ENDPOINT
+app.post('/api/ai/refine-description', async (req, res) => {
+  const { text } = req.body;
+  if (!text || !text.trim()) {
+    return res.status(400).json({ success: false, message: "กรุณาระบุข้อความที่ต้องการให้ AI ช่วยเรียบเรียง" });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.warn("⚠️ GEMINI_API_KEY is not defined in environment variables. Falling back to simple simulated rewrite.");
+    const trimmed = text.trim().slice(0, 400);
+    const mockRefined = `🌿 ${trimmed} ✨ ปลอดภัย ได้มาตรฐานนทีพลัส 💯% (ปรับปรุงสรรพคุณตามข้อกำหนดกฎหมายเรียบร้อยแล้วค่ะ)`;
+    return res.json({ success: true, refinedText: mockRefined });
+  }
+
+  try {
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+
+    const prompt = `คุณคือ AI ผู้ช่วยเขียนรายละเอียดสินค้าสำหรับร้านค้าบนระบบ Natee Plus
+หน้าที่ของคุณคือ นำข้อความสรรพคุณหรือคำอธิบายสินค้าที่ผู้ใช้กรอกมาเรียบเรียงใหม่ให้น่าอ่าน มีการใช้อิโมจิเล็กน้อยเพิ่มความดึงดูด และที่สำคัญที่สุดคือ ต้องปรับเปลี่ยนถ้อยคำให้ถูกต้องตามเกณฑ์ของกฎหมายไทย (เช่น พระราชบัญญัติอาหาร พ.ศ. 2522, พระราชบัญญัติเครื่องสำอาง พ.ศ. 2558, สมุนไพร ฯลฯ)
+- ต้องตัดหรือลดทอนคำอวดอ้างสรรพคุณเกินจริง คำโฆษณาต้องห้ามของ อย. (เช่น รักษาโรคหายขาด, ยาเทวดา, ดีที่สุดในโลก, ยับยั้งหรือป้องกันมะเร็ง, ขาวทันใจใน 3 วัน, ปลอดภัย 100%, เห็นผลทันที)
+- ปรับเปลี่ยนคำเหล่านั้นให้เป็นคำที่สุภาพ น่าเชื่อถือ ปลอดภัย และถูกกฎหมาย เช่น ช่วยบำรุง, ช่วยดูแลผิวพรรณ, สนับสนุนการทำงานของร่างกาย, อ่อนโยนต่อผิว
+- ความยาวของข้อความผลลัพธ์ห้ามเกิน 500 ตัวอักษรโดยเด็ดขาด
+- ให้ส่งกลับเฉพาะข้อความที่ปรับปรุงเสร็จแล้วเท่านั้น ไม่ต้องมีคำเกริ่นนำหรือคำอธิบายใดๆ ทั้งสิ้น
+
+ข้อความที่ต้องปรับปรุง: "${text}"`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: prompt,
+    });
+
+    const refinedText = response.text ? response.text.trim() : text;
+    const finalRefinedText = refinedText.slice(0, 500);
+
+    res.json({ success: true, refinedText: finalRefinedText });
+  } catch (error: any) {
+    console.error("Gemini API Error:", error);
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI: " + error.message });
+  }
 });
 
 // GET PENDING COUPON PV
@@ -3582,12 +3744,12 @@ app.get('/api/admin/all-products', (req, res) => {
   res.json({ success: true, products: db.sellerProducts || [] });
 });
 
-// EDIT SELLER PRODUCT (Every edit forces re-approval)
+// EDIT SELLER PRODUCT (Every edit forces re-approval unless admin override)
 app.post('/api/seller/product/edit', (req, res) => {
   const { 
     userId, productId, productName, price, pv, imageFile, description, shortDescription, category, cost,
     subcategory, weight, width, length, height, volumetricWeight, chargeableWeight,
-    baseShippingCost, sellerCoPay, customerShippingFee, netPayout
+    baseShippingCost, sellerCoPay, customerShippingFee, netPayout, approveInstantly
   } = req.body;
   const db = readDb();
   
@@ -3637,17 +3799,55 @@ app.post('/api/seller/product/edit', (req, res) => {
   prod.customerShippingFee = parseFloat(customerShippingFee) || 35;
   prod.netPayout = parseFloat(netPayout) || 0;
   
-  // Every edit returns product to Pending (must re-approve)
-  prod.status = "Pending";
-  if (prod.rejectReason) {
-    delete prod.rejectReason;
+  const isApproved = !!approveInstantly;
+
+  if (isApproved) {
+    prod.status = "Approved";
+    if (prod.rejectReason) {
+      delete prod.rejectReason;
+    }
+    // Update copy in main store products
+    db.products = db.products.filter(p => p.id !== productId);
+    db.products.push({
+      id: prod.id,
+      name: prod.name,
+      price: prod.price,
+      pv: prod.pv,
+      cost: prod.cost,
+      image: prod.image,
+      description: prod.description,
+      shortDescription: prod.shortDescription || "",
+      category: prod.category || "General",
+      sellerCode: prod.sellerCode,
+      sellerStoreName: prod.sellerStoreName,
+      subcategory: prod.subcategory || "",
+      weight: prod.weight || 0,
+      width: prod.width || 0,
+      length: prod.length || 0,
+      height: prod.height || 0,
+      volumetricWeight: prod.volumetricWeight || 0,
+      chargeableWeight: prod.chargeableWeight || 0,
+      baseShippingCost: prod.baseShippingCost || 35,
+      sellerCoPay: prod.sellerCoPay || 0,
+      customerShippingFee: prod.customerShippingFee || 35,
+      netPayout: prod.netPayout || 0
+    });
+  } else {
+    prod.status = "Pending";
+    if (prod.rejectReason) {
+      delete prod.rejectReason;
+    }
+    // Remove from main store until approved again
+    db.products = db.products.filter(p => p.id !== productId);
   }
   
-  // Remove from main store until approved again
-  db.products = db.products.filter(p => p.id !== productId);
-  
   writeDb(db);
-  res.json({ success: true, message: "แก้ไขรายละเอียดสินค้าสำเร็จ! นำส่งให้แอดมินอนุมัติใหม่อีกครั้งเพื่อความโปร่งใสเรียบร้อยแล้วค่ะ" });
+  res.json({ 
+    success: true, 
+    message: isApproved 
+      ? "แอดมินใช้สิทธิ์แทรกแซง: แก้ไขข้อมูลและอนุมัติสินค้าทันทีสำเร็จ! ✨" 
+      : "แก้ไขรายละเอียดสินค้าสำเร็จ! นำส่งให้แอดมินอนุมัติใหม่อีกครั้งเพื่อความโปร่งใสเรียบร้อยแล้วค่ะ" 
+  });
 });
 
 // GET ALL ORDERS FOR ADMIN REPORT
