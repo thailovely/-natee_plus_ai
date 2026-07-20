@@ -107,9 +107,9 @@
       <tspan fill="url(#plusTextGrad)"> พลัส</tspan>
     </text>
     
-    <!-- English Subtitle "— Natee Plus Shop —" -->
+    <!-- English Subtitle "— Natee Plus Partner —" -->
     <text y="34" font-family="'Sarabun', 'Inter', sans-serif" font-weight="800" font-size="16" letter-spacing="4" fill="#0D2D79">
-      — Natee Plus Shop —
+      — Natee Plus Partner —
     </text>
   </g>
 </svg>

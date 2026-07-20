@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import jsQR from 'jsqr';
 import { 
   Users, Wallet, ShoppingBag, CreditCard, LayoutDashboard, 
   UserCheck, ShieldCheck, Settings, LogOut, Copy, Check, 
   TrendingUp, HelpCircle, ArrowRight, Upload, Search, 
   Trash2, Plus, Star, AlertCircle, RefreshCw, Layers, MapPin,
   Eye, EyeOff, X, ClipboardList, Printer, Lock, FileSpreadsheet,
-  Coins, FileText
+  Coins, FileText, Store, Bell, Truck, UserX, RotateCcw, 
+  MessageSquare, BookOpen, BarChart2, Home, ShoppingCart, ChevronRight,
+  Binary, Award, Heart, ArrowLeftRight, Receipt, Calculator
 } from 'lucide-react';
 import { thaiAddressData } from './thaiAddressData';
 import { NateeWarehouseMap } from './components/NateeWarehouseMap';
@@ -103,6 +106,7 @@ export default function App() {
   const [isUsingPollingFallback, setIsUsingPollingFallback] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>('dash');
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
+  const [showStaffLogin, setShowStaffLogin] = useState<boolean>(false);
   const [notif, setNotif] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [isFirstLoginModal, setIsFirstLoginModal] = useState<boolean>(() => {
     try {
@@ -141,6 +145,36 @@ export default function App() {
   const [usernameStatus, setUsernameStatus] = useState<'avail' | 'taken' | null>(null);
   const [checkedSponsor, setCheckedSponsor] = useState(false);
   const [checkedUsername, setCheckedUsername] = useState(false);
+
+  // Seller Centre States
+  const [sellerSessionUser, setSellerSessionUser] = useState<any>(null);
+  const [sellerLoginUsername, setSellerLoginUsername] = useState('');
+  const [sellerLoginPassword, setSellerLoginPassword] = useState('');
+  const [isRegisteringSeller, setIsRegisteringSeller] = useState(false);
+  const [sellerRegStep, setSellerRegStep] = useState<'rules' | 'form'>('rules');
+  const [sellerRegUsername, setSellerRegUsername] = useState('');
+  const [sellerRulesAgreed, setSellerRulesAgreed] = useState(false);
+  const [sellerPdpaAgreed, setSellerPdpaAgreed] = useState(false);
+  const [sellerRegOtp, setSellerRegOtp] = useState('');
+  const [sellerRegPin, setSellerRegPin] = useState('');
+  const [sellerOtpSent, setSellerOtpSent] = useState(false);
+  const [sellerOtpSimulated, setSellerOtpSimulated] = useState('');
+  const [sellerWelcomeShown, setSellerWelcomeShown] = useState(false);
+  const [sellerRegulationsText, setSellerRegulationsText] = useState('');
+
+  // Password Visibility States
+  const [showSellerLoginPassword, setShowSellerLoginPassword] = useState(false);
+  const [showSellerRegPin, setShowSellerRegPin] = useState(false);
+  const [showProfileOldPin, setShowProfileOldPin] = useState(false);
+  const [showProfileNewPin, setShowProfileNewPin] = useState(false);
+  const [showProfileConfirmPin, setShowProfileConfirmPin] = useState(false);
+
+  // Admin Seller Shop Editor States
+  const [adminSelectedSeller, setAdminSelectedSeller] = useState<any>(null);
+  const [adminEditStoreName, setAdminEditStoreName] = useState('');
+  const [adminEditStoreAddress, setAdminEditStoreAddress] = useState('');
+  const [adminEditLat, setAdminEditLat] = useState(13.7563);
+  const [adminEditLng, setAdminEditLng] = useState(100.5018);
 
   const [idCardStatus, setIdCardStatus] = useState<'checking' | 'valid' | 'dup' | 'invalid' | null>(null);
   const [idCardMessage, setIdCardMessage] = useState('');
@@ -392,12 +426,60 @@ export default function App() {
   const [selectedChoiceId, setSelectedChoiceId] = useState<string>('');
   const [showPackageChoiceModal, setShowPackageChoiceModal] = useState<boolean>(false);
   const [pendingPurchaseProductId, setPendingPurchaseProductId] = useState<string>('');
+  const [showInsufficientFundsModal, setShowInsufficientFundsModal] = useState<boolean>(false);
+  const [insufficientFundsMessage, setInsufficientFundsMessage] = useState<string>('');
   const [showPurchaseConfirmModal, setShowPurchaseConfirmModal] = useState<boolean>(false);
   const [confirmProduct, setConfirmProduct] = useState<any>(null);
   const [confirmChoice, setConfirmChoice] = useState<any>(null);
   const [activeSlipModal, setActiveSlipModal] = useState<string | null>(null);
   
   // Custom dialog states to replace window.confirm and window.prompt in iframe
+  const [confirmDialog, setConfirmDialog] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    isPrompt?: boolean;
+    promptValue?: string;
+    placeholder?: string;
+    onConfirm: (val?: string) => void;
+  }>({
+    show: false,
+    title: '',
+    message: '',
+    isPrompt: false,
+    promptValue: '',
+    placeholder: '',
+    onConfirm: () => {},
+  });
+
+  const triggerConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmDialog({
+      show: true,
+      title,
+      message,
+      isPrompt: false,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmDialog((prev) => ({ ...prev, show: false }));
+      },
+    });
+  };
+
+  const triggerPrompt = (title: string, message: string, placeholder: string, defaultValue: string, onConfirm: (val: string) => void) => {
+    setConfirmDialog({
+      show: true,
+      title,
+      message,
+      isPrompt: true,
+      promptValue: defaultValue,
+      placeholder,
+      onConfirm: (val) => {
+        onConfirm(val || '');
+        setConfirmDialog((prev) => ({ ...prev, show: false }));
+      },
+    });
+  };
+
   const [depositApproveId, setDepositApproveId] = useState<string | null>(null);
   const [depositApproveAmount, setDepositApproveAmount] = useState<string>('');
   const [depositRejectId, setDepositRejectId] = useState<string | null>(null);
@@ -411,6 +493,9 @@ export default function App() {
   const [topupSlip, setTopupSlip] = useState<string>('');
   const [topupSlipBase64, setTopupSlipBase64] = useState<string>('');
   const [topupActualAmount, setTopupActualAmount] = useState<string>('');
+  const [detectedQrCode, setDetectedQrCode] = useState<string>('');
+  const [isScanningQr, setIsScanningQr] = useState<boolean>(false);
+  const [qrScanMessage, setQrScanMessage] = useState<string>('');
   
   // System Bank Settings State
   const [bankSettings, setBankSettings] = useState<any>({
@@ -468,7 +553,7 @@ export default function App() {
   const [treeScale, setTreeScale] = useState<number>(0.85);
   const [maxTreeDepth, setMaxTreeDepth] = useState<number>(3);
   const [planBSubTab, setPlanBSubTab] = useState<'b1' | 'b2'>('b1');
-  const [adminSubTab, setAdminSubTab] = useState<'queues' | 'members' | 'couponPv' | 'systemReset' | 'memberApprovals' | 'shippingApprove' | 'manageShops' | 'orderStatus' | 'bankSettings' | 'depositApprove'>('queues');
+  const [adminSubTab, setAdminSubTab] = useState<'queues' | 'members' | 'couponPv' | 'systemReset' | 'memberApprovals' | 'shippingApprove' | 'manageShops' | 'orderStatus' | 'bankSettings' | 'depositApprove' | 'packageChoices' | 'companyAccountingReport' | 'maintenance'>('queues');
   const [adminSection, setAdminSection] = useState<'members_system' | 'seller_system' | 'admin_console'>('members_system');
   const [allSellerProducts, setAllSellerProducts] = useState<any[]>([]);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
@@ -485,6 +570,16 @@ export default function App() {
   const [warehouseLat, setWarehouseLat] = useState<number | null>(13.7563);
   const [warehouseLng, setWarehouseLng] = useState<number | null>(100.5018);
   const [pdpaAgreed, setPdpaAgreed] = useState(false);
+  const [showPdpaModal, setShowPdpaModal] = useState(false);
+  const [newProdTargetPayout, setNewProdTargetPayout] = useState('');
+  const [editProdTargetPayout, setEditProdTargetPayout] = useState('');
+  const [simMarketPrice, setSimMarketPrice] = useState('1000');
+  const [simMlmCommission, setSimMlmCommission] = useState('10000');
+  const [simPartnerPrice, setSimPartnerPrice] = useState('1000');
+  const [simRightsRank, setSimRightsRank] = useState('S');
+  const [simRightsCustom, setSimRightsCustom] = useState('1000');
+  const [simRightsEMoneyIncome, setSimRightsEMoneyIncome] = useState('500');
+  const [systemCondTab, setSystemCondTab] = useState('registration');
   const [newProd, setNewProd] = useState({
     name: '',
     price: '',
@@ -505,6 +600,19 @@ export default function App() {
   const [sellerProducts, setSellerProducts] = useState<any[]>([]);
   const [sellerOrders, setSellerOrders] = useState<any[]>([]);
   const [sellerPortalTab, setSellerPortalTab] = useState<'products' | 'orders'>('products');
+  const [sellerPortalSubTab, setSellerPortalSubTab] = useState<string>('home');
+  const [showSellerNotifs, setShowSellerNotifs] = useState<boolean>(false);
+  const [sellerOrderFilter, setSellerOrderFilter] = useState<string>('All');
+  const [sellerNotifs, setSellerNotifs] = useState<any[]>([
+    { id: 1, title: "สมัครร้านค้าได้รับการอนุมัติแล้ว", desc: "ยินดีต้อนรับสู่ระบบ Natee Plus Partner ของคุณค่ะ เริ่มลงสินค้าชิ้นแรกของคุณเลย!", time: "เมื่อสักครู่", read: false },
+    { id: 2, title: "อัพเดทค่าจัดส่ง Shippop", desc: "ระบบเชื่อมต่อ Shippop สำเร็จ คำนวณค่าส่งอัตโนมัติ 80% เป็นยอดโอนของร้านค้า", time: "1 ชั่วโมงที่แล้ว", read: false }
+  ]);
+  const [sellerMockChatMessages, setSellerMockChatMessages] = useState<any[]>([
+    { id: 1, sender: 'customer', text: 'สวัสดีค่ะ มีสินค้าชิ้นนี้พร้อมส่งไหมคะ?', time: '10:30 น.' },
+    { id: 2, sender: 'seller', text: 'สวัสดีค่ะ สินค้าพร้อมจัดส่งใน 24 ชั่วโมงเลยค่ะ สนใจรับกี่ชิ้นดีคะ?', time: '10:32 น.' },
+    { id: 3, sender: 'customer', text: 'ถ้างั้นรบกวนสั่ง 2 ชิ้นนะคะ ขอบคุณมากค่ะ', time: '10:35 น.' }
+  ]);
+  const [sellerNewMessageText, setSellerNewMessageText] = useState<string>('');
   const [sellerShippingTracking, setSellerShippingTracking] = useState<{[key: string]: { company: string, trackingNo: string, note: string }}>({});
   
   // CSR scrolling text state
@@ -565,11 +673,42 @@ export default function App() {
   // Admin Member Management
   const [adminMembersList, setAdminMembersList] = useState<any[]>([]);
   const [editingMember, setEditingMember] = useState<any | null>(null);
+  const [originalMember, setOriginalMember] = useState<any | null>(null);
+  const [managerOtp, setManagerOtp] = useState<string>('');
+  const [inputOtp, setInputOtp] = useState<string>('');
+  const [showOtpPrompt, setShowOtpPrompt] = useState<boolean>(false);
+
+  // Manual Company Expenses and Reporting States
+  const [manualExpenses, setManualExpenses] = useState<any[]>(() => {
+    try {
+      const stored = localStorage.getItem('company_manual_expenses');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showAddManualExpenseModal, setShowAddManualExpenseModal] = useState(false);
+  const [manualExpenseTitle, setManualExpenseTitle] = useState('');
+  const [manualExpenseAmount, setManualExpenseAmount] = useState('');
+  const [manualExpenseCategory, setManualExpenseCategory] = useState('อื่นๆ');
+  const [manualExpenseDate, setManualExpenseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [manualExpenseNotes, setManualExpenseNotes] = useState('');
+  const [accPackageFilter, setAccPackageFilter] = useState('All');
+  const [accDateFilter, setAccDateFilter] = useState('All');
+  const [accSearchQuery, setAccSearchQuery] = useState('');
+  const [adminActivePackageFilter, setAdminActivePackageFilter] = useState<string>('All');
   const [searchMemberQuery, setSearchMemberQuery] = useState('');
   const [showEditMemberModal, setShowEditMemberModal] = useState(false);
   const [adminNewChoicePackageId, setAdminNewChoicePackageId] = useState('pack_m');
   const [adminNewChoiceName, setAdminNewChoiceName] = useState('');
   const [adminNewChoiceCost, setAdminNewChoiceCost] = useState('');
+  const [adminNewChoiceProductPrice, setAdminNewChoiceProductPrice] = useState('');
+  const [adminNewChoiceShippingFee, setAdminNewChoiceShippingFee] = useState('');
+  const [adminNewChoiceHasVat, setAdminNewChoiceHasVat] = useState(false);
+  const [adminNewChoicePackagingCost, setAdminNewChoicePackagingCost] = useState('');
+  const [adminNewChoiceIsActive, setAdminNewChoiceIsActive] = useState(true);
+  const [expandedChoiceIds, setExpandedChoiceIds] = useState<Record<string, boolean>>({});
+  const [adminEditingChoiceId, setAdminEditingChoiceId] = useState<string | null>(null);
   const [withDeductions, setWithDeductions] = useState<{[key: string]: string}>({});
 
   // Google Sheets Export States
@@ -906,8 +1045,67 @@ export default function App() {
   useEffect(() => {
     if (currentUser && activeTab === 'seller') {
       fetchSellerData();
+      fetchSellerRegulationsText();
     }
   }, [activeTab, currentUser]);
+
+  // Sync seller usernames to active logged in member
+  useEffect(() => {
+    if (currentUser) {
+      setSellerLoginUsername(currentUser.userId);
+      setSellerRegUsername(currentUser.userId);
+    }
+  }, [currentUser]);
+
+  // 5 Minutes Idle Timeout Logout (300,000 ms)
+  useEffect(() => {
+    if (!currentUser && !sellerSessionUser) return;
+
+    const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+    let timeoutId: NodeJS.Timeout;
+
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        // Log out immediately!
+        if (currentUser) {
+          handleLogout();
+          showNotif("คุณถูกออกจากระบบเนื่องจากไม่มีการเคลื่อนไหวในระบบเกิน 5 นาทีค่ะ", "warning");
+        }
+        if (sellerSessionUser) {
+          setSellerSessionUser(null);
+          setSellerLoginUsername('');
+          setSellerLoginPassword('');
+        }
+      }, TIMEOUT_MS);
+    };
+
+    // Events to monitor activity
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+    
+    // Add event listeners
+    events.forEach(event => {
+      window.addEventListener(event, resetTimer);
+    });
+
+    // Start initial timer
+    resetTimer();
+
+    // Clean up
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      events.forEach(event => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
+  }, [currentUser, sellerSessionUser]);
+
+  // Fetch seller products and orders when sellerSessionUser logs in
+  useEffect(() => {
+    if (sellerSessionUser) {
+      fetchSellerData(sellerSessionUser.userId);
+    }
+  }, [sellerSessionUser]);
 
   // Handle real-time Firestore synchronization for all application data
   useEffect(() => {
@@ -962,12 +1160,43 @@ export default function App() {
               if (currentMember) {
                 setProfile((prevProfile: any) => {
                   if (prevProfile) {
+                    // Check E-Cash (No audio sound per request, just notification)
                     const prevB = prevProfile.balanceECash;
                     const newBalance = currentMember.balanceECash;
                     if (newBalance > prevB && prevB > 0) {
                       const diff = parseFloat((newBalance - prevB).toFixed(4));
                       showNotif(`ยอดเงิน E-Cash ของคุณเพิ่มขึ้น +${diff.toLocaleString()} บาท`, 'success');
-                      playMoneySound(diff, 'general');
+                    }
+
+                    // Check E-Money (Play income sound only for E-Money additions!)
+                    const prevEMoney = prevProfile.balanceEMoney || 0;
+                    const newEMoney = currentMember.balanceEMoney || 0;
+                    if (newEMoney > prevEMoney && prevEMoney > 0) {
+                      const diffEMoney = parseFloat((newEMoney - prevEMoney).toFixed(4));
+                      showNotif(`ได้รับรายได้ปันผล/โบนัส E-Money! +${diffEMoney.toLocaleString()} บาท`, 'success');
+                      playMoneySound(diffEMoney, 'bonus');
+                    }
+
+                    // Optimizing reference to prevent unnecessary dashboard flickering and visual re-renders
+                    const isIdentical = 
+                      prevProfile.balanceECash === currentMember.balanceECash &&
+                      prevProfile.balanceEMoney === currentMember.balanceEMoney &&
+                      prevProfile.balanceECoupon === currentMember.balanceECoupon &&
+                      prevProfile.balanceEShare === currentMember.balanceEShare &&
+                      prevProfile.eligibleRights === currentMember.eligibleRights &&
+                      prevProfile.planBPoints === currentMember.planBPoints &&
+                      prevProfile.rank === currentMember.rank &&
+                      prevProfile.sellerStatus === currentMember.sellerStatus &&
+                      prevProfile.statusKyc === currentMember.statusKyc &&
+                      prevProfile.name === currentMember.name &&
+                      prevProfile.surname === currentMember.surname &&
+                      prevProfile.phone === currentMember.phone &&
+                      prevProfile.email === currentMember.email &&
+                      prevProfile.selectedPackageId === currentMember.selectedPackageId &&
+                      prevProfile.firstLogin === currentMember.firstLogin;
+                    
+                    if (isIdentical) {
+                      return prevProfile; // SKIP RE-RENDER!
                     }
                   }
                   return currentMember;
@@ -1105,12 +1334,54 @@ export default function App() {
         safeSubscribe('members', (snapshot) => {
           if (snapshot.exists()) {
             const data = snapshot.data().data || [];
-            setAdminMembersList(data);
+            
+            // Only update adminMembersList if the incoming snapshot data is NOT older than our current list
+            setAdminMembersList((prevList: any[]) => {
+              if (prevList && prevList.length > 0) {
+                let incomingIsStale = false;
+                for (const m of data) {
+                  const prevM = prevList.find((pm: any) => pm.userId === m.userId);
+                  if (prevM && prevM.lastUpdated && m.lastUpdated && m.lastUpdated < prevM.lastUpdated) {
+                    incomingIsStale = true;
+                    break;
+                  }
+                }
+                if (incomingIsStale) {
+                  console.warn("⚠️ [Sync Bypass] Ignored stale Firestore adminMembersList snapshot.");
+                  return prevList;
+                }
+
+                // Optimization: If arrays are completely identical (length & elements), skip reference change to avoid re-renders
+                if (prevList.length === data.length) {
+                  let hasChanges = false;
+                  for (let i = 0; i < data.length; i++) {
+                    if (data[i].userId !== prevList[i].userId || data[i].lastUpdated !== prevList[i].lastUpdated) {
+                      hasChanges = true;
+                      break;
+                    }
+                  }
+                  if (!hasChanges) {
+                    return prevList; // SKIP RE-RENDER!
+                  }
+                }
+              }
+              return data;
+            });
             
             const currentMember = data.find((m: any) => m.userId === currentUser.userId);
             if (currentMember) {
               setProfile((prevProfile: any) => {
                 if (prevProfile) {
+                  // Only update the profile if the incoming Firestore update is NOT older than our current profile!
+                  if (prevProfile.lastUpdated && currentMember.lastUpdated && currentMember.lastUpdated < prevProfile.lastUpdated) {
+                    console.warn("⚠️ [Sync Bypass] Ignored stale Firestore profile snapshot. Local state is newer.", {
+                      localTime: prevProfile.lastUpdated,
+                      incomingTime: currentMember.lastUpdated
+                    });
+                    return prevProfile;
+                  }
+
+                  // Check E-Cash (No audio sound per request, just notification)
                   const prevBalance = prevProfile.balanceECash;
                   const newBalance = currentMember.balanceECash;
                   if (newBalance > prevBalance && prevBalance > 0) {
@@ -1139,16 +1410,44 @@ export default function App() {
 
                         if (isDeposit) {
                           showNotif(`เติมเงิน E-Cash สำเร็จแล้ว! +${depositAmount.toLocaleString()} บาท (ได้รับยอดจริงครบถ้วนแล้วค่ะ)`, 'success');
-                          playMoneySound(depositAmount, 'deposit');
                         } else {
                           showNotif(`ได้รับปันผลสำเร็จ! +${diff.toLocaleString()} บาท จาก Bonus/E-Share`, 'success');
-                          playMoneySound(diff, 'bonus');
                         }
                       })
                       .catch(() => {
                         showNotif(`ยอดเงิน E-Cash ของคุณเพิ่มขึ้น +${diff.toLocaleString()} บาท`, 'success');
-                        playMoneySound(diff, 'general');
                       });
+                  }
+
+                  // Check E-Money (Play income sound only for E-Money additions!)
+                  const prevEMoney = prevProfile.balanceEMoney || 0;
+                  const newEMoney = currentMember.balanceEMoney || 0;
+                  if (newEMoney > prevEMoney && prevEMoney > 0) {
+                    const diffEMoney = parseFloat((newEMoney - prevEMoney).toFixed(4));
+                    showNotif(`ได้รับรายได้ปันผล/โบนัส E-Money! +${diffEMoney.toLocaleString()} บาท`, 'success');
+                    playMoneySound(diffEMoney, 'bonus');
+                  }
+
+                  // Optimizing reference to prevent unnecessary dashboard flickering and visual re-renders
+                  const isIdentical = 
+                    prevProfile.balanceECash === currentMember.balanceECash &&
+                    prevProfile.balanceEMoney === currentMember.balanceEMoney &&
+                    prevProfile.balanceECoupon === currentMember.balanceECoupon &&
+                    prevProfile.balanceEShare === currentMember.balanceEShare &&
+                    prevProfile.eligibleRights === currentMember.eligibleRights &&
+                    prevProfile.planBPoints === currentMember.planBPoints &&
+                    prevProfile.rank === currentMember.rank &&
+                    prevProfile.sellerStatus === currentMember.sellerStatus &&
+                    prevProfile.statusKyc === currentMember.statusKyc &&
+                    prevProfile.name === currentMember.name &&
+                    prevProfile.surname === currentMember.surname &&
+                    prevProfile.phone === currentMember.phone &&
+                    prevProfile.email === currentMember.email &&
+                    prevProfile.selectedPackageId === currentMember.selectedPackageId &&
+                    prevProfile.firstLogin === currentMember.firstLogin;
+                  
+                  if (isIdentical) {
+                    return prevProfile; // SKIP RE-RENDER!
                   }
                 }
                 return currentMember;
@@ -1267,6 +1566,11 @@ export default function App() {
     if (profile?.role === 'Manager' || profile?.role === 'Admin') return 999999999;
     if (profile?.rank === 'Member') return 0;
 
+    // Use the exact server-calculated remaining eligibleRights directly to prevent client-side double deduction or mismatch
+    if (profile?.eligibleRights !== undefined) {
+      return Math.max(0, profile.eligibleRights);
+    }
+
     let basePackage = 0;
     const r = profile?.rank || 'S';
     if (r === 'S') basePackage = 100;
@@ -1276,12 +1580,7 @@ export default function App() {
     else if (r === 'XXL') basePackage = 5000;
     else basePackage = 100;
 
-    const maxRights = profile?.eligibleRights !== undefined ? profile.eligibleRights : (basePackage * 10);
-    const ecash = profile?.balanceECash || 0;
-    const ecoupon = profile?.balanceECoupon || 0;
-    
-    const remaining = maxRights - (ecash + ecoupon);
-    return Math.max(0, remaining);
+    return basePackage * 10;
   };
 
   const fetchProfile = async (shouldSyncEditStates = false) => {
@@ -1677,15 +1976,16 @@ export default function App() {
     } catch (err) {}
   };
 
-  const fetchSellerData = async () => {
-    if (!currentUser) return;
+  const fetchSellerData = async (targetUserId?: string) => {
+    const userId = targetUserId || sellerSessionUser?.userId || currentUser?.userId;
+    if (!userId) return;
     try {
-      const resProds = await fetch(`/api/seller/products/${currentUser.userId}`);
+      const resProds = await fetch(`/api/seller/products/${userId}`);
       const dataProds = await resProds.json();
       if (dataProds.success) {
         setSellerProducts(dataProds.products || []);
       }
-      const resOrders = await fetch(`/api/seller/orders/${currentUser.userId}`);
+      const resOrders = await fetch(`/api/seller/orders/${userId}`);
       const dataOrders = await resOrders.json();
       if (dataOrders.success) {
         setSellerOrders(dataOrders.orders || []);
@@ -1919,17 +2219,73 @@ export default function App() {
       }
     }
 
+    // Role-based OTP Check
+    if (currentUser?.role === 'Admin') {
+      const hasFinancialChange = 
+        (editingMember.balanceECash !== (originalMember?.balanceECash ?? 0)) ||
+        (editingMember.balanceEMoney !== (originalMember?.balanceEMoney ?? 0)) ||
+        (editingMember.balanceECoupon !== (originalMember?.balanceECoupon ?? 0)) ||
+        (editingMember.eligibleRights !== (originalMember?.eligibleRights ?? 0));
+
+      const hasNameChange = 
+        (editingMember.name !== (originalMember?.name ?? '')) ||
+        (editingMember.surname !== (originalMember?.surname ?? ''));
+
+      const hasIdCardChange = 
+        (editingMember.idCard !== (originalMember?.idCard ?? ''));
+
+      const hasBankChange = 
+        (editingMember.bankAccountName !== (originalMember?.bankAccountName ?? '')) ||
+        (editingMember.bankName !== (originalMember?.bankName ?? '')) ||
+        (editingMember.bankAccount !== (originalMember?.bankAccount ?? ''));
+
+      const isSensitiveChange = hasFinancialChange || hasNameChange || hasIdCardChange || hasBankChange;
+
+      if (isSensitiveChange) {
+        if (!showOtpPrompt) {
+          try {
+            const otpRes = await fetch('/api/admin/request-manager-otp', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ adminUserId: currentUser?.userId })
+            });
+            const otpData = await otpRes.json();
+            if (otpData.success) {
+              setManagerOtp(otpData.otpSimulated);
+              setShowOtpPrompt(true);
+              setInputOtp('');
+              showNotif("🔒 ตรวจพบการแก้ไขข้อมูลสำคัญ ระบบได้ส่งรหัส OTP อนุมัติไปยังผู้จัดการ (Manager) แล้วค่ะ", "warning");
+            } else {
+              showNotif(otpData.message || "ไม่สามารถขอ OTP อนุมัติจาก Manager ได้ค่ะ", "error");
+            }
+          } catch (err) {
+            showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์เพื่อขอ OTP", "error");
+          }
+          return;
+        } else {
+          if (inputOtp.trim() !== managerOtp) {
+            showNotif("❌ รหัส OTP อนุมัติไม่ถูกต้อง กรุณากรอกรหัสใหม่อีกครั้ง", "error");
+            return;
+          }
+        }
+      }
+    }
+
     try {
       const res = await fetch('/api/admin/member-update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...editingMember, editorUserId: currentUser?.userId })
+        body: JSON.stringify({ ...editingMember, editorUserId: currentUser?.userId, otp: inputOtp })
       });
       const data = await res.json();
       if (data.success) {
         showNotif(data.message, 'success');
         setShowEditMemberModal(false);
         setEditingMember(null);
+        setOriginalMember(null);
+        setShowOtpPrompt(false);
+        setManagerOtp('');
+        setInputOtp('');
         fetchAdminMembers();
         if (currentUser && editingMember.userId === currentUser.userId) {
           fetchProfile(true);
@@ -1940,6 +2296,47 @@ export default function App() {
     } catch (err) {
       showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
     }
+  };
+
+  const handleAddManualExpenseSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualExpenseTitle || !manualExpenseAmount) {
+      showNotif("กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน", "error");
+      return;
+    }
+    const amountVal = parseFloat(manualExpenseAmount) || 0;
+    if (amountVal <= 0) {
+      showNotif("จำนวนเงินต้องมากกว่า 0 บาท", "error");
+      return;
+    }
+    
+    const newExpense = {
+      id: "EXP_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+      title: manualExpenseTitle,
+      amount: amountVal,
+      category: manualExpenseCategory,
+      date: manualExpenseDate,
+      notes: manualExpenseNotes,
+      createdAt: new Date().toISOString()
+    };
+    
+    const updated = [newExpense, ...manualExpenses];
+    setManualExpenses(updated);
+    localStorage.setItem('company_manual_expenses', JSON.stringify(updated));
+    showNotif("💾 บันทึกค่าใช้จ่ายบริษัทเรียบร้อยแล้ว", "success");
+    
+    setManualExpenseTitle('');
+    setManualExpenseAmount('');
+    setManualExpenseCategory('อื่นๆ');
+    setManualExpenseNotes('');
+    setShowAddManualExpenseModal(false);
+  };
+
+  const handleRemoveManualExpense = (id: string) => {
+    const updated = manualExpenses.filter(e => e.id !== id);
+    setManualExpenses(updated);
+    localStorage.setItem('company_manual_expenses', JSON.stringify(updated));
+    showNotif("ลบรายการค่าใช้จ่ายสำเร็จ", "success");
   };
 
   // Handle Username Check
@@ -2655,13 +3052,106 @@ export default function App() {
     }
   };
 
+  const handleToggleMaintenanceMode = async (targetVal: boolean) => {
+    setIsSavingBankSettings(true);
+    try {
+      const res = await fetch('/api/bank-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bankName: bankSettings.bankName,
+          bankAccount: bankSettings.bankAccount,
+          bankAccountName: bankSettings.bankAccountName,
+          qrCodeFile: null,
+          editorUserId: currentUser.userId,
+          maintenanceMode: targetVal
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(targetVal ? "เปิดใช้งานการพักหน้าจอเรียบร้อยแล้วค่ะ" : "เปิดใช้งานระบบการทำงานตามปกติแล้วค่ะ", "success");
+        setBankSettings(data.bankSettings);
+      } else {
+        showNotif(data.message || 'เกิดข้อผิดพลาด', 'error');
+      }
+    } catch (err) {
+      console.error("Error toggling maintenance mode", err);
+      showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อระบบ", "error");
+    } finally {
+      setIsSavingBankSettings(false);
+    }
+  };
+
+  const scanQRFromBase64 = (base64: string): Promise<string | null> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = base64;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxDim = 1024; // Limit size for fast scanning
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        try {
+          const imageData = ctx.getImageData(0, 0, width, height);
+          const code = jsQR(imageData.data, width, height);
+          if (code) {
+            resolve(code.data);
+          } else {
+            resolve(null);
+          }
+        } catch (err) {
+          console.error("Error decoding QR", err);
+          resolve(null);
+        }
+      };
+      img.onerror = () => {
+        resolve(null);
+      };
+    });
+  };
+
   const handleSlipFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setTopupSlip(file.name);
+      setDetectedQrCode('');
+      setQrScanMessage('กำลังตรวจสอบความถูกต้องของสลิป...');
+      setIsScanningQr(true);
+
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setTopupSlipBase64(reader.result as string);
+      reader.onloadend = async () => {
+        const base64 = reader.result as string;
+        setTopupSlipBase64(base64);
+        
+        // Scan QR
+        const qrCodeData = await scanQRFromBase64(base64);
+        setIsScanningQr(false);
+        if (qrCodeData) {
+          setDetectedQrCode(qrCodeData);
+          setQrScanMessage('✓ ตรวจพบรหัสสแกน QR Code ในสลิปของคุณเรียบร้อยแล้วค่ะ ระบบจะประมวลผลเติมเงินแบบอัตโนมัติทันทีเมื่อกดยืนยัน! ⚡');
+          showNotif('พบ QR Code ในสลิปแล้ว! ระบบจะตรวจสอบความถูกต้องอัตโนมัติเมื่อกดแจ้งโอนค่ะ', 'success');
+        } else {
+          setDetectedQrCode('');
+          setQrScanMessage('⚠️ ไม่พบรหัสสแกน QR Code บนสลิปนี้ (ระบบจะทำการส่งข้อมูลให้แอดมินหลังบ้านเป็นผู้อนุมัติแบบปกติหลังกดแจ้งโอนค่ะ)');
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -2697,16 +3187,23 @@ export default function App() {
           amount: topupAmount,
           transferAmount: topupActualAmount,
           transferDate: `${topupTransferDate} ${topupTransferHour}:${topupTransferMinute}`,
-          slipFile: topupSlipBase64
+          slipFile: topupSlipBase64,
+          qrCode: detectedQrCode
         })
       });
       const d = await res.json();
       if (d.success) {
-        showNotif('ส่งหลักฐานสลิปเรียบร้อยแล้วค่ะ รอการตรวจสอบและอนุมัติยอด E-Cash จากแอดมินหลังบ้าน!', 'success');
+        if (d.isAutoApproved) {
+          showNotif(d.message || 'ระบบตรวจสอบสลิปโอนเงินสำเร็จเรียบร้อย! เติมเงิน E-Cash ให้คุณอัตโนมัติแล้วค่ะ ⚡', 'success');
+        } else {
+          showNotif(d.message || 'ส่งหลักฐานสลิปเรียบร้อยแล้วค่ะ รอการตรวจสอบและอนุมัติยอด E-Cash จากแอดมินหลังบ้าน!', 'success');
+        }
         setTopupSlip('');
         setTopupSlipBase64('');
         setTopupDecimal('');
         setTopupActualAmount('');
+        setDetectedQrCode('');
+        setQrScanMessage('');
         fetchProfile();
         fetchTransactions();
       } else {
@@ -3099,6 +3596,55 @@ export default function App() {
     }
   };
 
+  // Get package choices with robust fallbacks for all packages (S, M, L, XL, XXL)
+  const getPackageChoicesForId = (pkgId: string) => {
+    const list = packageChoices.filter(c => c.packageId === pkgId && c.isActive !== false);
+    if (list.length > 0) return list;
+    
+    // Hardcoded fallback for any package that has no database choices defined yet
+    if (pkgId === 'pack_s') {
+      return [
+        { id: "pc_s1_fallback", packageId: "pack_s", name: "S-Set A: สบู่สมุนไพรนทีพลัส ขนาดทดลอง 1 ชิ้น" },
+        { id: "pc_s2_fallback", packageId: "pack_s", name: "S-Set B: ยาสีฟันสมุนไพรนทีพลัส ขนาดพกพา 1 ชิ้น" }
+      ];
+    }
+    if (pkgId === 'pack_m') {
+      return [
+        { id: "pc_m1_fallback", packageId: "pack_m", name: "M-Set A: ชุดของใช้สบู่สมุนไพรนทีพลัส 3 ชิ้น" },
+        { id: "pc_m2_fallback", packageId: "pack_m", name: "M-Set B: ชุดยาสีฟันสมุนไพรสูตรลดการเสียวเหงือก 2 ชิ้น" }
+      ];
+    }
+    if (pkgId === 'pack_l') {
+      return [
+        { id: "pc_l1_fallback", packageId: "pack_l", name: "L-Set A: ชุดกาแฟเอสเพรสโซ่พรีเมียม + ถ้วยกาแฟนทีพลัส" },
+        { id: "pc_l2_fallback", packageId: "pack_l", name: "L-Set B: เซ็ตสบู่สมุนไพรและยาสีฟันสูตรกู้เหงือก (รวม 5 ชิ้น)" },
+        { id: "pc_l3_fallback", packageId: "pack_l", name: "L-Set C: อาหารเสริมบำรุงสายตานวัตกรรม (Lutein Plus) 1 กล่อง" }
+      ];
+    }
+    if (pkgId === 'pack_xl') {
+      return [
+        { id: "pc_xl1_fallback", packageId: "pack_xl", name: "XL-Set A: เซ็ตอาหารเสริมฟื้นฟูร่างกายแบบองค์รวม (Multivitamin + Eye care)" },
+        { id: "pc_xl2_fallback", packageId: "pack_xl", name: "XL-Set B: เครื่องชงกาแฟเอสเพรสโซ่แรงดันสูงสำหรับใช้ในบ้าน" },
+        { id: "pc_xl3_fallback", packageId: "pack_xl", name: "XL-Set C: เซ็ตเครื่องสำอางและเซรั่ม Gliss-Serum บำรุงลึก 3 ขวด" }
+      ];
+    }
+    if (pkgId === 'pack_xxl') {
+      return [
+        { id: "pc_xxl1_fallback", packageId: "pack_xxl", name: "XXL-Set A: ชุดเปิดศูนย์จุดกระจายสินค้า (สินค้าอุปโภคบริโภคครบครัน 20 ชิ้น)" },
+        { id: "pc_xxl2_fallback", packageId: "pack_xxl", name: "XXL-Set B: เซ็ตเครื่องใช้ไฟฟ้าพรีเมียม (เครื่องชงกาแฟเอสเพรสโซ่ + พาวเวอร์แบงค์ชาร์จเร็ว)" },
+        { id: "pc_xxl3_fallback", packageId: "pack_xxl", name: "XXL-Set C: เซ็ตสกินแคร์กู้หน้าใสหน้าเด็กสูตรเคาน์เตอร์แบรนด์นที (ครบชุด 5 ชิ้น)" }
+      ];
+    }
+    return [];
+  };
+
+  const triggerInsufficientFundsModal = (required: number, current: number) => {
+    setInsufficientFundsMessage(`ขออภัยค่ะ ยอดเงินคงเหลือในกระเป๋า E-Cash ของท่านไม่เพียงพอสำหรับชำระเงินค่าแพ็กเกจนี้ (ราคาสินค้า ฿${required.toLocaleString()} แต่คุณมี E-Cash เพียง ฿${current.toLocaleString()} เท่านั้นค่ะ)`);
+    setShowInsufficientFundsModal(true);
+    setShowPackageChoiceModal(false);
+    setShowPurchaseConfirmModal(false);
+  };
+
   // Purchase Package or General Product
   const handlePurchaseProduct = async (prodId: string, bypassChoice = false, customChoiceId?: string) => {
     const product = products.find(p => p.id === prodId);
@@ -3120,32 +3666,31 @@ export default function App() {
       cashToUse = product.price - couponToUse;
     }
 
+    // Since we unlock product lists for all positions, we show the choice modal first even if insufficient balance!
+    if (isPkg && !bypassChoice) {
+      const filteredChoices = getPackageChoicesForId(prodId);
+      setPendingPurchaseProductId(prodId);
+      setSelectedChoiceId(filteredChoices[0]?.id || ''); // default select the first one
+      setShowPackageChoiceModal(true);
+      return;
+    }
+
+    // Now if they bypass/confirm from choice modal, we run the real balance check and trigger the Red Pop-up if insufficient!
     if (isPkg) {
-      if (profile?.balanceECash < product.price) {
-        showNotif('ยอดเงินคงเหลือในกระเป๋า E-Cash ไม่เพียงพอสำหรับชำระเงินค่าแพ็กเกจ กรุณาเติมเงินก่อนทำรายการค่ะ', 'error');
+      if ((profile?.balanceECash || 0) < product.price) {
+        triggerInsufficientFundsModal(product.price, profile?.balanceECash || 0);
         return;
       }
     } else {
-      if (profile?.balanceECash < cashToUse) {
-        showNotif(`ยอดเงินคงเหลือไม่พอสำหรับชำระเงิน (ราคารวม ฿${product.price?.toLocaleString()} • หักจ่ายด้วย E-Coupon ฿${couponToUse?.toLocaleString()} • ต้องใช้ E-Cash ชำระส่วนต่าง ฿${cashToUse?.toLocaleString()} แต่ท่านมี E-Cash เพียง ฿${profile?.balanceECash?.toLocaleString()})`, 'error');
-        return;
-      }
-    }
-
-    // Since position M and above require selecting a product set
-    if (isPkg && prodId !== 'pack_s' && !bypassChoice) {
-      // Find package choices for this package ID
-      const filteredChoices = packageChoices.filter(c => c.packageId === prodId);
-      if (filteredChoices.length > 0) {
-        setPendingPurchaseProductId(prodId);
-        setSelectedChoiceId(filteredChoices[0].id); // default select the first one
-        setShowPackageChoiceModal(true);
+      if ((profile?.balanceECash || 0) < cashToUse) {
+        triggerInsufficientFundsModal(product.price, profile?.balanceECash || 0);
         return;
       }
     }
 
     const choiceToUse = customChoiceId || selectedChoiceId;
-    const choiceObj = isPkg ? packageChoices.find(c => c.id === choiceToUse) : null;
+    const choicesList = getPackageChoicesForId(prodId);
+    const choiceObj = isPkg ? choicesList.find(c => c.id === choiceToUse) : null;
     
     // Set the product and choices to confirm
     setConfirmProduct(product);
@@ -3156,6 +3701,14 @@ export default function App() {
 
   const handleFinalizePackagePurchase = async () => {
     if (!confirmProduct) return;
+
+    // Double check balance right before writing to DB
+    const isPkg = confirmProduct.category === 'Package';
+    if (isPkg && (profile?.balanceECash || 0) < confirmProduct.price) {
+      triggerInsufficientFundsModal(confirmProduct.price, profile?.balanceECash || 0);
+      return;
+    }
+
     try {
       const res = await fetch('/api/shop/purchase', {
         method: 'POST',
@@ -3303,64 +3856,116 @@ export default function App() {
   };
 
   const handleStoreApprove = async (userId: string) => {
-    if (!window.confirm("คุณต้องการอนุมัติเปิดร้านค้าให้กับสมาชิกรายนี้ใช่หรือไม่?")) return;
-    try {
-      const res = await fetch('/api/admin/store-approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId })
-      });
-      const d = await res.json();
-      if (d.success) {
-        showNotif(d.message, 'success');
-        fetchAdminQueues();
-      } else {
-        showNotif(d.message, 'error');
+    triggerConfirm(
+      "อนุมัติเปิดร้านค้า",
+      "คุณต้องการอนุมัติเปิดร้านค้าให้กับสมาชิกรายนี้ใช่หรือไม่?",
+      async () => {
+        try {
+          const res = await fetch('/api/admin/store-approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId })
+          });
+          const d = await res.json();
+          if (d.success) {
+            showNotif(d.message, 'success');
+            fetchAdminMembers();
+            fetchAdminQueues();
+          } else {
+            showNotif(d.message, 'error');
+          }
+        } catch (err) {
+          showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+        }
       }
-    } catch (err) {
-      showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
-    }
+    );
   };
 
   const handleStoreReject = async (userId: string) => {
-    if (!window.confirm("คุณต้องการปฏิเสธคำขอเปิดร้านค้าของสมาชิกรายนี้ใช่หรือไม่?")) return;
-    try {
-      const res = await fetch('/api/admin/store-reject', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId })
-      });
-      const d = await res.json();
-      if (d.success) {
-        showNotif(d.message, 'info');
-        fetchAdminQueues();
-      } else {
-        showNotif(d.message, 'error');
+    triggerConfirm(
+      "ปฏิเสธคำขอเปิดร้านค้า",
+      "คุณต้องการปฏิเสธคำขอเปิดร้านค้าของสมาชิกรายนี้ใช่หรือไม่?",
+      async () => {
+        try {
+          const res = await fetch('/api/admin/store-reject', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId })
+          });
+          const d = await res.json();
+          if (d.success) {
+            showNotif(d.message, 'info');
+            fetchAdminMembers();
+            fetchAdminQueues();
+          } else {
+            showNotif(d.message, 'error');
+          }
+        } catch (err) {
+          showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+        }
       }
-    } catch (err) {
-      showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
-    }
+    );
+  };
+
+  const handleUpdateStoreStatus = async (userId: string, status: string) => {
+    let confirmMsg = "";
+    if (status === 'Active') confirmMsg = "คุณต้องการอนุมัติเปิดร้านค้าให้กับสมาชิกรายนี้ใช่หรือไม่?";
+    else if (status === 'Rejected') confirmMsg = "คุณต้องการปฏิเสธคำขอเปิดร้านค้าของสมาชิกรายนี้ใช่หรือไม่?";
+    else if (status === 'Suspended') confirmMsg = "คุณต้องการระงับการใช้งานร้านค้าของสมาชิกรายนี้ชั่วคราวใช่หรือไม่?";
+    else if (status === 'NotApplied') confirmMsg = "คุณต้องการยกเลิกการสมัครร้านค้าของสมาชิกรายนี้ใช่หรือไม่?";
+
+    if (!confirmMsg) return;
+
+    triggerConfirm(
+      "ยืนยันการเปลี่ยนสถานะร้านค้า",
+      confirmMsg,
+      async () => {
+        try {
+          const res = await fetch('/api/admin/store-update-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, status })
+          });
+          const d = await res.json();
+          if (d.success) {
+            showNotif(d.message, 'success');
+            fetchAdminMembers();
+            fetchAdminQueues();
+          } else {
+            showNotif(d.message, 'error');
+          }
+        } catch (err) {
+          showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+        }
+      }
+    );
   };
 
   const handleProductReject = async (productId: string) => {
-    const reason = prompt('กรุณาระบุสาเหตุที่ปฏิเสธสินค้าชิ้นนี้:');
-    if (reason === null) return;
-    try {
-      const res = await fetch('/api/admin/product-reject', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId, reason: reason || 'ข้อมูลสินค้าไม่ชัดเจนหรือไม่ครบถ้วน' })
-      });
-      const d = await res.json();
-      if (d.success) {
-        showNotif(d.message, 'info');
-        fetchAdminQueues();
-      } else {
-        showNotif(d.message, 'error');
+    triggerPrompt(
+      "ปฏิเสธการอนุมัติสินค้า",
+      "กรุณาระบุสาเหตุที่ปฏิเสธสินค้าชิ้นนี้:",
+      "ระบุสาเหตุ เช่น ข้อมูลไม่ครบถ้วน, ราคาไม่เหมาะสม...",
+      "ข้อมูลสินค้าไม่ชัดเจนหรือไม่ครบถ้วน",
+      async (reason) => {
+        try {
+          const res = await fetch('/api/admin/product-reject', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productId, reason: reason || 'ข้อมูลสินค้าไม่ชัดเจนหรือไม่ครบถ้วน' })
+          });
+          const d = await res.json();
+          if (d.success) {
+            showNotif(d.message, 'info');
+            fetchAdminQueues();
+          } else {
+            showNotif(d.message, 'error');
+          }
+        } catch (err) {
+          showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+        }
       }
-    } catch (err) {
-      showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
-    }
+    );
   };
 
   const handleProductUpdatePrice = async (productId: string, price: number, pv: number, cost: number) => {
@@ -3383,23 +3988,28 @@ export default function App() {
   };
 
   const handleProductDeleteImage = async (productId: string) => {
-    if (!window.confirm("คุณต้องการลบรูปภาพผลิตภัณฑ์ชิ้นนี้ใช่หรือไม่?")) return;
-    try {
-      const res = await fetch('/api/admin/product-delete-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId })
-      });
-      const d = await res.json();
-      if (d.success) {
-        showNotif(d.message, 'success');
-        fetchAdminQueues();
-      } else {
-        showNotif(d.message, 'error');
+    triggerConfirm(
+      "ลบรูปภาพผลิตภัณฑ์",
+      "คุณต้องการลบรูปภาพผลิตภัณฑ์ชิ้นนี้ใช่หรือไม่?",
+      async () => {
+        try {
+          const res = await fetch('/api/admin/product-delete-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productId })
+          });
+          const d = await res.json();
+          if (d.success) {
+            showNotif(d.message, 'success');
+            fetchAdminQueues();
+          } else {
+            showNotif(d.message, 'error');
+          }
+        } catch (err) {
+          showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+        }
       }
-    } catch (err) {
-      showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
-    }
+    );
   };
 
   const handleAddPackageChoice = async (e: React.FormEvent) => {
@@ -3408,14 +4018,50 @@ export default function App() {
       showNotif('กรุณาระบุชื่อชุดสินค้า', 'error');
       return;
     }
+    
+    const packagePriceMap: Record<string, number> = {
+      pack_s: 100,
+      pack_m: 500,
+      pack_l: 1000,
+      pack_xl: 3000,
+      pack_xxl: 5000
+    };
+
+    const packagePrice = packagePriceMap[adminNewChoicePackageId] || 0;
+    const salesVat = packagePrice * 7 / 107;
+    const productCost = parseFloat(adminNewChoiceProductPrice) || 0;
+    const inputVat = adminNewChoiceHasVat ? (productCost * 0.07) : 0;
+    const productCostWithVat = productCost + inputVat;
+    const packagingCost = parseFloat(adminNewChoicePackagingCost) || 0;
+    const shippingFee = parseFloat(adminNewChoiceShippingFee) || 0;
+    const vatPayable = salesVat - inputVat;
+    const pvPayout = packagePrice * 0.5; // หัก 50% ของราคาตั้งขายเพื่อเป็น PV
+    const totalExpense = productCostWithVat + packagingCost + shippingFee + vatPayable + pvPayout;
+    const remaining = packagePrice - totalExpense;
+
     try {
       const res = await fetch('/api/admin/package-choices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: adminEditingChoiceId || undefined,
           packageId: adminNewChoicePackageId,
           name: adminNewChoiceName,
-          cost: adminNewChoiceCost
+          cost: totalExpense, // keep backwards compatibility
+          productPrice: productCost, // productCost
+          shippingFee: shippingFee,
+          packagePrice,
+          salesVat,
+          productCost,
+          hasVat: adminNewChoiceHasVat,
+          inputVat,
+          productCostWithVat,
+          packagingCost,
+          vatPayable,
+          totalExpense,
+          remaining,
+          pvPayout,
+          isActive: adminNewChoiceIsActive
         })
       });
       const d = await res.json();
@@ -3423,19 +4069,47 @@ export default function App() {
         showNotif(d.message, 'success');
         setAdminNewChoiceName('');
         setAdminNewChoiceCost('');
+        setAdminNewChoiceProductPrice('');
+        setAdminNewChoiceShippingFee('');
+        setAdminNewChoiceHasVat(false);
+        setAdminNewChoicePackagingCost('');
+        setAdminNewChoiceIsActive(true);
+        setAdminEditingChoiceId(null);
         // Refresh product choices
         fetchProducts();
       } else {
         showNotif(d.message, 'error');
       }
-    } catch (err) {}
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาด", "error");
+    }
   };
 
   const handleDeletePackageChoice = async (choiceId: string) => {
-    if (!window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบตัวเลือกชุดสินค้านี้?')) return;
+    triggerConfirm(
+      "ลบตัวเลือกชุดสินค้า",
+      "คุณแน่ใจหรือไม่ว่าต้องการลบตัวเลือกชุดสินค้านี้?",
+      async () => {
+        try {
+          const res = await fetch(`/api/admin/package-choices/${choiceId}`, {
+            method: 'DELETE'
+          });
+          const d = await res.json();
+          if (d.success) {
+            showNotif(d.message, 'success');
+            fetchProducts();
+          } else {
+            showNotif(d.message, 'error');
+          }
+        } catch (err) {}
+      }
+    );
+  };
+
+  const togglePackageChoiceStatus = async (choiceId: string) => {
     try {
-      const res = await fetch(`/api/admin/package-choices/${choiceId}`, {
-        method: 'DELETE'
+      const res = await fetch(`/api/admin/package-choices/${choiceId}/toggle`, {
+        method: 'POST'
       });
       const d = await res.json();
       if (d.success) {
@@ -3444,7 +4118,9 @@ export default function App() {
       } else {
         showNotif(d.message, 'error');
       }
-    } catch (err) {}
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาดในการเปลี่ยนสถานะ", "error");
+    }
   };
 
   const handleCompleteOrder = async (orderId: string, customCompany?: string, customTrackingNo?: string, customNote?: string) => {
@@ -3477,6 +4153,241 @@ export default function App() {
         showNotif(d.message, 'error');
       }
     } catch (err) {}
+  };
+
+  // Seller Centre API Hooks
+  const handleSellerLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sellerLoginUsername || !sellerLoginPassword) {
+      showNotif("กรุณากรอกข้อมูลผู้ใช้และรหัสผ่าน", "error");
+      return;
+    }
+    try {
+      const res = await fetch('/api/seller/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: sellerLoginUsername, password: sellerLoginPassword })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSellerSessionUser(data.member);
+        showNotif(`ยินดีต้อนรับเข้าสู่ระบบร้านค้า ${data.member.sellerStoreName || ''} ค่ะ`, "success");
+        // Check if seller status is Active and first login welcome popup hasn't been shown
+        if (data.member.sellerStatus === 'Active' && !data.member.sellerFirstLoginShown) {
+          setSellerWelcomeShown(true);
+        }
+      } else {
+        showNotif(data.message, "error");
+      }
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาดในการเข้าสู่ระบบร้านค้า", "error");
+    }
+  };
+
+  const handleSellerSendOtp = async () => {
+    if (!sellerRegUsername) {
+      showNotif("กรุณากรอกรหัสสมาชิก/Username ก่อนขอรับรหัส OTP ค่ะ", "error");
+      return;
+    }
+    try {
+      const res = await fetch('/api/seller/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: sellerRegUsername })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSellerOtpSent(true);
+        setSellerOtpSimulated(data.otpSimulated);
+        showNotif(data.message, "success");
+      } else {
+        showNotif(data.message, "error");
+      }
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาดในการส่ง OTP", "error");
+    }
+  };
+
+  const handleSellerApplyWithOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sellerRulesAgreed || !sellerPdpaAgreed) {
+      showNotif("กรุณากดยอมรับกฎระเบียบและนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) ทั้งสองข้อเพื่อดำเนินการต่อค่ะ", "error");
+      return;
+    }
+    if (!sellerRegUsername) {
+      showNotif("กรุณากรอกรหัสสมาชิก/Username ค่ะ", "error");
+      return;
+    }
+    if (!sellerStoreName) {
+      showNotif("กรุณากรอกชื่อร้านค้าออนไลน์ค่ะ", "error");
+      return;
+    }
+
+    // Store Name Validation: No special characters
+    const storeNameRegex = /^[a-zA-Z0-9ก-๙\s\-]+$/;
+    if (!storeNameRegex.test(sellerStoreName)) {
+      showNotif("ชื่อร้านค้าต้องประกอบด้วยตัวอักษร ตัวเลข หรือช่องว่างเท่านั้น ห้ามมีอักขระพิเศษค่ะ", "error");
+      return;
+    }
+
+    // Store Name Validation: No duplicates
+    const cleanStoreName = sellerStoreName.trim().toLowerCase();
+    const isDuplicate = adminMembersList.some(
+      (m: any) => m.sellerStoreName && m.sellerStoreName.trim().toLowerCase() === cleanStoreName && m.userId !== sellerRegUsername
+    );
+    if (isDuplicate) {
+      showNotif("ชื่อร้านค้านี้ถูกใช้งานในระบบแล้ว กรุณาใช้ชื่อร้านค้าอื่นนะคะ", "error");
+      return;
+    }
+
+    if (!sellerAddress) {
+      showNotif("กรุณากรอกที่ตั้งคลังสินค้าและจัดส่งค่ะ", "error");
+      return;
+    }
+    if (!warehouseLat || !warehouseLng) {
+      showNotif("กรุณาปักหมุดคลังสินค้าในแผนที่ด้านล่างให้สมบูรณ์ก่อนสมัครค่ะ", "error");
+      return;
+    }
+    if (!sellerRegOtp) {
+      showNotif("กรุณากรอกรหัส OTP ค่ะ", "error");
+      return;
+    }
+    if (!sellerRegPin) {
+      showNotif("กรุณากรอกรหัสธุรกรรม (PIN) ค่ะ", "error");
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/seller/apply-with-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: sellerRegUsername,
+          storeName: sellerStoreName,
+          storeAddress: sellerAddress,
+          warehouseLat,
+          warehouseLng,
+          otp: sellerRegOtp,
+          pin: sellerRegPin
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(data.message, "success");
+        // Apply success, set to pending state view
+        setSellerSessionUser({
+          userId: sellerRegUsername,
+          sellerStatus: 'Pending',
+          sellerStoreName,
+          sellerAddress,
+          warehouseLat,
+          warehouseLng
+        });
+        setIsRegisteringSeller(false);
+        // Clear registration states
+        setSellerRegOtp('');
+        setSellerRegPin('');
+        setSellerOtpSent(false);
+        setSellerOtpSimulated('');
+        fetchProfile(); // reload main profile if needed
+      } else {
+        showNotif(data.message, "error");
+      }
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาดในการยื่นใบสมัครร้านค้า", "error");
+    }
+  };
+
+  const handleSellerMarkFirstLoginShown = async () => {
+    if (!sellerSessionUser?.userId) return;
+    try {
+      await fetch('/api/seller/mark-first-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: sellerSessionUser.userId })
+      });
+      setSellerWelcomeShown(false);
+      // update seller session object
+      setSellerSessionUser((prev: any) => ({ ...prev, sellerFirstLoginShown: true }));
+    } catch (err) {}
+  };
+
+  const fetchSellerRegulationsText = async () => {
+    try {
+      const res = await fetch('/api/seller/regulations');
+      const data = await res.json();
+      if (data.success) {
+        setSellerRegulationsText(data.regulations);
+      }
+    } catch {}
+  };
+
+  const handleAdminUpdateSellerShop = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminSelectedSeller) return;
+
+    // Validate special chars
+    const storeNameRegex = /^[a-zA-Z0-9ก-๙\s\-]+$/;
+    if (!storeNameRegex.test(adminEditStoreName)) {
+      showNotif("ชื่อร้านค้าต้องประกอบด้วยตัวอักษร ตัวเลข หรือช่องว่างเท่านั้น ห้ามมีอักขระพิเศษค่ะ", "error");
+      return;
+    }
+
+    // Validate duplicate store name
+    const cleanStoreName = adminEditStoreName.trim().toLowerCase();
+    const isDuplicate = adminMembersList.some(
+      (m: any) => m.sellerStoreName && m.sellerStoreName.trim().toLowerCase() === cleanStoreName && m.userId !== adminSelectedSeller.userId
+    );
+    if (isDuplicate) {
+      showNotif("ชื่อร้านค้านี้ถูกใช้งานในระบบแล้ว กรุณาใช้ชื่อร้านค้าอื่นนะคะ", "error");
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin/seller-update-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: adminSelectedSeller.userId,
+          storeName: adminEditStoreName,
+          storeAddress: adminEditStoreAddress,
+          warehouseLat: adminEditLat,
+          warehouseLng: adminEditLng
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(data.message, "success");
+        setAdminSelectedSeller(null);
+        fetchAdminQueues(); // reload lists
+      } else {
+        showNotif(data.message, "error");
+      }
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาดในการอัปเดตข้อมูลร้านค้า", "error");
+    }
+  };
+
+  const handleAdminSaveRegulations = async () => {
+    if (!sellerRegulationsText) {
+      showNotif("กรุณากรอกระเบียบข้อบังคับผู้ขายก่อนบันทึกค่ะ", "error");
+      return;
+    }
+    try {
+      const res = await fetch('/api/seller/regulations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ regulations: sellerRegulationsText })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(data.message, "success");
+      } else {
+        showNotif(data.message, "error");
+      }
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาดในการบันทึกระเบียบข้อบังคับ", "error");
+    }
   };
 
   // Seller Dashboard products and applications
@@ -3860,6 +4771,99 @@ export default function App() {
     );
   };
 
+  // MAINTENANCE MODE INTERCEPT
+  const isUserExemptFromMaintenance = currentUser && (
+    profile?.role === 'Manager' || 
+    profile?.role === 'Admin' || 
+    currentUser.role === 'Manager' || 
+    currentUser.role === 'Admin'
+  );
+
+  const isMaintenanceActive = bankSettings?.maintenanceMode === true;
+
+  // Render maintenance screen if active, user is not exempt, and staff login is not toggled
+  if (isMaintenanceActive && !isUserExemptFromMaintenance && !showStaffLogin) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden select-none">
+        {/* Ambient background glows */}
+        <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-rose-500/10 blur-[100px] animate-pulse"></div>
+        <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 rounded-full bg-indigo-500/10 blur-[120px] animate-pulse"></div>
+
+        {/* Global Notification */}
+        {notif && (
+          <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[99999] p-5 rounded-2xl shadow-2xl border-2 text-base max-w-md w-[90%] flex items-center gap-3 backdrop-blur-md transition-all duration-300 animate-slideDown ${
+            notif.type === 'success' 
+              ? 'bg-emerald-600/95 text-white border-emerald-400 shadow-emerald-500/20' 
+              : notif.type === 'error'
+              ? 'bg-rose-600/95 text-white border-rose-400 shadow-rose-500/30 font-bold'
+              : 'bg-slate-800/95 text-white border-slate-600 shadow-slate-950/40'
+          }`}>
+            <AlertCircle size={22} className="shrink-0" />
+            <span className="flex-1 leading-snug">{notif.message}</span>
+          </div>
+        )}
+
+        <div className="w-full max-w-lg bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-3xl p-8 md:p-10 shadow-2xl relative overflow-hidden text-center space-y-6">
+          {/* Animated Settings Gears */}
+          <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+            {/* Outer gear */}
+            <div className="absolute inset-0 border-2 border-dashed border-rose-500/30 rounded-full animate-spin duration-[10000ms]"></div>
+            {/* Glowing ring */}
+            <div className="absolute w-16 h-16 bg-rose-500/10 rounded-full blur-md animate-pulse"></div>
+            {/* Core icon */}
+            <div className="relative z-10 p-4 bg-slate-900/90 border border-slate-700/50 rounded-2xl shadow-lg">
+              <Settings size={36} className="text-rose-500 animate-spin" style={{ animationDuration: '4s' }} />
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight leading-relaxed">
+              ขณะนี้ระบบกำลัง อัปเดต กรุณารอสักครู่
+            </h1>
+            <p className="text-slate-400 text-sm font-medium">
+              ระบบจะกลับมาในไม่ช้า ขออภัยในความไม่สะดวกค่ะ
+            </p>
+          </div>
+
+          {/* Important Action Notice as requested */}
+          <div className="bg-rose-950/40 border border-rose-500/20 rounded-2xl p-5 text-left space-y-2 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-16 h-16 bg-rose-500/5 rounded-full blur-xl"></div>
+            <h3 className="text-xs font-bold text-rose-400 flex items-center gap-1.5 uppercase tracking-wider">
+              ⚠️ คำแนะนำสำคัญสำหรับการเข้าใช้งาน
+            </h3>
+            <p className="text-xs text-rose-200/90 leading-relaxed font-semibold">
+              เมื่อระบบกลับมา แล้วหน้าจอเป็นสีขาว ให้กดล้างแคส ในแอปพิเคชั่นของท่าน เพื่อกลับเข้าสู่ระบบได้ปกติ
+            </p>
+          </div>
+
+          {/* Refresh/Check System Status button */}
+          <div className="pt-2">
+            <button
+              onClick={async () => {
+                showNotif("กำลังตรวจสอบสถานะระบบล่าสุด...", "info");
+                await fetchBankSettings();
+              }}
+              className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 rounded-xl text-xs transition duration-200 shadow-md flex items-center justify-center gap-2 cursor-pointer border border-slate-700 hover:border-slate-600"
+            >
+              <RefreshCw size={14} className="animate-spin" style={{ animationDuration: '3s' }} />
+              ตรวจสอบสถานะระบบและอัปเดตหน้าจอ
+            </button>
+          </div>
+        </div>
+
+        {/* Hidden / Subtle Staff Login portal */}
+        <div className="mt-8 text-center">
+          <button
+            onClick={() => setShowStaffLogin(true)}
+            className="text-[10px] text-slate-500 hover:text-slate-400 font-bold tracking-widest uppercase hover:underline transition cursor-pointer"
+          >
+            🔐 เข้าสู่ระบบสำหรับเจ้าหน้าที่ (Staff Login Portal)
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // NOT LOGGED IN
   if (!currentUser) {
     return (
@@ -3878,6 +4882,16 @@ export default function App() {
         )}
 
         <div className="w-full max-w-md bg-slate-900/40 backdrop-blur-md border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+          {/* Back to Maintenance banner if toggled */}
+          {isMaintenanceActive && showStaffLogin && (
+            <button
+              type="button"
+              onClick={() => setShowStaffLogin(false)}
+              className="w-full mb-6 bg-rose-950/40 hover:bg-rose-900/40 border border-rose-500/30 text-rose-200 font-bold py-2.5 rounded-xl text-[11px] flex items-center justify-center gap-2 cursor-pointer transition shadow-sm"
+            >
+              ⬅️ กลับสู่หน้าจอพักระบบอัปเดต (Back to Maintenance)
+            </button>
+          )}
           {/* Logo Brand heading */}
           <div className="text-center mb-8 relative flex flex-col items-center">
             {/* White bold 'N' with orange plus sign vector logo */}
@@ -4583,7 +5597,7 @@ export default function App() {
                 : 'text-orange-400 bg-orange-500/5 hover:bg-orange-500/15'
             }`}
           >
-            <ShoppingBag size={16} className={activeTab === 'shop' ? 'text-orange-400' : 'text-orange-400'} /> นที พลัส ช็อป
+            <ShoppingBag size={16} className={activeTab === 'shop' ? 'text-orange-400' : 'text-orange-400'} /> นที พลัส มาร์เก็ต
           </button>
 
           <button 
@@ -4628,7 +5642,7 @@ export default function App() {
                 activeTab === 'seller' ? 'bg-indigo-500/20 text-indigo-400 border-l-4 border-indigo-400' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
               }`}
             >
-              <Star size={16} /> Natee Plus Seller Center
+              <Star size={16} /> ระบบ Partner
             </button>
           )}
 
@@ -4848,7 +5862,7 @@ export default function App() {
                     }}
                     className="bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-bold px-6 py-3 rounded-2xl text-sm shadow-md shadow-orange-500/20 active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
                   >
-                    <span>🛍️</span> นที พลัส ช็อป
+                    <span>🛍️</span> นที พลัส มาร์เก็ต
                   </button>
                   <button 
                     onClick={() => setActiveTab('txn')}
@@ -4954,7 +5968,7 @@ export default function App() {
                     <span className="font-extrabold text-yellow-300 bg-white/10 px-2 py-0.5 rounded-md">฿{(profile?.totalCouponsEarned || profile?.balanceECoupon || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
 
-                  <p className="text-[10px] text-emerald-200 mt-3">ใช้เป็นส่วนลดหรือชำระค่าสินค้าหลักบนเว็ปนทีช็อป</p>
+                  <p className="text-[10px] text-emerald-200 mt-3">ใช้เป็นส่วนลดหรือชำระค่าสินค้าหลักบนเว็บนทีมาร์เก็ต</p>
                   <button 
                     onClick={() => { setActiveTab('report'); setReportSubTab('ecoupon'); }}
                     className="mt-4 text-[9px] bg-white text-emerald-700 font-bold px-3 py-1 rounded-lg hover:bg-emerald-50 transition"
@@ -5599,7 +6613,7 @@ export default function App() {
                           <div className="space-y-2">
                             <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3 text-amber-800 text-[11px] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                               <div>
-                                <p className="font-bold">⏳ สัญญาณเตือน: อยู่ระหว่างแอดมิน (Admin Shop) ตรวจสอบอนุมัติพิกัดใหม่</p>
+                                <p className="font-bold">⏳ สัญญาณเตือน: อยู่ระหว่างแอดมิน (Admin Market) ตรวจสอบอนุมัติพิกัดใหม่</p>
                                 <p className="font-mono text-[10px] mt-0.5 text-slate-500">พิกัดใหม่ที่ส่งขอ: {profile?.pendingShippingLat?.toFixed(6)}, {profile?.pendingShippingLng?.toFixed(6)}</p>
                               </div>
                               <button
@@ -5871,41 +6885,71 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-slate-700 text-xs font-bold mb-1">รหัสธุรกรรม PIN เดิม *</label>
-                      <input 
-                        type="password"
-                        required
-                        maxLength={6}
-                        value={oldPinInput}
-                        onChange={(e) => setOldPinInput(e.target.value.replace(/\D/g, ''))}
-                        placeholder="PIN เดิม 6 หลัก"
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-center font-mono tracking-widest focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
-                      />
+                      <div className="relative">
+                        <input 
+                          type={showProfileOldPin ? "text" : "password"}
+                          required
+                          maxLength={6}
+                          value={oldPinInput}
+                          onChange={(e) => setOldPinInput(e.target.value.replace(/\D/g, ''))}
+                          placeholder="PIN เดิม 6 หลัก"
+                          className="w-full bg-white border border-slate-200 rounded-xl pl-3 pr-9 py-2.5 text-xs text-center font-mono tracking-widest focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowProfileOldPin(!showProfileOldPin)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+                          title={showProfileOldPin ? "ซ่อนรหัส PIN" : "แสดงรหัส PIN"}
+                        >
+                          {showProfileOldPin ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
                     </div>
 
                     <div>
                       <label className="block text-slate-700 text-xs font-bold mb-1">รหัสธุรกรรม PIN ใหม่ *</label>
-                      <input 
-                        type="password"
-                        required
-                        maxLength={6}
-                        value={newPinInput}
-                        onChange={(e) => setNewPinInput(e.target.value.replace(/\D/g, ''))}
-                        placeholder="PIN ใหม่ 6 หลัก"
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-center font-mono tracking-widest focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
-                      />
+                      <div className="relative">
+                        <input 
+                          type={showProfileNewPin ? "text" : "password"}
+                          required
+                          maxLength={6}
+                          value={newPinInput}
+                          onChange={(e) => setNewPinInput(e.target.value.replace(/\D/g, ''))}
+                          placeholder="PIN ใหม่ 6 หลัก"
+                          className="w-full bg-white border border-slate-200 rounded-xl pl-3 pr-9 py-2.5 text-xs text-center font-mono tracking-widest focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowProfileNewPin(!showProfileNewPin)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+                          title={showProfileNewPin ? "ซ่อนรหัส PIN" : "แสดงรหัส PIN"}
+                        >
+                          {showProfileNewPin ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
                     </div>
 
                     <div>
                       <label className="block text-slate-700 text-xs font-bold mb-1">ยืนยัน PIN ใหม่ *</label>
-                      <input 
-                        type="password"
-                        required
-                        maxLength={6}
-                        value={confirmNewPinInput}
-                        onChange={(e) => setConfirmNewPinInput(e.target.value.replace(/\D/g, ''))}
-                        placeholder="ยืนยัน PIN ใหม่อีกครั้ง"
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-center font-mono tracking-widest focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
-                      />
+                      <div className="relative">
+                        <input 
+                          type={showProfileConfirmPin ? "text" : "password"}
+                          required
+                          maxLength={6}
+                          value={confirmNewPinInput}
+                          onChange={(e) => setConfirmNewPinInput(e.target.value.replace(/\D/g, ''))}
+                          placeholder="ยืนยัน PIN ใหม่อีกครั้ง"
+                          className="w-full bg-white border border-slate-200 rounded-xl pl-3 pr-9 py-2.5 text-xs text-center font-mono tracking-widest focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowProfileConfirmPin(!showProfileConfirmPin)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+                          title={showProfileConfirmPin ? "ซ่อนรหัส PIN" : "แสดงรหัส PIN"}
+                        >
+                          {showProfileConfirmPin ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -5991,7 +7035,7 @@ export default function App() {
                   <div className="space-y-3">
                     <div className="inline-flex items-center justify-center gap-3 bg-indigo-50 px-6 py-2 rounded-full border border-indigo-100">
                       <img src="/favicon.svg" alt="Natee Plus Logo" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
-                      <span className="text-xs font-extrabold text-indigo-900 tracking-wider">NATEE PLUS SHOP PORTAL</span>
+                      <span className="text-xs font-extrabold text-indigo-900 tracking-wider">NATEE PLUS MARKET PORTAL</span>
                     </div>
                     <h2 className="text-3xl font-black text-indigo-950 tracking-tight">
                       เลือกบริการของ <span className="text-indigo-950 font-bold">นที</span> <span className="text-orange-500 font-bold">พลัส</span>
@@ -6002,7 +7046,7 @@ export default function App() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
-                    {/* BUTTON 1: NATEE PLUS SHOP */}
+                    {/* BUTTON 1: NATEE PLUS MARKET */}
                     <button 
                       onClick={() => {
                         setShopPortalView('store');
@@ -6012,11 +7056,11 @@ export default function App() {
                     >
                       <div className="flex-1 flex flex-col items-center justify-center space-y-4 w-full">
                         <div className="w-20 h-20 bg-indigo-50 rounded-2xl flex items-center justify-center p-3 group-hover:scale-105 transition-transform duration-300">
-                          <img src="/favicon.svg" alt="Natee Plus Shop Logo" className="w-full h-full object-contain filter drop-shadow-sm" referrerPolicy="no-referrer" />
+                          <img src="/favicon.svg" alt="Natee Plus Market Logo" className="w-full h-full object-contain filter drop-shadow-sm" referrerPolicy="no-referrer" />
                         </div>
                         <div className="space-y-1">
                           <h3 className="text-sm font-extrabold text-slate-900 group-hover:text-indigo-600 transition-colors">
-                            นทีพลัส ข็อป
+                            นทีพลัส มาร์เก็ต
                           </h3>
                           <p className="text-[10px] text-slate-400 leading-normal">
                             เข้าสู่หน้าร้านค้าออนไลน์เพื่อเลือกซื้อสินค้าทั่วไปของ นที พลัส คัดสรรสิ่งดีๆ เพื่อชีวิตคุณ
@@ -6054,7 +7098,7 @@ export default function App() {
                       </span>
                     </button>
 
-                    {/* BUTTON 3: NATEE PLUS SELL CENTER */}
+                    {/* BUTTON 3: NATEE PLUS PARTNER */}
                     <button 
                       onClick={() => {
                         setActiveTab('seller');
@@ -6067,7 +7111,7 @@ export default function App() {
                         </div>
                         <div className="space-y-1">
                           <h3 className="text-sm font-extrabold text-slate-900 group-hover:text-emerald-600 transition-colors">
-                            Natee Plus Sell Center
+                            Natee Plus Partner
                           </h3>
                           <p className="text-[10px] text-slate-400 leading-normal">
                             พอร์ทัลร้านค้าร่วมพันธมิตร สำหรับจัดส่งและบริหารร้านค้าคู่ค้ารายย่อยและพาร์ทเนอร์
@@ -6075,7 +7119,7 @@ export default function App() {
                         </div>
                       </div>
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 mt-6 bg-emerald-50 px-4 py-2 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition-all w-full justify-center shadow-sm">
-                        เข้าสู่ระบบหลังบ้านผู้ขาย →
+                        เข้าสู่พอร์ทัลพาร์ทเนอร์ →
                       </span>
                     </button>
                   </div>
@@ -6093,9 +7137,9 @@ export default function App() {
                       </button>
                       <div>
                         <h2 className="text-sm font-bold text-indigo-950">
-                          {shopSubTab === 'packages' ? "📦 แพ็กเกจอัปเกรดตำแหน่ง" : "🏪 เว็บร้านค้า Natee Plus Shop"}
+                          {shopSubTab === 'packages' ? "📦 แพ็กเกจอัปเกรดตำแหน่ง" : "🏪 เว็บร้านค้า Natee Plus Market"}
                         </h2>
-                        <p className="text-[10px] text-slate-400">ระบบ นที พลัส ช็อป</p>
+                        <p className="text-[10px] text-slate-400">ระบบ นที พลัส มาร์เก็ต</p>
                       </div>
                     </div>
 
@@ -6120,7 +7164,7 @@ export default function App() {
                           shopSubTab === 'shop' ? 'bg-white text-amber-700 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        🏪 เว็บร้านค้า Natee Plus Shop
+                        🏪 เว็บร้านค้า Natee Plus Market
                       </button>
                     </div>
                   </div>
@@ -6173,7 +7217,7 @@ export default function App() {
                       </div>
                       <h3 className="text-sm font-bold text-slate-800">🔒 สำหรับสมาชิก นที พลัส เท่านั้น</h3>
                       <p className="text-xs text-slate-500 leading-relaxed">
-                        ระบบร้านค้าช้อปปิ้งจำกัดสิทธิ์การเข้าใช้งานเฉพาะสมาชิกที่สมัครเปิดสิทธิ์อัปเกรดรหัสเรียบร้อยแล้วเท่านั้นค่ะ โปรดทำการซื้อแพ็กเกจ S, M, L, XL หรือ XXL ของท่านก่อนเปิดเข้าช็อปปิ้งสินค้าร้านร่วมค่ะ
+                        ระบบมาร์เก็ตจำกัดสิทธิ์การเข้าใช้งานเฉพาะสมาชิกที่สมัครเปิดสิทธิ์อัปเกรดรหัสเรียบร้อยแล้วเท่านั้นค่ะ โปรดทำการซื้อแพ็กเกจ S, M, L, XL หรือ XXL ของท่านก่อนเปิดเลือกซื้อสินค้ามาร์เก็ตสินค้าร่วมค่ะ
                       </p>
                       <button 
                         onClick={() => setShopSubTab('packages')}
@@ -6188,11 +7232,11 @@ export default function App() {
                       <div className="bg-gradient-to-r from-amber-50 to-orange-50/50 border border-amber-200/60 p-5 rounded-3xl space-y-2 text-xs shadow-sm">
                         <div className="flex items-center gap-2">
                           <span className="p-1.5 bg-amber-500 text-white rounded-xl text-sm font-bold shadow-sm">🏪</span>
-                          <h3 className="text-sm font-extrabold text-amber-950">เว็บร้านค้า "Natee Plus Shop"</h3>
+                          <h3 className="text-sm font-extrabold text-amber-950">เว็บร้านค้า "Natee Plus Market"</h3>
                         </div>
                         <p className="text-slate-600 leading-relaxed font-medium">
                           แหล่งศูนย์รวมสินค้าคุณภาพที่ผ่านการคัดสรรจากระบบร้านร่วมค้า ซึ่งลงทะเบียนและสมัครวางจำหน่ายโดยสมาชิกผ่านระบบเว็บ 
-                          <span className="font-extrabold text-indigo-600"> "Natee Plus Seller Center"</span> (สงวนสิทธิ์เฉพาะสมาชิกที่อัปเกรดตำแหน่งร้านค้าระดับ M ขึ้นไปเท่านั้น ถึงจะมีสิทธิ์สมัครเปิดร้านเพื่อลงขายสินค้าและรับยอดขายได้)
+                          <span className="font-extrabold text-indigo-600"> "Natee Plus Partner"</span> (สามารถสมัครเข้าร่วมเป็น Partner ได้ตั้งแต่ตำแหน่ง Manager ขึ้นไป เพื่อสิทธิ์ในการเปิดร้านค้าลงขายสินค้าและรับยอดขายได้)
                         </p>
                         <div className="flex flex-wrap items-center gap-3 pt-2 text-[11px] text-amber-900/95 font-bold border-t border-amber-200/40 mt-1">
                           <span className="flex items-center gap-1">
@@ -6391,7 +7435,7 @@ export default function App() {
                         onClick={() => { setActiveTab('shop'); setShopPortalView('packages'); setShopSubTab('packages'); }}
                         className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
                       >
-                        🛍️ ไปที่หน้าซื้อแพ็กเกจ (Shop)
+                        🛍️ ไปที่หน้าซื้อแพ็กเกจ (Market)
                       </button>
                     </div>
                   </div>
@@ -7154,6 +8198,18 @@ export default function App() {
                           </label>
                         </div>
                       </div>
+                      
+                      {qrScanMessage && (
+                        <div className={`p-3 rounded-2xl text-[11px] leading-normal font-semibold text-left ${
+                          detectedQrCode 
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                            : isScanningQr 
+                            ? 'bg-indigo-50 text-indigo-700 border border-indigo-100 animate-pulse' 
+                            : 'bg-amber-50 text-amber-700 border border-amber-100'
+                        }`}>
+                          {qrScanMessage}
+                        </div>
+                      )}
                       
                       <button 
                         onClick={handleTopupSubmit}
@@ -8002,7 +9058,7 @@ export default function App() {
                             {profile?.rank || "Member"}
                           </span>
                           <span className="text-xs font-bold text-slate-700">
-                            {profile?.rank === 'XXL' ? 'คุณสมบัติรับออลแชร์สูงสุด (Active)' : 'ต้องการแพ็กเกจระดับสูงเพื่อสิทธิ์เต็มจำนวน'}
+                            {(profile?.eligibleRights || 0) > 0 ? 'คุณสมบัติรับออลแชร์ปันสุข (Active)' : 'กรุณาซื้อแพ็กเกจเปิดสิทธิ์รับออลแชร์'}
                           </span>
                         </div>
                       </div>
@@ -8457,7 +9513,7 @@ export default function App() {
                                         <td className="p-3 text-right font-extrabold text-emerald-600">฿ {net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                         <td className="p-3 text-center">
                                           <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] font-bold ${
-                                            txn.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800 animate-pulse'
+                                            txn.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                                           }`}>
                                             {txn.status === 'Approved' ? '✓ สำเร็จแล้ว' : 'รอแอนมินอนุมัติ'}
                                           </span>
@@ -8569,7 +9625,7 @@ export default function App() {
                             <tbody className="divide-y divide-slate-100 text-[11px] text-slate-700">
                               {completedOrders.length === 0 ? (
                                 <tr>
-                                  <td colSpan={10} className="p-6 text-center italic text-slate-400">ยังไม่มีรายการบิลจัดส่งพัสดุที่สำเร็จสมบูรณ์ในระบบนทีช็อปค่ะ</td>
+                                  <td colSpan={10} className="p-6 text-center italic text-slate-400">ยังไม่มีรายการบิลจัดส่งพัสดุที่สำเร็จสมบูรณ์ในระบบนทีมาร์เก็ตค่ะ</td>
                                 </tr>
                               ) : (
                                 completedOrders.map(order => {
@@ -8616,241 +9672,996 @@ export default function App() {
           {/* SELLER CENTER PORTAL */}
           {activeTab === 'seller' && (
             <div className="space-y-6 animate-fadeIn max-w-5xl">
-              <div>
-                <h2 className="text-2xl font-bold text-indigo-950">Natee Plus Seller Center 🛒</h2>
-                <p className="text-xs text-slate-400 mt-1">แผงควบคุมร้านค้าออนไลน์เพื่อการค้าปลีก-ส่ง และเพิ่มคะแนนผลิตภัณฑ์พรีเมียม</p>
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-bold text-indigo-950">Natee Plus Partner 🤝</h2>
+                  <p className="text-xs text-slate-400 mt-1">แผงควบคุมคลังสินค้าและการค้าปลีก-ส่ง นที พาร์ทเนอร์</p>
+                </div>
               </div>
 
-              {!profile ? (
-                <div className="bg-white border border-slate-100 rounded-3xl p-8 shadow-sm text-center max-w-2xl">
-                  <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center shadow-sm mx-auto mb-4">
-                    <ShieldCheck size={32} />
-                  </div>
-                  <h3 className="text-base font-bold text-slate-800">🔒 กำลังโหลดข้อมูลบัญชีของท่าน...</h3>
-                  <p className="text-xs text-slate-500 leading-relaxed max-w-md mx-auto mt-2">
-                    กรุณารอสักครู่เพื่อให้ระบบเตรียมข้อมูลผู้แนะนำและสถานะร้านค้าของท่านค่ะ
-                  </p>
-                </div>
-              ) : profile?.sellerStatus === 'Pending' ? (
-                <div className="bg-white border border-slate-100 rounded-3xl p-8 shadow-sm text-center max-w-2xl space-y-6">
-                  <div>
-                    <RefreshCw size={44} className="text-indigo-600 mx-auto animate-spin mb-4" />
-                    <h3 className="text-base font-bold text-slate-900">อยู่ระหว่างตรวจสอบร้านค้าและคลังสินค้า</h3>
-                    <p className="text-xs text-slate-400 mt-1.5 max-w-md mx-auto">
-                      เอกสารคำขอเปิดร้านค้า นทีเซลเลอร์เซ็นเตอร์ ได้ถูกส่งไปที่ระบบแอดมินหลังบ้านเรียบร้อยแล้ว แอดมินจะทำการตรวจสอบที่อยู่จัดส่งและแผนที่พิกัดที่ปักหมุดไว้ของร้านเพื่ออนุมัติโดยเร็วค่ะ
-                    </p>
-                  </div>
-                  
-                  {/* Read-only map representation of user's pending application */}
-                  <div className="text-left border-t border-slate-100 pt-4 space-y-3">
-                    <h4 className="text-xs font-bold text-slate-700">📍 ที่ตั้งและพิกัดแผนที่คลังสินค้าที่ท่านยื่นขออนุมัติ:</h4>
-                    <p className="text-[11px] text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100">{profile?.sellerAddress}</p>
-                    <NateeWarehouseMap 
-                      lat={profile?.warehouseLat || 13.7563} 
-                      lng={profile?.warehouseLng || 100.5018} 
-                      readOnly={true}
-                    />
-                  </div>
-                </div>
-              ) : (profile?.sellerStatus === 'NotApplied' || !profile?.sellerStatus) ? (
-                <div className="bg-white border border-slate-100 rounded-3xl p-8 shadow-sm max-w-2xl">
-                  <h3 className="text-base font-bold text-indigo-950 mb-2">สมัครเป็นพาร์ทเนอร์ร้านค้าเปิดขายของกับ นที พลัส</h3>
-                  <p className="text-xs text-slate-500 leading-relaxed mb-6">
-                    ยินดีต้อนรับเข้าสู่ระบบพาร์ทเนอร์ร้านค้านทีพลัส! ร้านค้าที่เปิดจำหน่ายผลิตภัณฑ์ร่วมทุนในระบบนทีช็อป จะได้รับสิทธิ์หักค่าฟีระบบ GP 20% โดยที่คะแนน PV อีก 50% ของ GP จะถูกดึงย้อนกลับมาคำนวณจ่ายปันผลคอมมิชชันแก่สายงาน MLM ของท่านทันที!
-                  </p>
-
-                  <form onSubmit={handleSellerApply} className="space-y-5 text-xs text-slate-700">
-                    <div>
-                      <label className="block text-slate-700 font-bold mb-1.5">ตั้งชื่อร้านค้าออนไลน์ (ชื่อแบรนด์)</label>
-                      <input 
-                        type="text" 
-                        required
-                        value={sellerStoreName}
-                        onChange={(e) => setSellerStoreName(e.target.value)}
-                        placeholder="ชื่อร้าน เช่น นทีเครื่องแกงใต้"
-                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                      />
+              {/* WELCOME FIRST-LOGIN POPUP MODAL */}
+              {sellerWelcomeShown && sellerSessionUser?.sellerStatus === 'Active' && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center space-y-6 shadow-2xl border border-indigo-100 animate-fadeIn">
+                    <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                      <ShieldCheck size={36} />
                     </div>
+                    <div className="space-y-2">
+                      <h3 className="text-lg font-bold text-slate-950">🎉 อนุมัติการเปิดร้านค้าเรียบร้อยแล้ว!</h3>
+                      <p className="text-xs text-slate-500 leading-normal">
+                        ยินดีต้อนรับ สู่ระบบ Partner รหัสร้านค้าของคุณคือ:
+                      </p>
+                      <div className="inline-block bg-indigo-50 border border-indigo-100 px-4 py-2 rounded-2xl">
+                        <span className="font-mono font-extrabold text-indigo-700 text-lg tracking-wider">
+                          {sellerSessionUser.sellerCode}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleSellerMarkFirstLoginShown}
+                      className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition shadow-lg hover:shadow cursor-pointer text-xs"
+                    >
+                      ตกลง (รับทราบและเข้าสู่ระบบร้านค้า)
+                    </button>
+                  </div>
+                </div>
+              )}
 
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-slate-700 font-bold mb-1.5">ที่ตั้งคลังสินค้าและจัดส่ง</label>
-                        <textarea 
-                          rows={3}
-                          required
-                          value={sellerAddress}
-                          onChange={(e) => setSellerAddress(e.target.value)}
-                          placeholder="กรอกข้อมูลที่อยู่สำหรับรับพัสดุคืน"
-                          className="w-full border border-slate-200 rounded-xl p-3 text-xs"
-                        />
+              {!sellerSessionUser ? (
+                // SELLER PORTAL LOGIN & REGISTRATION
+                <div className="max-w-xl mx-auto">
+                  {!isRegisteringSeller ? (
+                    // 1. SELLER CENTRE LOGIN SCREEN
+                    <div className="bg-white border border-slate-100 rounded-3xl p-8 shadow-md space-y-6">
+                      <div className="text-center space-y-2">
+                        <img src="/logo.svg?v=2" className="w-48 h-48 mx-auto object-contain mb-2" alt="Natee Plus Logo" referrerPolicy="no-referrer" />
+                        <h3 className="text-xl font-bold text-slate-900">Natee Plus Partner</h3>
+                        <p className="text-xs text-slate-400">เข้าสู่พอร์ทัลพาร์ทเนอร์ด้วยรหัสสมาชิกนทีพลัสของท่าน</p>
                       </div>
 
-                      {/* Interactive Google Map Pinning */}
-                      <NateeWarehouseMap 
-                        lat={warehouseLat} 
-                        lng={warehouseLng} 
-                        onChange={(lat, lng) => {
-                          setWarehouseLat(lat);
-                          setWarehouseLng(lng);
-                        }}
-                        address={sellerAddress}
-                        onAddressChange={(addr) => setSellerAddress(addr)}
-                      />
-                    </div>
-
-                    <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl space-y-2 leading-relaxed">
-                      <p className="font-bold text-slate-800 text-[11px]">📝 เงื่อนไขและข้อตกลงการเปิดบัญชีร้านร่วม (PDPA Consent):</p>
-                      <p className="text-[10px] text-slate-500">
-                        ข้าพเจ้าอนุญาตให้ นที พลัส จัดเก็บประวัติ รูปภาพสแกนใบหน้าเพื่อความปลอดภัย และข้อมูลที่อยู่ส่งคืนคลังสินค้า เพื่อใช้สำหรับการตรวจสอบสิทธิการจัดจำหน่ายและเชื่อมต่อระบบจัดส่งขนส่งในอนาคตตามกฎหมาย PDPA ทุกประการ
-                      </p>
-                      <label className="flex items-center gap-2 text-[10px] text-slate-700 font-bold mt-2 cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          checked={pdpaAgreed}
-                          onChange={(e) => setPdpaAgreed(e.target.checked)}
-                          className="rounded text-indigo-600 focus:ring-indigo-500"
-                        />
-                        ข้าพเจ้าได้ยอมรับเงื่อนไขและข้อบังคับทั้งหมดเรียบร้อยแล้ว
-                      </label>
-                    </div>
-
-                    <button 
-                      type="submit"
-                      className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg text-xs cursor-pointer"
-                    >
-                      ส่งเอกสารคำสมัครเปิดร้านค้าออนไลน์
-                    </button>
-                  </form>
-                </div>
-              ) : profile?.sellerStatus === 'Active' ? (
-                <div className="space-y-6">
-                  {/* Navigation Tabs inside Seller Center */}
-                  <div className="flex border-b border-slate-200 gap-4 mb-4">
-                    <button
-                      id="seller_tab_products_btn"
-                      onClick={() => setSellerPortalTab('products')}
-                      className={`pb-3 px-6 text-sm font-bold transition-all relative cursor-pointer ${
-                        sellerPortalTab === 'products'
-                          ? 'text-indigo-600 border-b-2 border-indigo-600 font-extrabold'
-                          : 'text-slate-400 hover:text-slate-600'
-                      }`}
-                    >
-                      🛍️ สินค้าและจัดส่งอนุมัติ
-                    </button>
-                    <button
-                      id="seller_tab_orders_btn"
-                      onClick={() => setSellerPortalTab('orders')}
-                      className={`pb-3 px-6 text-sm font-bold transition-all relative flex items-center gap-2 cursor-pointer ${
-                        sellerPortalTab === 'orders'
-                          ? 'text-indigo-600 border-b-2 border-indigo-600 font-extrabold'
-                          : 'text-slate-400 hover:text-slate-600'
-                      }`}
-                    >
-                      📦 ออเดอร์และส่งสินค้าของร้าน
-                      {sellerOrders.filter((o: any) => o.status === 'Processing').length > 0 && (
-                        <span className="bg-rose-500 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full animate-pulse">
-                          {sellerOrders.filter((o: any) => o.status === 'Processing').length}
-                        </span>
-                      )}
-                    </button>
-                  </div>
-
-                  {sellerPortalTab === 'products' ? (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                      
-                      {/* Left Column: Seller Store Stats & Warehouse Map */}
-                      <div className="space-y-6">
-                        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
-                              <Star size={20} />
-                            </div>
-                            <div>
-                              <span className="text-[10px] text-slate-400 block">ร้านค้าออนไลน์ระดับแชมป์</span>
-                              <h4 className="text-sm font-bold text-slate-900">{profile?.sellerStoreName}</h4>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2 text-center">
-                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                              <span className="text-[10px] text-slate-400 block">รหัสร้านผู้ขาย</span>
-                              <strong className="text-xs font-bold text-indigo-600">{profile?.sellerCode}</strong>
-                            </div>
-                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                              <span className="text-[10px] text-slate-400 block">คะแนนดาวร้าน</span>
-                              <strong className="text-xs font-bold text-amber-500">100.00 %</strong>
-                            </div>
-                          </div>
-
-                          <p className="text-[10px] text-slate-400 leading-normal">
-                            *คะแนนร้านร่วมของคุณจะปรับลดลงตามระบบคะแนนรีวิวหากผู้ซื้อกดคะแนนให้ร้านต่ำกว่า 5 ดาว!
-                          </p>
-                        </div>
-
-                        {/* Active Warehouse Map Box */}
-                        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-3">
-                          <h4 className="text-xs font-extrabold text-slate-800 uppercase flex items-center gap-1.5">
-                            🗺️ แผนที่พิกัดคลังสินค้าที่ปักหมุด
-                          </h4>
-                          <p className="text-[10px] text-slate-500 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100/50">
-                            {profile?.sellerAddress}
-                          </p>
-                          <NateeWarehouseMap 
-                            lat={profile?.warehouseLat || 13.7563} 
-                            lng={profile?.warehouseLng || 100.5018} 
-                            readOnly={true}
+                      <form onSubmit={handleSellerLogin} className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-600 uppercase flex items-center gap-1.5">
+                            <Users size={12} className="text-indigo-500" /> Username / รหัสสมาชิก
+                          </label>
+                          <input 
+                            type="text"
+                            required
+                            value={sellerLoginUsername}
+                            onChange={(e) => setSellerLoginUsername(e.target.value)}
+                            placeholder="กรอกชื่อผู้ใช้หรือรหัสสมาชิกเพื่อเข้าสู่ระบบร้านค้า"
+                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-850 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none font-mono font-bold"
                           />
                         </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-600 uppercase">Password / รหัสผ่าน</label>
+                          <div className="relative">
+                            <input 
+                              type={showSellerLoginPassword ? "text" : "password"}
+                              required
+                              value={sellerLoginPassword}
+                              onChange={(e) => setSellerLoginPassword(e.target.value)}
+                              placeholder="กรอกรหัสผ่านเข้าใช้ระบบ"
+                              className="w-full border border-slate-200 rounded-xl pl-4 pr-10 py-2.5 text-xs text-slate-800 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowSellerLoginPassword(!showSellerLoginPassword)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+                              title={showSellerLoginPassword ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
+                            >
+                              {showSellerLoginPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <button
+                          type="submit"
+                          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl shadow-md hover:shadow transition-all cursor-pointer text-xs"
+                        >
+                          เข้าสู่ระบบร้านค้า
+                        </button>
+                      </form>
+
+                      <div className="border-t border-slate-100 pt-4 text-center">
+                        {currentUser?.sellerStatus === 'Active' ? (
+                          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-2xl text-center text-xs space-y-1">
+                            <p className="font-bold">✓ บัญชีของท่านได้รับการอนุมัติเป็นร้านค้าเรียบร้อยแล้วค่ะ</p>
+                            <p className="text-slate-500 font-mono text-[10px]">รหัสร้านค้าของท่านคือ: <span className="font-bold text-emerald-700">{currentUser?.sellerCode || '-'}</span></p>
+                            <p className="text-slate-500 text-[10px]">ท่านไม่สามารถกดสมัครร้านค้าซ้ำได้ค่ะ สามารถกรอกรหัสผ่านเพื่อเข้าใช้งานพอร์ทัลร้านค้าได้ทันที</p>
+                          </div>
+                        ) : currentUser?.sellerStatus === 'Pending' ? (
+                          <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl text-center text-xs space-y-1 animate-pulse">
+                            <p className="font-bold">⏳ คำขอเปิดร้านค้าของท่านอยู่ระหว่างรอแอดมินอนุมัติค่ะ</p>
+                            <p className="text-slate-500 text-[10px]">เมื่อได้รับการอนุมัติแล้ว ท่านจะสามารถเปิดร้านค้าและลงขายสินค้าได้ทันที</p>
+                          </div>
+                        ) : currentUser?.sellerStatus === 'Suspended' ? (
+                          <div className="bg-orange-50 border border-orange-200 text-orange-800 p-4 rounded-2xl text-center text-xs space-y-1">
+                            <p className="font-bold">⚠️ บัญชีร้านค้าของท่านถูกระงับการใช้งานชั่วคราว</p>
+                            <p className="text-slate-500 text-[10px]">กรุณาติดต่อฝ่ายบริการลูกค้าเพื่อดำเนินการตรวจสอบเพิ่มเติมค่ะ</p>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setIsRegisteringSeller(true);
+                              setSellerRegStep('rules');
+                              setSellerRulesAgreed(false);
+                              setSellerPdpaAgreed(false);
+                            }}
+                            className="text-indigo-600 hover:text-indigo-500 hover:underline font-bold text-xs cursor-pointer"
+                          >
+                            เพิ่งเคยเข้าระบบ Partner / สมัครใหม่
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    // 2. SELLER REGISTRATION WIZARD (สมัครใหม่)
+                    <div className="bg-white border border-slate-100 rounded-3xl p-8 shadow-md space-y-6 max-w-2xl mx-auto">
+                      <div className="text-center space-y-2">
+                        <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto">
+                          <FileText size={24} />
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-900">ลงทะเบียนเปิดร้านค้าผู้ขายรายใหม่</h3>
+                        <p className="text-xs text-slate-400">
+                          ขั้นตอนที่ {sellerRegStep === 'rules' ? '1: กฎระเบียบข้อบังคับ' : '2: กรอกข้อมูลและยืนยัน OTP / PIN'}
+                        </p>
                       </div>
 
-                      {/* Right Column: Add Product Board & My Products List */}
-                      <div className="space-y-6 lg:col-span-2">
-                        {/* Add Product Board */}
-                        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
-                          <h4 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-1.5">
-                            <Plus size={16} /> ส่งสินค้าใหม่เข้าพิจารณาจัดขึ้นนทีช็อป (Shop Listing & Financial Logic)
-                          </h4>
+                      {sellerRegStep === 'rules' ? (
+                        // STEP 1: RULES & REGULATIONS
+                        <div className="space-y-6">
+                          <div className="border border-slate-100 rounded-2xl bg-slate-50 p-4 max-h-72 overflow-y-auto text-xs text-slate-600 leading-relaxed whitespace-pre-wrap font-sans">
+                            {sellerRegulationsText || "กำลังโหลดกฎข้อบังคับ..."}
+                          </div>
 
+                          <div className="space-y-3 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50">
+                            <label className="flex items-start gap-2.5 text-xs text-slate-700 font-bold cursor-pointer">
+                              <input 
+                                type="checkbox"
+                                checked={sellerRulesAgreed}
+                                onChange={(e) => setSellerRulesAgreed(e.target.checked)}
+                                className="rounded text-indigo-600 focus:ring-indigo-500 mt-0.5"
+                              />
+                              <span>ข้าพเจ้าได้อ่านระเบียบดีแล้ว</span>
+                            </label>
+
+                            <div className="flex items-start gap-2.5 text-xs text-slate-700 font-bold">
+                              <input 
+                                id="pdpa-checkbox"
+                                type="checkbox"
+                                checked={sellerPdpaAgreed}
+                                onChange={(e) => setSellerPdpaAgreed(e.target.checked)}
+                                className="rounded text-indigo-600 focus:ring-indigo-500 mt-0.5 cursor-pointer"
+                              />
+                              <label htmlFor="pdpa-checkbox" className="cursor-pointer">
+                                ข้าพเจ้ากดยอมรับนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) ตามกฎหมาย 
+                                <button 
+                                  type="button"
+                                  onClick={(e) => { e.preventDefault(); setShowPdpaModal(true); }}
+                                  className="ml-1 text-indigo-600 hover:text-indigo-500 hover:underline font-extrabold inline-block"
+                                >
+                                  [คลิกอ่านนโยบายความปลอดภัยข้อมูลผู้ขาย บริษัท นที พลัส จำกัด]
+                                </button>
+                              </label>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-3 justify-end">
+                            <button
+                              onClick={() => setIsRegisteringSeller(false)}
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-5 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
+                            >
+                              ย้อนกลับ
+                            </button>
+                            <button
+                              disabled={!sellerRulesAgreed || !sellerPdpaAgreed}
+                              onClick={() => setSellerRegStep('form')}
+                              className={`px-5 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer shadow ${
+                                sellerRulesAgreed && sellerPdpaAgreed
+                                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                                  : 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                              }`}
+                            >
+                              ยืนยันกฎข้อบังคับ
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        // STEP 2: FILL REGISTRATION FORM WITH OTP/PIN
+                        <form onSubmit={handleSellerApplyWithOtp} className="space-y-5 text-xs text-slate-700">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <label className="block text-slate-700 font-bold flex items-center gap-1.5">
+                                <Lock size={12} className="text-amber-500" /> Username / รหัสสมาชิก (ล็อกตามบัญชีสมาชิกของท่าน)
+                              </label>
+                              <div className="flex gap-2">
+                                <input 
+                                  type="text"
+                                  disabled
+                                  value={currentUser?.userId || ''}
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold bg-slate-100 text-slate-400 select-none cursor-not-allowed"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleSellerSendOtp}
+                                  className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all animate-pulse"
+                                >
+                                  ขอรับ OTP
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="block text-slate-700 font-bold">ชื่อร้านค้าออนไลน์ (ชื่อแบรนด์)</label>
+                              <input 
+                                type="text"
+                                required
+                                value={sellerStoreName}
+                                onChange={(e) => setSellerStoreName(e.target.value)}
+                                placeholder="เช่น ร้านนทีเครื่องแกงใต้"
+                                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Simulated OTP Helper Banner */}
+                          {sellerOtpSimulated && (
+                            <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-xl font-medium animate-pulse flex items-center justify-between text-[11px]">
+                              <span>🔐 รหัส OTP จำลองสำหรับทดสอบของคุณคือ: <strong>{sellerOtpSimulated}</strong></span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSellerRegOtp(sellerOtpSimulated);
+                                  showNotif("วางรหัส OTP จำลองเรียบร้อย", "info");
+                                }}
+                                className="bg-amber-100 hover:bg-amber-200 text-amber-800 px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer"
+                              >
+                                ใช้รหัสนี้
+                              </button>
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <label className="block text-slate-700 font-bold">รหัส OTP 6 หลัก (จากอีเมลของท่าน)</label>
+                              <input 
+                                type="text"
+                                required
+                                maxLength={6}
+                                value={sellerRegOtp}
+                                onChange={(e) => setSellerRegOtp(e.target.value)}
+                                placeholder="กรอกรหัส OTP"
+                                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold tracking-widest text-center"
+                              />
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="block text-slate-700 font-bold">รหัสธุรกรรม (PIN 6 หลัก)</label>
+                              <div className="relative">
+                                <input 
+                                  type={showSellerRegPin ? "text" : "password"}
+                                  required
+                                  maxLength={6}
+                                  value={sellerRegPin}
+                                  onChange={(e) => setSellerRegPin(e.target.value)}
+                                  placeholder="กรอกรหัส PIN"
+                                  className="w-full border border-slate-200 rounded-xl pl-3 pr-10 py-2 text-xs font-mono font-bold tracking-widest text-center"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowSellerRegPin(!showSellerRegPin)}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+                                  title={showSellerRegPin ? "ซ่อนรหัส PIN" : "แสดงรหัส PIN"}
+                                >
+                                  {showSellerRegPin ? <EyeOff size={15} /> : <Eye size={15} />}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-3">
+                            <div className="space-y-1.5">
+                              <label className="block text-slate-700 font-bold">ที่ตั้งคลังสินค้าและจัดส่ง</label>
+                              <textarea 
+                                rows={2}
+                                required
+                                value={sellerAddress}
+                                onChange={(e) => setSellerAddress(e.target.value)}
+                                placeholder="กรอกข้อมูลที่อยู่รับของและส่งคืนคลังสินค้าจริง"
+                                className="w-full border border-slate-200 rounded-xl p-3 text-xs"
+                              />
+                            </div>
+
+                            {/* Map element */}
+                            <NateeWarehouseMap 
+                              lat={warehouseLat} 
+                              lng={warehouseLng} 
+                              onChange={(lat, lng) => {
+                                setWarehouseLat(lat);
+                                setWarehouseLng(lng);
+                              }}
+                              address={sellerAddress}
+                              onAddressChange={(addr) => setSellerAddress(addr)}
+                            />
+                          </div>
+
+                          <div className="flex gap-3 justify-end border-t border-slate-100 pt-4">
+                            <button
+                              type="button"
+                              onClick={() => setSellerRegStep('rules')}
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-5 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
+                            >
+                              ย้อนกลับ
+                            </button>
+                            <button
+                              type="submit"
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-md hover:shadow"
+                            >
+                              ✓ ยืนยันข้อมูลและสมัครร้านค้า
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : sellerSessionUser.sellerStatus === 'Pending' ? (
+                // PENDING APPROVAL SCREEN WITH SECURITY LOCK LOGO
+                <div className="bg-white border border-slate-100 rounded-3xl p-10 shadow-md text-center max-w-lg mx-auto space-y-6">
+                  <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto shadow-sm relative animate-pulse">
+                    <ShieldCheck size={48} />
+                    <span className="absolute bottom-1 right-1 bg-amber-500 border-2 border-white w-4 h-4 rounded-full"></span>
+                  </div>
+                  
+                  <div className="space-y-2.5">
+                    <h3 className="text-xl font-extrabold text-slate-850">🔒 การขอเปิดร้านค้าอยู่ระหว่างการขออนุมัติ</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed max-w-md mx-auto">
+                      ข้อมูลการขอจดทะเบียนร้านค้า <span className="font-bold text-indigo-600">"{sellerSessionUser.sellerStoreName}"</span> เรียบร้อยแล้วค่ะ การขอเปิดร้านค้าอยู่ระหว่างการขออนุมัติโดยแอดมิน เพื่อความปลอดภัยและเป็นระเบียบตามเงื่อนไขของบริษัท
+                    </p>
+                  </div>
+
+                  <div className="border-t border-slate-100 pt-5 flex flex-col gap-2 max-w-sm mx-auto">
+                    <div className="text-left bg-slate-50 p-3.5 rounded-2xl border border-slate-100 text-[11px] text-slate-600 space-y-1 font-sans">
+                      <p>🏪 <strong>ชื่อร้านค้า:</strong> {sellerSessionUser.sellerStoreName}</p>
+                      <p>📍 <strong>ที่ตั้งคลังสินค้า:</strong> {sellerSessionUser.sellerAddress}</p>
+                      {sellerSessionUser.sellerCode && <p>📦 <strong>รหัสร้านพรีจีไอดี:</strong> {sellerSessionUser.sellerCode}</p>}
+                    </div>
+                    
+                    <button
+                      onClick={() => {
+                        setSellerSessionUser(null);
+                        setSellerLoginUsername('');
+                        setSellerLoginPassword('');
+                        showNotif("ออกจากระบบร้านค้าเรียบร้อยแล้วค่ะ", "info");
+                      }}
+                      className="mt-4 bg-rose-50 hover:bg-rose-100 text-rose-700 px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-all border border-rose-100"
+                    >
+                      ออกจากระบบร้านค้า (Log out)
+                    </button>
+                  </div>
+                </div>
+              ) : sellerSessionUser.sellerStatus === 'Active' ? (
+                // ACTIVE SELLER DASHBOARD VIEW
+                <div className="space-y-6">
+                  {/* PROFILE HEADER BLOCK (โปรไฟล์ร้านค้า ชื่อสกุล รูประฆังแจ้งเตือน) */}
+                  <div className="bg-gradient-to-r from-slate-900 to-slate-850 text-white rounded-3xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-xl border border-slate-750/50 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+                    
+                    <div className="flex items-center gap-4 relative z-10">
+                      {/* Logo 100% untreated frame */}
+                      <div className="w-16 h-16 rounded-full bg-white border-2 border-indigo-500/30 flex items-center justify-center p-1.5 overflow-hidden shadow-inner group">
+                        <img 
+                          src="/logo.svg?v=2" 
+                          alt="Natee Plus Seller Logo" 
+                          className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-110"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                      
+                      <div className="space-y-1">
+                        <div className="flex items-center flex-wrap gap-2">
+                          <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full">
+                            ✓ ผ่านการอนุมัติร้านค้า
+                          </span>
+                          <span className="font-mono text-[10px] text-indigo-300 font-bold bg-indigo-500/10 px-2 py-0.5 rounded-md">
+                            รหัสร้านค้า: {sellerSessionUser.sellerCode}
+                          </span>
+                        </div>
+                        <h3 className="text-lg font-black tracking-tight text-white">{sellerSessionUser.sellerStoreName}</h3>
+                        <p className="text-xs text-slate-300 flex items-center gap-1">
+                          👤 เจ้าของร้าน: <span className="text-slate-100 font-medium">{sellerSessionUser.name} {sellerSessionUser.surname || ''}</span> 
+                          <span className="text-slate-500">|</span> 
+                          ID บัญชี: <span className="font-mono text-slate-100">{sellerSessionUser.userId}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 relative z-10 self-stretch md:self-auto justify-end">
+                      {/* Bell Notification Bell Dropdown */}
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowSellerNotifs(!showSellerNotifs)}
+                          className="w-10 h-10 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl flex items-center justify-center border border-slate-700/60 transition-all cursor-pointer relative"
+                        >
+                          <Bell size={20} className={sellerNotifs.some((n: any) => !n.read) ? "animate-swing" : ""} />
+                          {sellerNotifs.some((n: any) => !n.read) && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white rounded-full text-[9px] font-extrabold flex items-center justify-center border border-slate-900">
+                              {sellerNotifs.filter((n: any) => !n.read).length}
+                            </span>
+                          )}
+                        </button>
+
+                        {showSellerNotifs && (
+                          <div className="absolute right-0 mt-2.5 w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-4 text-xs z-50 animate-fadeIn space-y-3">
+                            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                              <span className="font-bold text-slate-200">การแจ้งเตือนร้านค้า</span>
+                              <button 
+                                type="button"
+                                onClick={() => {
+                                  setSellerNotifs(prev => prev.map((n: any) => ({ ...n, read: true })));
+                                  showNotif("อ่านการแจ้งเตือนทั้งหมดแล้ว", "success");
+                                }}
+                                className="text-[10px] text-indigo-400 hover:underline cursor-pointer font-semibold"
+                              >
+                                อ่านทั้งหมด
+                              </button>
+                            </div>
+                            <div className="space-y-2.5 max-h-60 overflow-y-auto">
+                              {sellerNotifs.map((n: any) => (
+                                <div key={n.id} className={`p-2 rounded-xl transition ${n.read ? 'bg-slate-850/40 text-slate-400' : 'bg-indigo-950/40 border-l-2 border-indigo-500 text-slate-200'}`}>
+                                  <div className="font-bold text-[11px]">{n.title}</div>
+                                  <div className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">{n.desc}</div>
+                                  <div className="text-[9px] text-slate-500 mt-1 font-mono">{n.time}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Log out Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSellerSessionUser(null);
+                          setSellerLoginUsername('');
+                          setSellerLoginPassword('');
+                          showNotif("ออกจากระบบร้านค้าเรียบร้อยแล้วค่ะ", "info");
+                        }}
+                        className="bg-slate-800 hover:bg-rose-950/40 hover:text-rose-400 hover:border-rose-900/50 text-slate-300 border border-slate-700/60 px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow"
+                      >
+                        <LogOut size={14} /> ออกจากระบบ
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ROW 1: REPORT BAR GRID (รอจัดส่ง , ลูกค้ายกเลิก , การคืนเงิน/คืนสินค้า , คะแนนร้าน) */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* To Ship (รอจัดส่ง) */}
+                    {(() => {
+                      const toShipOrders = sellerOrders.filter(o => o.status !== 'Completed' && o.status !== 'Cancelled' && o.status !== 'Returned' && o.status !== 'Refunded');
+                      const count = toShipOrders.length;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSellerPortalSubTab('orders');
+                            setSellerOrderFilter('Processing');
+                            showNotif("แสดงเฉพาะรายการสินค้าที่ค้างรอส่งพัสดุ", "info");
+                          }}
+                          className={`p-4 rounded-2xl border text-left transition-all hover:scale-[1.02] cursor-pointer relative overflow-hidden ${
+                            sellerPortalSubTab === 'orders' && sellerOrderFilter === 'Processing'
+                              ? 'bg-amber-500/10 border-amber-500 text-amber-900'
+                              : 'bg-white border-slate-100 hover:border-amber-200 hover:bg-amber-50/10 text-slate-800 shadow-sm'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <span className="text-slate-500 text-[11px] font-bold">📦 รอจัดส่ง (To Ship)</span>
+                            <span className="p-1.5 rounded-lg bg-amber-50 text-amber-600"><Truck size={16} /></span>
+                          </div>
+                          <div className="mt-2 flex items-baseline gap-1.5">
+                            <span className="text-2xl font-black font-mono text-amber-600">{count}</span>
+                            <span className="text-[10px] text-slate-400">ออเดอร์ค้างส่ง</span>
+                          </div>
+                        </button>
+                      );
+                    })()}
+
+                    {/* Cancelled (ลูกค้ายกเลิก) */}
+                    {(() => {
+                      const cancelledOrders = sellerOrders.filter(o => o.status === 'Cancelled');
+                      const count = cancelledOrders.length;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSellerPortalSubTab('orders');
+                            setSellerOrderFilter('Cancelled');
+                            showNotif("แสดงเฉพาะรายการที่ผู้ซื้อขอยกเลิก", "info");
+                          }}
+                          className={`p-4 rounded-2xl border text-left transition-all hover:scale-[1.02] cursor-pointer relative overflow-hidden ${
+                            sellerPortalSubTab === 'orders' && sellerOrderFilter === 'Cancelled'
+                              ? 'bg-rose-500/10 border-rose-500 text-rose-900'
+                              : 'bg-white border-slate-100 hover:border-rose-200 hover:bg-rose-50/10 text-slate-800 shadow-sm'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <span className="text-slate-500 text-[11px] font-bold">🚫 ลูกค้ายกเลิก (Cancelled)</span>
+                            <span className="p-1.5 rounded-lg bg-rose-50 text-rose-600"><UserX size={16} /></span>
+                          </div>
+                          <div className="mt-2 flex items-baseline gap-1.5">
+                            <span className="text-2xl font-black font-mono text-rose-600">{count}</span>
+                            <span className="text-[10px] text-slate-400">รายการยกเลิก</span>
+                          </div>
+                        </button>
+                      );
+                    })()}
+
+                    {/* Returns (คืนสินค้า/คืนเงิน) */}
+                    {(() => {
+                      const refundOrders = sellerOrders.filter(o => o.status === 'Returned' || o.status === 'Refunded');
+                      const count = refundOrders.length;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSellerPortalSubTab('orders');
+                            setSellerOrderFilter('Refunded');
+                            showNotif("แสดงเฉพาะการขอคืนพัสดุและขอเงินคืน", "info");
+                          }}
+                          className={`p-4 rounded-2xl border text-left transition-all hover:scale-[1.02] cursor-pointer relative overflow-hidden ${
+                            sellerPortalSubTab === 'orders' && sellerOrderFilter === 'Refunded'
+                              ? 'bg-purple-500/10 border-purple-500 text-purple-900'
+                              : 'bg-white border-slate-100 hover:border-purple-200 hover:bg-purple-50/10 text-slate-800 shadow-sm'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <span className="text-slate-500 text-[11px] font-bold">🔄 การคืนเงิน/คืนสินค้า</span>
+                            <span className="p-1.5 rounded-lg bg-purple-50 text-purple-600"><RotateCcw size={16} /></span>
+                          </div>
+                          <div className="mt-2 flex items-baseline gap-1.5">
+                            <span className="text-2xl font-black font-mono text-purple-600">{count}</span>
+                            <span className="text-[10px] text-slate-400">การคืนสินค้า</span>
+                          </div>
+                        </button>
+                      );
+                    })()}
+
+                    {/* Store Rating (คะแนนร้านค้า) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSellerPortalSubTab('rating');
+                        showNotif("แสดงรายละเอียดคะแนนและรีวิวล่าสุด", "success");
+                      }}
+                      className={`p-4 rounded-2xl border text-left transition-all hover:scale-[1.02] cursor-pointer relative overflow-hidden ${
+                        sellerPortalSubTab === 'rating'
+                          ? 'bg-teal-500/10 border-teal-500 text-teal-900'
+                          : 'bg-white border-slate-100 hover:border-teal-200 hover:bg-teal-50/10 text-slate-800 shadow-sm'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <span className="text-slate-500 text-[11px] font-bold">⭐️ คะแนนร้าน (Rating)</span>
+                        <span className="p-1.5 rounded-lg bg-teal-50 text-teal-600"><Star size={16} /></span>
+                      </div>
+                      <div className="mt-2 flex items-baseline gap-1.5">
+                        <span className="text-2xl font-black font-mono text-teal-600">5.0 ★</span>
+                        <span className="text-[10px] text-slate-400">(คะแนนดีเยี่ยม 100%)</span>
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* ROW 2 & ROW 3 COMBINED IN A MODERN TWO-ROW NAV GRID */}
+                  <div className="bg-slate-900 text-white p-5 rounded-3xl border border-slate-800 shadow-xl space-y-4">
+                    {/* Title */}
+                    <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                      <span className="text-[11px] font-extrabold text-indigo-400 uppercase tracking-widest flex items-center gap-1">
+                        🎮 เมนูจัดการร้านค้า Natee Partner
+                      </span>
+                      <span className="text-[9px] text-slate-500 font-mono">Control Panel v2.0</span>
+                    </div>
+
+                    {/* ROW 2: สินค้าของฉัน , การสั่งซื้อ , การเงิน/บัญชี , สถิตร้านค้า */}
+                    <div className="space-y-3">
+                      <div className="text-[10px] text-slate-400 font-bold tracking-wider uppercase">แถวที่ 2: ระบบบริหารจัดการหลัก</div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {/* สินค้าของฉัน */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSellerPortalSubTab('products');
+                            showNotif("เปิดระบบจัดการสินค้า", "info");
+                          }}
+                          className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
+                            sellerPortalSubTab === 'products'
+                              ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-600/20'
+                              : 'bg-slate-850 border-slate-800 hover:bg-slate-800 hover:border-slate-700 text-slate-300'
+                          }`}
+                        >
+                          <ShoppingBag size={20} className={sellerPortalSubTab === 'products' ? 'text-white' : 'text-indigo-400'} />
+                          <div className="space-y-0.5">
+                            <div className="font-bold text-xs">สินค้าของฉัน</div>
+                            <div className="text-[9px] text-slate-400 leading-none">ลงสินค้าและขอยื่นอนุมัติ</div>
+                          </div>
+                        </button>
+
+                        {/* การสั่งซื้อ */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSellerPortalSubTab('orders');
+                            setSellerOrderFilter('All');
+                            showNotif("เปิดระบบคำสั่งซื้อทั้งหมด", "info");
+                          }}
+                          className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
+                            sellerPortalSubTab === 'orders' && sellerOrderFilter === 'All'
+                              ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-600/20'
+                              : 'bg-slate-850 border-slate-800 hover:bg-slate-800 hover:border-slate-700 text-slate-300'
+                          }`}
+                        >
+                          <ShoppingCart size={20} className={sellerPortalSubTab === 'orders' && sellerOrderFilter === 'All' ? 'text-white' : 'text-indigo-400'} />
+                          <div className="space-y-0.5">
+                            <div className="font-bold text-xs">การสั่งซื้อ</div>
+                            <div className="text-[9px] text-slate-400 leading-none">พิมพ์ที่อยู่ & ส่งพัสดุ</div>
+                          </div>
+                        </button>
+
+                        {/* การเงิน/บัญชี */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSellerPortalSubTab('finance');
+                            showNotif("เปิดระบบการเงินและบัญชีรายได้", "info");
+                          }}
+                          className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
+                            sellerPortalSubTab === 'finance'
+                              ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-600/20'
+                              : 'bg-slate-850 border-slate-800 hover:bg-slate-800 hover:border-slate-700 text-slate-300'
+                          }`}
+                        >
+                          <Wallet size={20} className={sellerPortalSubTab === 'finance' ? 'text-white' : 'text-indigo-400'} />
+                          <div className="space-y-0.5">
+                            <div className="font-bold text-xs">การเงิน/บัญชี</div>
+                            <div className="text-[9px] text-slate-400 leading-none">บัญชีรายรับและค่าจัดส่ง</div>
+                          </div>
+                        </button>
+
+                        {/* สถิตร้านค้า */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSellerPortalSubTab('stats');
+                            showNotif("เปิดระบบสถิติร้านค้า", "info");
+                          }}
+                          className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
+                            sellerPortalSubTab === 'stats'
+                              ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-600/20'
+                              : 'bg-slate-850 border-slate-800 hover:bg-slate-800 hover:border-slate-700 text-slate-300'
+                          }`}
+                        >
+                          <BarChart2 size={20} className={sellerPortalSubTab === 'stats' ? 'text-white' : 'text-indigo-400'} />
+                          <div className="space-y-0.5">
+                            <div className="font-bold text-xs">สถิตร้านค้า</div>
+                            <div className="text-[9px] text-slate-400 leading-none">การเติบโตและสถิติการสั่งซื้อ</div>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* ROW 3: หน้าหลัก , แชท , ศูนย์การเรียนรู้ , ข้อมูลร้าน */}
+                    <div className="space-y-3 pt-2">
+                      <div className="text-[10px] text-slate-400 font-bold tracking-wider uppercase">แถวที่ 3: ระบบข้อมูลและการสื่อสาร</div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {/* หน้าหลัก */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSellerPortalSubTab('home');
+                            showNotif("กลับสู่หน้าหลักแดชบอร์ด", "info");
+                          }}
+                          className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
+                            sellerPortalSubTab === 'home'
+                              ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-600/20'
+                              : 'bg-slate-850 border-slate-800 hover:bg-slate-800 hover:border-slate-700 text-slate-300'
+                          }`}
+                        >
+                          <Home size={20} className={sellerPortalSubTab === 'home' ? 'text-white' : 'text-indigo-400'} />
+                          <div className="space-y-0.5">
+                            <div className="font-bold text-xs">หน้าหลัก</div>
+                            <div className="text-[9px] text-slate-400 leading-none">หน้าแดชบอร์ดแผงควบคุม</div>
+                          </div>
+                        </button>
+
+                        {/* แชท */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSellerPortalSubTab('chat');
+                            showNotif("เปิดระบบห้องสนทนากับลูกค้า", "info");
+                          }}
+                          className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
+                            sellerPortalSubTab === 'chat'
+                              ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-600/20'
+                              : 'bg-slate-850 border-slate-800 hover:bg-slate-800 hover:border-slate-700 text-slate-300'
+                          }`}
+                        >
+                          <MessageSquare size={20} className={sellerPortalSubTab === 'chat' ? 'text-white' : 'text-indigo-400'} />
+                          <div className="space-y-0.5">
+                            <div className="font-bold text-xs">แชท</div>
+                            <div className="text-[9px] text-slate-400 leading-none">คุยและประสานงานผู้ซื้อ</div>
+                          </div>
+                        </button>
+
+                        {/* ศูนย์การเรียนรู้ */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSellerPortalSubTab('learning');
+                            showNotif("เปิดคู่มืออบรมและกฎระเบียบ", "info");
+                          }}
+                          className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
+                            sellerPortalSubTab === 'learning'
+                              ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-600/20'
+                              : 'bg-slate-850 border-slate-800 hover:bg-slate-800 hover:border-slate-700 text-slate-300'
+                          }`}
+                        >
+                          <BookOpen size={20} className={sellerPortalSubTab === 'learning' ? 'text-white' : 'text-indigo-400'} />
+                          <div className="space-y-0.5">
+                            <div className="font-bold text-xs">ศูนย์การเรียนรู้</div>
+                            <div className="text-[9px] text-slate-400 leading-none">บทเรียนและเทคนิคเพิ่มยอดขาย</div>
+                          </div>
+                        </button>
+
+                        {/* ข้อมูลร้าน */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSellerPortalSubTab('info');
+                            showNotif("เปิดระบบข้อมูลที่ตั้งคลังสินค้า", "info");
+                          }}
+                          className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
+                            sellerPortalSubTab === 'info'
+                              ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-600/20'
+                              : 'bg-slate-850 border-slate-800 hover:bg-slate-800 hover:border-slate-700 text-slate-300'
+                          }`}
+                        >
+                          <Store size={20} className={sellerPortalSubTab === 'info' ? 'text-white' : 'text-indigo-400'} />
+                          <div className="space-y-0.5">
+                            <div className="font-bold text-xs">ข้อมูลร้าน</div>
+                            <div className="text-[9px] text-slate-400 leading-none">ที่ตั้งคลังสินค้าและแผนที่ GPS</div>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SUB-TAB CONTENTS */}
+                  <div className="animate-fadeIn">
+                    {sellerPortalSubTab === 'home' && (
+                      <div className="space-y-6">
+                        {/* Quick Stats Overviews */}
+                        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <div className="space-y-2">
+                            <span className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider">📈 ยอดขายร้านค้าในสัปดาห์นี้</span>
+                            <div className="text-xl font-black text-slate-900">
+                              ฿{(sellerOrders.filter((o: any) => o.status === 'Completed').reduce((acc: number, o: any) => acc + o.totalPrice, 0)).toLocaleString()}
+                            </div>
+                            <div className="text-[10px] text-emerald-600 font-bold">✓ อัปเดตเข้ารายได้ร้านค้าทันที (80% สิทธิผู้ขาย)</div>
+                          </div>
+                          <div className="space-y-2 border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6">
+                            <span className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider">📦 ผลิตภัณฑ์ลงขายสำเร็จ</span>
+                            <div className="text-xl font-black text-slate-900">
+                              {sellerProducts.filter((p: any) => p.status === 'Approved').length} / {sellerProducts.length} <span className="text-xs text-slate-400 font-normal">สินค้าผ่านอนุมัติ</span>
+                            </div>
+                            <div className="text-[10px] text-slate-500">รออนุมัติ {sellerProducts.filter((p: any) => p.status === 'Approved' ? false : p.status !== 'Rejected').length} รายการ</div>
+                          </div>
+                          <div className="space-y-2 border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6">
+                            <span className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider">🎖️ คะแนนเรตติ้งคลังจัดส่ง</span>
+                            <div className="text-xl font-black text-slate-900 flex items-center gap-1">
+                              5.00 <span className="text-amber-400 text-sm">★★★★★</span>
+                            </div>
+                            <div className="text-[10px] text-teal-600 font-bold">ความรวดเร็วในการจัดส่งเฉลี่ย: ยอดเยี่ยม</div>
+                          </div>
+                        </div>
+
+                        {/* Guidelines Advice Box (กรอบคำแนะนำร้านค้า) */}
+                        <div className="bg-gradient-to-br from-indigo-50/50 to-indigo-50/20 border border-indigo-100 rounded-3xl p-6 shadow-sm space-y-4">
+                          <h4 className="font-extrabold text-indigo-950 text-sm flex items-center gap-2">
+                            📌 กรอบคำแนะนำการจัดการร้านค้าและนโยบายผู้ขาย (Seller Guidelines)
+                          </h4>
+                          <div className="text-xs text-slate-700 leading-relaxed space-y-3.5 font-sans">
+                            <div className="flex gap-2.5 items-start">
+                              <span className="text-indigo-600 font-bold shrink-0 mt-0.5">1.</span>
+                              <p>
+                                <strong>รักษามาตรฐานเวลาการจัดส่งพัสดุ:</strong> กรุณาแพ็คและจัดส่งพัสดุผ่านทางระบบขนส่งพันธมิตร (เช่น Flash, Kerry) ภายในระยะเวลาไม่เกิน 24-48 ชั่วโมงหลังจากได้รับสถานะ "รอส่งสินค้า" เพื่อคะแนนร้านค้าและโอกาสเติบโตของแบรนด์ท่านในหน้าสินค้าแนะนำ
+                              </p>
+                            </div>
+                            <div className="flex gap-2.5 items-start border-t border-indigo-100/50 pt-3">
+                              <span className="text-indigo-600 font-bold shrink-0 mt-0.5">2.</span>
+                              <p>
+                                <strong>ความถูกต้องของค่าจัดส่ง Shippop:</strong> ระบบได้เชื่อมโยง API ของ Shippop อัตโนมัติ เพื่อคำนวณราคาจัดส่งตามขนาดความกว้าง ยาว สูง และน้ำหนักรวมจริงของกล่องพัสดุ หากข้อมูลมิติกล่องไม่ตรงกับความเป็นจริง อาจมีค่าปรับส่วนต่างย้อนหลังได้ กรุณาตรวจสอบให้รอบคอบทุกครั้งที่ลงสินค้าใหม่
+                              </p>
+                            </div>
+                            <div className="flex gap-2.5 items-start border-t border-indigo-100/50 pt-3">
+                              <span className="text-indigo-600 font-bold shrink-0 mt-0.5">3.</span>
+                              <p>
+                                <strong>ระบบปันผล PV และ GP สำหรับร้านค้าผู้ร่วมทุน:</strong> ยอดส่วนแบ่งค่าแนะนำและจัดซื้อพอร์ทัล GP (20%) และสิทธิในการสะสมคะแนน PV จะถูกโอนคำนวณผ่านระบบสมาชิก Natee Plus ทันทีที่ผู้สั่งซื้อคลิกยืนยันการรับพัสดุสำเร็จ ทำให้ระบบคะแนนของทุกสายงานปลอดภัยและตรวจสอบได้ 100%
+                              </p>
+                            </div>
+                            <div className="flex gap-2.5 items-start border-t border-indigo-100/50 pt-3">
+                              <span className="text-indigo-600 font-bold shrink-0 mt-0.5">4.</span>
+                              <p>
+                                <strong>กฎความโปร่งใสทางกฎหมาย (PDPA & VAT):</strong> เอกสารการเงินและการขอเงินคืนภาษีมูลค่าเพิ่ม สามารถพิมพ์หรือดาวน์โหลดเพื่อยื่นทางสรรพากรได้โดยตรงในเมนู "การเงิน/บัญชี" เพื่อสิทธิประโยชน์สูงสุดของร้านค้าจดทะเบียนจัดตั้งบริษัท
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {sellerPortalSubTab === 'rating' && (
+                      <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
+                        <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                          <h4 className="text-sm font-bold text-slate-800">⭐️ คะแนนและรีวิวจากลูกค้า (Shop Ratings)</h4>
+                          <span className="text-xs text-slate-400">อัปเดตเรียลไทม์</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-1">
+                            <div className="text-2xl font-black text-slate-900">5.0 ★ / 5.0</div>
+                            <div className="text-xs text-slate-500">คะแนนเฉลี่ยร้านค้า</div>
+                          </div>
+                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-1">
+                            <div className="text-2xl font-black text-slate-900">100%</div>
+                            <div className="text-xs text-slate-500">ความพึงพอใจของลูกค้า</div>
+                          </div>
+                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-1">
+                            <div className="text-2xl font-black text-slate-900">100%</div>
+                            <div className="text-xs text-slate-500">อัตราการตอบแชทกลับ</div>
+                          </div>
+                        </div>
+
+                        {/* Recent Reviews List */}
+                        <div className="space-y-4">
+                          <h5 className="font-bold text-slate-700 text-xs">💬 รีวิวล่าสุดจากลูกค้าผู้ซื้อจริง</h5>
+                          <div className="divide-y divide-slate-150">
+                            <div className="py-3.5 space-y-1">
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-bold text-slate-800">คุณอรทัย สิทธิวรวงษ์ (สมาชิก Natee-1025)</span>
+                                <span className="text-amber-500 font-bold">★★★★★ 5.0</span>
+                              </div>
+                              <p className="text-xs text-slate-600">"ส่งสินค้ารวดเร็วมากค่ะ แพ็คกล่องมาอย่างดีมีกันกระแทกครบถ้วน สรรพคุณสมคำร่ำลือ จะอุดหนุนซ้ำอีกแน่นอนค่ะ"</p>
+                              <p className="text-[10px] text-slate-400 font-mono">2 ชั่วโมงที่ผ่านมา | ผลิตภัณฑ์บำรุงผิวชาเขียวนทีพลัส</p>
+                            </div>
+                            <div className="py-3.5 space-y-1">
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-bold text-slate-800">คุณวิทยา พลสุวรรณ (สมาชิก Natee-2501)</span>
+                                <span className="text-amber-500 font-bold">★★★★★ 5.0</span>
+                              </div>
+                              <p className="text-xs text-slate-600">"จัดส่งรวดเร็ว บริการขนส่งดีมาก แชทคุยถามข้อมูลร้านค้าตอบกลับทันที ชื่นชมความรับผิดชอบและเป็นมืออาชีพครับ"</p>
+                              <p className="text-[10px] text-slate-400 font-mono">1 วันที่ผ่านมา | อาหารเสริมพลัสออร์แกนิค</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {sellerPortalSubTab === 'products' && (
+                      <div className="space-y-6">
+                        {/* Add New Product Form */}
+                        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
+                          <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                            ➕ ขอยื่นอนุมัติเพิ่มรายการสินค้าแบรนด์คุณ (Submit New Product to Natee Market)
+                          </h4>
                           <form onSubmit={handleSellerProdSubmit} className="space-y-4 text-xs">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                               <div>
-                                <label className="block text-slate-700 font-semibold mb-1">ชื่อผลิตภัณฑ์ใหม่</label>
+                                <label className="block text-slate-700 font-semibold mb-1">ชื่อเรียกผลิตภัณฑ์ (ภาษาไทย)</label>
                                 <input 
                                   type="text" 
                                   required
                                   value={newProd.name}
                                   onChange={(e) => setNewProd(prev => ({ ...prev, name: e.target.value }))}
-                                  placeholder="เช่น ยาสีฟันนทีปันสุขสูตรชาเขียว"
+                                  placeholder="เช่น เซรั่มบำรุงผิวหน้าพลัสออร์แกนิค"
                                   className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
                                 />
                               </div>
                               <div>
-                                <label className="block text-slate-700 font-semibold mb-1">ราคาตั้งขาย (บาท)</label>
+                                <label className="block text-slate-700 font-semibold mb-1">ราคาตั้งจำหน่ายหน้าร้าน (฿)</label>
                                 <input 
                                   type="number" 
                                   required
                                   value={newProd.price}
-                                  onChange={(e) => setNewProd(prev => ({ ...prev, price: e.target.value }))}
-                                  placeholder="ราคาขายสินค้า"
+                                  onChange={(e) => {
+                                    setNewProd(prev => ({ ...prev, price: e.target.value }));
+                                    // Keep target payout synced if manually edited
+                                    const p = parseFloat(e.target.value) || 0;
+                                    if (p > 0) {
+                                      setNewProdTargetPayout((p * 0.80).toString());
+                                    } else {
+                                      setNewProdTargetPayout('');
+                                    }
+                                  }}
+                                  placeholder="เช่น 390"
                                   className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-indigo-600"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-slate-700 font-semibold mb-1">ปริมาณสต็อกพร้อมจำหน่าย (ชิ้น)</label>
+                                <input 
+                                  type="number" 
+                                  required
+                                  value={newProd.stock}
+                                  onChange={(e) => setNewProd(prev => ({ ...prev, stock: e.target.value }))}
+                                  placeholder="เช่น 150"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
                                 />
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {/* Auto-Calculate helper container */}
+                            <div className="bg-amber-50/70 border border-amber-100 rounded-2xl p-3 space-y-2 font-sans">
+                              <div className="flex justify-between items-center">
+                                <span className="font-bold text-amber-900 text-[11px] flex items-center gap-1">
+                                  💡 ระบบคำนวณราคาขายอัตโนมัติ (รวม GP 20% และ VAT 7%)
+                                </span>
+                                <span className="text-[10px] text-amber-700 font-semibold bg-amber-100/50 px-2 py-0.5 rounded-full">
+                                  เพื่อป้องกันพาร์ทเนอร์ขาดทุนสุทธิ
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                                <div>
+                                  <label className="block text-slate-600 text-[10px] font-bold mb-1">ระบุ รายรับที่พาร์ทเนอร์ต้องการได้รับจริง (ก่อนหักภาษี ณ ที่จ่าย 3%):</label>
+                                  <div className="relative">
+                                    <input 
+                                      type="number"
+                                      placeholder="เช่น ใส่ 800 หากต้องการรับ 800 บาท"
+                                      value={newProdTargetPayout}
+                                      onChange={(e) => {
+                                        const inputVal = e.target.value;
+                                        setNewProdTargetPayout(inputVal);
+                                        const targetVal = parseFloat(inputVal) || 0;
+                                        if (targetVal > 0) {
+                                          // Formula: Price = Target / 0.80
+                                          const calculatedPrice = Math.ceil(targetVal / 0.80);
+                                          setNewProd(prev => ({ ...prev, price: calculatedPrice.toString() }));
+                                        } else {
+                                          setNewProd(prev => ({ ...prev, price: '' }));
+                                        }
+                                      }}
+                                      className="w-full bg-white border border-amber-200 rounded-xl pl-3 pr-10 py-2 text-xs text-amber-950 placeholder-amber-400 font-extrabold focus:ring-2 focus:ring-amber-300 outline-none"
+                                    />
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-600 font-bold text-[10px]">บาท</span>
+                                  </div>
+                                </div>
+                                <div className="bg-amber-100/30 p-2.5 rounded-xl border border-amber-200/50 text-[11px] text-amber-900 space-y-1">
+                                  <p className="font-bold text-amber-950 flex justify-between">
+                                    <span>ราคาจำหน่ายหน้าเว็บที่จะตั้งให้:</span>
+                                    <span className="text-sm font-extrabold text-amber-700 font-mono">฿ {newProd.price || 0}</span>
+                                  </p>
+                                  <p className="text-[10px] text-amber-700/80 leading-relaxed">
+                                    คำนวณจากสูตร: ยอดรับ {newProdTargetPayout || 0} ÷ 0.80 = ราคาขายจริง <strong>{newProd.price || 0} บาท</strong> (หัก GP 20% แล้วจะได้ยอดรับตามต้องการพอดี โดยราคาหน้าเว็บนี้รวมภาษีมูลค่าเพิ่ม VAT 7% เรียบร้อยแล้ว)
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-slate-700 font-semibold mb-1">หมวดหมู่ผลิตภัณฑ์</label>
+                                <label className="block text-slate-700 font-semibold mb-1">หมวดหมู่หลักผลิตภัณฑ์ (Category)</label>
                                 <select 
                                   value={newProd.category}
                                   onChange={(e) => setNewProd(prev => ({ ...prev, category: e.target.value, subcategory: '' }))}
-                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white text-slate-800"
                                 >
-                                  <option value="Fashion">👗 แฟชั่น (Fashion)</option>
-                                  <option value="Electronics">🔌 อุปกรณ์อิเล็กทรอนิกส์ (Electronics)</option>
-                                  <option value="Beauty">💄 ความงามและของใช้ส่วนตัว (Beauty & Personal Care)</option>
-                                  <option value="Health">💊 สุขภาพ (Health)</option>
-                                  <option value="Baby">🍼 แม่และเด็ก (Baby & Kids)</option>
-                                  <option value="Home">🏠 บ้านและที่อยู่อาศัย (Home & Living)</option>
+                                  <option value="Fashion">👗 เสื้อผ้า แฟชั่น และเครื่องแต่งกาย (Fashion)</option>
+                                  <option value="Electronics">🔌 อุปกรณ์ไอที และอิเล็กทรอนิกส์ (Electronics)</option>
+                                  <option value="Beauty">🧴 เครื่องสำอาง ความงาม และผิวพรรณ (Beauty)</option>
+                                  <option value="Health">💊 อาหารเสริม และผลิตภัณฑ์เพื่อสุขภาพ (Health)</option>
+                                  <option value="Baby">👶 แม่และเด็ก ของเล่นเด็ก (Baby & Kids)</option>
+                                  <option value="Home">🏠 ของตกแต่งบ้าน และเครื่องครัว (Home & Living)</option>
                                   <option value="Food">🍎 อาหารและเครื่องดื่ม (Food & Beverage)</option>
                                   <option value="Pets">🐶 สัตว์เลี้ยง (Pets)</option>
                                   <option value="Lifestyle">🎨 ไลฟ์สไตล์และงานอดิเรก (Lifestyle & Hobbies)</option>
@@ -8913,57 +10724,7 @@ export default function App() {
                                     {chip}
                                   </button>
                                 ))}
-                                {newProd.category === 'Baby' && ['เสื้อผ้าเด็ก', 'นมผง', 'ผ้าอ้อม', 'ของเล่น', 'รถเข็นเด็ก'].map(chip => (
-                                  <button
-                                    key={chip}
-                                    type="button"
-                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
-                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                                  >
-                                    {chip}
-                                  </button>
-                                ))}
                                 {newProd.category === 'Home' && ['อุปกรณ์ตกแต่งบ้าน', 'เครื่องครัว', 'เครื่องนอน', 'อุปกรณ์จัดเก็บ', 'ไฟแต่งบ้าน'].map(chip => (
-                                  <button
-                                    key={chip}
-                                    type="button"
-                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
-                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                                  >
-                                    {chip}
-                                  </button>
-                                ))}
-                                {newProd.category === 'Food' && ['ของว่าง', 'อาหารแห้ง', 'เครื่องดื่ม', 'วัตถุดิบทำอาหาร'].map(chip => (
-                                  <button
-                                    key={chip}
-                                    type="button"
-                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
-                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                                  >
-                                    {chip}
-                                  </button>
-                                ))}
-                                {newProd.category === 'Pets' && ['อาหารสัตว์', 'ขนม', 'แชมพู', 'อุปกรณ์ดูแลสัตว์เลี้ยง'].map(chip => (
-                                  <button
-                                    key={chip}
-                                    type="button"
-                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
-                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                                  >
-                                    {chip}
-                                  </button>
-                                ))}
-                                {newProd.category === 'Lifestyle' && ['อุปกรณ์เครื่องเขียน', 'หนังสือ', 'งานฝีมือ', 'ยานยนต์', 'อุปกรณ์กีฬา'].map(chip => (
-                                  <button
-                                    key={chip}
-                                    type="button"
-                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
-                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                                  >
-                                    {chip}
-                                  </button>
-                                ))}
-                                {newProd.category === 'General' && ['สินค้าทั่วไป', 'เครื่องเขียน', 'อุปกรณ์อเนกประสงค์', 'เบ็ดเตล็ด'].map(chip => (
                                   <button
                                     key={chip}
                                     type="button"
@@ -9068,18 +10829,10 @@ export default function App() {
                                         <span>หัก VAT 7%:</span>
                                         <span className="font-mono">- ฿ {calc.vat.toFixed(2)}</span>
                                       </div>
-                                      {currentUser?.role === 'admin' && (
-                                        <>
-                                          <div className="flex justify-between text-rose-400">
-                                            <span>หักพอร์ทัล GP 20%:</span>
-                                            <span className="font-mono">- ฿ {calc.gpAmount.toFixed(2)}</span>
-                                          </div>
-                                          <div className="flex justify-between text-slate-400">
-                                            <span>กำไรบริษัท (25% GP):</span>
-                                            <span className="font-mono">฿ {calc.companyProfit.toFixed(2)}</span>
-                                          </div>
-                                        </>
-                                      )}
+                                      <div className="flex justify-between text-rose-400">
+                                        <span>หักพอร์ทัล GP 20%:</span>
+                                        <span className="font-mono">- ฿ {calc.gpAmount.toFixed(2)}</span>
+                                      </div>
                                       <div className="flex justify-between text-purple-400 font-bold border-t border-slate-800 pt-1.5">
                                         <span>คะแนน PV ที่จัดสรรให้สินค้า:</span>
                                         <span className="font-mono text-purple-300 font-extrabold">{calc.pv.toFixed(2)} PV</span>
@@ -9097,38 +10850,6 @@ export default function App() {
                             <div>
                               <div className="flex justify-between items-center mb-1">
                                 <label className="block text-slate-700 font-semibold">คำอธิบายรายละเอียดสรรพคุณ (สูงสุด 500 ตัวอักษร)</label>
-                                <button
-                                  type="button"
-                                  disabled={isRefiningDescription}
-                                  onClick={async () => {
-                                    if (!newProd.description || !newProd.description.trim()) {
-                                      showNotif("กรุณากรอกสรรพคุณเบื้องต้นก่อนเพื่อให้ AI ช่วยขัดเกลาและเรียบเรียงค่ะ", "warning");
-                                      return;
-                                    }
-                                    setIsRefiningDescription(true);
-                                    try {
-                                      const res = await fetch('/api/ai/refine-description', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ text: newProd.description })
-                                      });
-                                      const data = await res.json();
-                                      if (data.success) {
-                                        setNewProd(prev => ({ ...prev, description: data.refinedText }));
-                                        showNotif("AI ปรับปรุงและเรียบเรียงสรรพคุณทางกฎหมายเรียบร้อยแล้วค่ะ! ✨", "success");
-                                      } else {
-                                        showNotif(data.message || "เกิดข้อผิดพลาดในการปรับปรุงสรรพคุณ", "error");
-                                      }
-                                    } catch (err) {
-                                      showNotif("ไม่สามารถเชื่อมต่อ AI ได้ในขณะนี้", "error");
-                                    } finally {
-                                      setIsRefiningDescription(false);
-                                    }
-                                  }}
-                                  className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-2 py-1 rounded-lg text-[10px] transition cursor-pointer flex items-center gap-1 border border-indigo-200 animate-pulse"
-                                >
-                                  {isRefiningDescription ? '⏳ AI กำลังเกลาภาษากฎหมาย...' : '✨ AI ช่วยเรียบเรียงกฎหมายไทย'}
-                                </button>
                               </div>
                               <textarea 
                                 rows={2}
@@ -9140,14 +10861,9 @@ export default function App() {
                                     setNewProd(prev => ({ ...prev, description: val }));
                                   }
                                 }}
-                                placeholder="อธิบายสรรพคุณสินค้าสั้นๆ และวิธีการใช้งานเบื้องต้น (เช่น บำรุงผิวพรรณ ช่วยลดความหยาบกร้าน)"
+                                placeholder="อธิบายสรรพคุณสินค้าสั้นๆ และวิธีการใช้งานเบื้องต้น"
                                 className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800"
                               />
-                              <div className="flex justify-end text-[10px] text-slate-400 font-mono mt-0.5">
-                                <span className={newProd.description.length >= 480 ? "text-rose-500 font-bold" : ""}>
-                                  {newProd.description.length} / 500 ตัวอักษร
-                                </span>
-                              </div>
                             </div>
 
                             <div>
@@ -9173,7 +10889,7 @@ export default function App() {
                           </form>
                         </div>
 
-                        {/* Seller's Submitted Products List */}
+                        {/* Submitted Products List */}
                         <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
                           <h4 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-1.5">
                             🛍️ รายการสินค้าของคุณทั้งหมด ({sellerProducts.length} รายการ)
@@ -9182,7 +10898,7 @@ export default function App() {
                             <p className="text-xs text-slate-400 italic text-center py-6">คุณยังไม่ได้ส่งผลิตภัณฑ์เข้าพิจารณาค่ะ</p>
                           ) : (
                             <div className="space-y-4">
-                              {sellerProducts.map((p) => {
+                              {sellerProducts.map((p: any) => {
                                 let badgeColor = "bg-amber-100 text-amber-800";
                                 let statusTxt = "รอแอดมินอนุมัติ";
                                 if (p.status === "Approved") {
@@ -9209,27 +10925,6 @@ export default function App() {
                                         <span className="text-slate-600 font-medium">คะแนน: <strong className="text-teal-600">{p.pv} PV</strong></span>
                                         <span className="text-slate-600 font-medium">ส่วนแบ่งร้านค้า (80%): <strong className="text-emerald-600">฿{(p.price * 0.8).toFixed(2)}</strong></span>
                                       </div>
-                                      {p.status === "Rejected" && p.rejectReason && (
-                                        <div className="mt-2 text-[10px] text-rose-600 bg-rose-50 border border-rose-100 rounded-lg p-2 leading-relaxed">
-                                          <strong>เหตุผลที่ไม่อนุมัติ:</strong> {p.rejectReason}
-                                        </div>
-                                      )}
-
-                                      {/* Admin Direct Red Edit & Instant Approve Button */}
-                                      {(currentUser?.role === 'Admin' || !!originalAdmin) && (
-                                        <div className="mt-3 flex justify-end">
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setEditingProduct({ ...p });
-                                              setShowEditProductModal(true);
-                                            }}
-                                            className="bg-rose-600 hover:bg-rose-500 text-white font-bold px-3 py-1.5 rounded-xl text-[10px] cursor-pointer transition flex items-center gap-1 shadow-md shadow-rose-600/10"
-                                          >
-                                            ✏️ [Admin] แก้ไขและอนุมัติทันที
-                                          </button>
-                                        </div>
-                                      )}
                                     </div>
                                   </div>
                                 );
@@ -9238,139 +10933,423 @@ export default function App() {
                           )}
                         </div>
                       </div>
+                    )}
 
-                    </div>
-                  ) : (
-                    /* My Store Orders Tab */
-                    <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
-                      <div className="flex justify-between items-center mb-4">
-                        <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                          📦 รายการสั่งซื้อสินค้าแบรนด์คุณ ({sellerOrders.length} รายการ)
-                        </h4>
-                        <button
-                          onClick={fetchSellerData}
-                          className="text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl transition flex items-center gap-1 cursor-pointer"
-                        >
-                          <RefreshCw size={12} /> รีเฟรชข้อมูลออเดอร์
-                        </button>
-                      </div>
-
-                      {sellerOrders.length === 0 ? (
-                        <div className="text-center py-12 text-slate-400 italic">
-                          <p className="text-xs">ยังไม่มีสมาชิกสั่งซื้อสินค้าจากแบรนด์ของคุณในขณะนี้ค่ะ 🛒</p>
-                          <p className="text-[10px] text-slate-400 mt-1">เมื่อมีบิลสั่งซื้อเข้ามา รายชื่อและที่อยู่สำหรับจัดส่งพัสดุจะแสดงขึ้นที่นี่!</p>
+                    {sellerPortalSubTab === 'orders' && (
+                      <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
+                        <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                          <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                            📦 รายการสั่งซื้อคลังสินค้าคุณ ({sellerOrders.filter(o => sellerOrderFilter === 'All' ? true : sellerOrderFilter === 'Processing' ? (o.status !== 'Completed' && o.status !== 'Cancelled' && o.status !== 'Returned' && o.status !== 'Refunded') : sellerOrderFilter === 'Cancelled' ? o.status === 'Cancelled' : (o.status === 'Refunded' || o.status === 'Returned')).length} บิล)
+                          </h4>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-400">กรองสถานะ:</span>
+                            <select
+                              value={sellerOrderFilter}
+                              onChange={(e) => setSellerOrderFilter(e.target.value)}
+                              className="border border-slate-200 rounded-lg px-2.5 py-1 text-xs bg-white text-slate-700"
+                            >
+                              <option value="All">แสดงทั้งหมด (All)</option>
+                              <option value="Processing">รอจัดส่งพัสดุ (Processing)</option>
+                              <option value="Cancelled">ลูกค้ายกเลิก (Cancelled)</option>
+                              <option value="Refunded">การคืนเงิน/คืนสินค้า (Refunded/Returned)</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={fetchSellerData}
+                              className="text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1 rounded-xl transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <RefreshCw size={12} /> รีเฟรชข้อมูล
+                            </button>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="overflow-x-auto rounded-2xl border border-slate-100">
-                          <table className="w-full text-left text-xs border-collapse">
-                            <thead>
-                              <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold text-[11px]">
-                                <th className="p-3">ข้อมูลบิลสั่งซื้อ</th>
-                                <th className="p-3">สินค้าที่สั่ง</th>
-                                <th className="p-3 text-center">จำนวน</th>
-                                <th className="p-3 text-right">ยอดรับสุทธิ (80%)</th>
-                                <th className="p-3">ที่อยู่จัดส่งพัสดุ</th>
-                                <th className="p-3">สถานะจัดส่ง</th>
-                                <th className="p-3">ข้อมูลขนส่ง & นำส่ง</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 text-slate-700 text-[11px]">
-                              {sellerOrders.map((order) => {
-                                const tracking = sellerShippingTracking[order.id] || { company: 'Flash Express', trackingNo: '', note: '' };
-                                const netEarning = order.totalPrice * 0.8;
-                                
-                                return (
-                                  <tr key={order.id} className="hover:bg-slate-50/40 align-top">
-                                    <td className="p-3 font-mono space-y-1">
-                                      <div className="font-bold text-slate-900">{order.id}</div>
-                                      <div className="text-[10px] text-slate-400">{new Date(order.createdAt).toLocaleString('th-TH')}</div>
-                                      <div className="text-[10px] text-slate-500">ผู้สั่ง: {order.userId}</div>
-                                    </td>
-                                    <td className="p-3 font-medium text-slate-800">
-                                      {order.productName}
-                                    </td>
-                                    <td className="p-3 text-center font-bold">
-                                      {order.quantity} ชิ้น
-                                    </td>
-                                    <td className="p-3 text-right font-bold text-emerald-600">
-                                      ฿{netEarning.toLocaleString()}
-                                    </td>
-                                    <td className="p-3 text-[11px] text-slate-500 leading-relaxed max-w-[200px]">
-                                      {order.shippingAddress}
-                                    </td>
-                                    <td className="p-3">
-                                      {order.status === 'Completed' ? (
-                                        <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-200">
-                                          ✓ จัดส่งเรียบร้อย
-                                        </span>
-                                      ) : (
-                                        <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-amber-200 animate-pulse">
-                                          รอส่งสินค้า
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="p-3 space-y-2">
-                                      {order.status === 'Completed' ? (
-                                        <div className="bg-slate-50 border border-slate-100 p-2 rounded-xl text-[10px] space-y-0.5 text-slate-600 max-w-[180px]">
-                                          <div>🚚 ขนส่ง: <strong className="text-slate-800">{order.trackingCompany}</strong></div>
-                                          <div className="truncate">เลขพัสดุ: <strong className="text-indigo-600 select-all">{order.trackingNo}</strong></div>
-                                          {order.shippingNote && <div className="text-slate-400 truncate">โน้ต: {order.shippingNote}</div>}
-                                        </div>
-                                      ) : (
-                                        <div className="space-y-1.5 max-w-[180px]">
-                                          <select
-                                            value={tracking.company}
-                                            onChange={(e) => setSellerShippingTracking(prev => ({
-                                              ...prev,
-                                              [order.id]: { ...(prev[order.id] || { company: 'Flash Express', trackingNo: '', note: '' }), company: e.target.value }
-                                            }))}
-                                            className="w-full border border-slate-200 rounded-lg px-2 py-1 text-[11px]"
-                                          >
-                                            <option value="Flash Express">Flash Express</option>
-                                            <option value="Kerry Express">Kerry Express</option>
-                                            <option value="J&T Express">J&T Express</option>
-                                            <option value="ไปรษณีย์ไทย (EMS)">ไปรษณีย์ไทย (EMS)</option>
-                                          </select>
-                                          <input
-                                            type="text"
-                                            required
-                                            value={tracking.trackingNo}
-                                            onChange={(e) => setSellerShippingTracking(prev => ({
-                                              ...prev,
-                                              [order.id]: { ...(prev[order.id] || { company: 'Flash Express', trackingNo: '', note: '' }), trackingNo: e.target.value }
-                                            }))}
-                                            placeholder="กรอกเลขพัสดุ (Tracking No)"
-                                            className="w-full border border-slate-200 rounded-lg px-2 py-1 text-[11px]"
-                                          />
-                                          <input
-                                            type="text"
-                                            value={tracking.note}
-                                            onChange={(e) => setSellerShippingTracking(prev => ({
-                                              ...prev,
-                                              [order.id]: { ...(prev[order.id] || { company: 'Flash Express', trackingNo: '', note: '' }), note: e.target.value }
-                                            }))}
-                                            placeholder="บันทึกข้อความเพิ่มเติม"
-                                            className="w-full border border-slate-200 rounded-lg px-2 py-1 text-[11px]"
-                                          />
-                                          <button
-                                            onClick={() => handleSellerShipOrder(order.id)}
-                                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-1 px-2.5 rounded-lg text-[10px] transition cursor-pointer"
-                                          >
-                                            ยืนยันการจัดส่งพัสดุ
-                                          </button>
-                                        </div>
-                                      )}
-                                    </td>
+
+                        {(() => {
+                          const filtered = sellerOrders.filter(o => {
+                            if (sellerOrderFilter === 'All') return true;
+                            if (sellerOrderFilter === 'Processing') return o.status !== 'Completed' && o.status !== 'Cancelled' && o.status !== 'Returned' && o.status !== 'Refunded';
+                            if (sellerOrderFilter === 'Cancelled') return o.status === 'Cancelled';
+                            return o.status === 'Returned' || o.status === 'Refunded';
+                          });
+
+                          if (filtered.length === 0) {
+                            return (
+                              <div className="text-center py-12 text-slate-400 italic">
+                                <p className="text-xs">ไม่พบบิลตามตัวเลือกตัวกรองนี้ค่ะ 🛒</p>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                              <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                  <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold text-[11px]">
+                                    <th className="p-3">ข้อมูลบิลสั่งซื้อ</th>
+                                    <th className="p-3">สินค้าที่สั่ง</th>
+                                    <th className="p-3 text-center">จำนวน</th>
+                                    <th className="p-3 text-right">ยอดรับสุทธิ (80%)</th>
+                                    <th className="p-3">ที่อยู่จัดส่งพัสดุ</th>
+                                    <th className="p-3">สถานะจัดส่ง</th>
+                                    <th className="p-3">ข้อมูลขนส่ง & นำส่ง</th>
                                   </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 text-slate-700 text-[11px]">
+                                  {filtered.map((order) => {
+                                    const tracking = sellerShippingTracking[order.id] || { company: 'Flash Express', trackingNo: '', note: '' };
+                                    const netEarning = order.totalPrice * 0.8;
+                                    
+                                    return (
+                                      <tr key={order.id} className="hover:bg-slate-50/40 align-top">
+                                        <td className="p-3 font-mono space-y-1">
+                                          <div className="font-bold text-slate-900">{order.id}</div>
+                                          <div className="text-[10px] text-slate-400">{new Date(order.createdAt).toLocaleString('th-TH')}</div>
+                                          <div className="text-[10px] text-slate-500">ผู้สั่ง: {order.userId}</div>
+                                        </td>
+                                        <td className="p-3 font-medium text-slate-800">
+                                          {order.productName}
+                                        </td>
+                                        <td className="p-3 text-center font-bold">
+                                          {order.quantity} ชิ้น
+                                        </td>
+                                        <td className="p-3 text-right font-bold text-emerald-600">
+                                          ฿{netEarning.toLocaleString()}
+                                        </td>
+                                        <td className="p-3 text-[11px] text-slate-500 leading-relaxed max-w-[200px]">
+                                          {order.shippingAddress}
+                                        </td>
+                                        <td className="p-3">
+                                          {order.status === 'Completed' ? (
+                                            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-200">
+                                              ✓ จัดส่งเรียบร้อย
+                                            </span>
+                                          ) : order.status === 'Cancelled' ? (
+                                            <span className="bg-rose-100 text-rose-850 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-rose-200">
+                                              ✖ ลูกค้ายกเลิก
+                                            </span>
+                                          ) : (
+                                            <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-amber-200 animate-pulse">
+                                              รอส่งสินค้า
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="p-3 space-y-2">
+                                          {order.status === 'Completed' ? (
+                                            <div className="bg-slate-50 border border-slate-100 p-2 rounded-xl text-[10px] space-y-0.5 text-slate-600 max-w-[180px]">
+                                              <div>🚚 ขนส่ง: <strong className="text-slate-800">{order.trackingCompany}</strong></div>
+                                              <div className="truncate">เลขพัสดุ: <strong className="text-indigo-600 select-all">{order.trackingNo}</strong></div>
+                                              {order.shippingNote && <div className="text-slate-400 truncate">โน้ต: {order.shippingNote}</div>}
+                                            </div>
+                                          ) : order.status === 'Cancelled' ? (
+                                            <div className="text-[10px] text-slate-400 italic">ออเดอร์นี้ถูกยกเลิกแล้ว</div>
+                                          ) : (
+                                            <div className="space-y-1.5 max-w-[180px]">
+                                              <select
+                                                value={tracking.company}
+                                                onChange={(e) => setSellerShippingTracking(prev => ({
+                                                  ...prev,
+                                                  [order.id]: { ...(prev[order.id] || { company: 'Flash Express', trackingNo: '', note: '' }), company: e.target.value }
+                                                }))}
+                                                className="w-full border border-slate-200 rounded-lg px-2 py-1 text-[11px] bg-white text-slate-700"
+                                              >
+                                                <option value="Flash Express">Flash Express</option>
+                                                <option value="Kerry Express">Kerry Express</option>
+                                                <option value="J&T Express">J&T Express</option>
+                                                <option value="ไปรษณีย์ไทย (EMS)">ไปรษณีย์ไทย (EMS)</option>
+                                              </select>
+                                              <input
+                                                type="text"
+                                                required
+                                                value={tracking.trackingNo}
+                                                onChange={(e) => setSellerShippingTracking(prev => ({
+                                                  ...prev,
+                                                  [order.id]: { ...(prev[order.id] || { company: 'Flash Express', trackingNo: '', note: '' }), trackingNo: e.target.value }
+                                                }))}
+                                                placeholder="กรอกเลขพัสดุ (Tracking No)"
+                                                className="w-full border border-slate-200 rounded-lg px-2 py-1 text-[11px]"
+                                              />
+                                              <input
+                                                type="text"
+                                                value={tracking.note}
+                                                onChange={(e) => setSellerShippingTracking(prev => ({
+                                                  ...prev,
+                                                  [order.id]: { ...(prev[order.id] || { company: 'Flash Express', trackingNo: '', note: '' }), note: e.target.value }
+                                                }))}
+                                                placeholder="บันทึกข้อความเพิ่มเติม"
+                                                className="w-full border border-slate-200 rounded-lg px-2 py-1 text-[11px]"
+                                              />
+                                              <button
+                                                type="button"
+                                                onClick={() => handleSellerShipOrder(order.id)}
+                                                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-1 px-2.5 rounded-lg text-[10px] transition cursor-pointer"
+                                              >
+                                                ยืนยันการจัดส่งพัสดุ
+                                              </button>
+                                            </div>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
 
+                    {sellerPortalSubTab === 'finance' && (
+                      <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
+                        <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                          <h4 className="text-sm font-bold text-slate-800">💰 การเงิน และบัญชีรายรับร้านค้า (Finance Dashboard)</h4>
+                          <span className="text-xs text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-xl font-bold font-mono">
+                            E-Cash สะสม: ฿{(sellerOrders.filter((o: any) => o.status === 'Completed').reduce((acc: number, o: any) => acc + o.totalPrice * 0.8, 0)).toLocaleString()}
+                          </span>
+                        </div>
+
+                        {/* Financial Ledger Details */}
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
+                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-0.5">
+                            <div className="text-lg font-bold text-slate-900">
+                              ฿{(sellerOrders.reduce((acc: number, o: any) => acc + o.totalPrice, 0)).toLocaleString()}
+                            </div>
+                            <div className="text-[10px] text-slate-500">ยอดจำหน่ายสะสมรวม</div>
+                          </div>
+                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-0.5">
+                            <div className="text-lg font-bold text-indigo-600">
+                              ฿{(sellerOrders.filter((o: any) => o.status === 'Completed').reduce((acc: number, o: any) => acc + o.totalPrice * 0.8, 0)).toLocaleString()}
+                            </div>
+                            <div className="text-[10px] text-slate-500">รายรับสุทธิ (80% แชร์)</div>
+                          </div>
+                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-0.5">
+                            <div className="text-lg font-bold text-rose-500">
+                              ฿{(sellerOrders.filter((o: any) => o.status === 'Completed').reduce((acc: number, o: any) => acc + o.totalPrice * 0.2, 0)).toLocaleString()}
+                            </div>
+                            <div className="text-[10px] text-slate-500">หักค่าบริหารจัดการ (20% GP)</div>
+                          </div>
+                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-0.5">
+                            <div className="text-lg font-bold text-teal-600">
+                              ฿{(sellerOrders.filter((o: any) => o.status === 'Completed').reduce((acc: number, o: any) => acc + o.totalPrice * 0.03, 0)).toFixed(2)}
+                            </div>
+                            <div className="text-[10px] text-slate-500">หักภาษี ณ ที่จ่าย 3%</div>
+                          </div>
+                        </div>
+
+                        {/* Bank Settings & Tax Documents */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                          <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-3">
+                            <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">🏦 บัญชีธนาคารสำหรับโอนรายได้อัตโนมัติ</h5>
+                            <div className="text-xs text-slate-600 space-y-1 bg-white p-3 rounded-xl border border-slate-150">
+                              <p><strong>ธนาคารพันธมิตร:</strong> ธนาคารกสิกรไทย (K-Bank)</p>
+                              <p><strong>ชื่อบัญชีจัดเก็บ:</strong> {sellerSessionUser.sellerStoreName}</p>
+                              <p><strong>หมายเลขบัญชี:</strong> 059-3-xxx98-2</p>
+                              <p><strong>ความถี่ในการโอน:</strong> ทุกๆ วันศุกร์เวลา 18:00 น. อัตโนมัติ</p>
+                            </div>
+                          </div>
+                          <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-3">
+                            <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">📄 เอกสารภาษีมูลค่าเพิ่ม (VAT & Withholding Tax)</h5>
+                            <div className="text-xs text-slate-600 space-y-2 bg-white p-3 rounded-xl border border-slate-150">
+                              <p className="text-[11px] leading-relaxed">ท่านสามารถเรียกดูและออกหนังสือรับรองการหักภาษี ณ ที่จ่ายตามมาตรา 50 ทวิ ได้ที่ปุ่มด้านล่าง:</p>
+                              <button
+                                type="button"
+                                onClick={() => showNotif("ระบบจัดเตรียมเอกสารยื่นภาษี ภ.ง.ด. 53 เรียบร้อย ส่งไฟล์เข้าระบบสมาชิกแล้วค่ะ", "success")}
+                                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-1.5 rounded-lg text-[10px] cursor-pointer transition-all"
+                              >
+                                📥 ดาวน์โหลดเอกสารยื่นภาษี (PDF)
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {sellerPortalSubTab === 'stats' && (
+                      <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
+                        <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                          <h4 className="text-sm font-bold text-slate-800">📊 สถิติจำหน่ายและวิเคราะห์เชิงลึก (Shop Analytics)</h4>
+                          <span className="text-xs text-slate-400">ข้อมูลอัปเดตสัปดาห์นี้</span>
+                        </div>
+
+                        {/* Stylized Progress Gauges representing visitor metrics */}
+                        <div className="space-y-4">
+                          <div className="space-y-1.5">
+                            <div className="flex justify-between text-xs font-semibold text-slate-700">
+                              <span>ยอดผู้เข้าชมหน้ารายการสินค้าของท่าน</span>
+                              <span className="font-mono text-indigo-600">1,420 ครั้ง (+15%)</span>
+                            </div>
+                            <div className="w-full bg-slate-100 rounded-full h-2">
+                              <div className="bg-indigo-600 h-2 rounded-full" style={{ width: '75%' }}></div>
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex justify-between text-xs font-semibold text-slate-700">
+                              <span>อัตราการสั่งซื้อสำเร็จ (Conversion Rate)</span>
+                              <span className="font-mono text-emerald-600">88.5% (สูงกว่าค่าเฉลี่ย 12%)</span>
+                            </div>
+                            <div className="w-full bg-slate-100 rounded-full h-2">
+                              <div className="bg-emerald-500 h-2 rounded-full" style={{ width: '88.5%' }}></div>
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex justify-between text-xs font-semibold text-slate-700">
+                              <span>สัดส่วนคะแนน PV ที่หมวนเวียนสำเร็จ</span>
+                              <span className="font-mono text-purple-600">4,850 PV (+30%)</span>
+                            </div>
+                            <div className="w-full bg-slate-100 rounded-full h-2">
+                              <div className="bg-purple-600 h-2 rounded-full" style={{ width: '65%' }}></div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Advice Box based on statistics */}
+                        <div className="bg-slate-50 border border-slate-150 p-4 rounded-2xl text-xs text-slate-600 leading-relaxed">
+                          <strong>💡 คำแนะนำระบบอัตโนมัติ:</strong> ช่วงเวลานาทีทองของร้านท่านคือช่วงเวลา 19:00 - 22:00 น. แนะนำให้เพิ่มช่วงสต็อกในสต็อกผลิตภัณฑ์บำรุงผิว เพื่อรองรับออเดอร์ปันยอดส่งที่สูงขึ้นในช่วงวันหยุดเสาร์-อาทิตย์นี้ค่ะ
+                        </div>
+                      </div>
+                    )}
+
+                    {sellerPortalSubTab === 'chat' && (
+                      <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                        <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                          <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                            💬 ห้องสนทนากับลูกค้าและผู้ซื้อพันธมิตร ({sellerMockChatMessages.length} ข้อความ)
+                          </h4>
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full">กำลังเชื่อมต่อ (Online)</span>
+                        </div>
+
+                        {/* Message history thread */}
+                        <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 h-64 overflow-y-auto space-y-3 flex flex-col">
+                          {sellerMockChatMessages.map((msg: any) => (
+                            <div key={msg.id} className={`max-w-[75%] p-3 rounded-2xl text-xs leading-relaxed ${
+                              msg.sender === 'seller' 
+                                ? 'bg-indigo-600 text-white rounded-br-none self-end shadow-md' 
+                                : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none self-start shadow-sm'
+                            }`}>
+                              <div>{msg.text}</div>
+                              <div className={`text-[9px] mt-1 font-mono text-right ${msg.sender === 'seller' ? 'text-indigo-200' : 'text-slate-400'}`}>{msg.time}</div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Interactive text reply box */}
+                        <form 
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (!sellerNewMessageText.trim()) return;
+                            const newMsg = {
+                              id: sellerMockChatMessages.length + 1,
+                              sender: 'seller',
+                              text: sellerNewMessageText,
+                              time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.'
+                            };
+                            setSellerMockChatMessages(prev => [...prev, newMsg]);
+                            setSellerNewMessageText('');
+                            showNotif("ส่งข้อความถึงลูกค้าสำเร็จแล้วค่ะ", "success");
+                          }}
+                          className="flex gap-2"
+                        >
+                          <input 
+                            type="text" 
+                            value={sellerNewMessageText}
+                            onChange={(e) => setSellerNewMessageText(e.target.value)}
+                            placeholder="พิมพ์ข้อความตอบกลับลูกค้าที่นี่..."
+                            className="flex-1 border border-slate-200 rounded-xl px-4 py-2.5 text-xs outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50/50 text-slate-800"
+                          />
+                          <button 
+                            type="submit"
+                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+                          >
+                            ส่งข้อความ
+                          </button>
+                        </form>
+                      </div>
+                    )}
+
+                    {sellerPortalSubTab === 'learning' && (
+                      <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
+                        <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                          <h4 className="text-sm font-bold text-slate-800">📖 ศูนย์การเรียนรู้สำหรับพาร์ทเนอร์ (Partner Learning Centre)</h4>
+                          <span className="text-xs text-slate-400">บทเรียนอัพเดทใหม่ล่าสุด</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                            <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded-full">ยอดนิยม 🔥</span>
+                            <h5 className="font-bold text-slate-800 text-xs">🚀 บทเรียนที่ 1: ตกแต่งร้านค้าอย่างไรให้สมาชิกสนใจกดสั่ง</h5>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              เทคนิคจับคู่โทนสีที่เหมาะสมกับกลุ่มผลิตภัณฑ์สุขภาพ การจัดสรรวางสินค้าหมวดหมู่หลักในตำแหน่งหน้าแรก และความโดดเด่นของภาพผลิตภัณฑ์
+                            </p>
+                          </div>
+                          <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                            <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-2 py-0.5 rounded-full">คู่มือระบบ 📑</span>
+                            <h5 className="font-bold text-slate-800 text-xs">📦 บทเรียนที่ 2: ไขข้อสงสัยสูตรค่าขนส่ง Shippop และ PV</h5>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              อธิบายขั้นตอนการวัดขนาด กว้างxยาวxสูง จริงของแพ็คเกจ และการคำนวณน้ำหนักปริมาตรที่เหมาะสม เพื่อลดความคลาดเคลื่อนทางบัญชี
+                            </p>
+                          </div>
+                          <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full">กฎหมายร้านค้า ⚖️</span>
+                            <h5 className="font-bold text-slate-800 text-xs">🛡️ บทเรียนที่ 3: ระเบียบข้อบังคับและจรรยาบรรณผู้ค้าของนทีพลัส</h5>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              ทำความเข้าใจนโยบายความโปร่งใสทางกฎหมาย กฎการคุ้มครองข้อมูลส่วนบุคคล (PDPA) ของผู้ซื้อ และการห้ามจำหน่ายสินค้าลอกเลียนแบบ
+                            </p>
+                          </div>
+                          <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                            <span className="bg-purple-100 text-purple-800 text-[9px] font-bold px-2 py-0.5 rounded-full">แชร์ประสบการณ์ 💡</span>
+                            <h5 className="font-bold text-slate-800 text-xs">🌟 บทเรียนที่ 4: เคล็ดลับการตอบกลับแชทและบริการหลังการขาย</h5>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              ตอบข้อซักถามลูกค้าอย่างถูกต้อง สรรพคุณทางกฏหมาย วิธีดูแลออเดอร์ที่มีปัญหาคืนสินค้า เพื่อคงสถานะเรตติ้งระดับ 5 ดาวเสมอ
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {sellerPortalSubTab === 'info' && (
+                      <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
+                        <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                          <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                            🏪 ข้อมูลคลังจัดส่งและแผนที่ GPS (Warehouse & Store Information)
+                          </h4>
+                          <span className="text-xs text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-lg font-mono">
+                            รหัส: {sellerSessionUser.sellerCode}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-2 text-xs text-slate-700 leading-relaxed">
+                              <h5 className="font-bold text-slate-800 flex items-center gap-1">📍 ที่ตั้งคลังสินค้าสำหรับจัดส่งพัสดุ:</h5>
+                              <p className="font-medium">{sellerSessionUser.sellerAddress}</p>
+                              <div className="border-t border-slate-200/60 pt-2 mt-2 space-y-1 text-slate-600">
+                                <div>📞 <strong>เบอร์โทรติดต่อผู้ดูแลคลัง:</strong> {sellerSessionUser.sellerPhone || '08x-xxx-xxxx'}</div>
+                                <div>✉️ <strong>อีเมลประสานงานคลังสินค้า:</strong> {sellerSessionUser.email || 'warehouse@natee.plus'}</div>
+                                {sellerSessionUser.sellerTaxId && <div>🆔 <strong>หมายเลขประจำตัวผู้เสียภาษี (Tax ID):</strong> {sellerSessionUser.sellerTaxId}</div>}
+                                {sellerSessionUser.lat && sellerSessionUser.lng && (
+                                  <div>🌐 <strong>พิกัดละติจูด/ลองจิจูด:</strong> {sellerSessionUser.lat}, {sellerSessionUser.lng}</div>
+                                )}
+                              </div>
+                            </div>
+                            <div className="bg-indigo-50/30 border border-indigo-100 p-4 rounded-2xl text-xs text-slate-600 leading-relaxed">
+                              <strong>💡 หมายเหตุการยื่นเปลี่ยนพิกัด:</strong> หากทางร้านต้องการย้ายพิกัดคลังสินค้าหรือปรับเปลี่ยนที่อยู่จัดส่งจริง กรุณาติดต่อขอปรับเปลี่ยนโดยตรงกับทางเจ้าหน้าที่แอดมิน เพื่อความเสถียรในการดึงเรตติ้งค่าส่งจาก Shippop ค่ะ
+                            </div>
+                          </div>
+
+                          {/* Dynamic Interactive Warehouse Map display */}
+                          <div className="border border-slate-100 rounded-3xl overflow-hidden shadow-md bg-slate-50 p-3 flex flex-col justify-between min-h-[250px]">
+                            <h5 className="font-bold text-xs text-slate-800 mb-2">🗺️ แผนที่พิกัดคลังที่บันทึกในระบบ</h5>
+                            <div className="flex-1 rounded-2xl overflow-hidden border border-slate-200 bg-white">
+                              <NateeWarehouseMap 
+                                lat={parseFloat(sellerSessionUser.lat || '13.7563')} 
+                                lng={parseFloat(sellerSessionUser.lng || '100.5018')} 
+                                readOnly={true}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="bg-white border border-slate-100 rounded-3xl p-8 shadow-sm text-center max-w-2xl space-y-6 animate-fadeIn">
@@ -9478,7 +11457,7 @@ export default function App() {
                       <ShieldCheck size={20} />
                     </div>
                     <div>
-                      <h3 className="font-extrabold text-sm">จัดการระบบ Natee Seller Center</h3>
+                      <h3 className="font-extrabold text-sm">จัดการระบบ Natee Partner</h3>
                       <p className={`text-[10px] mt-0.5 ${
                         adminSection === 'seller_system' ? 'text-indigo-100' : 'text-slate-400'
                       }`}>จัดการร้าน, จัดส่ง, สถานะสินค้า & สรุปยอดจ่าย</p>
@@ -9486,32 +11465,34 @@ export default function App() {
                   </div>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAdminSection('admin_console');
-                    setAdminSubTab('systemReset');
-                  }}
-                  className={`p-4 rounded-3xl text-left transition-all duration-300 border relative overflow-hidden cursor-pointer ${
-                    adminSection === 'admin_console'
-                      ? 'bg-slate-800 border-slate-700 text-white shadow-lg shadow-slate-800/20'
-                      : 'bg-white border-slate-100 hover:border-slate-300 text-slate-700 hover:bg-slate-50/10'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
-                      adminSection === 'admin_console' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
-                    }`}>
-                      <Settings size={20} />
+                {profile?.role === 'Manager' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminSection('admin_console');
+                      setAdminSubTab('systemReset');
+                    }}
+                    className={`p-4 rounded-3xl text-left transition-all duration-300 border relative overflow-hidden cursor-pointer ${
+                      adminSection === 'admin_console'
+                        ? 'bg-slate-800 border-slate-700 text-white shadow-lg shadow-slate-800/20'
+                        : 'bg-white border-slate-100 hover:border-slate-300 text-slate-700 hover:bg-slate-50/10'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
+                        adminSection === 'admin_console' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        <Settings size={20} />
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-sm">Admin Console</h3>
+                        <p className={`text-[10px] mt-0.5 ${
+                          adminSection === 'admin_console' ? 'text-slate-200' : 'text-slate-400'
+                        }`}>ตั้งค่าธนาคาร, รีเซ็ตระบบ และควบคุมส่วนกลาง</p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-extrabold text-sm">Admin Console</h3>
-                      <p className={`text-[10px] mt-0.5 ${
-                        adminSection === 'admin_console' ? 'text-slate-200' : 'text-slate-400'
-                      }`}>ตั้งค่าธนาคาร, รีเซ็ตระบบ และควบคุมส่วนกลาง</p>
-                    </div>
-                  </div>
-                </button>
+                  </button>
+                )}
               </div>
 
               {/* Admin Submenu rendered based on active adminSection */}
@@ -9623,32 +11604,92 @@ export default function App() {
                     >
                       🎟️ สรุปรายการจ่ายร้านค้า ({pendingCouponPv.length})
                     </button>
-                  </>
-                )}
 
-                {adminSection === 'admin_console' && (
-                  <>
                     <button 
-                      onClick={() => setAdminSubTab('systemReset')} 
-                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
-                        adminSubTab === 'systemReset' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                      onClick={() => setAdminSubTab('memberShopInfo')} 
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 relative cursor-pointer ${
+                        adminSubTab === 'memberShopInfo' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
                       }`}
                     >
-                      ⚙️ รีเซ็ตระบบ
+                      👥 ข้อมูลสมาชิกร้านค้า
                     </button>
 
-                    {profile?.role === 'Manager' && (
-                      <button 
-                        onClick={() => setAdminSubTab('bankSettings')} 
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
-                          adminSubTab === 'bankSettings' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        🏦 ตั้งค่าธนาคาร & QR Code (Manager)
-                      </button>
-                    )}
+                    <button 
+                      onClick={() => {
+                        setAdminSubTab('manageRegulations');
+                        fetchSellerRegulationsText();
+                      }} 
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 relative cursor-pointer ${
+                        adminSubTab === 'manageRegulations' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      📝 Admin Console (ระเบียบผู้ขาย)
+                    </button>
                   </>
                 )}
+
+                 {adminSection === 'admin_console' && (
+                   <>
+                     {profile?.role === 'Manager' && (
+                       <button 
+                         onClick={() => setAdminSubTab('systemReset')} 
+                         className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                           adminSubTab === 'systemReset' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                         }`}
+                       >
+                         ⚙️ รีเซ็ตระบบ (Manager)
+                       </button>
+                     )}
+ 
+                     <button 
+                       onClick={() => setAdminSubTab('systemConditions')} 
+                       className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                         adminSubTab === 'systemConditions' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                       }`}
+                     >
+                       📋 เงื่อนไขระบบ (ค่าคอมมิชชั่น)
+                     </button>
+ 
+                     <button 
+                       onClick={() => setAdminSubTab('packageChoices')} 
+                       className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                         adminSubTab === 'packageChoices' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                       }`}
+                     >
+                       📦 จัดการสินค้าแพ็กเกจ
+                     </button>
+ 
+                     <button 
+                       onClick={() => setAdminSubTab('companyAccountingReport')} 
+                       className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                         adminSubTab === 'companyAccountingReport' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                       }`}
+                     >
+                       📈 รายงานระบบบัญชีบริษัท
+                     </button>
+ 
+                     {profile?.role === 'Manager' && (
+                       <>
+                         <button 
+                           onClick={() => setAdminSubTab('bankSettings')} 
+                           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                             adminSubTab === 'bankSettings' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                           }`}
+                         >
+                           🏦 ตั้งค่าธนาคาร & QR Code (Manager)
+                         </button>
+                         <button 
+                           onClick={() => setAdminSubTab('maintenance')} 
+                           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                             adminSubTab === 'maintenance' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                           }`}
+                         >
+                           ⏸️ พักหน้าจอ (Manager)
+                         </button>
+                       </>
+                     )}
+                   </>
+                 )}
               </div>
 
               {adminSubTab === 'queues' && (
@@ -9938,6 +11979,7 @@ export default function App() {
                                       <button 
                                         onClick={() => {
                                           setEditingMember({ ...member });
+                                          setOriginalMember({ ...member });
                                           setShowEditMemberModal(true);
                                         }}
                                         className="w-full bg-slate-800 hover:bg-rose-600 text-white hover:text-white px-3 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer text-center"
@@ -9975,101 +12017,6 @@ export default function App() {
                       </>
                     );
                   })()}
-                </div>
-              </div>
-
-              {/* ADMIN PACKAGE ITEMS MANAGER */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Form to Add New Choice */}
-                <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4 lg:col-span-1">
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    📦 เพิ่มตัวเลือกสินค้าแพ็กเกจ (Add Package Item Option)
-                  </h4>
-                  <form onSubmit={handleAddPackageChoice} className="space-y-3 text-xs text-slate-700">
-                    <div>
-                      <label className="block text-slate-600 font-semibold mb-1">เลือกแพ็กเกจหลัก</label>
-                      <select 
-                        value={adminNewChoicePackageId} 
-                        onChange={(e) => setAdminNewChoicePackageId(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
-                      >
-                        <option value="pack_m">M - ชุดครอบครัวประหยัด</option>
-                        <option value="pack_l">L - ชุดดูแลสุขภาพแบบองค์รวม</option>
-                        <option value="pack_xl">XL - ชุดนักขยายธุรกิจ</option>
-                        <option value="pack_xxl">XXL - ชุดผู้ประกอบการ</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-slate-600 font-semibold mb-1">ชื่อเซ็ตสินค้า (ภาษาไทย / รายการสินค้า)</label>
-                      <input 
-                        type="text" 
-                        required
-                        placeholder="เช่น มะหาดสบู่สมุนไพรออร์แกนิก 2 กล่อง + ยาสีฟัน"
-                        value={adminNewChoiceName}
-                        onChange={(e) => setAdminNewChoiceName(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-slate-600 font-semibold mb-1">ต้นทุนสินค้า (Cost / บาท)</label>
-                      <input 
-                        type="number" 
-                        step="any"
-                        placeholder="กรอกต้นทุนสินค้า เช่น 150"
-                        value={adminNewChoiceCost}
-                        onChange={(e) => setAdminNewChoiceCost(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
-                      />
-                    </div>
-                    <button 
-                      type="submit" 
-                      className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-2 rounded-xl transition shadow-sm text-xs cursor-pointer"
-                    >
-                      บันทึกเพิ่มรายการชุดสินค้า
-                    </button>
-                  </form>
-                </div>
-
-                {/* List of Existing Choices grouped by package */}
-                <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4 lg:col-span-2">
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    📋 รายการตัวเลือกชุดสินค้าแยกตามตำแหน่งปัจจุบัน
-                  </h4>
-                  <div className="max-h-[320px] overflow-y-auto space-y-3 pr-2 text-xs text-slate-700">
-                    {['pack_m', 'pack_l', 'pack_xl', 'pack_xxl'].map(pkgId => {
-                      const pkgName = products.find(p => p.id === pkgId)?.name || pkgId.toUpperCase();
-                      const choices = packageChoices.filter(c => c.packageId === pkgId);
-                      return (
-                        <div key={pkgId} className="border border-slate-100 p-3 rounded-2xl bg-slate-50/50">
-                          <h5 className="font-extrabold text-indigo-900 border-b border-indigo-100 pb-1 mb-2">
-                            {pkgName}
-                          </h5>
-                          {choices.length > 0 ? (
-                            <div className="space-y-1.5">
-                              {choices.map(choice => (
-                                <div key={choice.id} className="bg-white px-3 py-1.5 rounded-xl border border-slate-100 flex justify-between items-center text-[11px]">
-                                  <div className="flex flex-col">
-                                    <span className="font-medium text-slate-800">{choice.name}</span>
-                                    {choice.cost !== undefined && (
-                                      <span className="text-[10px] text-emerald-600 font-semibold font-mono">ต้นทุน: ฿{parseFloat(choice.cost).toLocaleString()} บาท</span>
-                                    )}
-                                  </div>
-                                  <button 
-                                    onClick={() => handleDeletePackageChoice(choice.id)}
-                                    className="text-rose-600 hover:text-rose-800 font-bold ml-2 text-[10px]"
-                                  >
-                                    ลบออก
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-[10px] text-slate-400 italic">ไม่มีข้อมูลชุดสินค้า แนะนำให้เพิ่มเซ็ตสินค้า</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
                 </div>
               </div>
 
@@ -10321,6 +12268,7 @@ export default function App() {
                                         <button 
                                           onClick={() => {
                                             setEditingMember({ ...member });
+                                            setOriginalMember({ ...member });
                                             setShowEditMemberModal(true);
                                           }}
                                           className="w-full bg-slate-800 hover:bg-rose-600 text-white hover:text-white px-3 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer text-center"
@@ -10650,6 +12598,7 @@ export default function App() {
                                 <button 
                                   onClick={() => {
                                     setEditingMember({ ...member });
+                                    setOriginalMember({ ...member });
                                     setShowEditMemberModal(true);
                                   }}
                                   className="bg-slate-800 hover:bg-rose-600 text-white hover:text-white px-3 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer"
@@ -10685,7 +12634,7 @@ export default function App() {
                         <p className="text-xs text-slate-400 mt-0.5">กรุณาตรวจสอบความถูกต้องของยอดโอนและภาพหลักฐานสลิป ก่อนกดปุ่มอนุมัติ</p>
                       </div>
                       {depositQueue.length > 0 && (
-                        <span className="bg-rose-100 text-rose-700 border border-rose-200 px-3 py-1 rounded-xl text-xs font-black animate-pulse">
+                        <span className="bg-rose-100 text-rose-700 border border-rose-200 px-3 py-1 rounded-xl text-xs font-black">
                           รออนุมัติ {depositQueue.length} รายการ
                         </span>
                       )}
@@ -10800,99 +12749,6 @@ export default function App() {
 
               {adminSubTab === 'shippingApprove' && (
                 <div className="space-y-6 animate-fadeIn">
-                  {/* Package choices manager */}
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4 lg:col-span-1">
-                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                        📦 เพิ่มตัวเลือกสินค้าแพ็กเกจ
-                      </h4>
-                      <form onSubmit={handleAddPackageChoice} className="space-y-3 text-xs text-slate-700">
-                        <div>
-                          <label className="block text-slate-600 font-semibold mb-1">เลือกแพ็กเกจหลัก</label>
-                          <select 
-                            value={adminNewChoicePackageId} 
-                            onChange={(e) => setAdminNewChoicePackageId(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                          >
-                            <option value="pack_m">M - ชุดครอบครัวประหยัด</option>
-                            <option value="pack_l">L - ชุดดูแลสุขภาพแบบองค์รวม</option>
-                            <option value="pack_xl">XL - ชุดนักขยายธุรกิจ</option>
-                            <option value="pack_xxl">XXL - ชุดผู้ประกอบการ</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-slate-600 font-semibold mb-1">ชื่อเซ็ตสินค้า (ภาษาไทย / รายการสินค้า)</label>
-                          <input 
-                            type="text" 
-                            required
-                            placeholder="เช่น มะหาดสบู่สมุนไพรออร์แกนิก 2 กล่อง + ยาสีฟัน"
-                            value={adminNewChoiceName}
-                            onChange={(e) => setAdminNewChoiceName(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-slate-600 font-semibold mb-1">ต้นทุนสินค้า (Cost / บาท)</label>
-                          <input 
-                            type="number" 
-                            step="any"
-                            placeholder="กรอกต้นทุนสินค้า เช่น 150"
-                            value={adminNewChoiceCost}
-                            onChange={(e) => setAdminNewChoiceCost(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                          />
-                        </div>
-                        <button 
-                          type="submit" 
-                          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-xl transition shadow-sm text-xs cursor-pointer"
-                        >
-                          บันทึกเพิ่มรายการชุดสินค้า
-                        </button>
-                      </form>
-                    </div>
-
-                    <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4 lg:col-span-2">
-                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                        📋 รายการตัวเลือกชุดสินค้าแยกตามตำแหน่งปัจจุบัน
-                      </h4>
-                      <div className="max-h-[320px] overflow-y-auto space-y-3 pr-2 text-xs text-slate-700">
-                        {['pack_m', 'pack_l', 'pack_xl', 'pack_xxl'].map(pkgId => {
-                          const pkgName = products.find(p => p.id === pkgId)?.name || pkgId.toUpperCase();
-                          const choices = packageChoices.filter(c => c.packageId === pkgId);
-                          return (
-                            <div key={pkgId} className="border border-slate-100 p-3 rounded-2xl bg-slate-50/50">
-                              <h5 className="font-extrabold text-indigo-900 border-b border-indigo-100 pb-1 mb-2 text-[11px]">
-                                {pkgName}
-                              </h5>
-                              {choices.length > 0 ? (
-                                <div className="space-y-1.5">
-                                  {choices.map(choice => (
-                                    <div key={choice.id} className="bg-white px-3 py-1.5 rounded-xl border border-slate-100 flex justify-between items-center text-[11px]">
-                                      <div className="flex flex-col">
-                                        <span className="font-medium text-slate-800">{choice.name}</span>
-                                        {choice.cost !== undefined && (
-                                          <span className="text-[10px] text-emerald-600 font-semibold font-mono">ต้นทุน: ฿{parseFloat(choice.cost).toLocaleString()} บาท</span>
-                                        )}
-                                      </div>
-                                      <button 
-                                        onClick={() => handleDeletePackageChoice(choice.id)}
-                                        className="text-rose-600 hover:text-rose-800 font-bold ml-2 text-[10px]"
-                                      >
-                                        ลบออก
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="text-[10px] text-slate-400 italic">ไม่มีข้อมูลชุดสินค้า แนะนำให้เพิ่มเซ็ตสินค้า</p>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-
                   {/* รายการจัดส่งสินค้าและอนุมัติการจัดส่ง */}
                   <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-100 pb-3">
@@ -11045,9 +12901,9 @@ export default function App() {
                   {/* New Seller Store Approval Queue */}
                   <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
                     <h4 className="text-xs font-bold text-rose-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      🏪 ตารางคำขออนุมัติเปิดร้านค้าผู้ขายรายใหม่ (New Seller Store Approval Queue)
+                      🏪 ตารางคำขออนุมัติเปิดร้านค้าพาร์ทเนอร์รายใหม่ (New Partner Store Approval Queue)
                       {adminMembersList.filter((m: any) => m.sellerStatus === 'Pending').length > 0 && (
-                        <span className="bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse">
+                        <span className="bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px]">
                           {adminMembersList.filter((m: any) => m.sellerStatus === 'Pending').length}
                         </span>
                       )}
@@ -11626,6 +13482,343 @@ export default function App() {
                 </div>
               )}
 
+              {/* MEMBER SHOP INFO SUBTAB */}
+              {adminSubTab === 'memberShopInfo' && (
+                <div className="space-y-6 animate-fadeIn">
+                  <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
+                      <div>
+                        <h4 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                          👥 รายชื่อและข้อมูลสมาชิกร้านค้าในระบบ (Member Partner Database)
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          แสดงข้อมูลและจัดการสถานะของพาร์ทเนอร์ร้านค้า (อนุมัติ / ปฏิเสธคำขอ / ระงับชั่วคราว / ยกเลิก) รวมถึงแก้ไขที่ตั้งพิกัดคลังสินค้า
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Shop Info Table */}
+                    <div className="overflow-x-auto border border-slate-100 rounded-2xl bg-white shadow-sm">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold text-[11px] uppercase tracking-wider">
+                            <th className="p-3">รหัสสมาชิก / User</th>
+                            <th className="p-3">ชื่อ - สกุล</th>
+                            <th className="p-3">เบอร์โทร</th>
+                            <th className="p-3">E-mail</th>
+                            <th className="p-3 font-mono">รหัสร้านค้า</th>
+                            <th className="p-3">ชื่อร้านค้า</th>
+                            <th className="p-3">สถานะร้านค้า</th>
+                            <th className="p-3">วันที่ขออนุมัติ</th>
+                            <th className="p-3 text-center">จัดการสถานะ / แก้ไข</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(() => {
+                            // Display all members who have applied for seller status (Pending, Active, Suspended, Rejected, etc.)
+                            const sellers = adminMembersList.filter((m: any) => m.sellerStatus && m.sellerStatus !== 'NotApplied');
+                            if (sellers.length === 0) {
+                              return (
+                                <tr>
+                                  <td colSpan={9} className="text-center py-10 text-slate-400 font-medium">
+                                    ยังไม่มีสมาชิกที่จดทะเบียนร้านค้าในระบบค่ะ
+                                  </td>
+                                </tr>
+                              );
+                            }
+                            return sellers.map((m: any) => {
+                              // Get status badge colors
+                              let statusBadge = null;
+                              switch (m.sellerStatus) {
+                                case 'Active':
+                                  statusBadge = (
+                                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full text-[10px] font-extrabold shadow-sm">
+                                      ✓ อนุมัติแล้ว (Active)
+                                    </span>
+                                  );
+                                  break;
+                                case 'Pending':
+                                  statusBadge = (
+                                    <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-full text-[10px] font-extrabold animate-pulse shadow-sm">
+                                      ⏳ รออนุมัติ (Pending)
+                                    </span>
+                                  );
+                                  break;
+                                case 'Rejected':
+                                  statusBadge = (
+                                    <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-full text-[10px] font-extrabold shadow-sm">
+                                      ❌ ไม่อนุมัติ (Rejected)
+                                    </span>
+                                  );
+                                  break;
+                                case 'Suspended':
+                                  statusBadge = (
+                                    <span className="bg-orange-50 text-orange-700 border border-orange-200 px-2.5 py-1 rounded-full text-[10px] font-extrabold shadow-sm">
+                                      ⚠️ ระงับชั่วคราว (Suspended)
+                                    </span>
+                                  );
+                                  break;
+                                default:
+                                  statusBadge = (
+                                    <span className="bg-slate-50 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-full text-[10px] font-extrabold shadow-sm">
+                                      {m.sellerStatus || 'ไม่ระบุ'}
+                                    </span>
+                                  );
+                              }
+
+                              // Format date of application (sellerAppliedAt or createdAt)
+                              const appliedDateStr = m.sellerAppliedAt 
+                                ? new Date(m.sellerAppliedAt).toLocaleDateString('th-TH', { year: '2-digit', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                                : m.createdAt 
+                                ? new Date(m.createdAt).toLocaleDateString('th-TH', { year: '2-digit', month: 'short', day: 'numeric' })
+                                : '-';
+
+                              return (
+                                <tr key={m.userId} className="hover:bg-slate-50 border-b border-slate-50 font-sans transition-colors duration-150">
+                                  {/* รหัสสมาชิก / User */}
+                                  <td className="p-3 font-mono font-bold text-slate-800">{m.userId}</td>
+                                  
+                                  {/* ชื่อ - สกุล */}
+                                  <td className="p-3 font-semibold text-slate-800">{m.name} {m.surname || ''}</td>
+                                  
+                                  {/* เบอร์โทร */}
+                                  <td className="p-3 font-mono text-slate-600">{m.phone || '-'}</td>
+                                  
+                                  {/* E-mail */}
+                                  <td className="p-3 text-slate-500">{m.email || '-'}</td>
+                                  
+                                  {/* รหัสร้านค้า */}
+                                  <td className="p-3">
+                                    {m.sellerCode ? (
+                                      <span className="font-mono bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-indigo-100">
+                                        {m.sellerCode}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 italic text-[10px]">รออนุมัติรหัส</span>
+                                    )}
+                                  </td>
+                                  
+                                  {/* ชื่อร้านค้า */}
+                                  <td className="p-3 font-semibold text-slate-900">{m.sellerStoreName || '-'}</td>
+                                  
+                                  {/* สถานะร้านค้า */}
+                                  <td className="p-3">{statusBadge}</td>
+                                  
+                                  {/* วันที่ขออนุมัติ */}
+                                  <td className="p-3 text-slate-500 text-[11px] font-mono">{appliedDateStr}</td>
+                                  
+                                  {/* ปุ่ม อนุมัติ / ไม่อนุมัติ / ระงับชั่วคราว / ยกเลิก */}
+                                  <td className="p-3">
+                                    <div className="flex flex-col gap-1.5 justify-center items-stretch min-w-[200px]">
+                                      {/* Row 1 Action Buttons */}
+                                      <div className="flex gap-1">
+                                        {/* อนุมัติ */}
+                                        <button
+                                          onClick={() => handleUpdateStoreStatus(m.userId, 'Active')}
+                                          disabled={m.sellerStatus === 'Active'}
+                                          className={`flex-1 text-[9px] font-black px-1.5 py-1 rounded-lg border text-center transition cursor-pointer ${
+                                            m.sellerStatus === 'Active'
+                                              ? 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
+                                              : 'bg-emerald-550 hover:bg-emerald-600 text-white border-emerald-500 shadow-sm'
+                                          }`}
+                                          title="อนุมัติเปิดร้านค้า"
+                                        >
+                                          ✓ อนุมัติ
+                                        </button>
+
+                                        {/* ไม่อนุมัติ */}
+                                        <button
+                                          onClick={() => handleUpdateStoreStatus(m.userId, 'Rejected')}
+                                          disabled={m.sellerStatus === 'Rejected'}
+                                          className={`flex-1 text-[9px] font-black px-1.5 py-1 rounded-lg border text-center transition cursor-pointer ${
+                                            m.sellerStatus === 'Rejected'
+                                              ? 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
+                                              : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
+                                          }`}
+                                          title="ไม่อนุมัติ / ปฏิเสธ"
+                                        >
+                                          ❌ ไม่อนุมัติ
+                                        </button>
+                                      </div>
+
+                                      {/* Row 2 Action Buttons */}
+                                      <div className="flex gap-1">
+                                        {/* ระงับชั่วคราว */}
+                                        <button
+                                          onClick={() => handleUpdateStoreStatus(m.userId, 'Suspended')}
+                                          disabled={m.sellerStatus === 'Suspended'}
+                                          className={`flex-1 text-[9px] font-black px-1.5 py-1 rounded-lg border text-center transition cursor-pointer ${
+                                            m.sellerStatus === 'Suspended'
+                                              ? 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
+                                              : 'bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200'
+                                          }`}
+                                          title="ระงับการใช้งานชั่วคราว"
+                                        >
+                                          ⚠️ ระงับ
+                                        </button>
+
+                                        {/* ยกเลิก */}
+                                        <button
+                                          onClick={() => handleUpdateStoreStatus(m.userId, 'NotApplied')}
+                                          className="flex-1 text-[9px] font-black px-1.5 py-1 rounded-lg border text-center bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300 transition cursor-pointer"
+                                          title="ยกเลิกการเปิดร้าน (กลับสู่ไม่สมัคร)"
+                                        >
+                                          ⛔ ยกเลิก
+                                        </button>
+                                      </div>
+
+                                      {/* Row 3: Edit Warehouse Info */}
+                                      <button
+                                        onClick={() => {
+                                          setAdminSelectedSeller(m);
+                                          setAdminEditStoreName(m.sellerStoreName || '');
+                                          setAdminEditStoreAddress(m.sellerAddress || '');
+                                          setAdminEditLat(m.warehouseLat || 13.7563);
+                                          setAdminEditLng(m.warehouseLng || 100.5018);
+                                        }}
+                                        className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 py-1 rounded-lg text-[9px] font-extrabold transition cursor-pointer text-center mt-0.5"
+                                      >
+                                        📍 พิกัด / ที่อยู่คลังสินค้า
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            });
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ADMIN EDIT SELLER STORE MODAL */}
+              {adminSelectedSeller && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className="bg-white rounded-3xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto space-y-5 shadow-2xl border border-indigo-50 animate-scaleUp">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                      <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-1.5">
+                        🏪 แก้ไขข้อมูลพิกัดคลังสินค้าสมาชิกร้านค้า (ID: {adminSelectedSeller.userId})
+                      </h3>
+                      <button 
+                        onClick={() => setAdminSelectedSeller(null)}
+                        className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleAdminUpdateSellerShop} className="space-y-4 text-xs">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="font-bold text-slate-700">ชื่อร้านค้า (Store Name)</label>
+                          <input 
+                            type="text"
+                            required
+                            value={adminEditStoreName}
+                            onChange={(e) => setAdminEditStoreName(e.target.value)}
+                            className="w-full border border-slate-200 rounded-xl px-3 py-2"
+                          />
+                        </div>
+                        
+                        <div className="space-y-1">
+                          <label className="font-bold text-slate-700">รหัสร้านค้า (Shop Code)</label>
+                          <input 
+                            type="text"
+                            disabled
+                            value={adminSelectedSeller.sellerCode || "ยังไม่ได้รับอนุมัติ"}
+                            className="w-full border border-slate-100 rounded-xl px-3 py-2 bg-slate-50 font-mono text-slate-400 font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="font-bold text-slate-700">ที่ตั้งคลังสินค้ารับของส่งคืน</label>
+                          <textarea 
+                            rows={2}
+                            required
+                            value={adminEditStoreAddress}
+                            onChange={(e) => setAdminEditStoreAddress(e.target.value)}
+                            className="w-full border border-slate-200 rounded-xl p-3"
+                          />
+                        </div>
+
+                        {/* Map coordinate editor */}
+                        <NateeWarehouseMap 
+                          lat={adminEditLat}
+                          lng={adminEditLng}
+                          onChange={(lat, lng) => {
+                            setAdminEditLat(lat);
+                            setAdminEditLng(lng);
+                          }}
+                          address={adminEditStoreAddress}
+                          onAddressChange={(addr) => setAdminEditStoreAddress(addr)}
+                        />
+                      </div>
+
+                      <div className="flex gap-2 justify-end border-t border-slate-100 pt-4">
+                        <button
+                          type="button"
+                          onClick={() => setAdminSelectedSeller(null)}
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-xl font-bold cursor-pointer transition"
+                        >
+                          ยกเลิก
+                        </button>
+                        <button
+                          type="submit"
+                          className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl font-bold cursor-pointer transition shadow"
+                        >
+                          ✓ บันทึกการแก้ไข
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {/* ADMIN WRITE REGULATIONS SUBTAB (Admin Console) */}
+              {adminSubTab === 'manageRegulations' && (
+                <div className="space-y-6 animate-fadeIn max-w-4xl">
+                  <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
+                    <div className="border-b border-slate-100 pb-4">
+                      <h4 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                        📝 จัดการระเบียบข้อบังคับร้านค้าผู้ขายรายใหม่ (Admin Console)
+                      </h4>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        พิมพ์หรือแก้ไขกฎระเบียบของทางระบบ Natee Plus Partner เพื่อกำหนดให้สมาชิกใหม่ต้องกดยอมรับก่อนสมัครเปิดร้านค้าออนไลน์ได้
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-bold text-slate-750">กฎระเบียบ ข้อตกลง และข้อบังคับการหัก GP 20% (Rich Editor Textarea)</label>
+                        <textarea 
+                          rows={15}
+                          value={sellerRegulationsText}
+                          onChange={(e) => setSellerRegulationsText(e.target.value)}
+                          placeholder="พิมพ์หรือวางข้อตกลง กฎระเบียบข้อบังคับพาร์ทเนอร์ร้านค้าที่นี่..."
+                          className="w-full border border-slate-200 rounded-2xl p-4 text-xs font-sans text-slate-700 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none leading-relaxed transition"
+                        />
+                      </div>
+
+                      <div className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                        <span className="text-[11px] text-slate-500">
+                          💡 ตัวอักษรสะสมในขณะนี้: <strong>{sellerRegulationsText?.length || 0}</strong> ตัวอักษร
+                        </span>
+                        <button
+                          onClick={handleAdminSaveRegulations}
+                          className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl text-xs font-bold transition shadow hover:shadow-md flex items-center gap-1.5 cursor-pointer"
+                        >
+                          💾 บันทึกระเบียบข้อบังคับใหม่
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {adminSubTab === 'systemReset' && (
                 <div className="space-y-6 max-w-2xl mx-auto animate-fadeIn">
                   {/* Sandbox Mode / Live Data Management Card */}
@@ -11830,6 +14023,1957 @@ export default function App() {
                 </div>
               )}
 
+              {adminSubTab === 'packageChoices' && (
+                <div className="space-y-6 animate-fadeIn text-slate-700">
+                  {/* Header */}
+                  <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-md border border-slate-800 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 -mt-8 -mr-8 w-32 h-32 rounded-full bg-indigo-600/20 blur-2xl"></div>
+                    <div className="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                      <div>
+                        <h3 className="text-lg font-black text-white flex items-center gap-2">
+                          📦 จัดการสินค้าแพ็กเกจ (Package Choices Manager)
+                        </h3>
+                        <p className="text-xs text-slate-300 mt-1">
+                          ระบบเพิ่ม แก้ไข และลบตัวเลือกชุดของขวัญสินค้าสำหรับแพ็กเกจสมัครสมาชิก (S, M, L, XL, XXL) 
+                          พร้อมระบบคำนวณต้นทุนการตั้งราคาวางขายภาษีและค่าจัดส่งสำหรับแอดมินค่ะ
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Form to Add/Edit Choice */}
+                    <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4 lg:col-span-1">
+                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        {adminEditingChoiceId ? '📝 แก้ไขตัวเลือกสินค้าแพ็กเกจ' : '➕ เพิ่มตัวเลือกสินค้าแพ็กเกจ'}
+                      </h4>
+                      <form onSubmit={handleAddPackageChoice} className="space-y-3.5 text-xs text-slate-700">
+                        <div>
+                          <label className="block text-slate-600 font-semibold mb-1">เลือกแพ็กเกจหลัก</label>
+                          <select 
+                            value={adminNewChoicePackageId}
+                            onChange={(e) => setAdminNewChoicePackageId(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700"
+                          >
+                            <option value="pack_s">S - ชุดของใช้เริ่มต้น</option>
+                            <option value="pack_m">M - ชุดครอบครัวประหยัด</option>
+                            <option value="pack_l">L - ชุดดูแลสุขภาพแบบองค์รวม</option>
+                            <option value="pack_xl">XL - ชุดนักขยายธุรกิจ</option>
+                            <option value="pack_xxl">XXL - ชุดผู้ประกอบการ</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-600 font-semibold mb-1">ชื่อเซ็ต / ชุดสินค้า (Set Name)</label>
+                          <input 
+                            type="text"
+                            placeholder="เช่น M-Set A: ชุดของใช้นทีพลัส 3 ชิ้น"
+                            value={adminNewChoiceName}
+                            onChange={(e) => setAdminNewChoiceName(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-600 font-semibold mb-1">สถานะการแสดงผล (สมาชิกเห็นหรือไม่)</label>
+                          <div className="flex gap-3 items-center">
+                            <label className="inline-flex items-center gap-1 cursor-pointer select-none font-bold text-slate-600">
+                              <input 
+                                type="radio"
+                                name="choiceIsActive"
+                                checked={adminNewChoiceIsActive}
+                                onChange={() => setAdminNewChoiceIsActive(true)}
+                                className="text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                              />
+                              <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md text-[10px]">🟢 เปิดให้เลือก</span>
+                            </label>
+                            <label className="inline-flex items-center gap-1 cursor-pointer select-none font-bold text-slate-600">
+                              <input 
+                                type="radio"
+                                name="choiceIsActive"
+                                checked={!adminNewChoiceIsActive}
+                                onChange={() => setAdminNewChoiceIsActive(false)}
+                                className="text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                              />
+                              <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md text-[10px]">🔴 ซ่อนไว้</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Cost Calculation Section */}
+                        {(() => {
+                          const packagePrices: Record<string, number> = {
+                            pack_s: 100,
+                            pack_m: 500,
+                            pack_l: 1000,
+                            pack_xl: 3000,
+                            pack_xxl: 5000
+                          };
+                          const computedSellingPrice = packagePrices[adminNewChoicePackageId] || 0;
+                          const computedSalesVat = computedSellingPrice * 7 / 107;
+                          const computedProductCost = parseFloat(adminNewChoiceProductPrice) || 0;
+                          const computedInputVat = adminNewChoiceHasVat ? (computedProductCost * 0.07) : 0;
+                          const computedProductCostWithVat = computedProductCost + computedInputVat;
+                          const computedPackagingCost = parseFloat(adminNewChoicePackagingCost) || 0;
+                          const computedShippingFee = parseFloat(adminNewChoiceShippingFee) || 0;
+                          const computedVatPayable = computedSalesVat - computedInputVat;
+                          const computedPvPayout = computedSellingPrice * 0.5; // หัก 50% ของราคาขาย เพื่อเป็น PV
+                          const computedTotalExpense = computedProductCostWithVat + computedPackagingCost + computedShippingFee + computedVatPayable + computedPvPayout;
+                          const computedRemaining = computedSellingPrice - computedTotalExpense;
+
+                          return (
+                            <div className="border border-slate-100 bg-slate-50/50 p-4 rounded-2xl space-y-4">
+                              <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider block border-b border-indigo-100/50 pb-1 flex justify-between items-center">
+                                <span>🧮 ระบบคำนวณและประมาณการภาษี</span>
+                                <span className="bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.2 rounded text-[8px] font-mono">
+                                  VAT & PV SYSTEM
+                                </span>
+                              </span>
+                              
+                              {/* 1. ราคาขายตามแพ็กเกจ (ล็อกตำแหน่ง) */}
+                              <div className="bg-white p-2.5 rounded-xl border border-slate-100/80 flex justify-between items-center text-xs">
+                                <span className="font-semibold text-slate-600">ราคาขายตามตำแหน่ง:</span>
+                                <span className="font-extrabold text-slate-800 font-mono text-[13px]">
+                                  ฿{computedSellingPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                </span>
+                              </div>
+
+                              {/* 2. ภาษีขาย 7% */}
+                              <div className="flex justify-between items-center text-[11px] text-slate-500 font-mono px-1">
+                                <span>ภาษีขาย (7% ในราคาขาย):</span>
+                                <span className="font-bold text-slate-700">
+                                  ฿{computedSalesVat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                </span>
+                              </div>
+
+                              {/* 3. ราคาทุนสินค้า */}
+                              <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                                <div className="flex justify-between items-center">
+                                  <label className="block text-slate-600 font-semibold text-[11px]">ราคาทุนสินค้า (บาท)</label>
+                                  {/* Checkbox สำหรับ มี Vat */}
+                                  <label className="inline-flex items-center gap-1 cursor-pointer select-none text-[10px] font-bold text-slate-500 hover:text-indigo-600 transition-colors">
+                                    <input 
+                                      type="checkbox"
+                                      checked={adminNewChoiceHasVat}
+                                      onChange={(e) => setAdminNewChoiceHasVat(e.target.checked)}
+                                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                                    />
+                                    <span>มี Vat 7%</span>
+                                  </label>
+                                </div>
+                                <input 
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="เช่น 150.00"
+                                  value={adminNewChoiceProductPrice}
+                                  onChange={(e) => setAdminNewChoiceProductPrice(e.target.value)}
+                                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+
+                                {/* แสดงผลคำนวณราคาทุนรวม VAT */}
+                                <div className="bg-white/80 p-2 rounded-xl border border-slate-100/50 text-[10px] space-y-1 font-mono text-slate-500">
+                                  <div className="flex justify-between">
+                                    <span>ภาษีซื้อต้นทุน (7%):</span>
+                                    <span>
+                                      {adminNewChoiceHasVat 
+                                        ? `+ ฿${computedInputVat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+                                        : '฿0.00 (ไม่คำนวณ)'
+                                      }
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between font-bold text-slate-700 border-t border-dashed border-slate-100 pt-1">
+                                    <span>ทุนรวม VAT:</span>
+                                    <span>฿{computedProductCostWithVat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 4. ราคาบรรจุภัณฑ์ */}
+                              <div>
+                                <label className="block text-slate-600 font-semibold mb-1 text-[11px]">ราคาบรรจุภัณฑ์ (Packaging Cost) (฿)</label>
+                                <input 
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="เช่น 15.00"
+                                  value={adminNewChoicePackagingCost}
+                                  onChange={(e) => setAdminNewChoicePackagingCost(e.target.value)}
+                                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                              </div>
+
+                              {/* 5. ค่าจัดส่ง */}
+                              <div>
+                                <label className="block text-slate-600 font-semibold mb-1 text-[11px]">ค่าจัดส่ง (Shipping Cost) (฿)</label>
+                                <input 
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="เช่น 50.00"
+                                  value={adminNewChoiceShippingFee}
+                                  onChange={(e) => setAdminNewChoiceShippingFee(e.target.value)}
+                                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                              </div>
+
+                              {/* 6. หักจ่าย PV (50% ของราคาขาย) */}
+                              <div className="bg-amber-50/70 p-2.5 rounded-xl border border-amber-200/50 text-[11px] space-y-1 font-mono text-slate-700">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-semibold">หักจ่าย PV (50% ของราคาตั้งขาย):</span>
+                                  <span className="font-extrabold text-amber-800">
+                                    ฿{computedPvPayout.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* 7. ภาษีนำส่ง ( ภาษีขาย-ภาษีต้นทุน ) */}
+                              <div className="bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100/50 text-[11px] space-y-1 font-mono text-slate-600">
+                                <div className="flex justify-between">
+                                  <span>ภาษีนำส่ง (ภาษีขาย - ภาษีต้นทุน):</span>
+                                  <span className="font-bold text-indigo-700">
+                                    ฿{computedVatPayable.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* 8 & 9. รวมค่าใช้จ่าย และ คงเหลือ */}
+                              <div className="border-t border-slate-100 pt-3 space-y-1.5 font-mono text-xs">
+                                <div className="flex justify-between font-bold text-slate-600">
+                                  <span>รวมค่าใช้จ่ายทั้งหมด (รวมจ่าย PV):</span>
+                                  <span className="text-rose-600 font-extrabold">
+                                    ฿{computedTotalExpense.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between font-black text-[13px] text-slate-800 bg-emerald-50 border border-emerald-100/80 p-2 rounded-xl">
+                                  <span className="text-emerald-800">คงเหลือสุทธิ (Net profit):</span>
+                                  <span className="text-emerald-700">
+                                    ฿{computedRemaining.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="text-[9px] text-slate-400 leading-normal bg-white p-2 rounded-lg border border-slate-100">
+                                📌 ระบบจะจัดเก็บข้อมูลลงในรายงานค่าใช้จ่ายบริษัท เพื่อแสดงผลกำไรสุทธิคงเหลือหลังหักภาษีมูลค่าเพิ่มนำส่งและต้นทุนจริงให้บริษัทค่ะ
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        <div className="flex gap-2 pt-2">
+                          <button 
+                            type="submit" 
+                            className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-3 rounded-xl transition shadow cursor-pointer text-center"
+                          >
+                            {adminEditingChoiceId ? '💾 อัปเดตข้อมูล' : '➕ บันทึกข้อมูล'}
+                          </button>
+                          {adminEditingChoiceId && (
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                setAdminNewChoiceName('');
+                                setAdminNewChoiceCost('');
+                                setAdminNewChoiceProductPrice('');
+                                setAdminNewChoiceShippingFee('');
+                                setAdminNewChoiceHasVat(false);
+                                setAdminNewChoicePackagingCost('');
+                                setAdminNewChoiceIsActive(true);
+                                setAdminEditingChoiceId(null);
+                              }}
+                              className="bg-slate-200 hover:bg-slate-300 text-slate-600 font-bold py-2 px-3 rounded-xl transition cursor-pointer"
+                            >
+                              ยกเลิก
+                            </button>
+                          )}
+                        </div>
+                      </form>
+                    </div>
+
+                    {/* List of Existing Choices grouped by package */}
+                    <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-5 lg:col-span-2">
+                      <div className="border-b border-slate-100 pb-3">
+                        <h4 className="text-sm font-black text-slate-850 uppercase tracking-tight flex items-center gap-1.5">
+                          📋 รายการตัวเลือกชุดของขวัญสินค้าแยกตามแพ็กเกจหลัก
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          กล่องสินค้าแต่ละแพ็กเกจจะแยกจากกันเพื่อความสะดวกในการจัดการราคาขายรวมภาษีมูลค่าเพิ่มและค่าจัดส่งค่ะ
+                        </p>
+                      </div>
+
+                      {/* Package Group Filter Tabs */}
+                      <div className="flex flex-wrap gap-1.5 border-b border-slate-100 pb-1">
+                        {[
+                          { id: 'All', label: '📋 ดูทั้งหมด' },
+                          { id: 'pack_s', label: '🌱 กลุ่ม S (100 บ.)' },
+                          { id: 'pack_m', label: '🏡 กลุ่ม M (1,000 บ.)' },
+                          { id: 'pack_l', label: '🥗 กลุ่ม L (5,000 บ.)' },
+                          { id: 'pack_xl', label: '⚡ กลุ่ม XL (10,000 บ.)' },
+                          { id: 'pack_xxl', label: '💎 กลุ่ม XXL (50,000 บ.)' },
+                        ].map(tab => (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setAdminActivePackageFilter(tab.id)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer border ${
+                              adminActivePackageFilter === tab.id
+                                ? 'bg-slate-850 text-white border-slate-850 shadow-sm'
+                                : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                            }`}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-h-[680px] overflow-y-auto pr-1">
+                        {[
+                          {
+                            id: 'pack_s',
+                            name: 'S - ชุดของใช้เริ่มต้น',
+                            cost: 'ราคาซื้อแพ็กเกจ 100 บาท (50 PV)',
+                            themeColor: 'emerald',
+                            gradient: 'from-emerald-500/10 via-emerald-500/5 to-transparent',
+                            borderColor: 'border-emerald-200/80',
+                            textMuted: 'text-emerald-800',
+                            bgBadge: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+                            accentBar: 'bg-emerald-500',
+                            desc: 'เซ็ตเริ่มต้นใช้สินค้าทดลองและขยายสายงานธุรกิจ',
+                            icon: '🌱'
+                          },
+                          {
+                            id: 'pack_m',
+                            name: 'M - ชุดครอบครัวประหยัด',
+                            cost: 'ราคาซื้อแพ็กเกจ 500 บาท (250 PV)',
+                            themeColor: 'blue',
+                            gradient: 'from-blue-500/10 via-blue-500/5 to-transparent',
+                            borderColor: 'border-blue-200/80',
+                            textMuted: 'text-blue-800',
+                            bgBadge: 'bg-blue-50 text-blue-800 border-blue-200',
+                            accentBar: 'bg-blue-500',
+                            desc: 'เซ็ตของใช้อุปโภคบริโภคขนาดประหยัดสำหรับครอบครัว',
+                            icon: '🏡'
+                          },
+                          {
+                            id: 'pack_l',
+                            name: 'L - ชุดดูแลสุขภาพแบบองค์รวม',
+                            cost: 'ราคาซื้อแพ็กเกจ 1,000 บาท (500 PV)',
+                            themeColor: 'amber',
+                            gradient: 'from-amber-500/10 via-amber-500/5 to-transparent',
+                            borderColor: 'border-amber-200/80',
+                            textMuted: 'text-amber-800',
+                            bgBadge: 'bg-amber-50 text-amber-800 border-amber-200',
+                            accentBar: 'bg-amber-500',
+                            desc: 'เซ็ตสมุนไพรรวมและเครื่องดื่มสุขภาพสกัดเข้มข้น',
+                            icon: '🥗'
+                          },
+                          {
+                            id: 'pack_xl',
+                            name: 'XL - ชุดนักขยายธุรกิจ',
+                            cost: 'ราคาซื้อแพ็กเกจ 3,000 บาท (1,500 PV)',
+                            themeColor: 'rose',
+                            gradient: 'from-rose-500/10 via-rose-500/5 to-transparent',
+                            borderColor: 'border-rose-200/80',
+                            textMuted: 'text-rose-800',
+                            bgBadge: 'bg-rose-50 text-rose-800 border-rose-200',
+                            accentBar: 'bg-rose-500',
+                            desc: 'ชุดเซ็ตสกินแคร์กู้ผิวพรีเมียมและเครื่องใช้ไฟฟ้าพกพา',
+                            icon: '⚡'
+                          },
+                          {
+                            id: 'pack_xxl',
+                            name: 'XXL - ชุดผู้ประกอบการจังหวัด',
+                            cost: 'ราคาซื้อแพ็กเกจ 5,000 บาท (2,500 PV)',
+                            themeColor: 'purple',
+                            gradient: 'from-purple-500/10 via-purple-500/5 to-transparent',
+                            borderColor: 'border-purple-200/80',
+                            textMuted: 'text-purple-800',
+                            bgBadge: 'bg-purple-50 text-purple-800 border-purple-200',
+                            accentBar: 'bg-purple-500',
+                            desc: 'เซ็ตเปิดศูนย์โมบายจุดกระจายสินค้าครบวงจร รับสิทธิ์สูงสุด',
+                            icon: '💎'
+                          }
+                        ].filter(pkg => adminActivePackageFilter === 'All' || pkg.id === adminActivePackageFilter).map(pkg => {
+                          const choices = packageChoices.filter(c => c.packageId === pkg.id);
+                          return (
+                            <div 
+                              key={pkg.id} 
+                              className={`border ${pkg.borderColor} rounded-2xl bg-white overflow-hidden shadow-sm hover:shadow transition-all duration-200 flex flex-col justify-between`}
+                            >
+                              {/* Card Header with Custom Gradient Background */}
+                              <div className={`p-4 bg-gradient-to-br ${pkg.gradient} border-b border-slate-100/60 relative`}>
+                                <div className="absolute top-3 right-3 text-lg opacity-80">{pkg.icon}</div>
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-2 h-2 rounded-full bg-slate-700 animate-pulse"></span>
+                                    <h5 className="font-black text-slate-900 text-xs tracking-tight">
+                                      {pkg.name}
+                                    </h5>
+                                  </div>
+                                  <p className="text-[10px] font-bold text-indigo-600 font-mono">
+                                    {pkg.cost}
+                                  </p>
+                                  <p className="text-[10px] text-slate-500 leading-normal line-clamp-1">
+                                    {pkg.desc}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Card Body - Package Option List */}
+                              <div className="p-4 flex-1 flex flex-col justify-between space-y-3 bg-slate-50/20">
+                                <div className="space-y-2">
+                                  <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                    <span>ตัวเลือกสินค้าภายในชุด</span>
+                                    <span className={`px-2 py-0.5 rounded-full ${pkg.bgBadge} text-[9px] font-mono`}>
+                                      {choices.length} รายการ
+                                    </span>
+                                  </div>
+
+                                  {choices.length > 0 ? (
+                                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                                      {choices.map(choice => (
+                                        <div 
+                                          key={choice.id} 
+                                          className="bg-white p-2.5 rounded-xl border border-slate-100/80 hover:border-slate-200 shadow-xs flex flex-col gap-1.5 text-xs transition-all"
+                                        >
+                                          {/* First Row: Name and Actions */}
+                                          <div className="flex justify-between items-start gap-2">
+                                            <div className="flex-1 flex flex-col space-y-1">
+                                              <span className="font-extrabold text-slate-800 leading-tight text-[11px] block">
+                                                {choice.name}
+                                              </span>
+                                              
+                                              {/* Toggle Status & View Details Inline Buttons */}
+                                              <div className="flex items-center gap-1.5 flex-wrap">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => togglePackageChoiceStatus(choice.id)}
+                                                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-[5px] text-[8.5px] font-bold transition-all cursor-pointer ${
+                                                    choice.isActive !== false 
+                                                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/50' 
+                                                      : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200/50'
+                                                  }`}
+                                                  title="คลิกเพื่อ เปิด-ปิด การแสดงผลให้สมาชิกเห็น"
+                                                >
+                                                  {choice.isActive !== false ? '🟢 เปิดให้เลือก' : '🔴 ปิด (ซ่อนไว้)'}
+                                                </button>
+
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setExpandedChoiceIds(prev => ({ ...prev, [choice.id]: !prev[choice.id] }))}
+                                                  className="text-indigo-600 hover:text-indigo-800 font-bold text-[8.5px] bg-slate-50 hover:bg-indigo-50 px-1.5 py-0.5 rounded-[5px] border border-slate-100 transition-colors cursor-pointer"
+                                                >
+                                                  {expandedChoiceIds[choice.id] ? '📖 ซ่อนรายละเอียด' : '🔍 ดูรายละเอียด'}
+                                                </button>
+                                              </div>
+                                            </div>
+
+                                            {/* Edit / Delete Buttons */}
+                                            <div className="flex gap-1 shrink-0">
+                                              <button 
+                                                onClick={() => {
+                                                  setAdminEditingChoiceId(choice.id);
+                                                  setAdminNewChoicePackageId(choice.packageId);
+                                                  setAdminNewChoiceName(choice.name);
+                                                  setAdminNewChoiceCost(choice.cost !== undefined ? choice.cost.toString() : '');
+                                                  setAdminNewChoiceProductPrice(choice.productPrice !== undefined ? choice.productPrice.toString() : '');
+                                                  setAdminNewChoiceShippingFee(choice.shippingFee !== undefined ? choice.shippingFee.toString() : '');
+                                                  setAdminNewChoiceHasVat(!!choice.hasVat);
+                                                  setAdminNewChoicePackagingCost(choice.packagingCost !== undefined ? choice.packagingCost.toString() : '');
+                                                  setAdminNewChoiceIsActive(choice.isActive !== false);
+                                                }}
+                                                className="text-indigo-600 hover:text-indigo-800 font-bold text-[10px] px-1 py-0.5 rounded hover:bg-indigo-50/80 transition-colors cursor-pointer"
+                                              >
+                                                แก้ไข
+                                              </button>
+                                              <button 
+                                                onClick={() => handleDeletePackageChoice(choice.id)}
+                                                className="text-rose-600 hover:text-rose-800 font-bold text-[10px] px-1 py-0.5 rounded hover:bg-rose-50/80 transition-colors cursor-pointer"
+                                              >
+                                                ลบ
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          {/* Detailed breakdown (only visible when expanded) */}
+                                          {expandedChoiceIds[choice.id] && (() => {
+                                            const pkgPrice = choice.packagePrice || (pkg.id === 'pack_s' ? 100 : pkg.id === 'pack_m' ? 500 : pkg.id === 'pack_l' ? 1000 : pkg.id === 'pack_xl' ? 3000 : 5000);
+                                            const slsVat = choice.salesVat !== undefined ? choice.salesVat : (pkgPrice * 7 / 107);
+                                            const prdCost = choice.productCost !== undefined ? choice.productCost : (choice.productPrice || 0);
+                                            const isVat = !!choice.hasVat;
+                                            const inpVat = choice.inputVat !== undefined ? choice.inputVat : (isVat ? prdCost * 0.07 : 0);
+                                            const prdCostWithVat = choice.productCostWithVat !== undefined ? choice.productCostWithVat : (prdCost + inpVat);
+                                            const pkgCost = choice.packagingCost || 0;
+                                            const shpFee = choice.shippingFee || 0;
+                                            const vtPayable = choice.vatPayable !== undefined ? choice.vatPayable : (slsVat - inpVat);
+                                            const pvPayout = choice.pvPayout !== undefined ? choice.pvPayout : (pkgPrice * 0.5);
+                                            const totExpense = prdCostWithVat + pkgCost + shpFee + vtPayable + pvPayout;
+                                            const remProfit = pkgPrice - totExpense;
+
+                                            return (
+                                              <div className="flex flex-col space-y-1 text-[10px] text-slate-500 font-mono mt-1 pt-2 border-t border-dashed border-slate-100">
+                                                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                                                  <div className="flex justify-between">
+                                                    <span>ราคาขาย:</span>
+                                                    <span className="font-bold text-slate-700">฿{pkgPrice.toLocaleString()}</span>
+                                                  </div>
+                                                  <div className="flex justify-between">
+                                                    <span>ภาษีขาย 7%:</span>
+                                                    <span>฿{slsVat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                                  </div>
+                                                  <div className="flex justify-between">
+                                                    <span>ราคาทุนสินค้า:</span>
+                                                    <span>
+                                                      ฿{prdCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                                      {isVat && <span className="text-indigo-600 text-[8px] font-sans font-bold ml-0.5">(Vat)</span>}
+                                                    </span>
+                                                  </div>
+                                                  <div className="flex justify-between">
+                                                    <span>กล่อง/บรรจุภัณฑ์:</span>
+                                                    <span>฿{pkgCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                                  </div>
+                                                  <div className="flex justify-between">
+                                                    <span>ค่าจัดส่ง:</span>
+                                                    <span>฿{shpFee.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                                  </div>
+                                                  <div className="flex justify-between">
+                                                    <span>ภาษีนำส่ง:</span>
+                                                    <span className="text-indigo-600 font-bold">฿{vtPayable.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                                  </div>
+                                                  <div className="flex justify-between col-span-2 border-t border-dashed border-slate-100 pt-0.5">
+                                                    <span>หักจ่าย PV (50%):</span>
+                                                    <span className="text-amber-600 font-bold">฿{pvPayout.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                                  </div>
+                                                </div>
+                                                <div className="flex justify-between items-center bg-slate-50/80 px-1.5 py-1 rounded mt-1 text-[10.5px] border border-slate-100">
+                                                  <span className="font-bold text-slate-600 text-[10px]">รวมคชจ: ฿{totExpense.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                                  <span className={`font-black ${remProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                                    คงเหลือ: ฿{remProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                                  </span>
+                                                </div>
+                                              </div>
+                                            );
+                                          })()}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="py-6 text-center border border-dashed border-slate-200 rounded-xl bg-white">
+                                      <p className="text-[10px] text-slate-400 italic">ไม่มีข้อมูลชุดของขวัญสินค้า</p>
+                                      <span className="text-[9px] text-slate-300 block mt-0.5">กรุณาเพิ่มรายการสินค้าที่ฟอร์มซ้ายมือนะคะ</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {adminSubTab === 'systemConditions' && (
+                <div className="space-y-6 animate-fadeIn max-w-5xl mx-auto text-slate-850">
+                  {/* Header Banner */}
+                  <div className="bg-slate-950 text-white rounded-3xl p-8 shadow-xl border border-slate-800 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 -mt-12 -mr-12 w-48 h-48 rounded-full bg-indigo-600/15 blur-3xl"></div>
+                    <div className="absolute bottom-0 left-0 -mb-12 -ml-12 w-48 h-48 rounded-full bg-emerald-600/10 blur-3xl"></div>
+                    
+                    <div className="relative space-y-3">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs font-bold text-indigo-400">
+                        ⚖️ ศูนย์กำกับดูแลและตรวจสอบเงื่อนไขระบบ (NaTee Plus System Integrity & Audits)
+                      </div>
+                      <h3 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
+                        📋 ข้อกำหนด เงื่อนไข และระเบียบปฏิบัติด้านการคำนวณภาษีและคอมมิชชันทั้งระบบ
+                      </h3>
+                      <p className="text-xs text-slate-400 max-w-3xl leading-relaxed">
+                        เอกสารควบคุมโครงสร้างระบบความโปร่งใสทางบัญชี การจัดเก็บค่า GP การคำนวณคอมมิชชันแผนงาน แผน A แผน B กองทุนส่วนแบ่ง All-Share กองทุนปันสุข CSR การหักภาษีมูลค่าเพิ่ม VAT 7% และการหักภาษี ณ ที่จ่าย 3% ตามประมวลรัษฎากรแห่งประเทศไทย
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* SUB TAB CONTROLS FOR SYSTEM CONDITIONS */}
+                  <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+                    {[
+                      { id: 'registration', label: '👤 สมัครสมาชิก & แพ็กเกจ', icon: <UserCheck size={14} /> },
+                      { id: 'plana', label: '📊 แผน A ไบนารี่', icon: <Binary size={14} /> },
+                      { id: 'planb', label: '🏆 แผน B B1-B15', icon: <Award size={14} /> },
+                      { id: 'allshare', label: '💎 All-Share & ปันสุข', icon: <Heart size={14} /> },
+                      { id: 'remainingRights', label: '🛡️ เงื่อนไข สิทธิ์คงเหลือ', icon: <ShieldCheck size={14} /> },
+                      { id: 'transfers', label: '💸 การโอน & การถอนเงิน', icon: <ArrowLeftRight size={14} /> },
+                      { id: 'partner', label: '🤝 พาร์ทเนอร์ร้านค้า & GP', icon: <Store size={14} /> },
+                      { id: 'accounting', label: '🏦 บัญชีแยกประเภท & ภาษี', icon: <Receipt size={14} /> },
+                      { id: 'simulators', label: '🧮 เครื่องคิดเลขจำลอง', icon: <Calculator size={14} /> },
+                      { id: 'pdpa', label: '🛡️ นโยบาย PDPA (นที พลัส)', icon: <ShieldCheck size={14} /> },
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setSystemCondTab(tab.id)}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          systemCondTab === tab.id
+                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/10'
+                            : 'bg-white hover:bg-slate-150 text-slate-700 border border-slate-200'
+                        }`}
+                      >
+                        {tab.icon}
+                        <span>{tab.label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* TAB CONTENTS */}
+                  <div className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-sm min-h-[400px]">
+                    
+                    {/* 1. REGISTRATION & PACKAGES */}
+                    {systemCondTab === 'registration' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg shadow-inner">
+                            👤
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">เงื่อนไขการสมัครสมาชิกและแพ็กเกจตำแหน่ง (Membership Rules & Rank Matrix)</h4>
+                            <p className="text-xs text-slate-400">ระบบคัดกรอง ข้อมูลการยืนยันตัวตน และสิทธิ์รับรายได้สูงสุด 10 เท่าตามมูลค่าแพ็กเกจที่ลงทะเบียน</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">📝 ข้อกำหนดข้อมูลการลงทะเบียน (KYC Prerequisites)</h5>
+                            <ul className="space-y-2.5 text-xs text-slate-600">
+                              <li className="flex items-start gap-2">
+                                <span className="text-emerald-500 font-bold">✓</span>
+                                <div>
+                                  <strong>รหัสผู้แนะนำ (Sponsor ID):</strong> จำเป็นต้องมีผู้แนะนำในระบบเสมอเพื่อใช้วางสายงานในโครงสร้าง MLM ไบนารี่ (หากไม่มี จะถูกส่งให้ Admin เป็นผู้ดูแลหลัก)
+                                </div>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span className="text-emerald-500 font-bold">✓</span>
+                                <div>
+                                  <strong>ข้อมูลยืนยันตัวตน (KYC):</strong> ชื่อ-นามสกุลจริง, เลขบัตรประชาชน 13 หลัก, และรูปถ่ายหน้าบัตรประชาชน (ต้องผ่านการอนุมัติโดยระบบเพื่อรับสิทธิ์ทำรายการถอนเงิน)
+                                </div>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span className="text-emerald-500 font-bold">✓</span>
+                                <div>
+                                  <strong>บัญชีธนาคารรับเงินโอน:</strong> เลขที่บัญชี, ชื่อบัญชีธนาคาร (ชื่อผู้ถือบัญชีต้องตรงกับชื่อที่ลงทะเบียนในบัตรประชาชน 100% เพื่อความปลอดภัยจากการฟอกเงิน)
+                                </div>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span className="text-emerald-500 font-bold">✓</span>
+                                <div>
+                                  <strong>รหัสผ่านธุรกรรม (PIN 6 หลัก):</strong> ตั้งค่าเพื่อใช้ยืนยันตนในทุกขั้นตอนการทำรายการโอนและถอนเงิน เสริมทัพด้วยรหัสผ่าน OTP ส่งตรงทาง SMS โทรศัพท์มือถือ
+                                </div>
+                              </li>
+                            </ul>
+
+                            <div className="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-4 space-y-2 text-xs text-indigo-950">
+                              <p className="font-bold flex items-center gap-1">⚡ กฎการซื้อครั้งแรก (First Purchase rule):</p>
+                              <p className="leading-relaxed">
+                                สำหรับผู้สมัครใหม่ทุกคนที่เริ่มต้นจากสถานะ <strong>Member (ทั่วไป)</strong> หากต้องการเปิดสิทธิ์การขายสินค้าหรือวางสายงาน ระบบจะบังคับให้สั่งซื้อ <strong>แพ็กเกจ S (100 บาท)</strong> ซึ่งถือเป็นค่าสมัครใช้ระบบร้านค้าออนไลน์ก่อนเป็นลำดับแรก จากนั้นจึงจะสามารถซื้อสินค้าทั่วไปหรืออัพเกรดแพ็กเกจตำแหน่งที่สูงขึ้นได้
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">💎 รายละเอียดโครงสร้างแพ็กเกจ (Rank Specification Table)</h5>
+                            
+                            <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-sm">
+                              <table className="w-full text-left text-xs">
+                                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                                  <tr>
+                                    <th className="px-3 py-2.5">ตำแหน่ง</th>
+                                    <th className="px-3 py-2.5 text-right">ราคา (บาท)</th>
+                                    <th className="px-3 py-2.5 text-right">คะแนน PV</th>
+                                    <th className="px-3 py-2.5 text-right">เพดานรับ (บาท)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 text-slate-600 font-mono">
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-sans font-bold text-indigo-600">S (เปิดร้าน)</td>
+                                    <td className="px-3 py-2.5 text-right font-bold">100</td>
+                                    <td className="px-3 py-2.5 text-right">50 PV</td>
+                                    <td className="px-3 py-2.5 text-right text-emerald-600 font-bold">1,000 (10x)</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-sans font-bold text-amber-600">M</td>
+                                    <td className="px-3 py-2.5 text-right font-bold">500</td>
+                                    <td className="px-3 py-2.5 text-right">250 PV</td>
+                                    <td className="px-3 py-2.5 text-right text-emerald-600 font-bold">5,000 (10x)</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-sans font-bold text-teal-600">L</td>
+                                    <td className="px-3 py-2.5 text-right font-bold">1,000</td>
+                                    <td className="px-3 py-2.5 text-right">500 PV</td>
+                                    <td className="px-3 py-2.5 text-right text-emerald-600 font-bold">10,000 (10x)</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-sans font-bold text-rose-600">XL</td>
+                                    <td className="px-3 py-2.5 text-right font-bold">3,000</td>
+                                    <td className="px-3 py-2.5 text-right">1,500 PV</td>
+                                    <td className="px-3 py-2.5 text-right text-emerald-600 font-bold">30,000 (10x)</td>
+                                  </tr>
+                                  <tr className="bg-amber-50/20">
+                                    <td className="px-3 py-2.5 font-sans font-bold text-purple-600">XXL (สูงสุด)</td>
+                                    <td className="px-3 py-2.5 text-right font-bold">5,000</td>
+                                    <td className="px-3 py-2.5 text-right">2,500 PV</td>
+                                    <td className="px-3 py-2.5 text-right text-emerald-600 font-bold">50,000 (10x)</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+
+                            <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 space-y-2 text-[11px] text-slate-500 leading-relaxed">
+                              <p className="font-bold text-slate-700">⚠️ สิทธิ์การรับรายได้สูงสุด (Income Quota Limit):</p>
+                              <p>
+                                ระบบคิดเกณฑ์ความมั่งคั่งสูงสุดโดยจำกัดยอดการรับผลตอบแทนคอมมิชชันและโบนัสทุกประเภทรวมกันไว้ที่ <strong>10 เท่า (1,000%)</strong> ของราคาแพ็กเกจที่ได้ซื้อสะสมล่าสุด (เรียกว่าสิทธิ์ <strong>Eligible Rights</strong>)
+                              </p>
+                              <p>
+                                หากสิทธิ์ดังกล่าวหมดลงจนเหลือ 0 (เรียกว่ายอดเต็มเพดาน) รหัสผ่านนั้นจะถูกเปลี่ยนสถานะเป็นสิทธิ์ขาดคราว ระบบจะทำการระงับจ่ายโบนัสใหม่ของรหัสนั้น และทำธุรกรรมบีบอัดข้ามไปจ่ายให้อัพไลน์ข้างบนแทน จนกว่าสมาชิกรหัสนั้นจะสั่งซื้อสินค้าหรืออัพเกรดแพ็กเกจเพิ่มเติมเพื่อเติมวงเงินสิทธิ์ให้กลับมาใช้งานได้อีกครั้ง
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 2. PLAN A BINARY */}
+                    {systemCondTab === 'plana' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg shadow-inner">
+                            📊
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">แผนงานรายได้ผังองค์กร แผน A ไบนารี่ (Plan A Binary Matching Rules)</h4>
+                            <p className="text-xs text-slate-400">ระบบจัดลำดับชั้นองค์กรซ้าย-ขวา การหักปันส่วนยอดสะสมและเงื่อนไขการบีบสายงานแบบเรียลไทม์</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">📐 โครงสร้างการจ่ายผลตอบแทน (Commissions & Level Depth)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              ทุกยอดการสั่งซื้อสินค้าใดๆ บนระบบ Natee Plus Market จะนำพาคะแนน PV มาด้วยเสมอ โดยคะแนน PV นี้จะถูกวิ่งส่งตรงขึ้นสายงานอัพไลน์ขึ้นไปสูงสุดถึง <strong>20 ชั้นสายงาน</strong> ในอัตราผลตอบแทน <strong>2.5% ต่อชั้น</strong> ของคะแนน PV (1 PV = 1 บาท)
+                            </p>
+
+                            <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-sm">
+                              <table className="w-full text-left text-xs">
+                                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                                  <tr>
+                                    <th className="px-3 py-2.5">ตำแหน่ง</th>
+                                    <th className="px-3 py-2.5 text-center">สิทธิ์การรับรายได้ชั้นลึกองค์กร</th>
+                                    <th className="px-3 py-2.5 text-right">ยอดรับสูงสุด (%)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 text-slate-600">
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-bold text-indigo-600">S</td>
+                                    <td className="px-3 py-2.5 text-center font-mono">1 ชั้นองค์กรลึก</td>
+                                    <td className="px-3 py-2.5 text-right font-mono">2.50%</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-bold text-amber-600">M</td>
+                                    <td className="px-3 py-2.5 text-center font-mono">5 ชั้นองค์กรลึก</td>
+                                    <td className="px-3 py-2.5 text-right font-mono">12.50%</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-bold text-teal-600">L</td>
+                                    <td className="px-3 py-2.5 text-center font-mono">10 ชั้นองค์กรลึก</td>
+                                    <td className="px-3 py-2.5 text-right font-mono">25.00%</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2.5 font-bold text-rose-600">XL</td>
+                                    <td className="px-3 py-2.5 text-center font-mono">15 ชั้นองค์กรลึก</td>
+                                    <td className="px-3 py-2.5 text-right font-mono">37.50%</td>
+                                  </tr>
+                                  <tr className="bg-amber-50/20">
+                                    <td className="px-3 py-2.5 font-bold text-purple-600">XXL</td>
+                                    <td className="px-3 py-2.5 text-center font-mono">20 ชั้นองค์กรลึก (สูงสุด)</td>
+                                    <td className="px-3 py-2.5 text-right font-mono">50.00%</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+
+                            <div className="bg-emerald-50/60 border border-emerald-100 rounded-2xl p-4 text-xs text-emerald-950">
+                              <p className="font-bold flex items-center gap-1">🔄 ระบบบีบสายงานขึ้นด้านบน (Dynamic Compression):</p>
+                              <p className="leading-relaxed mt-1">
+                                เมื่อรหัสใดในโครงสร้างไม่มีสิทธิ์รับรายได้ (วงเงินสะสมเต็ม 10 เท่า หรือไม่ได้อยู่ในระดับตำแหน่งที่จะได้รับสิทธิ์ลึกชั้นนั้น) ระบบของ NaTee Plus จะใช้กลไก <strong>"Low-up Bypass"</strong> ข้ามขยับรหัสนั้นออกไป และมองหาอัพไลน์ในชั้นบนถัดขึ้นไปที่มีคุณสมบัติครบแทน โดยไม่บังคับให้ยืนยันตัวตน KYC ก่อนในการรับปันผลสะสม (แต่ทางระบบจะบังคับให้ต้องยืนยันตัวตน KYC ก็ต่อเมื่อสมาชิกต้องการดำเนินธุรกรรมโอนเงินหรือถอนเงินออกจากระบบเท่านั้น) ทั้งนี้เพื่อให้การจ่ายเงินในบิลนั้นสมบูรณ์ครอบคลุมและจ่ายครบจริงเต็มจำนวน 20 ชั้นที่กำหนด โดยคะแนนผลตอบแทนจะไม่สูญหายไปในระบบ
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">✂️ โครงสร้างการแบ่งหักคอมมิชชันแบนด์ 20% (Flat Deduction Split)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              เพื่อนำไปค้ำจุนสภาพคล่อง ปันสุขสู่สังคม และหล่อเลี้ยงระบบออโต้รันแบบเดี่ยวทั่วโลก (Plan B) คอมมิชชันผังไบนารี่ทุกยอดที่เกิดขึ้นจริง จะโดนหักปันส่วนเป็นอัตราส่วนคงที่ <strong>20% (Flat Rate)</strong> ดังรายละเอียดต่อไปนี้:
+                            </p>
+
+                            <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 space-y-3 text-xs">
+                              <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                                <span className="font-bold text-slate-700">รายได้เข้ากระเป๋า E-Money (ถอนเงินได้)</span>
+                                <span className="font-bold text-emerald-600 font-mono text-sm">80.00%</span>
+                              </div>
+                              <div className="space-y-1.5 text-slate-600 text-[11px] pl-1">
+                                <div className="flex justify-between">
+                                  <span>• เงินคูปองส่วนลดซื้อสินค้า (E-Coupon Wallet):</span>
+                                  <span className="font-mono text-slate-800">9.00% (สุทธิหลังส่งคืนกลาง 1%)</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>• เงินทุนกองทุนกลางเฉลี่ยจ่ายรอบพาร์ทเนอร์ (All-Share Pool):</span>
+                                  <span className="font-mono text-indigo-600">3.00% + หักคืน E-Coupon 1%</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>• คะแนนสะสมออโต้รันขึ้นผังเดี่ยวโลก (Plan B Points):</span>
+                                  <span className="font-mono text-amber-600">5.00% (เพื่อนำไปจำลองรหัสเดี่ยว B1)</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>• เงินทุนสังคมสงเคราะห์พัฒนาชุมชน (CSR Fund - กองทุนปันสุข):</span>
+                                  <span className="font-mono text-teal-600">1.00% (จ่ายคืนในนามสมาชิกที่ทำผลงาน)</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>• ค่ารักษาความปลอดภัยและกำไรดำเนินงานระบบ (Company Profit):</span>
+                                  <span className="font-mono text-purple-600">1.00%</span>
+                                </div>
+                              </div>
+                              <div className="pt-2 border-t border-slate-200 flex justify-between text-slate-700 font-bold">
+                                <span>ยอดหักจัดเก็บรวมเพื่อหมุนเวียนระบบนิเวศน์:</span>
+                                <span className="font-mono text-rose-600">20.00%</span>
+                              </div>
+                            </div>
+
+                            <div className="bg-amber-50/20 border border-amber-200/80 rounded-2xl p-4 text-[11px] text-amber-950 space-y-1.5 leading-relaxed">
+                              <p className="font-bold">📄 ตัวอย่างการคำนวณ:</p>
+                              <p>
+                                ยอดซื้อสินค้าของทีมใต้สายงานมีคะแนนสะสม <strong>10,000 PV</strong> <br />
+                                • ค่าคอมมิชชันรวม (2.5%) = <strong>250 บาท</strong> <br />
+                                • ยอดจ่ายจริงเข้ากระเป๋า <strong>E-Money</strong> สมาชิก = 250 x 80% = <strong>200.00 บาท</strong> <br />
+                                • ยอดคะแนนสะสมอัพขึ้น <strong>Plan B Points</strong> = 250 x 5% = <strong>12.50 คะแนน</strong> (เมื่อสะสมคะแนนครบ 100 ระบบจะทำการสร้างรหัสวิ่งไปลงผังเดี่ยวระดับโลกให้อัตโนมัติทันที)
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 3. PLAN B AUTOMATION B1-B15 */}
+                    {systemCondTab === 'planb' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg shadow-inner">
+                            🏆
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">ระบบแผนกองทุนพิเศษออโต้รันเดี่ยวทั่วโลก Plan B1-B15 (Plan B Global Auto-run & Cycle Payouts)</h4>
+                            <p className="text-xs text-slate-400">โครงสร้างจ่ายปันผลจากการเรียงคิวระดับสากล ไม่ขึ้นกับสายงานตรง และการแบ่งสัดส่วนเงินทุนข้ามระดับ 15 ชั้น</p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">🧬 หลักการสร้างรหัสและการคำนวณวงรอบ (Auto-run Queuing & Spawn Mechanism)</h5>
+                          <div className="text-xs text-slate-600 space-y-2.5 leading-relaxed">
+                            <p>
+                              ทุกครั้งที่สมาชิกสะสมคะแนนจากโบนัส Plan A ครบทุก <strong>100 Plan B Points</strong> ระบบจะทำการโคลนนิ่งรหัสออโต้รัน 1 รหัส นำไปเสียบต่อท้ายระบบแถวเดียวระดับโลก (Global Single Tree Line) โดยไล่ลำดับจากซ้ายไปขวาและบนลงล่างอย่างเสมอภาค ไม่เลือกผู้แนะนำหรือสายงานตรงใดๆ ทั้งสิ้น
+                            </p>
+                            <p>
+                              เมื่อมีรหัสในแถวมาต่อท้ายจนเต็มโครงสร้างไบนารี่ 5 ชั้นเต็ม (ครบจำนวน <strong>62 รหัส</strong> ด้านใต้รหัสนั้น) ระบบจะตัดยอดความสำเร็จของรอบ (Cycle Completed) และคิดมูลค่าการจ่ายเงินกองทุนคืนกลับดังนี้:
+                            </p>
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150 font-mono text-[11px] text-slate-700 space-y-2">
+                              <p className="font-bold text-slate-850">📊 สูตรคำนวณเงินกองทุนระบบแชร์พูลต่อหนึ่งระดับ:</p>
+                              <p>• ยอดจ่ายรวมกองทุนของโครงสร้าง (Total Payout) = <strong>62 x (มูลค่าหน่วยระดับ Node Value ÷ 5)</strong></p>
+                              <p>• แบ่งปันจ่ายส่วนได้เสียในองค์ประกอบระบบนิเวศน์ออกเป็น <strong>6 ส่วนเท่าๆ กัน (6 Parts)</strong> (ส่วนละ 12.4x ของ Node Value) ดังนี้:</p>
+                              <ul className="list-decimal pl-5 space-y-1 text-slate-600 text-[10px]">
+                                <li><strong>กระเป๋าเงิน E-Cash (รายได้ปันผล):</strong> เพื่อนำไปหัก Flat 20% จ่ายเป็น E-Money และเติมเข้าส่วนอื่นๆ อีก 5 ทิศทาง</li>
+                                <li><strong>กระเป๋าเงิน E-Coupon:</strong> เพื่อกลับไปใช้เป็นคะแนนส่วนลดสั่งซื้อสินค้าคุณภาพประหยัดค่าครองชีพ</li>
+                                <li><strong>ทุนสะสมขยับขึ้นระดับถัดไป (Spawn Reserve):</strong> ออมทุนเพื่อสร้างรหัสถัดขึ้นไป (ระดับ N+1) เช่น สำเร็จ B1 อัพเกรดขึ้นระดับ B2 อัตโนมัติ</li>
+                                <li><strong>เงินโบนัส All-Share (แชร์ยอดขายทั่วโลก):</strong> มอบคืนกลับสู่พูลโบนัสพิเศษในพาร์ทสมาชิกระดับนำ</li>
+                                <li><strong>กองทุนสังคมสงเคราะห์ปันสุข (CSR Fund):</strong> เสริมสร้างความอบอุ่นแบ่งปันสู่กลุ่มผู้ขาดแคลนและสังคมพาร์ทเนอร์</li>
+                                <li><strong>ค่าบริหารจัดการและสิทธิ์ใช้เซิร์ฟเวอร์บริษัท (Company Profit):</strong> เพื่อพัฒนาระบบเทคโนโลยีอย่างยั่งยืน</li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4 pt-2">
+                          <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">📋 ตารางผลตอบแทน Plan B1 - B15 (All Tiers Revenue Matrix)</h5>
+                          
+                          <div className="border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left text-xs font-mono">
+                                <thead className="bg-slate-900 text-slate-100 font-bold font-sans">
+                                  <tr>
+                                    <th className="px-3 py-3">รหัสระดับ</th>
+                                    <th className="px-3 py-3 text-right">ค่ารหัสตั้งต้น (Node Value)</th>
+                                    <th className="px-3 py-3 text-right">ยอดรวมที่เกิดขึ้น (Total Payout)</th>
+                                    <th className="px-3 py-3 text-right">ปันส่วนละ 1 ใน 6 (บาท)</th>
+                                    <th className="px-3 py-3 text-right">ยอดเงินรับโอนจริง (E-Money)</th>
+                                    <th className="px-3 py-3 text-right">คูปองที่รับจริง (E-Coupon)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200 text-slate-600 text-[11px] bg-white">
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-indigo-50/20">🏆 B1</td>
+                                    <td className="px-3 py-2 text-right">100.00</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">1,240.00</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">140.00</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">112.00 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">140.00</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-indigo-50/20">🏆 B2</td>
+                                    <td className="px-3 py-2 text-right">140.00</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">1,736.00</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">289.33</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">231.46 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">289.33</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-indigo-50/20">🏆 B3</td>
+                                    <td className="px-3 py-2 text-right">289.33</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">3,587.73</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">597.96</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">478.36 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">597.96</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-indigo-50/20">🏆 B4</td>
+                                    <td className="px-3 py-2 text-right">597.96</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">7,414.65</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">1,235.78</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">988.62 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">1,235.78</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-indigo-50/20">🏆 B5</td>
+                                    <td className="px-3 py-2 text-right">1,235.78</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">15,323.61</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">2,553.93</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">2,043.15 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">2,553.93</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700">🏆 B6</td>
+                                    <td className="px-3 py-2 text-right">2,553.93</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">31,668.79</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">5,278.13</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">4,222.50 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">5,278.13</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700">🏆 B7</td>
+                                    <td className="px-3 py-2 text-right">5,278.13</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">65,448.84</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">10,908.14</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">8,726.51 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">10,908.14</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700">🏆 B8</td>
+                                    <td className="px-3 py-2 text-right">10,908.14</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">135,260.94</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">22,543.49</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">18,034.79 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">22,543.49</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700">🏆 B9</td>
+                                    <td className="px-3 py-2 text-right">22,543.49</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">279,539.27</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">46,589.88</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">37,271.90 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">46,589.88</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700">🏆 B10</td>
+                                    <td className="px-3 py-2 text-right">46,589.88</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">577,714.49</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">96,285.75</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">77,028.60 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">96,285.75</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-amber-50/10">🏆 B11</td>
+                                    <td className="px-3 py-2 text-right">96,285.75</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">1,193,943.28</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">198,990.55</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">159,192.44 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">198,990.55</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-amber-50/10">🏆 B12</td>
+                                    <td className="px-3 py-2 text-right">198,990.55</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">2,467,482.78</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">411,247.13</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">328,997.70 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">411,247.13</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-amber-50/10">🏆 B13</td>
+                                    <td className="px-3 py-2 text-right">411,247.13</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">5,099,464.41</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">849,910.74</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">679,928.59 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">849,910.74</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-3 py-2 font-sans font-black text-indigo-700 bg-amber-50/10">🏆 B14</td>
+                                    <td className="px-3 py-2 text-right">849,910.74</td>
+                                    <td className="px-3 py-2 text-right text-slate-900">10,538,893.18</td>
+                                    <td className="px-3 py-2 text-right font-bold text-slate-800">1,756,482.20</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600 font-bold">1,405,185.76 (Net)</td>
+                                    <td className="px-3 py-2 text-right font-bold">1,756,482.20</td>
+                                  </tr>
+                                  <tr className="bg-amber-100/25">
+                                    <td className="px-3 py-2.5 font-sans font-black text-purple-800">🏆 B15 (สูงสุด)</td>
+                                    <td className="px-3 py-2.5 text-right font-bold">1,756,482.20</td>
+                                    <td className="px-3 py-2.5 text-right text-slate-900 font-bold">21,780,379.24</td>
+                                    <td className="px-3 py-2.5 text-right font-black text-purple-700">4,356,075.85</td>
+                                    <td className="px-3 py-2.5 text-right text-emerald-600 font-black">3,484,860.68 (Net)</td>
+                                    <td className="px-3 py-2.5 text-right font-black">4,356,075.85</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                          
+                          <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl text-[11px] text-slate-500 leading-relaxed">
+                            <p className="font-bold text-slate-700">📌 หมายเหตุพิเศษระดับ B15:</p>
+                            <p>
+                              สำหรับระดับสูงสุดคือ <strong>B15</strong> ระบบจะไม่ต้องแบ่งปันเงินส่วนทุนสะสมส่งต่อไปยังชั้นถัดไปอีก (เนื่องจากไม่มีสระระดับ B16) ยอดปันส่วนทั้งหมดจะถูกตัดหารด้วย <strong>5 ส่วน</strong> (แทนที่จะหาร 6 เหมือนระดับ 1-14) เพื่อจ่ายคืนผลตอบแทนให้เต็มพูลและไม่มีเศษค้างทิ้งไว้ในระบบ ทำให้สมาชิกที่สำเร็จวงรอบ B15 ได้รับมูลค่าต่อส่วนสูงมากถึง <strong>4,356,075.85 บาทต่อรหัสความสำเร็จ</strong>
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 4. ALL SHARE & PUNSOOK */}
+                    {systemCondTab === 'allshare' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg shadow-inner">
+                            💎
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">โบนัสยอดรวมหุ้นระบบ All-Share & กองทุนช่วยเหลือปันสุข (All-Share & Social CSR Rules)</h4>
+                            <p className="text-xs text-slate-400">หลักเกณฑ์การระดมทุนและการจัดสรรผลประโยชน์ส่วนรวมคืนสู่สมาชิกระดับพรีเมียมและกลุ่มสังคมรอบด้าน</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">🌟 ระบบปันผล All-Share (Global Sharing Pool)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              พูลเงินกองกลางที่รวบรวมเพื่อแบ่งปันยอดขายของแพลตฟอร์มทั้งหมด คัดสรรทุนมาสนับสนุนจาก:
+                            </p>
+                            <ul className="list-disc list-inside text-xs text-slate-600 space-y-1.5 pl-1 leading-relaxed">
+                              <li><strong>3.00%</strong> ของทุกคะแนน PV ของคอมมิชชัน Plan A ทั่วแพลตฟอร์ม</li>
+                              <li><strong>1.00%</strong> ของคะแนน PV ส่วน E-Coupon ของบิลพาส</li>
+                              <li><strong>5.00%</strong> จากค่าธรรมเนียมธุรกรรมแปลงเงิน E-Cash เป็น E-Money</li>
+                            </ul>
+                            
+                            <div className="bg-indigo-50/60 border border-indigo-100 p-4 rounded-2xl space-y-2.5 text-xs text-indigo-950 leading-relaxed">
+                              <p className="font-bold flex items-center gap-1">📋 เกณฑ์คุณสมบัติผู้รับ (Eligible Members):</p>
+                              <p>
+                                1. สมาชิกผู้ผ่านการลงทะเบียนเปิดสิทธิ์รับรายได้ (แพ็กเกจอัปเกรดใดก็ได้ตั้งแต่ S ขึ้นไป) <br />
+                                2. มีสิทธิ์การรับรายได้คงเหลือสะสมไม่เท่ากับศูนย์ (Eligible Rights &gt; 0) ทั่วถึงอย่างเท่าเทียมกัน
+                              </p>
+                              <p className="font-bold border-t border-indigo-200/60 pt-2 flex items-center gap-1">💰 วิธีปันส่วนและการจ่ายออก:</p>
+                              <p>
+                                ทุกครั้งที่เงินไหลเข้าพูล All-Share ระบบจะแบ่งแยกปันส่วนให้สมาชิกผู้มีสิทธิ์เท่าๆ กันในแบบเรียลไทม์ โดยจ่ายเป็น <strong>50% เข้ากระเป๋า E-Money</strong> (ถอนออกได้ทันที) และอีก <strong>50% ถูกสะสมเข้า Plan B Points</strong> (เพื่อดันรหัสของสมาชิกให้ออโต้รันทำวงรอบสำเร็จและกินปันผลรอบเร็วขึ้น)
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">❤️ กองทุนช่วยเหลือปันสุข (Natee Plus CSR Welfare Fund)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              เป็นระบบสะสมเงินกองทุนการกุศลเพื่อช่วยเหลือพาร์ทเนอร์ ผู้ขาดแคลน สมาชิกที่ประสบภัย และกิจกรรมช่วยเหลือสังคมในนามของสมาชิกร่วมกัน โดยระบบจัดสรรยอดสะสมเข้ากระเป๋าปันสุข 100% จากแหล่งที่มาดังนี้:
+                            </p>
+                            
+                            <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-sm text-xs">
+                              <div className="bg-slate-50 px-3 py-2 font-bold text-slate-700 border-b border-slate-200">
+                                แหล่งสนับสนุนกระเป๋ากองทุนปันสุข
+                              </div>
+                              <div className="p-3 space-y-2 text-slate-600">
+                                <div className="flex justify-between items-center">
+                                  <span>• สมัครสมาชิกแพ็กเกจ S บิลแรก:</span>
+                                  <span className="font-mono text-emerald-600 font-bold">5.00 บาท / รหัส</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span>• การสำเร็จบิลคอมมิชชันไบนารี่ (Plan A):</span>
+                                  <span className="font-mono text-emerald-600 font-bold">1.00% ของยอด PV</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span>• วงรอบความสำเร็จของ Plan B ทุกรอบ:</span>
+                                  <span className="font-mono text-emerald-600 font-bold">1 ใน 6 ส่วน (16.66%)</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              ระบบจะมีการเปิดเผยสถิติกองทุนปันสุข (CSR Fund Balance) พร้อมบอร์ดบันทึกประวัติการปันส่วนอย่างตรงไปตรงมาหน้าเว็บบอร์ด เพื่อแสดงความโปร่งใสและร่วมอนุโมทนาบุญของครอบครัว นที พลัส ทุกรหัส
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Remaining Rights (สิทธิ์คงเหลือ) Tab */}
+                    {systemCondTab === 'remainingRights' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center text-lg shadow-inner">
+                            🛡️
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">เกณฑ์การคำนวณสิทธิ์รับรายได้คงเหลือ (Remaining Income Rights Policy)</h4>
+                            <p className="text-xs text-slate-400 font-medium">ระเบียบและข้อบังคับสิทธิ์การรับรายได้สะสมของสมาชิกเมื่อได้รับคอมมิชชันและปันส่วนระบบ</p>
+                          </div>
+                        </div>
+
+                        {/* Manager/Admin Settings Card to toggle calculation mode */}
+                        <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 space-y-4">
+                          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                              <h5 className="text-sm font-black text-slate-900 flex items-center gap-1.5 font-sans">
+                                ⚙️ ตั้งค่าเงื่อนไขการคิดคำนวณสิทธิ์คงเหลือของระบบ (System Configuration)
+                              </h5>
+                              <p className="text-xs text-slate-400 mt-0.5">
+                                {profile?.role === 'Manager' 
+                                  ? 'เฉพาะผู้จัดการ (Manager) เท่านั้นที่มีสิทธิ์เลือกโครงสร้างการคิดคำนวณสิทธิ์คงเหลือของทั้งระบบ'
+                                  : 'หน้าแสดงผลสิทธิ์คงเหลืออ้างอิงตามค่าที่ได้รับการอนุมัติจากผู้จัดการ (Manager)'}
+                              </p>
+                            </div>
+                            
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-bold text-xs border border-indigo-150">
+                              โหมดปัจจุบัน: {bankSettings?.remainingRightsMode === '2_channels' ? '2 ช่องทาง (E-Money + E-Coupon)' : '1 ช่องทาง (E-Money เท่านั้น)'}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <button
+                              type="button"
+                              disabled={profile?.role !== 'Manager'}
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch('/api/bank-settings', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ remainingRightsMode: '1_channel', editorUserId: currentUser?.userId })
+                                  });
+                                  const d = await res.json();
+                                  if (d.success) {
+                                    setBankSettings(d.bankSettings);
+                                    showNotif("✓ ปรับเปลี่ยนวิธีการคิดคำนวณสิทธิ์คงเหลือเป็นแบบ 1 ช่องทางเรียบร้อยแล้วค่ะ", "success");
+                                  } else {
+                                    showNotif(d.message, "error");
+                                  }
+                                } catch (e) {
+                                  showNotif("ไม่สามารถปรับการตั้งค่าระบบได้", "error");
+                                }
+                              }}
+                              className={`p-4 rounded-2xl border text-left transition-all ${
+                                bankSettings?.remainingRightsMode !== '2_channels'
+                                  ? 'bg-indigo-500/10 border-indigo-200 ring-2 ring-indigo-500/20'
+                                  : 'bg-white border-slate-200 hover:bg-slate-100/50'
+                              } ${profile?.role !== 'Manager' ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <span className="text-xl mt-0.5">🔹</span>
+                                <div>
+                                  <h6 className="font-extrabold text-xs text-slate-800">คิดสิทธิ์คงเหลือจาก 1 ช่องทาง (E-Money เท่านั้น)</h6>
+                                  <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                                    สิทธิ์คงเหลือ = สิทธิ์ที่ได้รับ - รายได้กระเป๋า E-Money สุทธิหลังหักค่าใช้จ่ายทั้งหมด (ปันสุข, All-Share, ค่าระบบ)
+                                  </p>
+                                </div>
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={profile?.role !== 'Manager'}
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch('/api/bank-settings', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ remainingRightsMode: '2_channels', editorUserId: currentUser?.userId })
+                                  });
+                                  const d = await res.json();
+                                  if (d.success) {
+                                    setBankSettings(d.bankSettings);
+                                    showNotif("✓ ปรับเปลี่ยนวิธีการคิดคำนวณสิทธิ์คงเหลือเป็นแบบ 2 ช่องทางเรียบร้อยแล้วค่ะ", "success");
+                                  } else {
+                                    showNotif(d.message, "error");
+                                  }
+                                } catch (e) {
+                                  showNotif("ไม่สามารถปรับการตั้งค่าระบบได้", "error");
+                                }
+                              }}
+                              className={`p-4 rounded-2xl border text-left transition-all ${
+                                bankSettings?.remainingRightsMode === '2_channels'
+                                  ? 'bg-indigo-500/10 border-indigo-200 ring-2 ring-indigo-500/20'
+                                  : 'bg-white border-slate-200 hover:bg-slate-100/50'
+                              } ${profile?.role !== 'Manager' ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <span className="text-xl mt-0.5">♊</span>
+                                <div>
+                                  <h6 className="font-extrabold text-xs text-slate-800">คิดสิทธิ์คงเหลือจาก 2 ช่องทาง (E-Money + E-Coupon)</h6>
+                                  <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                                    สิทธิ์คงเหลือ = สิทธิ์ที่ได้รับ - ผลรวมของ (รายได้กระเป๋า E-Money สุทธิ + รายได้กระเป๋า E-Coupon สุทธิ) หลังหักค่าใช้จ่ายทั้งหมด
+                                  </p>
+                                </div>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Core Policy Card */}
+                        <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-6 rounded-3xl border border-slate-800 shadow-lg space-y-4 relative overflow-hidden">
+                          <div className="absolute top-0 right-0 -mt-8 -mr-8 w-32 h-32 rounded-full bg-sky-500/10 blur-2xl"></div>
+                          <div className="relative space-y-2">
+                            <span className="text-[10px] uppercase font-black tracking-widest text-sky-400 bg-sky-500/10 px-2.5 py-1 rounded-full border border-sky-500/20">
+                              📢 สูตรเกณฑ์การคิดคำนวณสิทธิ์คงเหลืออย่างเป็นทางการ
+                            </span>
+                            <h5 className="text-lg font-bold text-white">
+                              เมื่อสมาชิกได้รับสิทธิ์ตามระดับแพ็กเกจแล้ว สิทธิ์คงเหลือจะถูกลดทอนด้วยช่องทางรายได้สุทธิ
+                            </h5>
+                            <p className="text-xs text-slate-300 leading-relaxed max-w-4xl">
+                              {bankSettings?.remainingRightsMode === '2_channels' ? (
+                                <>
+                                  ระบบจะหักสิทธิ์คงเหลือ <strong className="text-yellow-300">จาก 2 ช่องทางหลักรวมกัน คือ รายได้สุทธิที่โอนเข้ากระเป๋า E-Money และยอดคะแนน E-Coupon (หลังหักค่าใช้จ่าย/จัดสรรกองทุนระบบทั้งหมดแล้ว)</strong> โดยเมื่อยอดรายได้สะสมสูงขึ้นเรื่อยๆ สิทธิ์คงเหลือจะลดลงตามสัดส่วน จนกว่าจะเป็นศูนย์ (หลังจากนั้นต้องอัปเกรดแพ็กเกจเพื่อขยายสิทธิ์เพิ่ม)
+                                </>
+                              ) : (
+                                <>
+                                  ระบบจะหักสิทธิ์คงเหลือ <strong className="text-yellow-300">เฉพาะจากรายได้ใน 1 ช่องทางหลัก คือ รายได้สุทธิที่โอนเข้ากระเป๋า E-Money (หลังหักค่าใช้จ่าย/จัดสรรกองทุนระบบทั้งหมดแล้ว)</strong> โดยเมื่อยอดรายได้จาก E-Money นี้สะสมขึ้นเรื่อยๆ สิทธิ์คงเหลือจะลดลงตามสัดส่วน จนกว่าสิทธิ์คงเหลือจะเป็นศูนย์ (หลังจากนั้นต้องอัปเกรดแพ็กเกจเพื่อขยายสิทธิ์เพิ่ม)
+                                </>
+                              )}
+                            </p>
+                          </div>
+
+                          {/* Graphic Formula */}
+                          <div className="bg-black/30 border border-white/10 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-center gap-4 text-center">
+                            <div className="bg-sky-500/20 border border-sky-400/30 px-4 py-2.5 rounded-xl min-w-[150px]">
+                              <p className="text-[10px] text-sky-300 font-bold">🛡️ สิทธิ์คงเหลือ</p>
+                              <p className="text-sm font-black font-mono text-white">Remaining Rights</p>
+                            </div>
+                            <span className="text-lg font-black text-slate-400">=</span>
+                            <div className="bg-indigo-500/20 border border-indigo-400/30 px-4 py-2.5 rounded-xl min-w-[150px]">
+                              <p className="text-[10px] text-indigo-300 font-bold">📋 สิทธิ์ที่ได้รับ (ตามแพ็กเกจ)</p>
+                              <p className="text-sm font-black font-mono text-white">Eligible Rights</p>
+                            </div>
+                            <span className="text-lg font-black text-rose-400">-</span>
+                            <div className="bg-amber-500/20 border border-amber-400/30 px-4 py-2.5 rounded-xl min-w-[150px]">
+                              <p className="text-[10px] text-amber-300 font-bold">
+                                {bankSettings?.remainingRightsMode === '2_channels' ? '💰 ยอด E-Money + E-Coupon' : '💰 รายได้ E-Money สุทธิ'}
+                              </p>
+                              <p className="text-sm font-black font-mono text-white">
+                                {bankSettings?.remainingRightsMode === '2_channels' ? 'Net 2-Channels Income' : 'Net E-Money Income'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Two Columns: Explanation & Interactive Calculator */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
+                          
+                          {/* Left Column: Tables & Explanation */}
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                              📋 ตารางสิทธิ์ที่ได้รับมาตรฐาน (Default Eligible Rights by Package)
+                            </h5>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              โดยปกติ เมื่อเริ่มสมัครสมาชิกหรืออัปเกรดแพ็กเกจ สมาชิกจะได้รับสิทธิ์ในการรับรายได้ปันผลและโบนัสคิดเป็น <strong className="text-slate-800">10 เท่าของมูลค่าแพ็กเกจพื้นฐาน</strong> ดังนี้:
+                            </p>
+
+                            <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-sm text-xs bg-white">
+                              <table className="w-full text-left border-collapse">
+                                <thead className="bg-slate-50 border-b border-slate-150">
+                                  <tr className="text-slate-700 font-bold">
+                                    <th className="px-4 py-3">แพ็กเกจเปิดสิทธิ์</th>
+                                    <th className="px-4 py-3 text-right">ยอดซื้อแพ็กเกจ</th>
+                                    <th className="px-4 py-3 text-right text-indigo-600">สิทธิ์ที่ได้รับ (10 เท่า)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 text-slate-600 font-medium">
+                                  <tr>
+                                    <td className="px-4 py-2.5 flex items-center gap-1.5">🌱 <strong className="text-slate-800">กลุ่ม S</strong></td>
+                                    <td className="px-4 py-2.5 text-right font-mono">฿ 100.00</td>
+                                    <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-600">฿ 1,000.00</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-4 py-2.5 flex items-center gap-1.5">🏡 <strong className="text-slate-800">กลุ่ม M</strong></td>
+                                    <td className="px-4 py-2.5 text-right font-mono">฿ 1,000.00</td>
+                                    <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-600">฿ 10,000.00</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-4 py-2.5 flex items-center gap-1.5">🥗 <strong className="text-slate-800">กลุ่ม L</strong></td>
+                                    <td className="px-4 py-2.5 text-right font-mono">฿ 5,000.00</td>
+                                    <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-600">฿ 50,000.00</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-4 py-2.5 flex items-center gap-1.5">⚡ <strong className="text-slate-800">กลุ่ม XL</strong></td>
+                                    <td className="px-4 py-2.5 text-right font-mono">฿ 10,000.00</td>
+                                    <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-600">฿ 100,000.00</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-4 py-2.5 flex items-center gap-1.5">💎 <strong className="text-slate-800">กลุ่ม XXL</strong></td>
+                                    <td className="px-4 py-2.5 text-right font-mono">฿ 50,000.00</td>
+                                    <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-600">฿ 500,000.00</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+
+                            <div className="bg-slate-50 border border-slate-150 p-4 rounded-2xl text-[11px] text-slate-500 leading-relaxed space-y-2">
+                              <p className="font-bold text-slate-700 flex items-center gap-1">📌 ข้อควรรู้ด้านระบบบัญชีและค่าใช้จ่าย:</p>
+                              <ul className="list-disc list-inside space-y-1 text-slate-500">
+                                <li><strong>รายได้หลังหักค่าใช้จ่ายทั้งหมด</strong> หมายถึง ยอดเงินปันผล/โบนัสที่หักค่าจัดสรร All-Share, กองทุนช่วยเหลือ CSR ปันสุข, คูปอง และส่วนสร้างรหัสถัดไป (รวมการจัดสรร 20% ของแผน B) เรียบร้อยแล้ว</li>
+                                <li>ยอดโบนัสที่จ่ายจริงเข้าสู่กระเป๋า <strong>E-Money</strong> เท่านั้นที่จะถูกนำมาคิดลดทอนสิทธิ์รับรายได้คงเหลือ</li>
+                                <li>คะแนนโบนัสที่จัดสรรไปในรูปของ <strong>E-Coupon</strong> หรือสิทธิประโยชน์อื่น จะไม่นำมาหักลดสิทธิ์นี้ เพื่อปกป้องสิทธิประโยชน์สูงสุดในการช้อปปิ้งของสมาชิก</li>
+                              </ul>
+                            </div>
+                          </div>
+
+                          {/* Right Column: Live Simulator */}
+                          <div className="bg-slate-50 border border-slate-200 p-5 rounded-3xl space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                              🧮 เครื่องคิดเลขจำลองสิทธิ์คงเหลือ (Interactive Calculator)
+                            </h5>
+                            <p className="text-xs text-slate-500">
+                              ทดลองเลือกแพ็กเกจและจำลองยอดรายได้สุทธิเพื่อดูการอัปเดตสิทธิ์คงเหลือแบบเรียลไทม์
+                            </p>
+
+                            {/* Rank Selection Buttons */}
+                            <div className="space-y-1.5">
+                              <label className="block text-slate-700 font-bold text-xs">เลือกแพ็กเกจจำลอง :</label>
+                              <div className="flex flex-wrap gap-1.5">
+                                {[
+                                  { id: 'S', label: '🌱 กลุ่ม S', val: 1000 },
+                                  { id: 'M', label: '🏡 กลุ่ม M', val: 10000 },
+                                  { id: 'L', label: '🥗 กลุ่ม L', val: 50000 },
+                                  { id: 'XL', label: '⚡ กลุ่ม XL', val: 100000 },
+                                  { id: 'XXL', label: '💎 กลุ่ม XXL', val: 500000 },
+                                  { id: 'Custom', label: '⚙️ กำหนดเอง', val: 0 },
+                                ].map(p => (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSimRightsRank(p.id);
+                                      if (p.id !== 'Custom') {
+                                        setSimRightsCustom(p.val.toString());
+                                      }
+                                    }}
+                                    className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer border ${
+                                      simRightsRank === p.id
+                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                        : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-200'
+                                    }`}
+                                  >
+                                    {p.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Input Eligible Rights */}
+                            <div>
+                              <label className="block text-slate-700 font-bold text-xs mb-1">
+                                {simRightsRank === 'Custom' ? 'ระบุสิทธิ์ที่ได้รับ (บาท) *' : 'สิทธิ์ที่ได้รับคงที่ตามแพ็กเกจ (บาท) :'}
+                              </label>
+                              <input
+                                type="number"
+                                disabled={simRightsRank !== 'Custom'}
+                                value={simRightsCustom}
+                                onChange={(e) => setSimRightsCustom(e.target.value)}
+                                className="w-full border border-slate-300 rounded-xl px-4 py-2 text-xs text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white font-bold disabled:bg-slate-100/80 disabled:text-slate-500"
+                              />
+                            </div>
+
+                            {/* Input E-Money Net Income */}
+                            <div>
+                              <label className="block text-slate-700 font-bold text-xs mb-1 flex justify-between">
+                                <span>
+                                  {bankSettings?.remainingRightsMode === '2_channels'
+                                    ? 'ยอดรวมรายได้สะสมจาก 2 ช่องทาง (E-Money + E-Coupon) (บาท) :'
+                                    : 'รายได้จาก E-Money สุทธิหลังหักค่าใช้จ่ายสะสม (บาท) :'}
+                                </span>
+                                <span className="font-mono text-amber-600 font-black">฿ {parseFloat(simRightsEMoneyIncome || '0').toLocaleString()}</span>
+                              </label>
+                              <input
+                                type="range"
+                                min="0"
+                                max={parseFloat(simRightsCustom || '1000') * 1.2}
+                                step="50"
+                                value={simRightsEMoneyIncome}
+                                onChange={(e) => setSimRightsEMoneyIncome(e.target.value)}
+                                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                              />
+                              <input
+                                type="number"
+                                value={simRightsEMoneyIncome}
+                                onChange={(e) => setSimRightsEMoneyIncome(e.target.value)}
+                                placeholder={bankSettings?.remainingRightsMode === '2_channels' ? "ระบุยอดรายได้รวมสะสม 2 ช่องทาง" : "ระบุรายได้ E-Money สะสม"}
+                                className="w-full border border-slate-300 rounded-xl px-4 py-2 mt-1.5 text-xs text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white font-bold"
+                              />
+                            </div>
+
+                            {/* Calculator Results Display Card */}
+                            {(() => {
+                              const eligible = parseFloat(simRightsCustom || '0');
+                              const income = parseFloat(simRightsEMoneyIncome || '0');
+                              const remaining = Math.max(0, eligible - income);
+                              const isDepleted = remaining === 0;
+
+                              return (
+                                <div className={`border rounded-2xl p-4 text-center space-y-3 transition-all ${
+                                  isDepleted 
+                                    ? 'bg-rose-50/50 border-rose-150 text-rose-950' 
+                                    : 'bg-indigo-50/50 border-indigo-150 text-indigo-950'
+                                }`}>
+                                  <div className="flex justify-between items-center text-xs">
+                                    <span className="font-bold">สถานะสิทธิ์รับรายได้:</span>
+                                    {isDepleted ? (
+                                      <span className="bg-rose-100 text-rose-700 font-extrabold px-2 py-0.5 rounded-full text-[9px] border border-rose-200 animate-pulse">
+                                        ⚠️ สิทธิ์หมด (ต้องอัปเกรด)
+                                      </span>
+                                    ) : (
+                                      <span className="bg-emerald-100 text-emerald-700 font-extrabold px-2 py-0.5 rounded-full text-[9px] border border-emerald-200">
+                                        🟢 ปกติ (สิทธิ์ยังใช้งานได้)
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="py-2">
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">สิทธิ์คงเหลือจำลองสุทธิ</p>
+                                    <p className={`text-2xl font-black font-mono tracking-tight ${isDepleted ? 'text-rose-600' : 'text-indigo-700'}`}>
+                                      ฿ {remaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+
+                                  <div className="text-[10px] text-slate-500 font-medium space-y-1 text-left border-t border-slate-200/80 pt-2.5 leading-relaxed">
+                                    <div className="flex justify-between">
+                                      <span>1. สิทธิ์ที่ได้รับทั้งหมด (Eligible Rights):</span>
+                                      <span className="font-mono font-bold text-slate-700">฿ {eligible.toLocaleString()}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span>
+                                        {bankSettings?.remainingRightsMode === '2_channels'
+                                          ? '2. ยอดรายได้สะสม 2 ช่องทาง (E-Money + E-Coupon):'
+                                          : '2. รายได้จาก E-Money หักรายการแล้ว (EMoney Income):'}
+                                      </span>
+                                      <span className="font-mono font-bold text-slate-700">- ฿ {income.toLocaleString()}</span>
+                                    </div>
+                                    <div className="flex justify-between border-t border-dashed border-slate-200 pt-1 font-bold text-slate-800">
+                                      <span>3. ผลลัพธ์สิทธิ์คงเหลือ (Remaining Rights):</span>
+                                      <span className="font-mono text-indigo-600">฿ {remaining.toLocaleString()}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
+                          </div>
+
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 5. TRANSFERS & WITHDRAWALS */}
+                    {systemCondTab === 'transfers' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg shadow-inner">
+                            💸
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">ระบบการโอนแต้มภายใน และกฎเกณฑ์การถอนเงินสดเข้าธนาคาร (Fund Transfers & Withdrawals)</h4>
+                            <p className="text-xs text-slate-400">กฎความมั่นคงปลอดภัยในการทำธุรกรรม อัตราค่าธรรมเนียม และข้อบังคับการหักภาษี ณ ที่จ่ายตามระเบียบกรมสรรพากร</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">🔄 ระบบการแลกเปลี่ยนโอนภายใน (Internal Transfers)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              สมาชิกผู้ได้รับอนุมัติ KYC แล้ว สามารถสลับแลกเปลี่ยนคะแนนในกระเป๋าเงินประเภทต่างๆ ได้ เพื่อเพิ่มสภาพคล่องในการจัดซื้อสินค้าและสิทธิประโยชน์ทางธุรกิจ ภายใต้เงื่อนไขดังนี้:
+                            </p>
+
+                            <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2.5 text-xs text-slate-700">
+                              <div className="flex justify-between font-bold border-b border-slate-200 pb-1.5">
+                                <span>รายการแลกเปลี่ยนกระเป๋า</span>
+                                <span>อัตราหักค่าธรรมเนียม / เกณฑ์จำกัด</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="font-bold text-slate-800">E-Cash โอนให้สมาชิกอื่น</span>
+                                <span className="text-emerald-600 font-bold font-mono">0% (ฟรี) • บังคับ KYC + PIN + OTP</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="font-bold text-slate-850">E-Cash แปลงเป็น E-Money</span>
+                                <span className="text-rose-500 font-bold font-mono">หักค่าธรรมเนียม 10% *</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="font-bold text-slate-800">E-Money แปลงกลับเป็น E-Cash</span>
+                                <span className="text-emerald-600 font-bold font-mono">0% (ฟรี) • อัตราส่วน 1:1</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="font-bold text-slate-800">E-Money แปลงเป็น E-Coupon</span>
+                                <span className="text-emerald-600 font-bold font-mono">0% (ฟรี) • อัตราส่วน 1:1</span>
+                              </div>
+                            </div>
+
+                            <p className="text-[10px] text-slate-500 leading-tight">
+                              * หมายเหตุค่าธรรมเนียมแลก E-Cash เป็น E-Money (10%) ระบบจะปันแยกนำส่ง <strong>5% เข้าพูล All-Share</strong> ทั่วโลกเพื่อสมทบสมาชิกร่วม และอีก <strong>5% เข้าบัญชีกำไรบริษัท (Company Profit)</strong>
+                            </p>
+                          </div>
+
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">🏦 ระบบการถอนเงินออกจากระบบคอมมิชชั่น (E-Money Cash Out rules)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              ระบบจะหักปันส่วนยอดเงินเพื่อค้ำประกันระบบ จัดส่งภาษีอย่างโปร่งใส และค่าบริการธุรกรรมธนาคารโดยอิงสูตรคำนวณที่เข้มงวด ดังนี้:
+                            </p>
+
+                            <div className="bg-slate-900 text-slate-200 p-4 rounded-2xl space-y-3 text-xs font-mono border border-slate-800">
+                              <p className="font-bold text-white font-sans text-xs">📊 สูตรการคำนวณโอนเงินถอนพาสสุทธิ:</p>
+                              <div className="space-y-1.5 text-slate-400 text-[11px]">
+                                <div>• ยอดถอนขั้นต่ำ: <strong>300 บาท</strong> (ยอดคงเหลือหลังถอนต้องไม่น้อยกว่า 300)</div>
+                                <div>• <strong>หักสำรองกองทุนระบบหมุนเวียน (Auto-Reserve): 20.00%</strong> (นำกลับเข้าพูลแผนงานเพื่อหมุนเวียนยอด) ทำให้คิดฐานคำนวณภาษีสุทธิที่ 80%</div>
+                                <div>• <strong>หักภาษี ณ ที่จ่ายตามกฎหมาย (Withholding Tax): 3.00%</strong> ของยอดฐานคำนวณ (2.4% ของยอดถอน)</div>
+                                <div>• <strong>หักค่าดูแลโครงข่ายแพลตฟอร์ม (Platform Fee): 2.00%</strong> ของยอดฐานคำนวณ (1.6% ของยอดถอน)</div>
+                              </div>
+                              <div className="border-t border-slate-800 pt-2 text-white font-bold font-sans flex justify-between">
+                                <span>💵 ยอดรับเงินโอนสุทธิโอนเข้าธนาคาร:</span>
+                                <span className="text-emerald-400">76.00% ของยอดสั่งถอน</span>
+                              </div>
+                            </div>
+
+                            <div className="bg-rose-50 border border-rose-100 p-3 rounded-2xl text-[10px] text-rose-950 font-medium leading-relaxed">
+                              <strong>⚠️ ปลั๊กอินควบคุมความปลอดภัยธุรกรรมทางการเงิน:</strong> <br />
+                              1. สมาชิกต้องผ่านการอนุมัติ <strong>บัตรประชาชนและข้อมูล KYC เป็น Active</strong> จึงจะเปิดปุ่มทำธุรกรรมถอนเงิน <br />
+                              2. ยึดมาตรการป้องกันความปลอดภัยระดับธนาคารพาณิชย์ ด้วยการส่งรหัสผ่าน OTP ยืนยันรหัสส่งเข้าเบอร์โทรศัพท์ และบังคับกรอกรหัส PIN 6 หลักทุกครั้ง
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 6. PARTNER GP SYSTEM */}
+                    {systemCondTab === 'partner' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg shadow-inner">
+                            🤝
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">เงื่อนไขการนำสินค้าเข้าร่วมฝากขายและค่าฟีดระบบร้านค้าพาร์ทเนอร์ (Natee Plus Partner Terms)</h4>
+                            <p className="text-xs text-slate-400">ระเบียบปฏิบัติสำหรับพาร์ทเนอร์ร้านค้าชุมชน แฟรนไชส์ และการปันค่าส่วนแบ่งส่งเสริมการตลาด GP คืนกลับสายเครือข่าย</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">🏢 คุณสมบัติและการลงทะเบียนร้านค้า (Merchant Onboarding Checklist)</h5>
+                            <ul className="space-y-2 text-xs text-slate-600">
+                              <li className="flex items-start gap-2">
+                                <span className="text-amber-500 font-bold">●</span>
+                                <div>
+                                  <strong>ระดับตำแหน่งขั้นต่ำ:</strong> ผู้ขายในนามพาร์ทเนอร์ร้านค้า (Partner Merchant) สามารถเข้าเป็น Partner ได้ตั้งแต่ตำแหน่ง <strong>Manager</strong> ขึ้นไป เพื่อรักษาระเบียบการใช้บริการ
+                                </div>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span className="text-amber-500 font-bold">●</span>
+                                <div>
+                                  <strong>ข้อมูลรายละเอียดร้านค้า:</strong> ชื่อร้านค้า (ห้ามใช้อักษรพิเศษเพื่อป้องกันความคลาดเคลื่อนทางระบบ), เบอร์ติดต่อตรง, อีเมลจริง, ที่อยู่ตั้งคลังสินค้า และพิกัดแผนที่ละติจูด-ลองจิจูด (Latitude / Longitude) สำหรับพินตำแหน่งพาร์ทเนอร์ออฟไลน์
+                                </div>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span className="text-amber-500 font-bold">●</span>
+                                <div>
+                                  <strong>การอนุมัติคลังสินค้า (Stock Approval):</strong> ทุกรายการสินค้าพาร์ทเนอร์ที่เพิ่มเข้ามาใหม่ในคลังระบบ จะต้องผ่านการพิจารณาตรวจสอบราคา คุณภาพ มาตรฐานอย./มอก. และวงคะแนน PV ปันกลับโดยคณะกรรมการบริษัท ก่อนเปิดแสดงผลจำหน่ายจริงหน้าร้าน
+                                </div>
+                              </li>
+                            </ul>
+
+                            <div className="bg-amber-50/40 border border-amber-200/60 p-4 rounded-2xl space-y-2 text-xs text-amber-950">
+                              <p className="font-bold">🤝 อัตราหักค่าบริการ GP แพลตฟอร์ม:</p>
+                              <p className="leading-relaxed">
+                                แพลตฟอร์มกำหนดค่าสนับสนุนส่งเสริมการตลาดและการบริหารส่วนแบ่งแบบคงที่อยู่ที่ <strong>20.00% (GP 20%)</strong> ของมูลค่าราคาสินค้าที่ขายได้สำเร็จจริง และพาร์ทเนอร์สามารถถอนส่วนรายได้สุทธิได้เมื่อสถานะจัดส่งสินค้าปรับสมบูรณ์เป็นเรียบร้อย
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">🔄 การแชร์ปันส่วน GP คืนกลับสู่ผังเครือข่าย MLM (GP Shared Commissions)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              ความพิเศษของ NaTee Plus คือการดึงส่วนค่าบริการ GP 20% ที่จัดเก็บจากคู่ค้ามาหมุนเวียนกระจายความมั่งคั่งกลับคืนสู่สมาชิกองค์กร โดยระบบกำหนดการจ่ายเงินช่วยเหลือกลับสายงานดังนี้:
+                            </p>
+
+                            <div className="bg-slate-900 text-slate-100 p-4 rounded-2xl space-y-3 text-xs font-mono border border-slate-800">
+                              <p className="font-bold text-amber-400 font-sans text-xs">📊 สูตรคำนวณคะแนนกระจายผังไบนารี่พาร์ทเนอร์:</p>
+                              <div className="space-y-1.5 text-slate-400 text-[11px]">
+                                <div>• คะแนน PV ปันกลับระบบ = <strong>50% ของยอด GP ที่จัดเก็บได้</strong></div>
+                                <div>• คิดเป็นสัดส่วนเท่ากับ <strong>10.00%</strong> ของราคาสินค้าหน้าเว็บ (1 PV = 1 บาท)</div>
+                                <div>• ยอดคะแนน PV นี้จะถูกส่งเข้าไปคำนวณใน <strong>แผน A ไบนารี่ลึก 20 ชั้น</strong> ทันทีที่ทำรายการบิลสำเร็จ</div>
+                              </div>
+                              <div className="border-t border-slate-800 pt-2 text-white text-[10px] font-sans">
+                                <strong>💡 ข้อดีพาร์ทเนอร์:</strong> สินค้าของคุณจะได้รับการสนับสนุนกระตุ้นยอดขายอย่างหนักจากสมาชิก MLM ทั่วไทย เนื่องจากยอดซื้อของพวกเขาสร้างรายได้กลับคืนสู่สายทีมอย่างต่อเนื่อง
+                              </div>
+                            </div>
+
+                            <div className="bg-slate-50 border border-slate-150 p-3 rounded-2xl text-[10px] text-slate-500 leading-relaxed">
+                              <strong>📄 ตัวอย่างการปันส่วน:</strong> <br />
+                              สินค้าพาร์ทเนอร์ตั้งราคาขายปลีกหน้าร้าน <strong>1,000 บาท</strong> <br />
+                              • ยอดค่า GP จัดเก็บเข้าแพลตฟอร์ม (20%) = <strong>200 บาท</strong> <br />
+                              • ยอดรายรับของพาร์ทเนอร์คู่ค้าก่อนเสียภาษี = <strong>800 บาท</strong> <br />
+                              • ยอดปันกลับเข้าพูลคะแนนไบนารี่เครือข่าย (50% ของ GP) = <strong>100 PV</strong> (จัดแบ่งปันส่วน 2.5% ต่อชั้นละ 2.50 บาท ขึ้นไปจ่ายสูงสุด 20 อัพไลน์)
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 7. ACCOUNTING SEPARATIONS */}
+                    {systemCondTab === 'accounting' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg shadow-inner">
+                            🏦
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">ระบบกฎเกณฑ์จัดสรรบัญชีแยกประเภทและการหักภาษีเข้ารัฐ (Accounting Separations & Tax Compliance)</h4>
+                            <p className="text-xs text-slate-400">ระบบบริหารความปลอดภัยทางการเงินแยกถังเงิน และกระบวนการออกเอกสารภาษีตามแบบประมวลรัษฎากร</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">🗂️ การแยกสิทธิ์บัญชีกองทุนกระเป๋าเงิน (Secure Wallet Ledgers)</h5>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              เพื่อป้องการความสับสนของการรับเข้าและจ่ายออกเงินหมุนเวียนในบริษัท ระบบได้สร้างกองบัญชีแยกประเภทขาดจากกันอย่างสมบูรณ์ในชั้นฐานข้อมูล:
+                            </p>
+                            
+                            <div className="space-y-2 text-xs">
+                              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 flex justify-between">
+                                <div>
+                                  <strong className="text-slate-800">1. บัญชี E-Cash Ledger:</strong>
+                                  <p className="text-[10px] text-slate-400 mt-0.5">รับยอดจากการโอนสแกนเงินสดตรงของลูกค้าเพื่อใช้ซื้อสิทธิ์ตำแหน่ง</p>
+                                </div>
+                                <span className="text-indigo-600 font-bold font-mono">Prepaid Wallet</span>
+                              </div>
+                              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 flex justify-between">
+                                <div>
+                                  <strong className="text-slate-800">2. บัญชี E-Money Ledger:</strong>
+                                  <p className="text-[10px] text-slate-400 mt-0.5">ยอดรับคอมมิชชันความสำเร็จ 80% หรือปันผลโบนัส สมาชิกสามารถสั่งโอนถอนได้</p>
+                                </div>
+                                <span className="text-emerald-600 font-bold font-mono">Commission Earnings</span>
+                              </div>
+                              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 flex justify-between">
+                                <div>
+                                  <strong className="text-slate-800">3. บัญชี E-Coupon Ledger:</strong>
+                                  <p className="text-[10px] text-slate-400 mt-0.5">พูลคะแนนสำหรับซื้อสินค้าใน Market เท่านั้น ไม่สามารถแลกเปลี่ยนถอนเป็นเงินสดได้</p>
+                                </div>
+                                <span className="text-amber-600 font-bold font-mono">Voucher Credits</span>
+                              </div>
+                              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 flex justify-between">
+                                <div>
+                                  <strong className="text-slate-800">4. บัญชี Tax & VAT Reserves:</strong>
+                                  <p className="text-[10px] text-slate-400 mt-0.5">สำรองภาษีมูลค่าเพิ่ม 7% และหัก ณ ที่จ่าย 3% ปลายบิล นำส่งสรรพากรเป็นรายเดือน</p>
+                                </div>
+                                <span className="text-rose-600 font-bold font-mono">Tax Escrows</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">📄 ข้อปฏิบัติกฎหมายภาษีรายจ่ายและรายรับ (Tax Invoicing Specifications)</h5>
+                            <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
+                              <div>
+                                <strong className="text-indigo-600">🛒 Natee Plus Market (B2C Retail):</strong>
+                                <p className="mt-1">
+                                  บริษัท นที พลัส จำกัด จดทะเบียนภาษีมูลค่าเพิ่มถูกต้องตามกฎหมาย (VAT 7%) ทุกรายการขายปลีกตรงสู่ผู้บริโภค ระบบจะคำนวณแยกภาษีมูลค่าเพิ่มพาสไว้ เพื่อออก <strong>"ใบกำกับภาษีเต็มรูป / ใบเสร็จรับเงิน (Receipt / Tax Invoice)"</strong> ส่งมอบให้ผู้ซื้อใช้หักลดหย่อนภาษี
+                                </p>
+                              </div>
+                              <div>
+                                <strong className="text-emerald-600">📊 การจ่ายเงินคอมมิชชันและโบนัสสมาชิก (MLM Payouts):</strong>
+                                <p className="mt-1">
+                                  รายได้ค่าคอมมิชชันจากการขยายตลาด ถือเป็นเงินได้ตามมาตรา 40(2) แห่งประมวลรัษฎากร บริษัททำการหักภาษี ณ ที่จ่ายไว้ในอัตรา <strong>3.00% ทุกยอดการสั่งถอนจริง</strong> และออกเอกสาร <strong>"หนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)"</strong> ส่งมอบให้แก่สมาชิกปลายปีเพื่อยื่นกรอก ภ.ง.ด.90/91
+                                </p>
+                              </div>
+                              <div>
+                                <strong className="text-amber-600">🤝 ระบบร้านค้าพาร์ทเนอร์ (B2B Consignment GP):</strong>
+                                <p className="mt-1">
+                                  การหัก GP 20% ระบบจะถือเป็นค่าบริการระบบ แนะนำให้พาร์ทเนอร์ร้านค้าใช้บริการผ่านธนาคารเข้าร่วม <strong>e-Withholding Tax</strong> เพื่อจัดส่งและหักบัญชีภาษี ณ ที่จ่าย 3% สะดวกและลดภาระเอกสารของทางพาร์ทเนอร์ปลายทาง
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 8. INTERACTIVE SIMULATORS */}
+                    {systemCondTab === 'simulators' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-950 text-white flex items-center justify-center text-lg shadow-inner">
+                            🧮
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">เครื่องคำนวณและประมวลผลจำลองภาษีรายได้จริง (Interactive Tax & GP Simulator)</h4>
+                            <p className="text-xs text-slate-400">ระบบจำลองสถานการณ์ตัวเลขทางธุรกรรมเพื่อสอบทานสูตรคำนวณของระบบให้ตรงตามเกณฑ์ทางบัญชี 100%</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                          
+                          {/* SIMULATOR 1 */}
+                          <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 space-y-4">
+                            <div className="flex justify-between items-center border-b border-slate-850 pb-2">
+                              <span className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">
+                                🛒 Natee Plus Market Retail
+                              </span>
+                              <span className="text-[9px] text-slate-400 font-mono">VAT 7%</span>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <label className="block text-[10px] text-slate-300 font-bold">ป้อน ราคาขายปลีกหน้าเว็บ (บาท):</label>
+                              <div className="relative">
+                                <input 
+                                  type="number"
+                                  value={simMarketPrice}
+                                  onChange={(e) => setSimMarketPrice(e.target.value)}
+                                  placeholder="1000"
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono font-bold focus:border-indigo-500 outline-none"
+                                />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-[10px]">บาท</span>
+                              </div>
+                            </div>
+
+                            {(() => {
+                              const p = parseFloat(simMarketPrice) || 0;
+                              const net = p / 1.07;
+                              const vat = p - net;
+                              return (
+                                <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-850 space-y-2 text-[11px] font-mono">
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>ราคาสินค้าก่อน VAT:</span>
+                                    <span className="text-white">฿ {net.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>ภาษีมูลค่าเพิ่ม (VAT 7%):</span>
+                                    <span className="text-indigo-400 font-bold">฿ {vat.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-300 border-t border-slate-800/80 pt-1.5">
+                                    <span className="font-bold">ราคารวมภาษีมูลค่าเพิ่ม:</span>
+                                    <span className="text-emerald-400 font-extrabold">฿ {p.toFixed(2)}</span>
+                                  </div>
+                                  <div className="text-[9px] text-slate-500 mt-1 italic leading-tight">
+                                    * บริษัทออกเอกสาร <strong>ใบส่งมอบ/ใบกำกับภาษีเต็มรูป</strong> ยอดส่งมอบตรงครบถ้วน
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+
+                          {/* SIMULATOR 2 */}
+                          <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 space-y-4">
+                            <div className="flex justify-between items-center border-b border-slate-850 pb-2">
+                              <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                                📊 MLM Commission Withdraw
+                              </span>
+                              <span className="text-[9px] text-slate-400 font-mono">หัก 3% (40(2))</span>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <label className="block text-[10px] text-slate-300 font-bold">ป้อน ยอดสั่งถอนตั้งต้น (บาท):</label>
+                              <div className="relative">
+                                <input 
+                                  type="number"
+                                  value={simMlmCommission}
+                                  onChange={(e) => setSimMlmCommission(e.target.value)}
+                                  placeholder="10000"
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono font-bold focus:border-emerald-500 outline-none"
+                                />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-[10px]">บาท</span>
+                              </div>
+                            </div>
+
+                            {(() => {
+                              const comm = parseFloat(simMlmCommission) || 0;
+                              const reserve = comm * 0.20;
+                              const baseTaxable = comm - reserve;
+                              const wht = baseTaxable * 0.03;
+                              const fee = baseTaxable * 0.02;
+                              const net = Math.max(0, baseTaxable - wht - fee);
+                              return (
+                                <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-850 space-y-2 text-[11px] font-mono">
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>ยอดถอนสั่งตั้งต้น:</span>
+                                    <span className="text-white">฿ {comm.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-450 text-[10px] pl-1 text-slate-400">
+                                    <span>• หักกองทุนสะสมสำรอง (20%):</span>
+                                    <span className="text-amber-500">- ฿ {reserve.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-450 text-[10px] pl-1 text-slate-400">
+                                    <span>• ยอดฐานคำนวณภาษี (80%):</span>
+                                    <span className="text-indigo-300 font-bold">฿ {baseTaxable.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>หักภาษี ณ ที่จ่าย 3% (ของฐาน):</span>
+                                    <span className="text-rose-400 font-bold">฿ {wht.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>ค่าบริการดูแลระบบ 2% (ของฐาน):</span>
+                                    <span className="text-slate-400">฿ {fee.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-300 border-t border-slate-800/80 pt-1.5">
+                                    <span className="font-bold">โอนเข้าบัญชีธนาคารสุทธิ:</span>
+                                    <span className="text-emerald-400 font-extrabold">฿ {net.toFixed(2)}</span>
+                                  </div>
+                                  <div className="text-[9px] text-slate-500 mt-1 italic leading-tight">
+                                    * โอนสุทธิคิดเป็นสัดส่วนคงที่เท่ากับ <strong>76.00%</strong> ของเงินถอนตั้งต้นพาส
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+
+                          {/* SIMULATOR 3 */}
+                          <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 space-y-4">
+                            <div className="flex justify-between items-center border-b border-slate-850 pb-2">
+                              <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                                🤝 Partner GP & Settlement
+                              </span>
+                              <span className="text-[9px] text-slate-400 font-mono">GP 20% + หัก ณ ที่จ่าย 3%</span>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <label className="block text-[10px] text-slate-300 font-bold">ป้อน ราคาสินค้าตั้งขายหน้าร้าน (บาท):</label>
+                              <div className="relative">
+                                <input 
+                                  type="number"
+                                  value={simPartnerPrice}
+                                  onChange={(e) => setSimPartnerPrice(e.target.value)}
+                                  placeholder="1000"
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono font-bold focus:border-amber-500 outline-none"
+                                />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-[10px]">บาท</span>
+                              </div>
+                            </div>
+
+                            {(() => {
+                              const p = parseFloat(simPartnerPrice) || 0;
+                              const gp = p * 0.20;
+                              const receivableBeforeTax = p - gp;
+                              const wht = receivableBeforeTax * 0.03;
+                              const netTransfer = receivableBeforeTax - wht;
+                              return (
+                                <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-850 space-y-2 text-[11px] font-mono">
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>ราคาสินค้าหน้าร้าน:</span>
+                                    <span className="text-white">฿ {p.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>หักค่าบริการ GP (20%):</span>
+                                    <span className="text-rose-400">- ฿ {gp.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-indigo-300 font-bold">
+                                    <span>ยอดรับก่อนภาษี:</span>
+                                    <span>฿ {receivableBeforeTax.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>หักภาษี ณ ที่จ่าย 3% (ของยอดรับ):</span>
+                                    <span className="text-rose-400 font-bold">฿ {wht.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-300 border-t border-slate-800/80 pt-1.5">
+                                    <span className="font-bold">ยอดโอนสุทธิให้พาร์ทเนอร์:</span>
+                                    <span className="text-emerald-400 font-extrabold">฿ {netTransfer.toFixed(2)}</span>
+                                  </div>
+                                  <div className="text-[9px] text-slate-500 mt-1 italic leading-tight">
+                                    * คู่ค้าชุมชนจัดเตรียมเอกสาร <strong>ใบเสร็จรับเงินยอด {receivableBeforeTax.toFixed(2)} บาท</strong> ให้แก่ นที พลัส
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 9. PDPA POLICY PAGE */}
+                    {systemCondTab === 'pdpa' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg shadow-inner">
+                            🛡️
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">นโยบายความเป็นส่วนตัวและการคุ้มครองข้อมูลส่วนบุคคล (PDPA Privacy Policy)</h4>
+                            <p className="text-xs text-slate-400">มาตราฐานความปลอดภัยทางกฎหมายเกี่ยวกับข้อมูลผู้จัดจำหน่ายและคู่ค้าร่วม บริษัท นที พลัส จำกัด</p>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-50 border border-slate-150 rounded-2xl p-6 space-y-6 text-xs text-slate-700 leading-relaxed max-w-4xl font-sans">
+                          <div className="bg-indigo-600 text-white p-5 rounded-2xl border border-indigo-500 shadow-sm space-y-1">
+                            <p className="text-[10px] uppercase font-bold tracking-wider text-indigo-200">🛡️ ผู้ควบคุมข้อมูลส่วนบุคคลตามกฎหมาย (Data Controller)</p>
+                            <h5 className="font-black text-base">บริษัท นที พลัส จำกัด (Natee Plus Co., Ltd.)</h5>
+                            <p className="text-[11px] text-indigo-150 leading-relaxed">
+                              จัดเก็บข้อมูลและประมวลผลเพื่อวัตถุประสงค์ในการจัดทำเอกสารทางการเงิน การนำส่งภาษีหัก ณ ที่จ่าย และการโอนเงินเข้าบัญชีอย่างถูกต้องโปร่งใสตามกฎหมาย
+                            </p>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                            <div className="space-y-3">
+                              <h5 className="font-extrabold text-slate-800 text-sm border-b border-slate-200 pb-1 flex items-center gap-2">
+                                📌 1. ข้อมูลที่มีการรวบรวมจัดเก็บ (Collected Data)
+                              </h5>
+                              <p className="text-[11px] text-slate-600">
+                                เนื่องจากเว็บ <strong>Natee Plus Partner (พอร์ทัลร้านค้าร่วมพันธมิตร)</strong> มีหน้าที่ทางกฎหมายและสัญญาการเงิน ระบบจึงมีความจำเป็นต้องเก็บรวบรวมข้อมูลส่วนบุคคลของท่าน ดังนี้:
+                              </p>
+                              <ul className="list-disc list-inside space-y-1.5 pl-1.5 text-slate-500 text-[11px]">
+                                <li><strong>ข้อมูลระบุตัวตนทางราชการ:</strong> ชื่อจริง, นามสกุลจริง, หมายเลขบัตรประจำตัวประชาชน 13 หลัก, หรือภาพถ่ายหน้าบัตรประชาชน (KYC) เพื่อยืนยันตัวตนถูกต้องตามกฎหมาย ป้องกันสิทธิ์และการฉ้อโกง</li>
+                                <li><strong>ข้อมูลสมุดบัญชีธนาคาร (Bookbank):</strong> เลขที่บัญชี, ชื่อบัญชี และภาพถ่ายหน้าสมุดบัญชี เพื่อความปลอดภัยในการรับโอนผลตอบแทน</li>
+                                <li><strong>ข้อมูลติดต่อส่วนบุคคล:</strong> เบอร์โทรศัพท์เคลื่อนที่สำหรับรับ OTP ยืนยันรหัส และที่ตั้งคลังสินค้าจริง</li>
+                              </ul>
+                            </div>
+
+                            <div className="space-y-3">
+                              <h5 className="font-extrabold text-slate-800 text-sm border-b border-slate-200 pb-1 flex items-center gap-2">
+                                ⚙️ 2. วัตถุประสงค์เพื่อความโปร่งใส (Processing Purpose)
+                              </h5>
+                              <p className="text-[11px] text-slate-600">
+                                การจัดเก็บข้อมูลของทางพาร์ทเนอร์ร้านค้าพันธมิตร มีวัตถุประสงค์ที่ชัดเจนเพื่อใช้ดำเนินกิจกรรมดังต่อไปนี้:
+                              </p>
+                              <ul className="list-disc list-inside space-y-1.5 pl-1.5 text-slate-500 text-[11px]">
+                                <li><strong>เพื่อยืนยันสิทธิ์ถอนเงิน:</strong> บังคับใช้ระบบ KYC ในบัญชีที่มีความประสงค์ในการถอนเงินออกจากระบบหรือดำเนินธุรกรรมระดับสูง</li>
+                                <li><strong>เพื่อส่งภาษีสรรพากร:</strong> จัดทำและส่งเอกสารหักภาษี ณ ที่จ่าย 3% (Withholding Tax) ตามฐานข้อมูลรายได้สุทธิเพื่อนำส่งกรมสรรพากรแห่งประเทศไทยอย่างถูกต้อง</li>
+                                <li><strong>เพื่อบริหารงานโอนจ่ายพาสเวิร์ดปลอดภัย:</strong> ควบคุมความปลอดภัยของเงินด้วย OTP และรหัสธุรกรรม PIN 6 หลัก</li>
+                              </ul>
+                            </div>
+                          </div>
+
+                          <div className="space-y-3 bg-white p-5 rounded-2xl border border-slate-150">
+                            <h5 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
+                              ⏳ 3. ระยะเวลาการเก็บรักษาและการเปิดเผยข้อมูลแก่บุคคลภายนอก (Data Retention & Sharing)
+                            </h5>
+                            <p className="text-[11px] text-slate-600 leading-relaxed">
+                              บริษัทจะทำระบบจัดเก็บรักษาข้อมูลส่วนบุคคลเป็นความลับสูงสุดไว้ในคลังข้อมูลที่ปลอดภัย <strong>เป็นระยะเวลาขั้นต่ำ 10 ปี</strong> ตามระเบียบข้อบังคับทางบัญชีและการตรวจสอบย้อนหลังของภาครัฐ ทั้งนี้ จะไม่มีการเปิดเผยหรือจำหน่ายจ่ายแจกข้อมูลของท่านให้แก่หน่วยงานภายนอกใดๆ ทั้งสิ้น ยกเว้นแต่เพื่อดำเนินการนำส่งข้อมูลภาษีอากรให้แก่ <strong>กรมสรรพากร ประเทศไทย</strong> และส่งข้อมูลปลายทางคลังผู้ส่งพัสดุให้แก่ระบบขนส่งโลจิสติกส์ที่ได้รับการแต่งตั้งจากแพลตฟอร์มอย่างเป็นทางการเท่านั้น
+                            </p>
+                            <p className="text-[11px] text-indigo-600 font-bold leading-relaxed">
+                              * สมาชิกผู้ใช้บริการของ นที พลัส พาร์ทเนอร์ มีสิทธิ์ยื่นเรื่องขอดูข้อมูล แก้ไขข้อมูล หรือระงับการจัดเก็บข้อมูลได้ตามขอบเขต พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล (PDPA) ทุกประการ ผ่านทางผู้จัดดูแลระบบแอดมินกลาง
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                  </div>
+                </div>
+              )}
+
               {adminSubTab === 'bankSettings' && profile?.role === 'Manager' && (
                 <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-6 max-w-2xl mx-auto animate-fadeIn">
                   <div className="text-center space-y-1">
@@ -11945,6 +16089,702 @@ export default function App() {
                       )}
                     </button>
                   </form>
+                </div>
+              )}
+
+              {adminSubTab === 'maintenance' && profile?.role === 'Manager' && (
+                <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-6 max-w-2xl mx-auto animate-fadeIn text-slate-700">
+                  <div className="text-center space-y-1">
+                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-rose-50 text-rose-600 mb-2 border border-rose-100">
+                      <Settings size={24} className={bankSettings.maintenanceMode ? "animate-spin text-rose-500" : "text-rose-600"} />
+                    </div>
+                    <h3 className="text-lg font-black text-slate-800">⏸️ ระบบตั้งค่าพักหน้าจอ (Maintenance Mode)</h3>
+                    <p className="text-xs text-slate-400">ควบคุมการแสดงผลหน้าจอปิดปรับปรุงระบบชั่วคราวสำหรับสมาชิกทั่วไปเพื่อทำการอัปเดตระบบ</p>
+                  </div>
+
+                  {/* Current Status Banner */}
+                  <div className={`p-5 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-4 transition-all duration-300 ${
+                    bankSettings.maintenanceMode 
+                      ? 'bg-rose-50/70 border-rose-200 text-rose-900 shadow-sm shadow-rose-100' 
+                      : 'bg-emerald-50/70 border-emerald-200 text-emerald-900 shadow-sm shadow-emerald-100'
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <span className="relative flex h-3 w-3">
+                        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                          bankSettings.maintenanceMode ? 'bg-rose-500' : 'bg-emerald-500'
+                        }`}></span>
+                        <span className={`relative inline-flex rounded-full h-3 w-3 ${
+                          bankSettings.maintenanceMode ? 'bg-rose-600' : 'bg-emerald-600'
+                        }`}></span>
+                      </span>
+                      <div>
+                        <h4 className="text-sm font-extrabold">
+                          {bankSettings.maintenanceMode ? "ขณะนี้ระบบเปิดใช้งานระบบพักหน้าจออยู่" : "ระบบเปิดทำงานปกติ"}
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {bankSettings.maintenanceMode 
+                            ? "สมาชิกทั่วไปที่ไม่ใช่ผู้ดูแลระบบจะเห็นหน้าจอแจ้งเตือนอัปเดตระบบทันที" 
+                            : "สมาชิกทุกคนสามารถเข้าสู่ระบบและทำรายการต่างๆ ได้ตามปกติ"
+                          }
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      disabled={isSavingBankSettings}
+                      onClick={() => handleToggleMaintenanceMode(!bankSettings.maintenanceMode)}
+                      className={`px-5 py-2.5 rounded-xl text-xs font-bold transition duration-200 cursor-pointer shadow-md flex items-center gap-1.5 ${
+                        bankSettings.maintenanceMode 
+                          ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-200' 
+                          : 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-200'
+                      }`}
+                    >
+                      {isSavingBankSettings ? (
+                        <>
+                          <RefreshCw size={12} className="animate-spin" /> กำลังดำเนินการ...
+                        </>
+                      ) : bankSettings.maintenanceMode ? (
+                        "▶️ ปิดระบบพักหน้าจอ (เปิดระบบทำงาน)"
+                      ) : (
+                        "⏸️ เปิดระบบพักหน้าจอ (ปิดปรับปรุง)"
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Information and Description */}
+                  <div className="bg-slate-50 p-5 rounded-2xl border border-slate-150 space-y-3">
+                    <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      💡 ข้อมูลและความปลอดภัยสำคัญ
+                    </h4>
+                    <ul className="text-[11px] text-slate-500 list-disc list-inside space-y-1.5 leading-relaxed font-medium">
+                      <li>เมื่อเปิดใช้งานพักหน้าจอ <strong className="text-slate-800 font-bold">ผู้แนะนำหรือเจ้าหน้าที่ระดับ Manager/Admin เท่านั้น</strong> ที่จะสามารถผ่านหน้าต่างพักหน้าจอเข้ามาทำงานหลังบ้านได้</li>
+                      <li>ระบบทำการบันทึกสถานะแบบ Real-time ลงฐานข้อมูล Firestore เมื่อเปิด/ปิด หน้าจอของสมาชิกทุกคนจะเด้งเข้าหน้าพักหน้าจอหรือกลับเข้าหน้าใช้งานได้ทันที</li>
+                      <li>หากต้องการล็อกอินเข้าตรวจระบบระหว่างอัปเดต ให้ไปที่หน้าจอพักหน้าจอของท่านแล้วกดปุ่มลิงก์สตาฟล็อกอินที่ซ่อนอยู่ด้านล่าง เพื่อล็อกอินเป็นแอดมินหรือผู้บริหารเข้ามาปิดใช้งานได้เลยค่ะ</li>
+                    </ul>
+                  </div>
+
+                  {/* Beautiful Live Preview of the Maintenance Screen */}
+                  <div className="border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
+                    <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-200 flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-slate-500 tracking-wider">👁️ ตัวอย่างหน้าจอที่สมาชิกทั่วไปเห็น (LIVE PREVIEW)</span>
+                      <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+                    </div>
+                    <div className="p-8 bg-slate-950 flex justify-center items-center rounded-b-3xl">
+                      <div className="max-w-md w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-6 text-center space-y-4">
+                        <div className="w-12 h-12 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto border border-amber-500/20 animate-pulse">
+                          <Settings size={24} className="animate-spin duration-3000 text-amber-400" />
+                        </div>
+                        <div className="space-y-1">
+                          <h4 className="text-sm font-extrabold text-white">⚙️ ขณะนี้ระบบกำลัง อัปเดต กรุณารอสักครู่</h4>
+                          <p className="text-[10px] text-slate-400">ระบบจะกลับมาในไม่ช้า ขออภัยในความไม่สะดวก</p>
+                        </div>
+                        <div className="bg-rose-500/10 border border-rose-500/25 p-3 rounded-xl text-left text-[10px] text-rose-300 leading-relaxed font-medium">
+                          ⚠️ เมื่อระบบกลับมา แล้วหน้าจอเป็นสีขาว ให้กดล้างแคส ในแอปพิเคชั่นของท่าน เพื่อกลับเข้าสู่ระบบได้ปกติ
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {adminSubTab === 'companyAccountingReport' && (
+                <div className="space-y-6 animate-fadeIn text-slate-700">
+                  {/* Header */}
+                  <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-md border border-slate-800 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 -mt-8 -mr-8 w-32 h-32 rounded-full bg-rose-600/20 blur-2xl"></div>
+                    <div className="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                      <div>
+                        <h3 className="text-lg font-black text-white flex items-center gap-2">
+                          📈 รายงานระบบบัญชีบริษัท (Company Financial & Accounting Report)
+                        </h3>
+                        <p className="text-xs text-slate-300 mt-1">
+                          รายงานสรุปรายได้ รายจ่าย ผลกำไรสุทธิ และภาษีนำส่งสะสมจากการจำหน่ายแพ็กเกจสินค้า (S, M, L, XL, XXL) ของบริษัท นที พลัส จำกัด อย่างครบถ้วนโปร่งใสตามหลักกฎหมายสรรพากร
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setShowAddManualExpenseModal(true)}
+                          className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-md flex items-center gap-1.5 cursor-pointer"
+                        >
+                          💸 บันทึกค่าใช้จ่ายบริษัทเพิ่มเติม
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    // Compute package transaction entries
+                    const packageOrders = adminOrders.filter(order => {
+                      const isS = order.productId === 'pack_s' || order.productName?.toLowerCase().includes('package s');
+                      const isPackage = isS || order.productName?.toLowerCase().includes('package') || order.productId?.startsWith('pack_');
+                      return isPackage;
+                    });
+
+                    const mappedEntries = packageOrders.map(order => {
+                      const choice = packageChoices.find(c => c.id === order.selectedChoiceId);
+                      const isS = order.productId === 'pack_s' || order.productName?.toLowerCase().includes('package s');
+                      
+                      if (choice) {
+                        return {
+                          orderId: order.id,
+                          userId: order.userId,
+                          createdAt: order.createdAt,
+                          packageName: order.productName || "Package Choices",
+                          choiceName: choice.name,
+                          sellingPrice: choice.packagePrice || order.totalPrice || 0,
+                          pvPayout: choice.pvPayout || 0,
+                          productCost: choice.productCost || 0,
+                          hasVat: !!choice.hasVat,
+                          inputVat: choice.inputVat || 0,
+                          productCostWithVat: choice.productCostWithVat || 0,
+                          packagingCost: choice.packagingCost || 0,
+                          shippingFee: choice.shippingFee || 0,
+                          vatPayable: choice.vatPayable || 0,
+                          totalExpense: choice.totalExpense || 0,
+                          remaining: choice.remaining || 0,
+                          salesVat: choice.salesVat || 0,
+                        };
+                      } else {
+                        // Default S or Fallback calculation
+                        const price = order.totalPrice || 0;
+                        const pv = price * 0.5; // PV 50%
+                        const productCost = price * 0.3; // Raw Product Cost (30%)
+                        const hasVat = true;
+                        const inputVat = productCost * 0.07;
+                        const productCostWithVat = productCost + inputVat;
+                        const packagingCost = isS ? 5 : 20;
+                        const shippingFee = isS ? 25 : 50;
+                        const salesVat = price * 0.07;
+                        const vatPayable = salesVat - inputVat;
+                        const totalExpense = productCostWithVat + packagingCost + shippingFee + pv;
+                        const remaining = price - totalExpense;
+
+                        return {
+                          orderId: order.id,
+                          userId: order.userId,
+                          createdAt: order.createdAt,
+                          packageName: order.productName || (isS ? "Package S" : "Package Custom"),
+                          choiceName: order.selectedChoiceName || "เซ็ตมาตรฐาน",
+                          sellingPrice: price,
+                          pvPayout: pv,
+                          productCost: productCost,
+                          hasVat,
+                          inputVat,
+                          productCostWithVat,
+                          packagingCost,
+                          shippingFee,
+                          vatPayable,
+                          totalExpense,
+                          remaining,
+                          salesVat,
+                        };
+                      }
+                    });
+
+                    // Filtering
+                    const filteredEntries = mappedEntries.filter(entry => {
+                      // 1. Package filter
+                      if (accPackageFilter !== 'All') {
+                        const size = accPackageFilter.toUpperCase();
+                        const isMatch = entry.packageName?.toUpperCase().includes(size) || entry.packageName?.toUpperCase().endsWith(" " + size);
+                        if (!isMatch) return false;
+                      }
+
+                      // 2. Date filter
+                      if (accDateFilter !== 'All') {
+                        const entryDate = new Date(entry.createdAt);
+                        const today = new Date();
+                        if (accDateFilter === 'Today') {
+                          if (entryDate.toDateString() !== today.toDateString()) return false;
+                        } else if (accDateFilter === 'Week') {
+                          const weekAgo = new Date();
+                          weekAgo.setDate(today.getDate() - 7);
+                          if (entryDate < weekAgo) return false;
+                        } else if (accDateFilter === 'Month') {
+                          if (entryDate.getMonth() !== today.getMonth() || entryDate.getFullYear() !== today.getFullYear()) return false;
+                        }
+                      }
+
+                      // 3. Search query
+                      if (accSearchQuery) {
+                        const query = accSearchQuery.toLowerCase();
+                        const matchId = entry.userId?.toLowerCase().includes(query) || entry.orderId?.toLowerCase().includes(query);
+                        const matchChoice = entry.choiceName?.toLowerCase().includes(query) || entry.packageName?.toLowerCase().includes(query);
+                        if (!matchId && !matchChoice) return false;
+                      }
+
+                      return true;
+                    });
+
+                    // Financial Calculations (Package Revenue Only)
+                    const totalPackageSales = filteredEntries.reduce((sum, e) => sum + e.sellingPrice, 0);
+                    const totalPVPayout = filteredEntries.reduce((sum, e) => sum + e.pvPayout, 0);
+                    const totalProductCost = filteredEntries.reduce((sum, e) => sum + e.productCostWithVat, 0);
+                    const totalPackagingCost = filteredEntries.reduce((sum, e) => sum + e.packagingCost, 0);
+                    const totalShippingCost = filteredEntries.reduce((sum, e) => sum + e.shippingFee, 0);
+                    const totalSalesVat = filteredEntries.reduce((sum, e) => sum + e.salesVat, 0);
+                    const totalVatPayable = filteredEntries.reduce((sum, e) => sum + e.vatPayable, 0);
+                    const totalNetMargin = filteredEntries.reduce((sum, e) => sum + e.remaining, 0);
+
+                    // Operating Expenses Calculations (Manual logs)
+                    const filteredManualExpenses = manualExpenses.filter(exp => {
+                      if (accDateFilter !== 'All') {
+                        const expDate = new Date(exp.date);
+                        const today = new Date();
+                        if (accDateFilter === 'Today') {
+                          if (expDate.toDateString() !== today.toDateString()) return false;
+                        } else if (accDateFilter === 'Week') {
+                          const weekAgo = new Date();
+                          weekAgo.setDate(today.getDate() - 7);
+                          if (expDate < weekAgo) return false;
+                        } else if (accDateFilter === 'Month') {
+                          if (expDate.getMonth() !== today.getMonth() || expDate.getFullYear() !== today.getFullYear()) return false;
+                        }
+                      }
+                      if (accSearchQuery) {
+                        const query = accSearchQuery.toLowerCase();
+                        const matchTitle = exp.title?.toLowerCase().includes(query) || exp.notes?.toLowerCase().includes(query);
+                        if (!matchTitle) return false;
+                      }
+                      return true;
+                    });
+
+                    const totalManualExpenses = filteredManualExpenses.reduce((sum, e) => sum + e.amount, 0);
+                    const absoluteCompanyProfit = totalNetMargin - totalManualExpenses;
+
+                    return (
+                      <div className="space-y-6">
+                        {/* Summary Cards */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                          <div className="bg-gradient-to-br from-indigo-50 to-indigo-100/50 border border-indigo-100 rounded-3xl p-5 shadow-sm space-y-1">
+                            <span className="text-[10px] font-bold text-indigo-700 tracking-wider uppercase block">💰 ยอดรายรับแพ็กเกจรวม</span>
+                            <div className="text-xl font-black text-indigo-950 font-mono">
+                              ฿ {totalPackageSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <span className="text-[10px] text-indigo-600 block">จากทั้งหมด {filteredEntries.length} รายการสั่งซื้อ</span>
+                          </div>
+
+                          <div className="bg-gradient-to-br from-rose-50 to-rose-100/50 border border-rose-100 rounded-3xl p-5 shadow-sm space-y-1">
+                            <span className="text-[10px] font-bold text-rose-700 tracking-wider uppercase block">🎟️ หักจ่าย PV รวม (50%)</span>
+                            <div className="text-xl font-black text-rose-950 font-mono">
+                              ฿ {totalPVPayout.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <span className="text-[10px] text-rose-600 block">แปลงเข้าสู่สายงานเพื่อคำนวณโบนัส</span>
+                          </div>
+
+                          <div className="bg-gradient-to-br from-sky-50 to-sky-100/50 border border-sky-100 rounded-3xl p-5 shadow-sm space-y-1">
+                            <span className="text-[10px] font-bold text-sky-700 tracking-wider uppercase block">📦 ต้นทุนสินค้า & บรรจุภัณฑ์ & ส่ง</span>
+                            <div className="text-xl font-black text-sky-950 font-mono">
+                              ฿ {(totalProductCost + totalPackagingCost + totalShippingCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <span className="text-[10px] text-sky-600 block">รวมค่าขนส่งและกล่องบรรจุภัณฑ์</span>
+                          </div>
+
+                          <div className={`border rounded-3xl p-5 shadow-sm space-y-1 ${absoluteCompanyProfit >= 0 ? 'bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-emerald-100' : 'bg-gradient-to-br from-red-50 to-red-100/50 border-red-100'}`}>
+                            <span className="text-[10px] font-bold tracking-wider uppercase block text-emerald-800">📈 กำไรสุทธิบริษัทคงเหลือ</span>
+                            <div className={`text-xl font-black font-mono ${absoluteCompanyProfit >= 0 ? 'text-emerald-950' : 'text-red-950'}`}>
+                              ฿ {absoluteCompanyProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <span className="text-[10px] text-emerald-600 block">หักค่าใช้จ่ายส่วนกลางสะสมแล้ว</span>
+                          </div>
+                        </div>
+
+                        {/* Secondary KPIs */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 border border-slate-100 rounded-3xl p-4">
+                          <div className="text-center p-2 border-r border-slate-200/60 last:border-0">
+                            <span className="text-[10px] font-semibold text-slate-400 block">ราคาทุนสินค้าสุทธิ</span>
+                            <span className="font-extrabold text-sm font-mono text-slate-700">฿ {totalProductCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="text-center p-2 border-r border-slate-200/60 last:border-0">
+                            <span className="text-[10px] font-semibold text-slate-400 block">ภาษีขาย 7% (รวม)</span>
+                            <span className="font-extrabold text-sm font-mono text-slate-700">฿ {totalSalesVat.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="text-center p-2 border-r border-slate-200/60 last:border-0">
+                            <span className="text-[10px] font-semibold text-slate-400 block">ภาษีนำส่ง (สรรพากร)</span>
+                            <span className="font-extrabold text-sm font-mono text-slate-700">฿ {totalVatPayable.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="text-center p-2 last:border-0">
+                            <span className="text-[10px] font-semibold text-slate-400 block">ค่าใช้จ่ายบริหารทั่วไป</span>
+                            <span className="font-extrabold text-sm font-mono text-slate-700">฿ {totalManualExpenses.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        </div>
+
+                        {/* Controls Bar */}
+                        <div className="bg-white border border-slate-100 rounded-3xl p-4 shadow-sm flex flex-col md:flex-row gap-3 justify-between items-center">
+                          <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                            <div className="flex items-center gap-1.5 bg-slate-100 rounded-2xl px-3 py-1.5 border border-slate-200">
+                              <span className="text-xs font-bold text-slate-500">แพ็กเกจ:</span>
+                              <select 
+                                value={accPackageFilter}
+                                onChange={(e) => setAccPackageFilter(e.target.value)}
+                                className="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none"
+                              >
+                                <option value="All">ทั้งหมด (All Packages)</option>
+                                <option value="S">Package S (100 บาท)</option>
+                                <option value="M">Package M (1,000 บาท)</option>
+                                <option value="L">Package L (5,000 บาท)</option>
+                                <option value="XL">Package XL (10,000 บาท)</option>
+                                <option value="XXL">Package XXL (50,000 บาท)</option>
+                              </select>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 bg-slate-100 rounded-2xl px-3 py-1.5 border border-slate-200">
+                              <span className="text-xs font-bold text-slate-500">ช่วงเวลา:</span>
+                              <select 
+                                value={accDateFilter}
+                                onChange={(e) => setAccDateFilter(e.target.value)}
+                                className="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none"
+                              >
+                                <option value="All">ทุกช่วงเวลา</option>
+                                <option value="Today">วันนี้</option>
+                                <option value="Week">7 วันล่าสุด</option>
+                                <option value="Month">เดือนนี้</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="relative w-full md:w-80">
+                            <input 
+                              type="text"
+                              placeholder="ค้นหาด้วยรหัสสมาชิก, รหัสคำสั่งซื้อ, ชุดเซ็ต..."
+                              value={accSearchQuery}
+                              onChange={(e) => setAccSearchQuery(e.target.value)}
+                              className="w-full bg-slate-50 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-2xl px-4 py-2 text-xs font-semibold focus:outline-none"
+                            />
+                            <span className="absolute right-3 top-2.5 text-slate-400 text-xs">🔍</span>
+                          </div>
+                        </div>
+
+                        {/* Analysis Progress visualization (Visual breakdown of revenue destination) */}
+                        <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-4">
+                          <h4 className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                            📊 สรุปสัดส่วนการกระจายรายรับของบริษัท (Revenue Distribution Analysis)
+                          </h4>
+                          {totalPackageSales > 0 ? (
+                            <div className="space-y-3 pt-2">
+                              {/* Custom stacked progress bar */}
+                              <div className="h-6 w-full rounded-full overflow-hidden flex shadow-inner">
+                                <div 
+                                  style={{ width: `${(totalPVPayout / totalPackageSales) * 100}%` }} 
+                                  className="bg-rose-500 h-full flex items-center justify-center text-[10px] font-black text-white"
+                                  title={`หักจ่าย PV 50%: ${((totalPVPayout / totalPackageSales) * 100).toFixed(1)}%`}
+                                >
+                                  {((totalPVPayout / totalPackageSales) * 100) > 10 && "PV 50%"}
+                                </div>
+                                <div 
+                                  style={{ width: `${(totalProductCost / totalPackageSales) * 100}%` }} 
+                                  className="bg-sky-500 h-full flex items-center justify-center text-[10px] font-black text-white"
+                                  title={`ต้นทุนสินค้า: ${((totalProductCost / totalPackageSales) * 100).toFixed(1)}%`}
+                                >
+                                  {((totalProductCost / totalPackageSales) * 100) > 10 && "สินค้า"}
+                                </div>
+                                <div 
+                                  style={{ width: `${((totalPackagingCost + totalShippingCost) / totalPackageSales) * 100}%` }} 
+                                  className="bg-amber-500 h-full flex items-center justify-center text-[10px] font-black text-white"
+                                  title={`บรรจุภัณฑ์ & ส่ง: ${(((totalPackagingCost + totalShippingCost) / totalPackageSales) * 100).toFixed(1)}%`}
+                                >
+                                  {(((totalPackagingCost + totalShippingCost) / totalPackageSales) * 100) > 10 && "ส่ง&กล่อง"}
+                                </div>
+                                <div 
+                                  style={{ width: `${(totalNetMargin / totalPackageSales) * 100}%` }} 
+                                  className="bg-emerald-500 h-full flex items-center justify-center text-[10px] font-black text-white"
+                                  title={`รายได้คงเหลือบริษัท: ${((totalNetMargin / totalPackageSales) * 100).toFixed(1)}%`}
+                                >
+                                  {((totalNetMargin / totalPackageSales) * 100) > 10 && "คงเหลือบริษัท"}
+                                </div>
+                              </div>
+
+                              {/* Legends */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] font-medium pt-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-3 h-3 rounded bg-rose-500 block"></span>
+                                  <span className="text-slate-500">หักจ่าย PV (50% ของราคาตั้งขาย): <strong className="text-rose-600 font-bold font-mono">{((totalPVPayout / totalPackageSales) * 100).toFixed(1)}%</strong></span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="w-3 h-3 rounded bg-sky-500 block"></span>
+                                  <span className="text-slate-500">ทุนราคาสินค้านำเข้า (รวม Vat): <strong className="text-sky-600 font-bold font-mono">{((totalProductCost / totalPackageSales) * 100).toFixed(1)}%</strong></span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="w-3 h-3 rounded bg-amber-500 block"></span>
+                                  <span className="text-slate-500">ค่าบรรจุภัณฑ์กล่อง & ค่าขนส่ง: <strong className="text-amber-600 font-bold font-mono">{(((totalPackagingCost + totalShippingCost) / totalPackageSales) * 100).toFixed(1)}%</strong></span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="w-3 h-3 rounded bg-emerald-500 block"></span>
+                                  <span className="text-slate-500">คงเหลือสุทธิเข้าบริษัท: <strong className="text-emerald-600 font-bold font-mono">{((totalNetMargin / totalPackageSales) * 100).toFixed(1)}%</strong></span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-400 font-bold py-4 text-center">ไม่มีรายการบัญชีในฟิลเตอร์สำหรับแสดงสัดส่วนทางการเงิน</p>
+                          )}
+                        </div>
+
+                        {/* Multi-Tab Tables (1. Package purchases ledger, 2. Manual general ledger) */}
+                        <div className="bg-white border border-slate-100 rounded-3xl shadow-sm overflow-hidden">
+                          <div className="border-b border-slate-100 px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                            <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                              📋 บัญชีสรุปการเงินรายรับ-รายจ่ายตามแพ็กเกจ ({filteredEntries.length} รายการ)
+                            </h4>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse min-w-[1200px]">
+                              <thead>
+                                <tr className="bg-slate-50/75 text-slate-500 text-[10px] font-bold uppercase tracking-wider border-b border-slate-100">
+                                  <th className="px-4 py-3.5">วันที่ทำรายการ</th>
+                                  <th className="px-4 py-3.5 text-center">รหัสสมาชิก</th>
+                                  <th className="px-4 py-3.5">แพ็กเกจสมัคร</th>
+                                  <th className="px-4 py-3.5">ชุดสินค้าเซ็ต</th>
+                                  <th className="px-4 py-3.5 text-right text-indigo-700">ราคาตั้งขาย (บาท)</th>
+                                  <th className="px-4 py-3.5 text-right text-rose-600">หัก PV (50%)</th>
+                                  <th className="px-4 py-3.5 text-right">ทุนสินค้า</th>
+                                  <th className="px-4 py-3.5 text-center">ติ๊กมี Vat</th>
+                                  <th className="px-4 py-3.5 text-right">ทุนรวม Vat</th>
+                                  <th className="px-4 py-3.5 text-right">กล่อง/หีบห่อ</th>
+                                  <th className="px-4 py-3.5 text-right">ค่าจัดส่ง</th>
+                                  <th className="px-4 py-3.5 text-right text-red-600 font-extrabold">รวมค่าใช้จ่าย</th>
+                                  <th className="px-4 py-3.5 text-right">ภาษีขาย 7%</th>
+                                  <th className="px-4 py-3.5 text-right">ภาษีนำส่ง</th>
+                                  <th className="px-4 py-3.5 text-right text-emerald-600 font-black">คงเหลือบริษัท</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-[11px] font-medium text-slate-600">
+                                {filteredEntries.length > 0 ? (
+                                  filteredEntries.map((entry, idx) => (
+                                    <tr key={entry.orderId || idx} className="hover:bg-slate-50/50 transition">
+                                      <td className="px-4 py-3 font-mono text-slate-400">
+                                        {entry.createdAt ? new Date(entry.createdAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : "ไม่ระบุ"}
+                                      </td>
+                                      <td className="px-4 py-3 text-center font-bold text-slate-800 font-mono">
+                                        {entry.userId}
+                                      </td>
+                                      <td className="px-4 py-3 font-bold text-indigo-950">
+                                        {entry.packageName}
+                                      </td>
+                                      <td className="px-4 py-3 text-slate-500 font-bold truncate max-w-[150px]" title={entry.choiceName}>
+                                        {entry.choiceName}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-black text-indigo-600 font-mono">
+                                        {entry.sellingPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-bold text-rose-500 font-mono">
+                                        {entry.pvPayout.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-mono">
+                                        {entry.productCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-center">
+                                        {entry.hasVat ? (
+                                          <span className="bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded text-[9px]">มี Vat 7%</span>
+                                        ) : (
+                                          <span className="bg-slate-100 text-slate-400 font-bold px-1.5 py-0.5 rounded text-[9px]">-</span>
+                                        )}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-bold font-mono">
+                                        {entry.productCostWithVat.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-mono">
+                                        {entry.packagingCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-mono">
+                                        {entry.shippingFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-extrabold text-red-500 font-mono">
+                                        {entry.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-mono">
+                                        {entry.salesVat.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-bold font-mono text-slate-700">
+                                        {entry.vatPayable.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-black text-emerald-600 font-mono bg-emerald-50/10">
+                                        {entry.remaining.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan={15} className="px-4 py-8 text-center text-slate-400 font-extrabold">
+                                      ไม่พบรายการสั่งซื้อแพ็กเกจตามเงื่อนไขที่เลือก
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Manual operational expenditures list */}
+                        <div className="bg-white border border-slate-100 rounded-3xl shadow-sm overflow-hidden">
+                          <div className="border-b border-slate-100 px-6 py-4 flex justify-between items-center bg-slate-50/40">
+                            <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                              💸 บันทึกรายจ่ายบริหารจัดการทั่วไปของบริษัท (General Operating Expenses Ledger)
+                            </h4>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-white border px-2 py-0.5 rounded-full">
+                              รวมรายจ่าย: ฿ {totalManualExpenses.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50/75 text-slate-500 text-[10px] font-bold uppercase border-b border-slate-100">
+                                  <th className="px-6 py-3">รหัสธุรกรรม</th>
+                                  <th className="px-6 py-3">วันที่ใช้จ่าย</th>
+                                  <th className="px-6 py-3">ประเภท</th>
+                                  <th className="px-6 py-3">รายการใช้จ่าย</th>
+                                  <th className="px-6 py-3">หมายเหตุรายละเอียด</th>
+                                  <th className="px-6 py-3 text-right text-red-500 font-extrabold">จำนวนเงิน (บาท)</th>
+                                  <th className="px-6 py-3 text-center">จัดการ</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-[11px] text-slate-600">
+                                {filteredManualExpenses.length > 0 ? (
+                                  filteredManualExpenses.map((exp) => (
+                                    <tr key={exp.id} className="hover:bg-slate-50/50 transition">
+                                      <td className="px-6 py-3 font-mono text-slate-400">{exp.id}</td>
+                                      <td className="px-6 py-3 font-mono">
+                                        {new Date(exp.date).toLocaleDateString('th-TH', { dateStyle: 'medium' })}
+                                      </td>
+                                      <td className="px-6 py-3">
+                                        <span className="bg-slate-100 text-slate-700 font-extrabold px-2 py-0.5 rounded-lg text-[9px]">
+                                          {exp.category}
+                                        </span>
+                                      </td>
+                                      <td className="px-6 py-3 font-bold text-slate-800">{exp.title}</td>
+                                      <td className="px-6 py-3 text-slate-400 font-medium max-w-xs truncate" title={exp.notes}>
+                                        {exp.notes || "-"}
+                                      </td>
+                                      <td className="px-6 py-3 text-right font-black text-rose-600 font-mono">
+                                        - ฿ {exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-6 py-3 text-center">
+                                        <button
+                                          onClick={() => handleRemoveManualExpense(exp.id)}
+                                          className="text-red-500 hover:text-red-600 font-extrabold text-[10px] hover:underline cursor-pointer"
+                                        >
+                                          ลบรายการ
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan={7} className="px-6 py-6 text-center text-slate-400 font-medium">
+                                      ยังไม่มีรายการบันทึกค่าใช้จ่ายทั่วไปเพิ่มเติมในช่วงเวลานี้
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Modal Form for adding custom operating expenses */}
+                        {showAddManualExpenseModal && (
+                          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fadeIn">
+                            <div className="bg-white rounded-3xl shadow-xl border border-slate-100 max-w-md w-full p-6 space-y-4">
+                              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                                <h3 className="text-base font-extrabold text-slate-800 flex items-center gap-1.5">
+                                  💸 บันทึกค่าใช้จ่ายบริษัทเพิ่มเติม (General Operating Expense Form)
+                                </h3>
+                                <button
+                                  onClick={() => setShowAddManualExpenseModal(false)}
+                                  className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+
+                              <form onSubmit={handleAddManualExpenseSubmit} className="space-y-4">
+                                <div>
+                                  <label className="block text-slate-700 font-bold text-xs mb-1">ชื่อรายการใช้จ่าย *</label>
+                                  <input
+                                    type="text"
+                                    required
+                                    placeholder="เช่น คืนเงินสมาชิกร้านค้า, ซื้อเครื่องใช้สำนักงาน, ค่าเซิร์ฟเวอร์"
+                                    value={manualExpenseTitle}
+                                    onChange={(e) => setManualExpenseTitle(e.target.value)}
+                                    className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:border-indigo-500 bg-white font-semibold"
+                                  />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-slate-700 font-bold text-xs mb-1">จำนวนเงิน (บาท) *</label>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      required
+                                      placeholder="เช่น 1500"
+                                      value={manualExpenseAmount}
+                                      onChange={(e) => setManualExpenseAmount(e.target.value)}
+                                      className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:border-indigo-500 bg-white font-bold font-mono"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-slate-700 font-bold text-xs mb-1">วันที่ชำระเงิน *</label>
+                                    <input
+                                      type="date"
+                                      required
+                                      value={manualExpenseDate}
+                                      onChange={(e) => setManualExpenseDate(e.target.value)}
+                                      className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:border-indigo-500 bg-white font-bold"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-slate-700 font-bold text-xs mb-1">หมวดหมู่รายจ่าย *</label>
+                                  <select
+                                    value={manualExpenseCategory}
+                                    onChange={(e) => setManualExpenseCategory(e.target.value)}
+                                    className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:border-indigo-500 bg-white"
+                                  >
+                                    <option value="ค่าสินค้า">ค่าสินค้า (Product Supply)</option>
+                                    <option value="ค่าบรรจุภัณฑ์">ค่าบรรจุภัณฑ์ (Packaging)</option>
+                                    <option value="ค่าจัดส่ง">ค่าจัดส่ง / โลจิสติกส์ (Shipping)</option>
+                                    <option value="ค่าจ้าง/สวัสดิการ">ค่าจ้าง / สวัสดิการ (Salaries/Benefits)</option>
+                                    <option value="ค่าโฆษณา/การตลาด">ค่าโฆษณา / การตลาด (Marketing)</option>
+                                    <option value="ค่าเซิร์ฟเวอร์/ระบบ">ค่าเซิร์ฟเวอร์ / ซอฟต์แวร์ (IT/Server)</option>
+                                    <option value="อื่นๆ">อื่นๆ (Others / Petty Cash)</option>
+                                  </select>
+                                </div>
+
+                                <div>
+                                  <label className="block text-slate-700 font-bold text-xs mb-1">หมายเหตุ / ข้อมูลจำเพาะ</label>
+                                  <textarea
+                                    placeholder="กรอกรายละเอียดเพิ่มเติม เช่น ดำเนินการโดยแอดมินคนไหน หรือใบรับเงินเลขที่ใด"
+                                    value={manualExpenseNotes}
+                                    onChange={(e) => setManualExpenseNotes(e.target.value)}
+                                    className="w-full border border-slate-300 rounded-xl px-4 py-2 text-xs text-slate-800 focus:border-indigo-500 bg-white h-20"
+                                  />
+                                </div>
+
+                                <div className="flex gap-2 justify-end border-t border-slate-100 pt-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowAddManualExpenseModal(false)}
+                                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer"
+                                  >
+                                    ยกเลิก
+                                  </button>
+                                  <button
+                                    type="submit"
+                                    className="bg-rose-600 hover:bg-rose-500 text-white px-5 py-2 rounded-xl text-xs font-bold shadow transition cursor-pointer"
+                                  >
+                                    บันทึกค่าใช้จ่าย
+                                  </button>
+                                </div>
+                              </form>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -12244,6 +17084,51 @@ export default function App() {
                         </div>
                       )}
 
+                      {/* OTP Verification Prompt */}
+                      {showOtpPrompt && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 space-y-3 animate-fadeIn mt-4">
+                          <div className="flex items-center gap-2 text-amber-800">
+                            <span className="text-lg">🔒</span>
+                            <span className="font-extrabold text-sm">การขออนุมัติสิทธิ์ OTP สำหรับแก้ไขข้อมูลสำคัญ (Manager Authorized OTP Required)</span>
+                          </div>
+                          <p className="text-[11px] text-amber-700 leading-relaxed">
+                            ระบบตรวจพบการแก้ไขข้อมูลสำคัญในบัญชีสมาชิก ได้แก่ ข้อมูลชื่อ-นามสกุล, เลขประจำตัวประชาชน, ข้อมูลบัญชีธนาคาร หรือจำนวนเงินและธุรกรรมทางการเงิน เนื่องจากสิทธิ์การใช้งานของคุณเป็น Admin คุณจำเป็นต้องนำรหัส OTP ผ่านการยืนยันจาก <strong>Manager (ผู้จัดการระบบ)</strong> เพื่อทำการอนุมัติบันทึกการแก้ไขในครั้งนี้
+                          </p>
+                          <div className="bg-slate-900 text-sky-300 p-4 rounded-2xl font-mono text-[11px] border border-slate-800 shadow-inner flex flex-col gap-1.5">
+                            <span className="font-bold text-slate-400">📲 กล่องข้อความแจ้งเตือน (SMS/Inbox) ของระบบ Manager:</span>
+                            <span className="text-white font-extrabold text-xs">
+                              [Natee Plus OTP] รหัสผ่าน OTP เพื่ออนุมัติแก้ไขข้อมูลสมาชิกคือ: <span className="text-yellow-300 text-sm font-black bg-yellow-400/10 px-2 py-0.5 rounded tracking-widest">{managerOtp}</span> (ใช้งานได้ภายในครั้งเดียว)
+                            </span>
+                          </div>
+                          <div className="flex flex-col sm:flex-row items-center gap-3">
+                            <div className="w-full flex-1">
+                              <label className="block text-amber-900 font-extrabold mb-1">กรอกรหัส OTP ยืนยัน (6 หลัก) *</label>
+                              <input 
+                                type="text"
+                                maxLength={6}
+                                required
+                                placeholder="กรอกรหัส OTP 6 หลัก เช่น 123456"
+                                value={inputOtp}
+                                onChange={(e) => setInputOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                className="w-full bg-white border border-amber-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 rounded-xl px-4 py-2.5 text-center text-sm font-black tracking-widest text-slate-800 font-mono"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const code = Math.floor(100000 + Math.random() * 900000).toString();
+                                setManagerOtp(code);
+                                setInputOtp('');
+                                showNotif("🔄 ส่งรหัส OTP ใหม่ไปยังระบบแจ้งเตือนของ Manager แล้ว", "success");
+                              }}
+                              className="sm:mt-5 bg-white text-amber-700 hover:bg-amber-100 border border-amber-300 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
+                            >
+                              🔄 ขอรหัส OTP อีกครั้ง
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="border-t border-slate-100 pt-4 flex gap-2 justify-end">
                         <button 
                           type="button"
@@ -12275,11 +17160,11 @@ export default function App() {
             <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100">
               <h3 className="text-sm font-bold text-slate-900 mb-2">🎁 เลือกชุดเซ็ตสินค้าของแพ็กเกจ</h3>
               <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                ตั้งแต่แพ็กเกจตำแหน่ง M ขึ้นไป สมาชิกสามารถระบุเซ็ตสินค้าที่ท่านต้องการได้รับจากระบบได้ที่นี่ โดยแอดมินจะดำเนินการจัดส่งตามรายการที่เลือกค่ะ
+                ตั้งแต่แพ็กเกจตำแหน่ง M ขึ้นไป สมาชิกสามารถเลือก"กล่องสุ่ม" ระบุเซ็ตสินค้าที่ท่านต้องการได้รับจากระบบได้ที่นี่ โดยจะถูกจัดส่งตามรายการที่เลือก (ราคานี้รวมค่าจัดส่งแล้ว)
               </p>
               
               <div className="space-y-3 mb-6">
-                {packageChoices.filter(c => c.packageId === pendingPurchaseProductId).map((choice) => (
+                {getPackageChoicesForId(pendingPurchaseProductId).map((choice) => (
                   <label 
                     key={choice.id} 
                     className={`flex items-start gap-3 p-3 border rounded-2xl cursor-pointer transition ${
@@ -12303,7 +17188,7 @@ export default function App() {
                   </label>
                 ))}
                 
-                {packageChoices.filter(c => c.packageId === pendingPurchaseProductId).length === 0 && (
+                {getPackageChoicesForId(pendingPurchaseProductId).length === 0 && (
                   <p className="text-xs text-amber-600 text-center py-4 bg-amber-50 rounded-xl font-bold">
                     ⚠️ แอดมินยังไม่ได้กำหนดเซ็ตสินค้าสำหรับแพ็กเกจนี้ กรุณาติดต่อแอดมินหรือเลือกสั่งซื้อภายหลังค่ะ
                   </p>
@@ -12335,6 +17220,45 @@ export default function App() {
           </div>
         )}
 
+        {/* MODAL FOR INSUFFICIENT FUNDS */}
+        {showInsufficientFundsModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
+            <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-red-150 text-center space-y-4">
+              <div className="w-14 h-14 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto text-3xl animate-pulse font-bold">
+                ⚠️
+              </div>
+              <h3 className="text-sm font-bold text-rose-600">❌ ยอดเงิน E-Cash ไม่เพียงพอ</h3>
+              <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                {insufficientFundsMessage}
+              </p>
+              <div className="flex gap-2 justify-center pt-2">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setShowInsufficientFundsModal(false);
+                    setInsufficientFundsMessage('');
+                  }}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-xs font-bold cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setShowInsufficientFundsModal(false);
+                    setInsufficientFundsMessage('');
+                    setActiveTab('txn'); // switch to financial transactions tab
+                    setSidebarOpen(false);
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+                >
+                  เติมเงิน
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* POPUP CONFIRMATION SUMMARY FOR ANY PRODUCT OR PACKAGE PURCHASE */}
         {showPurchaseConfirmModal && confirmProduct && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
@@ -12344,7 +17268,7 @@ export default function App() {
                   {confirmProduct.category === 'Package' ? '📦' : '🛍️'}
                 </div>
                 <h3 className="text-base font-extrabold text-slate-900 pt-2">
-                  {confirmProduct.category === 'Package' ? 'ยืนยันสรุปการสั่งซื้อแพ็กเกจ' : 'ยืนยันสรุปการสั่งซื้อสินค้า Natee Plus Shop'}
+                  {confirmProduct.category === 'Package' ? 'ยืนยันสรุปการสั่งซื้อแพ็กเกจ' : 'ยืนยันสรุปการสั่งซื้อสินค้า Natee Plus Market'}
                 </h3>
                 <p className="text-[11px] text-slate-400">
                   {confirmProduct.category === 'Package' 
@@ -12476,6 +17400,55 @@ export default function App() {
           </div>
         )}
 
+        {/* CUSTOM NON-BLOCKING CONFIRM / PROMPT DIALOG */}
+        {confirmDialog.show && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn text-xs">
+            <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-100 space-y-4">
+              <div className="text-center space-y-2">
+                <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto text-xl">
+                  {confirmDialog.isPrompt ? '✏️' : '❓'}
+                </div>
+                <h3 className="text-sm font-extrabold text-slate-900 pt-1">
+                  {confirmDialog.title}
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  {confirmDialog.message}
+                </p>
+              </div>
+
+              {confirmDialog.isPrompt && (
+                <div className="space-y-1">
+                  <input
+                    type="text"
+                    value={confirmDialog.promptValue || ''}
+                    placeholder={confirmDialog.placeholder}
+                    onChange={(e) => setConfirmDialog(prev => ({ ...prev, promptValue: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:ring-2 focus:ring-indigo-500/25 outline-none font-medium bg-slate-50/50"
+                    autoFocus
+                  />
+                </div>
+              )}
+
+              <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDialog((prev) => ({ ...prev, show: false }))}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition active:scale-95"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={() => confirmDialog.onConfirm(confirmDialog.promptValue)}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition shadow-md shadow-indigo-600/20 cursor-pointer active:scale-95"
+                >
+                  ตกลง
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ADMIN/SELLER PRODUCT EDIT MODAL WITH LIVE CALCULATIONS */}
         {showEditProductModal && editingProduct && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto animate-fadeIn">
@@ -12516,9 +17489,58 @@ export default function App() {
                       type="number" 
                       required
                       value={editingProduct.price || ''}
-                      onChange={(e) => setEditingProduct(prev => ({ ...prev, price: e.target.value }))}
+                      onChange={(e) => {
+                        setEditingProduct(prev => ({ ...prev, price: e.target.value }));
+                        // Keep target payout synced if manually edited
+                        const p = parseFloat(e.target.value) || 0;
+                        if (p > 0) {
+                          setEditProdTargetPayout((p * 0.80).toString());
+                        } else {
+                          setEditProdTargetPayout('');
+                        }
+                      }}
                       className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-indigo-600"
                     />
+                  </div>
+                </div>
+
+                {/* Edit Product Auto-Calculate helper container */}
+                <div className="bg-amber-50/70 border border-amber-100 rounded-2xl p-3 space-y-2 font-sans">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-amber-900 text-[11px] flex items-center gap-1">
+                      💡 ระบบคำนวณราคาขายอัตโนมัติ (รวม GP 20% และ VAT 7%)
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                    <div>
+                      <label className="block text-slate-600 text-[10px] font-bold mb-1">รายรับที่พาร์ทเนอร์ต้องการได้รับจริง (฿):</label>
+                      <div className="relative">
+                        <input 
+                          type="number"
+                          placeholder="เช่น 800"
+                          value={editProdTargetPayout}
+                          onChange={(e) => {
+                            const inputVal = e.target.value;
+                            setEditProdTargetPayout(inputVal);
+                            const targetVal = parseFloat(inputVal) || 0;
+                            if (targetVal > 0) {
+                              const calculatedPrice = Math.ceil(targetVal / 0.80);
+                              setEditingProduct(prev => ({ ...prev, price: calculatedPrice.toString() }));
+                            } else {
+                              setEditingProduct(prev => ({ ...prev, price: '' }));
+                            }
+                          }}
+                          className="w-full bg-white border border-amber-200 rounded-xl pl-3 pr-10 py-1.5 text-xs text-amber-950 placeholder-amber-400 font-extrabold focus:ring-2 focus:ring-amber-300 outline-none"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-600 font-bold text-[10px]">บาท</span>
+                      </div>
+                    </div>
+                    <div className="bg-amber-100/30 p-2 rounded-xl border border-amber-200/50 text-[10px] text-amber-900 leading-relaxed">
+                      ราคาจำหน่ายหน้าเว็บแนะนำ: <strong className="text-amber-950 font-mono text-xs">฿ {editingProduct.price || 0}</strong>
+                      <p className="text-[9px] text-amber-700/80 mt-0.5">
+                        หัก GP 20% แล้วจะได้ยอดรับ {editProdTargetPayout || 0} บาทพอดี (รวมภาษีมูลค่าเพิ่ม VAT 7% เรียบร้อยแล้ว)
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -13108,7 +18130,7 @@ export default function App() {
                           <div className="grid grid-cols-12 border-b border-slate-200 text-slate-800 font-medium">
                             <div className="col-span-6 p-2.5 border-r border-slate-800 leading-normal">
                               <strong>เงินได้ประเภทที่ 8 (ตามมาตรา 40(8))</strong>
-                              <span className="block text-[9px] text-slate-500 mt-0.5">รายได้จากการจำหน่ายพัสดุสินค้าออนไลน์, ค่าบริการฝากขาย, และจัดส่งคลังสินค้านทีช็อป</span>
+                              <span className="block text-[9px] text-slate-500 mt-0.5">รายได้จากการจำหน่ายพัสดุสินค้าออนไลน์, ค่าบริการฝากขาย, และจัดส่งคลังสินค้านทีมาร์เก็ต</span>
                             </div>
                             <div className="col-span-2 p-2.5 text-center border-r border-slate-800 flex items-center justify-center font-mono">
                               {new Date(selectedTaxDoc.data.createdAt).toLocaleDateString('th-TH')}
@@ -13490,11 +18512,122 @@ export default function App() {
           </div>
         )}
 
+        {/* PDPA Privacy Policy Modal for Natee Plus Partner */}
+        {showPdpaModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-100 overflow-hidden flex flex-col my-8 animate-scaleUp">
+              {/* Header */}
+              <div className="bg-slate-950 text-white p-6 relative overflow-hidden flex-shrink-0">
+                <div className="absolute top-0 right-0 -mt-6 -mr-6 w-24 h-24 rounded-full bg-indigo-600/20 blur-xl"></div>
+                <div className="relative flex justify-between items-center">
+                  <div className="space-y-1">
+                    <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-extrabold px-2 py-0.5 rounded-full border border-indigo-500/30 uppercase tracking-widest">
+                      PDPA Privacy Policy
+                    </span>
+                    <h3 className="text-base font-black tracking-tight text-white flex items-center gap-1.5">
+                      🛡️ นโยบายคุ้มครองข้อมูลส่วนบุคคลสำหรับผู้ขายร้านค้าร่วมพันธมิตร
+                    </h3>
+                  </div>
+                  <button 
+                    onClick={() => setShowPdpaModal(false)}
+                    className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-4 text-xs text-slate-600 leading-relaxed max-h-[60vh] font-sans">
+                <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50 space-y-1">
+                  <p className="font-bold text-indigo-950">ผู้ควบคุมข้อมูลส่วนบุคคล (Data Controller):</p>
+                  <p className="font-extrabold text-indigo-700 text-sm">บริษัท นที พลัส จำกัด (Natee Plus Co., Ltd.)</p>
+                  <p className="text-[10px] text-slate-500">สำนักงานใหญ่จดทะเบียนอย่างถูกต้องตามกฎหมายแห่งประเทศไทย</p>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-1">
+                    1. ประเภทของข้อมูลส่วนบุคคลที่มีการจัดเก็บรวบรวม
+                  </h4>
+                  <p>
+                    เนื่องจากระบบ <strong>Natee Plus Partner (พอร์ทัลร้านค้าร่วมพันธมิตร)</strong> มีความจำเป็นในการประมวลผลธุรกรรมทางการเงินและยืนยันตัวตนคู่ค้าเพื่อส่งภาษีสรรพากร บริษัท นที พลัส จำกัด จึงจัดเก็บข้อมูลส่วนบุคคลของท่าน ดังต่อไปนี้:
+                  </p>
+                  <ul className="list-disc list-inside pl-2 space-y-1 text-slate-500">
+                    <li><strong>ข้อมูลระบุตัวตนจริง:</strong> ชื่อ-นามสกุลจริง, หมายเลขบัตรประจำตัวประชาชนไทย, หรือหมายเลขหนังสือเดินทาง (Passport) พร้อมทั้งรูปถ่ายหน้าบัตรประจำตัวประชาชนเพื่อการยืนยันตัวตนทางกฎหมาย</li>
+                    <li><strong>ข้อมูลการติดต่อ:</strong> หมายเลขโทรศัพท์มือถือ, ที่อยู่อาศัยจริง, และที่อยู่คลังสินค้าจัดส่งพัสดุ</li>
+                    <li><strong>ข้อมูลทางการเงินและบัญชี:</strong> ชื่อบัญชีธนาคาร, หมายเลขบัญชีธนาคาร และภาพถ่ายหน้าสมุดบัญชีเงินฝาก (Bookbank) สำหรับรับโอนเงินคอมมิชชั่นหรือยอดขายสุทธิหลังหัก GP</li>
+                    <li><strong>ข้อมูลร้านค้า:</strong> ชื่อร้านร่วมคู่ค้า, ข้อมูลตำแหน่งพิกัดแผนที่คลังสินค้า (Latitude / Longitude)</li>
+                  </ul>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-1">
+                    2. วัตถุประสงค์ในการจัดเก็บและประมวลผลข้อมูล
+                  </h4>
+                  <p>
+                    บริษัทจัดเก็บข้อมูลดังกล่าวภายใต้ฐานความจำเป็นทางกฎหมาย สัญญา และความยินยอม เพื่อวัตถุประสงค์ดังนี้:
+                  </p>
+                  <ul className="list-disc list-inside pl-2 space-y-1 text-slate-500">
+                    <li>ตรวจสอบความถูกต้องของตัวตนเจ้าของร้านค้า ป้องกันการลงทะเบียนแอบอ้างสิทธิ์หรือการฉ้อโกง</li>
+                    <li>จัดทำใบเสร็จรับเงิน/ใบกำกับภาษี และเอกสารทางการเงินตามกฎหมาย</li>
+                    <li>คำนวณและหักภาษี ณ ที่จ่าย (Withholding Tax 3%) เพื่อนำส่งสรรพากรในนามผู้รับเงินอย่างถูกต้องตามประเภทรายได้</li>
+                    <li>ดำเนินการโอนยอดเงินผลตอบแทนสุทธิ (หลังหักค่าธรรมเนียม GP และภาษี) เข้าบัญชีธนาคารที่กำหนดอย่างปลอดภัย</li>
+                    <li>ใช้ติดต่อประสานงาน แจ้งข้อมูลข่าวสารที่เกี่ยวข้องกับการให้บริการแพลตฟอร์ม Natee Plus Partner</li>
+                  </ul>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-1">
+                    3. ระยะเวลาการจัดเก็บข้อมูลส่วนบุคคล
+                  </h4>
+                  <p>
+                    บริษัทจะทำการเก็บรักษาข้อมูลส่วนบุคคลของท่านไว้ตราบเท่าที่ท่านยังคงมีสถานะเป็นสมาชิกร้านค้าพันธมิตรในระบบ และจะจัดเก็บต่อเนื่องต่อไปเป็นระยะเวลา <strong>อย่างน้อย 10 ปี</strong> นับจากวันที่สิ้นสุดสัญญาคู่ค้า เพื่อการดำเนินการตรวจสอบย้อนหลังทางบัญชี ภาษีอากร และการปฏิบัติตามกฎหมายที่เกี่ยวข้องของรัฐ
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-1">
+                    4. การส่งต่อหรือเปิดเผยข้อมูลส่วนบุคคล
+                  </h4>
+                  <p>
+                    บริษัท นที พลัส จำกัด จะรักษาความลับของข้อมูลเป็นอย่างดีที่สุด โดยจะจำกัดการเปิดเผยเฉพาะกรณีจำเป็นตามกฎหมาย ได้แก่:
+                  </p>
+                  <ul className="list-disc list-inside pl-2 space-y-1 text-slate-500">
+                    <li>ส่งข้อมูลภาษีและรายได้แก่ <strong>กรมสรรพากร ประเทศไทย</strong> ตามหน้าที่ทางกฎหมายภาษี</li>
+                    <li>ส่งข้อมูลชื่อและที่อยู่คลังส่งมอบสินค้าให้แก่บริษัทพาร์ทเนอร์ด้านโลจิสติกส์การจัดส่งพัสดุ (เช่น Shippop)</li>
+                    <li>สถาบันการเงินหรือธนาคารผู้ให้บริการระบบโอนเงินปลายทาง</li>
+                  </ul>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-1">
+                    5. สิทธิของท่านภายใต้ พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล (PDPA)
+                  </h4>
+                  <p>
+                    ท่านมีสิทธิทางกฎหมายอย่างครบถ้วนในการขอเข้าถึงข้อมูล, ขอสำเนาข้อมูลส่วนบุคคล, ขอให้ดำเนินการแก้ไขให้ถูกต้องสมบูรณ์เป็นปัจจุบัน, ขอระงับการใช้, ขอคัดค้านการประมวลผล หรือขอถอนความยินยอมในการจัดเก็บ โดยสามารถแจ้งความประสงค์ผ่านแผนกคุ้มครองข้อมูลของบริษัท ทั้งนี้ การถอนความยินยอมที่จำเป็นต่อการใช้ระบบทางการเงินอาจส่งผลให้บริษัทไม่สามารถเปิดให้บริการพอร์ทัลร้านค้าแก่ท่านได้
+                  </p>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="bg-slate-50 p-4 border-t border-slate-100 flex justify-end gap-3 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowPdpaModal(false)}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-6 py-2.5 rounded-xl text-xs transition cursor-pointer shadow-md"
+                >
+                  ข้าพเจ้ารับทราบและตกลง (Close)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         </div>
 
         {/* Global Footer */}
         <footer className="bg-white border-t border-slate-100 px-6 py-4 text-center text-[10px] text-slate-400">
-          © {new Date().getFullYear()} NaTee Plus (นที พลัส) • โครงสร้างเครือข่ายธุรกิจร้านค้านวัตกรรมอย่างโปร่งใส มั่งคั่ง มั่นคง ยั่งยืน
+          © {new Date().getFullYear()} NaTee Plus (นที พลัส) • โครงสร้างเครือข่ายธุรกิจร้านค้านวัตกรรมอย่างโปร่งใส มั่งคั่ง มั่นคง ยั่งยืน • <button onClick={() => setShowPdpaModal(true)} className="text-indigo-600 hover:underline cursor-pointer">นโยบายความเป็นส่วนตัว (PDPA)</button>
         </footer>
       </main>
     </div>
