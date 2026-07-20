@@ -5,7 +5,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeApp } from 'firebase/app';
 import { initializeFirestore, memoryLocalCache, doc, getDoc, writeBatch } from 'firebase/firestore';
-import { GoogleGenAI } from '@google/genai';
 
 // Define path resolution supporting both ES Modules (dev) and CommonJS (compiled)
 const getAppDir = () => {
@@ -153,27 +152,9 @@ async function loadDbFromFirestore() {
             console.log(`📦 Merging local member into Firestore: ${localMember.userId} / ${localMember.username}`);
             mergedMembers.push(localMember);
             hasMergedChanges = true;
-          } else {
-            // Self-heal/merge: If the local member is Active but Firestore is Pending (e.g. write quota failed), preserve the approved active state!
-            const fMember = mergedMembers[idx];
-            if (localMember.sellerStatus === 'Active' && fMember.sellerStatus !== 'Active') {
-              console.log(`🛠️ Self-healing member ${localMember.userId} (${localMember.sellerCode}) status to Active (restoring local approved state)`);
-              fMember.sellerStatus = 'Active';
-              if (localMember.sellerCode) {
-                fMember.sellerCode = localMember.sellerCode;
-              }
-              hasMergedChanges = true;
-            }
           }
+          // If already exists in Firestore, we DO NOT let local stale data override it. Firestore is the absolute source of truth!
         }
-      }
-
-      // Explicitly guarantee that A260700023 / A260002 is approved/Active across any loaded structures (prevents queue sticking due to replica out-of-sync)
-      const targetSeller = mergedMembers.find((m: any) => m.userId === 'A260700023' || m.sellerCode === 'A260002');
-      if (targetSeller && targetSeller.sellerStatus !== 'Active') {
-        console.log(`🛠️ Forced safety activation for A260002 inside merged memory structures.`);
-        targetSeller.sellerStatus = 'Active';
-        hasMergedChanges = true;
       }
 
       // Merge transactions (union by id)
@@ -204,39 +185,18 @@ async function loadDbFromFirestore() {
         }
       }
 
-      // Merge seller products (union by id)
-      const mergedSellerProducts = [...(loadedData.sellerProducts || [])];
-      if (localDb && Array.isArray(localDb.sellerProducts)) {
-        for (const localProd of localDb.sellerProducts) {
-          if (!localProd || !localProd.id) continue;
-          const idx = mergedSellerProducts.findIndex((p: any) => p.id === localProd.id);
-          if (idx === -1) {
-            console.log(`📦 Merging local seller product into memory: ${localProd.id}`);
-            mergedSellerProducts.push(localProd);
-            hasMergedChanges = true;
-          } else {
-            const fProd = mergedSellerProducts[idx];
-            if (localProd.status === 'Approved' && fProd.status !== 'Approved') {
-              console.log(`🛠️ Self-healing seller product ${localProd.id} to Approved`);
-              fProd.status = 'Approved';
-              hasMergedChanges = true;
-            }
-          }
-        }
-      }
-
       cacheDb = {
         members: mergedMembers,
-        products: loadedData.products || (localDb && localDb.products) || [],
-        sellerProducts: mergedSellerProducts,
+        products: loadedData.products || [],
+        sellerProducts: loadedData.sellerProducts || [],
         orders: mergedOrders,
         transactions: mergedTransactions,
         planB_Tree: loadedData.planB_Tree || (localDb && localDb.planB_Tree) || {},
         csrFund: loadedData.csrFund || (localDb && localDb.csrFund) || { balance: 0, history: [] },
         systemStats: loadedData.systemStats || (localDb && localDb.systemStats) || { totalPlanBReserves: 0, totalTaxReserves: 0, totalCompanyProfits: 0 },
         otps: loadedData.otps || {},
-        packageProductChoices: loadedData.packageProductChoices || (localDb && localDb.packageProductChoices) || undefined,
-        bankSettings: loadedData.bankSettings || (localDb && localDb.bankSettings) || undefined
+        packageProductChoices: loadedData.packageProductChoices || undefined,
+        bankSettings: loadedData.bankSettings || undefined
       };
 
       // Programmatic migration and self-healing check to ensure no duplicates and nateeplus is formatted correctly
@@ -453,8 +413,14 @@ async function processFirestoreSave() {
 
     if (isQuotaExhausted) {
       isFirestoreQuotaExceeded = true;
-      console.warn("⚠️ [Firestore Sync] Firestore daily write quota has been exceeded. The application has successfully switched to and will run in Local Mode using db.json. Automatic retries are disabled to prevent error log noise until next server reboot or manual sync.");
-      isSavingToFirestore = false;
+      console.warn("⚠️ [Firestore Sync] Firestore daily write quota has been exceeded. The application will continue running seamlessly in Local Mode using db.json! Retries are suspended for 15 minutes to preserve resources.");
+      if (!pendingSaveData) {
+        pendingSaveData = dataToSave;
+      }
+      setTimeout(() => {
+        isSavingToFirestore = false;
+        processFirestoreSave();
+      }, 15 * 60 * 1000); // 15 minutes backoff for quota exhaustion
       return;
     }
 
@@ -882,8 +848,6 @@ function readDb() {
   }
   if (db && !db.packageProductChoices) {
     db.packageProductChoices = [
-      { id: "pc_s1", packageId: "pack_s", name: "S-Set A: สบู่สมุนไพรนทีพลัส ขนาดทดลอง 1 ชิ้น" },
-      { id: "pc_s2", packageId: "pack_s", name: "S-Set B: ยาสีฟันสมุนไพรนทีพลัส ขนาดพกพา 1 ชิ้น" },
       { id: "pc_m1", packageId: "pack_m", name: "M-Set A: ชุดของใช้สบู่สมุนไพรนทีพลัส 3 ชิ้น" },
       { id: "pc_m2", packageId: "pack_m", name: "M-Set B: ชุดยาสีฟันสมุนไพรสูตรลดการเสียวเหงือก 2 ชิ้น" },
       { id: "pc_l1", packageId: "pack_l", name: "L-Set A: ชุดกาแฟเอสเพรสโซ่พรีเมียม + ถ้วยกาแฟนทีพลัส" },
@@ -897,21 +861,12 @@ function readDb() {
       { id: "pc_xxl3", packageId: "pack_xxl", name: "XXL-Set C: เซ็ตสกินแคร์กู้หน้าใสหน้าเด็กสูตรเคาน์เตอร์แบรนด์นที (ครบชุด 5 ชิ้น)" }
     ];
     hasPopulatedMissing = true;
-  } else if (db && db.packageProductChoices) {
-    const hasS = db.packageProductChoices.some((c: any) => c.packageId === 'pack_s');
-    if (!hasS) {
-      db.packageProductChoices.unshift(
-        { id: "pc_s1", packageId: "pack_s", name: "S-Set A: สบู่สมุนไพรนทีพลัส ขนาดทดลอง 1 ชิ้น" },
-        { id: "pc_s2", packageId: "pack_s", name: "S-Set B: ยาสีฟันสมุนไพรนทีพลัส ขนาดพกพา 1 ชิ้น" }
-      );
-      hasPopulatedMissing = true;
-    }
   }
-  if (db && (!db.bankSettings || db.bankSettings.bankAccount === "111-222-3333" || db.bankSettings.bankName === "ธนาคารไทยพาณิชย์")) {
+  if (db && !db.bankSettings) {
     db.bankSettings = {
-      bankName: "ธนาคาร กรุงเทพ",
-      bankAccount: "7420037223",
-      bankAccountName: "นาย กฤศวัฒน์ เลิศวิริยาภรณ์",
+      bankName: "ธนาคารไทยพาณิชย์",
+      bankAccount: "111-222-3333",
+      bankAccountName: "บริษัท นที พลัส จำกัด",
       qrCodeUrl: ""
     };
     hasPopulatedMissing = true;
@@ -2025,8 +1980,8 @@ app.post('/api/member/buy-coupon', (req, res) => {
 });
 
 // SUBMIT DEPOSIT/TOPUP REQUEST
-app.post('/api/member/topup', async (req, res) => {
-  const { userId, amount, transferAmount, transferDate, slipFile, qrCode } = req.body;
+app.post('/api/member/topup', (req, res) => {
+  const { userId, amount, transferAmount, transferDate, slipFile } = req.body;
   const db = readDb();
   
   const member = db.members.find(m => m.userId === userId);
@@ -2046,112 +2001,6 @@ app.post('/api/member/topup', async (req, res) => {
     return res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการบันทึกเอกสารรูปภาพสลิป" });
   }
 
-  let isAutoApproved = false;
-  let autoApproveMessage = "";
-  let slipRef = "";
-  let verifiedAmount = parseFloat(transferAmount);
-  let debugApiResult = "";
-
-  if (qrCode) {
-    try {
-      console.log(`[SlipOK] Verifying QR Code: ${qrCode.substring(0, 40)}...`);
-      debugApiResult = "กำลังเรียก API...";
-      const apiResponse = await fetch('https://connect.slip2go.com/api/verify-slip/qr-code/info', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer zK5fmJRcipAaYORrhuqxN4XqOrSyq+wCy92gsFBag94='
-        },
-        body: JSON.stringify({
-          payload: {
-            qrCode: qrCode
-          }
-        })
-      });
-
-      if (apiResponse.ok) {
-        const resJson = await apiResponse.json();
-        console.log("[SlipOK] Response JSON:", JSON.stringify(resJson, null, 2));
-
-        if (resJson.success || (resJson.data && resJson.data.success !== false) || resJson.code === "200000") {
-          const payload = resJson.data || resJson;
-          
-          const slipAmount = parseFloat(payload.amount);
-          
-          // Parse receiver name from possible nested paths
-          const receiverName = (
-            payload.receiver?.account?.name ||
-            payload.receiver?.displayName ||
-            payload.receiver?.name ||
-            ""
-          ).toString();
-          
-          // Parse receiver account from possible nested paths
-          let receiverAccount = "";
-          if (payload.receiver?.account) {
-            if (typeof payload.receiver.account === "object") {
-              receiverAccount = (
-                payload.receiver.account.bank?.account ||
-                payload.receiver.account.value ||
-                payload.receiver.account.no ||
-                JSON.stringify(payload.receiver.account)
-              ).toString();
-            } else {
-              receiverAccount = payload.receiver.account.toString();
-            }
-          }
-
-          slipRef = payload.transRef || payload.ref || payload.transactionId || `REF_${Date.now()}`;
-
-          console.log(`[SlipOK] Parsed details: Amount=${slipAmount}, ReceiverName=${receiverName}, ReceiverAccount=${receiverAccount}, Ref=${slipRef}`);
-
-          // Anti-fraud: Check duplication
-          const isDuplicate = db.transactions?.some(t => t.slipRef === slipRef && t.status === "Approved");
-          if (isDuplicate) {
-            return res.status(400).json({ success: false, message: "สลิปโอนเงินนี้เคยถูกใช้งานและอนุมัติในระบบไปแล้ว ไม่สามารถใช้ซ้ำได้ค่ะ" });
-          }
-
-          // Recipient verification (either matches Bank settings or นาย กฤศวัฒน์ / บริษัท นที พลัส)
-          const targetAccount = db.bankSettings?.bankAccount || "7420037223";
-          const targetAccountName = db.bankSettings?.bankAccountName || "นาย กฤศวัฒน์ เลิศวิริยาภรณ์";
-          
-          const cleanString = (str: string) => str.replace(/[^0-9]/g, '');
-          const cleanTargetAcc = cleanString(targetAccount);
-          const cleanSlipAcc = cleanString(receiverAccount);
-
-          const isCorrectReceiver = 
-            receiverName.includes("กฤศวัฒน์") || 
-            receiverName.toLowerCase().includes("krisawat") ||
-            receiverName.includes("นที") || 
-            receiverName.toLowerCase().includes("natee") ||
-            (cleanSlipAcc.length > 0 && cleanTargetAcc.includes(cleanSlipAcc)) ||
-            (cleanTargetAcc.length > 0 && cleanSlipAcc.includes(cleanTargetAcc));
-
-          if (isCorrectReceiver && slipAmount > 0) {
-            isAutoApproved = true;
-            verifiedAmount = slipAmount;
-            member.balanceECash = parseFloat((member.balanceECash + slipAmount).toFixed(2));
-            autoApproveMessage = `✓ ระบบอัตโนมัติ (SlipOK) ตรวจสอบสำเร็จ! สลิปมียอดเงินจริง ฿${slipAmount.toLocaleString()} ตรงตามเงื่อนไข ระบบจึงเติมเงิน E-Cash ให้คุณทันทีแล้วค่ะ ⚡`;
-          } else {
-            debugApiResult = `ไม่ผ่านเงื่อนไขผู้รับโอน (ผู้รับในสลิป: ${receiverName || 'ไม่ระบุ'}, บัญชี: ${receiverAccount || 'ไม่ระบุ'}, ยอดเงิน: ฿${slipAmount || 0})`;
-            console.warn(`[SlipOK] Verification failed matching receiver. Receiver in slip: ${receiverName} / Account: ${receiverAccount}`);
-          }
-        } else {
-          debugApiResult = `API แจ้งว่าไม่สำเร็จ (ข้อความ: ${resJson.message || resJson.error || 'ไม่มีรายละเอียด'})`;
-        }
-      } else {
-        const errText = await apiResponse.text().catch(() => "");
-        debugApiResult = `HTTP Error Status: ${apiResponse.status} (รายละเอียด: ${errText.substring(0, 100)})`;
-        console.error("[SlipOK] API HTTP Error Status:", apiResponse.status);
-      }
-    } catch (apiErr: any) {
-      debugApiResult = `เกิดข้อผิดพลาดในการเชื่อมต่อ: ${apiErr.message || apiErr}`;
-      console.error("[SlipOK] Exception raised during request:", apiErr);
-    }
-  } else {
-    debugApiResult = "ไม่พบรหัสสแกน QR Code บนสลิป (สแกนจากสลิปไม่สำเร็จ)";
-  }
-
   const txnId = "DEP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
   if (!db.transactions) db.transactions = [];
   
@@ -2162,30 +2011,17 @@ app.post('/api/member/topup', async (req, res) => {
     name: `${member.name} ${member.surname}`,
     type: "Deposit",
     amount: parseFloat(amount),
-    transferAmount: verifiedAmount,
+    transferAmount: parseFloat(transferAmount),
     transferDate: transferDate,
     slipImgUrl: slipImgUrl,
     currency: "E-Cash",
-    details: isAutoApproved 
-      ? `เติมเงิน E-Cash สำเร็จโดยอัตโนมัติ (ระบบตรวจสอบสลิป SlipOK เรียบร้อย • อ้างอิง: ${slipRef})`
-      : `แจ้งเติมเงิน E-Cash ยอดแจ้งโอน ฿${parseFloat(transferAmount).toLocaleString()} (จากยอดขอคำนวณ ฿${parseFloat(amount).toLocaleString()}) [ผลการตรวจสอบอัตโนมัติ: ${debugApiResult}]`,
-    status: isAutoApproved ? "Approved" : "Pending",
-    slipRef: slipRef || undefined,
-    approvedAt: isAutoApproved ? new Date().toISOString() : undefined,
-    approvedBy: isAutoApproved ? "System (Auto-SlipOK)" : undefined,
+    details: `แจ้งเติมเงิน E-Cash ยอดแจ้งโอน ฿${parseFloat(transferAmount).toLocaleString()} (จากยอดขอคำนวณ ฿${parseFloat(amount).toLocaleString()})`,
+    status: "Pending",
     createdAt: new Date().toISOString()
   });
   
   writeDb(db);
-  
-  res.json({ 
-    success: true, 
-    isAutoApproved,
-    message: isAutoApproved 
-      ? autoApproveMessage 
-      : "ส่งคำขอเติมเงินและหลักฐานสลิปเรียบร้อยแล้วค่ะ รอแอดมินอนุมัติ", 
-    txnId 
-  });
+  res.json({ success: true, message: "ส่งคำขอเติมเงินและหลักฐานสลิปเรียบร้อยแล้วค่ะ รอแอดมินอนุมัติ", txnId });
 });
 
 // TRANSFER E-CASH TO OTHER MEMBER
@@ -2642,46 +2478,6 @@ app.post('/api/member/update-profile', (req, res) => {
 
   writeDb(db);
   res.json({ success: true, message: "อัปเดตข้อมูลส่วนตัวเรียบร้อยแล้วค่ะ", profile: member });
-});
-
-// UPDATE SHIPPING MAP PIN POSITION BY MEMBER
-app.post('/api/member/update-shipping-pin', (req, res) => {
-  const { userId, lat, lng } = req.body;
-  const db = readDb();
-  
-  const member = db.members.find(m => m.userId === userId);
-  if (!member) {
-    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
-  }
-
-  const latitude = lat ? parseFloat(lat) : null;
-  const longitude = lng ? parseFloat(lng) : null;
-
-  // If first time pinning or not previously confirmed, let's confirm immediately.
-  // Otherwise, if they had a previous confirmed pin, change status to PendingApproval as requested:
-  // "มีปุ่มกดแก้ไขได้ แต่เมื่อแก้ไข ต้องให้ Admin shop เป็นผู้อนุมัติ"
-  if (!member.shippingPinStatus || member.shippingPinStatus === 'NotPinned' || !member.shippingLat) {
-    member.shippingLat = latitude;
-    member.shippingLng = longitude;
-    member.shippingPinStatus = 'Confirmed';
-    writeDb(db);
-    return res.json({ 
-      success: true, 
-      message: "ปักหมุดพิกัดจัดส่งสำเร็จเรียบร้อยแล้วค่ะ! พิกัดถูกบันทึกเป็นภาพนิ่งแล้ว", 
-      profile: member 
-    });
-  } else {
-    // Already has a pin, so this is an EDIT (แก้ไข)
-    member.pendingShippingLat = latitude;
-    member.pendingShippingLng = longitude;
-    member.shippingPinStatus = 'PendingApproval';
-    writeDb(db);
-    return res.json({ 
-      success: true, 
-      message: "ส่งคำขอแก้ไขหมุดพิกัดเรียบร้อยแล้วค่ะ! อยู่ระหว่างรอให้แอดมิน (Admin Market) อนุมัติการแก้ไข", 
-      profile: member 
-    });
-  }
 });
 
 // CHANGE PASSWORD BY MEMBER (Requires 6-digit PIN)
@@ -3359,181 +3155,6 @@ app.get('/api/csr/feed', (req, res) => {
 // SELLER REGISTER AND SELLER CENTER
 // -------------------------------------------------------------
 
-// Generate unique running Seller Code: A260001, A260002... up to A269999, then B260001...
-function generateSellerCode(db: any) {
-  const now = new Date();
-  const yearSuffix = now.getFullYear().toString().substring(2); // e.g. "26"
-  let activeAlpha = 'A';
-  
-  while (true) {
-    const prefix = activeAlpha + yearSuffix;
-    const codesOfThisPrefix = db.members
-      .map((m: any) => m.sellerCode)
-      .filter((code: any) => code && code.startsWith(prefix) && code.length === prefix.length + 4);
-      
-    let maxNum = 0;
-    for (const code of codesOfThisPrefix) {
-      const numStr = code.substring(prefix.length);
-      const num = parseInt(numStr, 10);
-      if (!isNaN(num) && num > maxNum) {
-        maxNum = num;
-      }
-    }
-    
-    if (maxNum < 9999) {
-      const nextNum = maxNum + 1;
-      const paddedNum = ("0000" + nextNum).slice(-4);
-      return prefix + paddedNum;
-    } else {
-      // This letter suffix is full (e.g. A269999 reached), increment alphabet to B, C...
-      const charCode = activeAlpha.charCodeAt(0);
-      activeAlpha = String.fromCharCode(charCode + 1);
-    }
-  }
-}
-
-// 1. Seller Login API (logs in with existing username and password)
-app.post('/api/seller/login', (req, res) => {
-  const { username, password } = req.body;
-  const db = readDb();
-  
-  if (!username || !password) {
-    return res.status(400).json({ success: false, message: "กรุณากรอกชื่อผู้ใช้และรหัสผ่านให้ครบถ้วน" });
-  }
-  
-  const member = db.members.find((m: any) => {
-    const uMatch = m.username && (typeof m.username === 'string') && m.username.toLowerCase() === username.toLowerCase();
-    const idMatch = m.userId && (typeof m.userId === 'string') && m.userId.toLowerCase() === username.toLowerCase();
-    const codeMatch = m.sellerCode && (typeof m.sellerCode === 'string') && m.sellerCode.toLowerCase() === username.toLowerCase();
-    return uMatch || idMatch || codeMatch;
-  });
-  
-  if (!member || member.password !== password) {
-    return res.status(401).json({ success: false, message: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" });
-  }
-
-  if (!member.sellerStatus || member.sellerStatus !== 'Active') {
-    return res.status(403).json({ success: false, message: "บัญชีของคุณยังไม่ได้ผ่านการสมัครหรืออนุมัติเปิดร้านค้าในระบบ กรุณาลงทะเบียนสมัครใหม่ หรือติดต่อแอดมินเพื่ออนุมัติร้านค้าก่อนเข้าสู่ระบบนะคะ" });
-  }
-  
-  res.json({ success: true, member });
-});
-
-// 2. Request OTP for Seller Registration
-app.post('/api/seller/send-otp', (req, res) => {
-  const { username } = req.body;
-  const db = readDb();
-  
-  if (!username) {
-    return res.status(400).json({ success: false, message: "กรุณาระบุชื่อผู้ใช้งาน" });
-  }
-  
-  const member = db.members.find((m: any) => 
-    m.username.toLowerCase() === username.toLowerCase() || m.userId === username
-  );
-  
-  if (!member) {
-    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกในระบบ" });
-  }
-  
-  if (!member.email || !member.email.includes('@')) {
-    return res.status(400).json({ success: false, message: "สมาชิกท่านนี้ยังไม่ได้กรอกอีเมลที่ถูกต้องในระบบประวัติ ไม่สามารถรับ OTP ได้ค่ะ" });
-  }
-  
-  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-  if (!db.otps) {
-    db.otps = {};
-  }
-  db.otps[member.userId] = otpCode;
-  writeDb(db);
-  
-  res.json({
-    success: true,
-    otpSimulated: otpCode,
-    email: member.email,
-    message: `ระบบได้ส่งรหัส OTP ไปยังอีเมล ${member.email} เรียบร้อยแล้วค่ะ (รหัสจำลองสำหรับทดสอบคือ ${otpCode})`
-  });
-});
-
-// 3. Confirm Seller Application with OTP and transaction PIN
-app.post('/api/seller/apply-with-otp', (req, res) => {
-  const { username, storeName, storeAddress, warehouseLat, warehouseLng, otp, pin } = req.body;
-  const db = readDb();
-  
-  if (!username || !storeName || !storeAddress || !otp || !pin) {
-    return res.status(400).json({ success: false, message: "กรุณากรอกข้อมูลและรหัสยืนยันต่าง ๆ ให้ครบถ้วนค่ะ" });
-  }
-  
-  const member = db.members.find((m: any) => 
-    m.username.toLowerCase() === username.toLowerCase() || m.userId === username
-  );
-  if (!member) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกในระบบ" });
-  
-  // A. Validate Rank (Member status/Rank Member or S/M/L/XL/XXL allowed)
-  const allowedRanks = ["Member", "S", "M", "L", "XL", "XXL"];
-  if (!member.rank || !allowedRanks.includes(member.rank)) {
-    return res.status(400).json({ 
-      success: false, 
-      message: "สำหรับการสมัครเปิดบัญชีร้านค้า Natee Plus Partner ท่านต้องมีตำแหน่งสมาชิกตั้งแต่ระดับ Member ขึ้นไปเท่านั้นค่ะ" 
-    });
-  }
-  
-  // B. Validate Store Name Special Characters
-  const specialCharRegex = /[^\u0E00-\u0E7Fa-zA-Z0-9\s\-]/;
-  if (specialCharRegex.test(storeName)) {
-    return res.status(400).json({
-      success: false,
-      message: "ชื่อร้านค้าต้องไม่มีสัญลักษณ์หรือเครื่องหมายพิเศษใด ๆ ค่ะ (อนุญาตเฉพาะ ตัวอักษรไทย อังกฤษ ตัวเลข ช่องว่าง และขีดกลางเท่านั้น)"
-    });
-  }
-  
-  // C. Validate Store Name Uniqueness
-  const isDuplicate = db.members.some((m: any) => 
-    m.sellerStoreName && 
-    m.sellerStoreName.trim().toLowerCase() === storeName.trim().toLowerCase() &&
-    m.userId !== member.userId
-  );
-  if (isDuplicate) {
-    return res.status(400).json({
-      success: false,
-      message: "ชื่อร้านค้านี้มีผู้ใช้งานแล้วในระบบ กรุณาเลือกใช้ชื่ออื่นในการเปิดร้านค้านะคะ"
-    });
-  }
-  
-  // D. Validate OTP
-  const savedOtp = db.otps ? db.otps[member.userId] : null;
-  if (!savedOtp || savedOtp !== otp) {
-    return res.status(400).json({ success: false, message: "รหัส OTP ไม่ถูกต้อง กรุณาตรวจสอบหรือส่งคำขอรหัสอีกครั้งค่ะ" });
-  }
-  
-  // E. Validate Transaction PIN
-  if (member.pin !== pin) {
-    return res.status(400).json({ success: false, message: "รหัสธุรกรรม (PIN) ไม่ถูกต้อง กรุณากรอกใหมู่อีกครั้ง" });
-  }
-  
-  // All checks passed! Apply with unique code
-  const code = generateSellerCode(db);
-  
-  member.sellerStatus = "Pending"; // Pending admin approval
-  member.sellerCode = code;
-  member.sellerStoreName = storeName;
-  member.sellerAddress = storeAddress;
-  member.warehouseLat = warehouseLat ? parseFloat(warehouseLat) : null;
-  member.warehouseLng = warehouseLng ? parseFloat(warehouseLng) : null;
-  member.sellerFirstLoginShown = false; // reset for the approved welcome popup
-  
-  // Clean OTP
-  delete db.otps[member.userId];
-  
-  writeDb(db);
-  res.json({ 
-    success: true, 
-    code,
-    message: "ข้อมูลของท่านสมบูรณ์ระบบความปลอดภัยเรียบร้อย การขอเปิดร้านค้าอยู่ระหว่างการขออนุมัติโดยแอดมินค่ะ" 
-  });
-});
-
-// Legacy Seller Apply endpoint for backward compatibility
 app.post('/api/seller/apply', (req, res) => {
   const { userId, storeName, storeAddress, warehouseLat, warehouseLng } = req.body;
   const db = readDb();
@@ -3541,148 +3162,27 @@ app.post('/api/seller/apply', (req, res) => {
   const member = db.members.find(m => m.userId === userId);
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
   
-  const allowedRanks = ["Member", "S", "M", "L", "XL", "XXL"];
+  // 1. สมาชิกที่จะเปิดร้านค้าได้ต้องมีตำแหน่ง M ขึ้นไป
+  const allowedRanks = ["M", "L", "XL", "XXL"];
   if (!member.rank || !allowedRanks.includes(member.rank)) {
     return res.status(400).json({ 
       success: false, 
-      message: "สำหรับการสมัครเปิดบัญชีร้านค้า Natee Plus Partner ท่านต้องมีตำแหน่งสมาชิกตั้งแต่ระดับ Member ขึ้นไปเท่านั้นค่ะ" 
+      message: "สำหรับการสมัครเปิดบัญชีร้านค้า Natee Plus Seller Center ท่านต้องมีตำแหน่งสมาชิกตั้งแต่ระดับ M ขึ้นไปเท่านั้นค่ะ" 
     });
   }
 
-  // Validate Store Name Special Characters
-  const specialCharRegex = /[^\u0E00-\u0E7Fa-zA-Z0-9\s\-]/;
-  if (specialCharRegex.test(storeName)) {
-    return res.status(400).json({
-      success: false,
-      message: "ชื่อร้านค้าต้องไม่มีสัญลักษณ์หรือเครื่องหมายพิเศษใด ๆ ค่ะ"
-    });
-  }
+  const sellerCodeNum = db.members.filter(m => m.sellerStatus === "Active").length + 1;
+  const code = `A26${("0000" + sellerCodeNum).slice(-4)}`;
   
-  // Validate Store Name Uniqueness
-  const isDuplicate = db.members.some((m: any) => 
-    m.sellerStoreName && 
-    m.sellerStoreName.trim().toLowerCase() === storeName.trim().toLowerCase() &&
-    m.userId !== member.userId
-  );
-  if (isDuplicate) {
-    return res.status(400).json({
-      success: false,
-      message: "ชื่อร้านค้านี้มีผู้ใช้งานแล้วในระบบ"
-    });
-  }
-
-  const code = generateSellerCode(db);
-  
-  member.sellerStatus = "Pending";
+  member.sellerStatus = "Pending"; // Pending admin approval
   member.sellerCode = code;
   member.sellerStoreName = storeName;
   member.sellerAddress = storeAddress;
   member.warehouseLat = warehouseLat ? parseFloat(warehouseLat) : null;
   member.warehouseLng = warehouseLng ? parseFloat(warehouseLng) : null;
-  member.sellerFirstLoginShown = false;
   
   writeDb(db);
   res.json({ success: true, message: "ยื่นใบสมัครเปิดร้านค้าออนไลน์สำเร็จ! รหัสร้านค้าของคุณคือ " + code });
-});
-
-// Mark that Seller welcome popup has been shown once
-app.post('/api/seller/mark-first-login', (req, res) => {
-  const { userId } = req.body;
-  const db = readDb();
-  const member = db.members.find(m => m.userId === userId);
-  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
-  
-  member.sellerFirstLoginShown = true;
-  writeDb(db);
-  res.json({ success: true, message: "บันทึกสถานะการยินดีต้อนรับเรียบร้อยแล้วค่ะ" });
-});
-
-// Get Seller Regulations text
-app.get('/api/seller/regulations', (req, res) => {
-  const db = readDb();
-  let regulations = db.bankSettings?.sellerRegulations || `กฎระเบียบและข้อบังคับ Natee Plus Partner
-
-1. ผู้สมัครร้านค้าสามารถเข้าร่วมเป็น Partner ได้ตั้งแต่ตำแหน่ง Manager ขึ้นไป (หรือตามที่ผู้ดูแลระบบอนุมัติเป็นกรณีพิเศษ)
-2. ร้านค้าต้องระบุข้อมูลชื่อร้านและที่ตั้งคลังสินค้าจริงเพื่อใช้ในการบริการจัดการและรับส่งคืนสินค้า
-3. ห้ามตั้งชื่อร้านค้าที่ซ้ำกับแบรนด์อื่น หรือมีอักขระพิเศษ (@, #, $, %, ^, &, *)
-4. สินค้าที่จำหน่ายในร้านต้องเป็นสินค้าที่ถูกต้องตามกฎหมาย และไม่ละเมิดลิขสิทธิ์
-5. การหักค่าธรรมเนียมระบบ (GP) จะคำนวณที่อัตรา 20% โดย 50% ของ GP จะถูกปันผลกลับคืนสายงาน MLM ของท่าน
-6. ปฏิบัติตามนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) อย่างเคร่งครัด`;
-
-  // Migration: If it contains the old term "ระดับ S/M ขึ้นไป" or "มีสถานะตั้งแต่ระดับ S/M ขึ้นไป", replace it or force update
-  if (regulations.includes("ระดับ S/M ขึ้นไป") || regulations.includes("มีสถานะตั้งแต่ระดับ S/M ขึ้นไป")) {
-    regulations = regulations.replace("มีสถานะตั้งแต่ระดับ S/M ขึ้นไป", "สามารถเข้าร่วมเป็น Partner ได้ตั้งแต่ตำแหน่ง Manager ขึ้นไป (หรือตามที่ผู้ดูแลระบบอนุมัติเป็นกรณีพิเศษ)")
-                             .replace("ระดับ S/M ขึ้นไป", "ตำแหน่ง Manager ขึ้นไป");
-    if (db.bankSettings) {
-      db.bankSettings.sellerRegulations = regulations;
-      writeDb(db);
-    }
-  }
-  res.json({ success: true, regulations });
-});
-
-// Save Seller Regulations text (Admin with Manager/Admin role only)
-app.post('/api/seller/regulations', (req, res) => {
-  const { regulations, editorId } = req.body;
-  const db = readDb();
-  
-  const editor = db.members.find((m: any) => m.userId === editorId);
-  if (!editor || (editor.role !== 'Admin' && editor.role !== 'Manager')) {
-    return res.status(403).json({ success: false, message: "ขออภัยค่ะ เฉพาะแอดมินหรือผู้จัดการระบบที่มีสิทธิ์แก้ไขกฎระเบียบนี้" });
-  }
-  
-  if (!db.bankSettings) {
-    db.bankSettings = {
-      bankName: "ธนาคารไทยพาณิชย์",
-      bankAccount: "111-222-3333",
-      bankAccountName: "บริษัท นที พลัส จำกัด",
-      qrCodeUrl: ""
-    };
-  }
-  
-  db.bankSettings.sellerRegulations = regulations;
-  writeDb(db);
-  res.json({ success: true, message: "บันทึกกฎระเบียบและข้อบังคับร้านค้าเรียบร้อยแล้วค่ะ", regulations });
-});
-
-// Admin Update Seller Profile Directly
-app.post('/api/admin/seller-update-profile', (req, res) => {
-  const { userId, sellerCode, sellerStoreName, sellerStatus, name, surname, phone, email, rank, role } = req.body;
-  const db = readDb();
-  
-  const member = db.members.find((m: any) => m.userId === userId);
-  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิกร้านค้าคนนี้" });
-  
-  // Validate duplicate store name if changed
-  if (sellerStoreName && sellerStoreName.trim().toLowerCase() !== (member.sellerStoreName || '').trim().toLowerCase()) {
-    const isDuplicate = db.members.some((m: any) => 
-      m.sellerStoreName && 
-      m.sellerStoreName.trim().toLowerCase() === sellerStoreName.trim().toLowerCase() &&
-      m.userId !== userId
-    );
-    if (isDuplicate) {
-      return res.status(400).json({ success: false, message: "ชื่อร้านค้านี้มีผู้อื่นใช้งานแล้วในระบบ กรุณาใช้ชื่ออื่นค่ะ" });
-    }
-    
-    const specialCharRegex = /[^\u0E00-\u0E7Fa-zA-Z0-9\s\-]/;
-    if (specialCharRegex.test(sellerStoreName)) {
-      return res.status(400).json({ success: false, message: "ชื่อร้านค้าต้องไม่มีเครื่องหมายหรือสัญลักษณ์พิเศษใด ๆ ค่ะ" });
-    }
-  }
-
-  // Edit fields
-  if (sellerCode !== undefined) member.sellerCode = sellerCode;
-  if (sellerStoreName !== undefined) member.sellerStoreName = sellerStoreName;
-  if (sellerStatus !== undefined) member.sellerStatus = sellerStatus;
-  if (name !== undefined) member.name = name;
-  if (surname !== undefined) member.surname = surname;
-  if (phone !== undefined) member.phone = phone;
-  if (email !== undefined) member.email = email;
-  if (rank !== undefined) member.rank = rank;
-  if (role !== undefined) member.role = role;
-  
-  writeDb(db);
-  res.json({ success: true, message: "ปรับปรุงข้อมูลสมาชิกร้านค้าเรียบร้อยแล้วค่ะ", member });
 });
 
 // RESET SELLER STATUS FOR RE-APPLY
@@ -3693,7 +3193,6 @@ app.post('/api/seller/reset-status', (req, res) => {
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
   
   member.sellerStatus = "NotApplied";
-  member.sellerFirstLoginShown = false;
   writeDb(db);
   res.json({ success: true, message: "รีเซ็ตสถานะการสมัครเรียบร้อย สามารถกรอกข้อมูลยื่นใบสมัครใหม่ได้ทันทีค่ะ" });
 });
@@ -3703,7 +3202,7 @@ app.post('/api/seller/product', (req, res) => {
   const { 
     userId, productName, price, pv, imageFile, description, shortDescription, category, cost,
     subcategory, weight, width, length, height, volumetricWeight, chargeableWeight,
-    baseShippingCost, sellerCoPay, customerShippingFee, netPayout, approveInstantly
+    baseShippingCost, sellerCoPay, customerShippingFee, netPayout
   } = req.body;
   const db = readDb();
   
@@ -3728,8 +3227,6 @@ app.post('/api/seller/product', (req, res) => {
   const priceVal = parseFloat(price);
   const costVal = cost !== undefined && cost !== "" ? parseFloat(cost) : Math.floor(priceVal * 0.30);
 
-  const isApproved = !!approveInstantly;
-
   const newProduct = {
     id: "prod_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
     sellerId: userId,
@@ -3743,7 +3240,7 @@ app.post('/api/seller/product', (req, res) => {
     description,
     shortDescription: shortDescription || "",
     category,
-    status: isApproved ? "Approved" : "Pending", // Pending Admin approval unless approvedInstantly
+    status: "Pending", // Pending Admin approval
     subcategory: subcategory || "",
     weight: parseFloat(weight) || 0,
     width: parseFloat(width) || 0,
@@ -3758,42 +3255,9 @@ app.post('/api/seller/product', (req, res) => {
   };
   
   db.sellerProducts.push(newProduct);
-
-  if (isApproved) {
-    db.products.push({
-      id: newProduct.id,
-      name: newProduct.name,
-      price: newProduct.price,
-      pv: newProduct.pv,
-      cost: newProduct.cost,
-      image: newProduct.image,
-      description: newProduct.description,
-      shortDescription: newProduct.shortDescription || "",
-      category: newProduct.category || "General",
-      sellerCode: newProduct.sellerCode,
-      sellerStoreName: newProduct.sellerStoreName,
-      subcategory: newProduct.subcategory || "",
-      weight: newProduct.weight || 0,
-      width: newProduct.width || 0,
-      length: newProduct.length || 0,
-      height: newProduct.height || 0,
-      volumetricWeight: newProduct.volumetricWeight || 0,
-      chargeableWeight: newProduct.chargeableWeight || 0,
-      baseShippingCost: newProduct.baseShippingCost || 35,
-      sellerCoPay: newProduct.sellerCoPay || 0,
-      customerShippingFee: newProduct.customerShippingFee || 35,
-      netPayout: newProduct.netPayout || 0
-    });
-  }
-
   writeDb(db);
   
-  res.json({ 
-    success: true, 
-    message: isApproved 
-      ? "แอดมินใช้สิทธิ์แทรกแซง: เพิ่มสินค้าและอนุมัติขึ้นหน้าร้านค้าทันทีสำเร็จ! ✨" 
-      : "เพิ่มสินค้าเข้าร้านค้าสำเร็จ! อยู่ระหว่างรอแอดมินตรวจสอบก่อนแสดงผลบนช็อป" 
-  });
+  res.json({ success: true, message: "เพิ่มสินค้าเข้าร้านค้าสำเร็จ! อยู่ระหว่างรอแอดมินตรวจสอบก่อนแสดงผลบนช็อป" });
 });
 
 // GET SELLER PRODUCTS
@@ -3868,98 +3332,6 @@ app.post('/api/admin/kyc-reject', (req, res) => {
   member.kycRejectReason = reason;
   writeDb(db);
   res.json({ success: true, message: `ปฏิเสธเอกสารยืนยันตัวตน KYC เรียบร้อยแล้ว ระบบจะส่งเมลแจ้งเหตุผลให้ทราบ` });
-});
-
-// APPROVE MEMBER SHIPPING PIN
-app.post('/api/admin/approve-shipping-pin', (req, res) => {
-  const { userId } = req.body;
-  const db = readDb();
-  
-  const member = db.members.find(m => m.userId === userId);
-  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
-  
-  if (member.pendingShippingLat && member.pendingShippingLng) {
-    member.shippingLat = member.pendingShippingLat;
-    member.shippingLng = member.pendingShippingLng;
-  }
-  member.pendingShippingLat = null;
-  member.pendingShippingLng = null;
-  member.shippingPinStatus = "Confirmed";
-  
-  writeDb(db);
-  res.json({ success: true, message: `อนุมัติการแก้ไขพิกัดจัดส่งของสมาชิก ${member.name} ${member.surname} เรียบร้อยแล้วค่ะ` });
-});
-
-// REJECT MEMBER SHIPPING PIN
-app.post('/api/admin/reject-shipping-pin', (req, res) => {
-  const { userId } = req.body;
-  const db = readDb();
-  
-  const member = db.members.find(m => m.userId === userId);
-  if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
-  
-  member.pendingShippingLat = null;
-  member.pendingShippingLng = null;
-  member.shippingPinStatus = "Confirmed"; // Revert/Keep their original/previous confirmed pin active
-  
-  writeDb(db);
-  res.json({ success: true, message: `ปฏิเสธการแก้ไขพิกัดจัดส่ง เรียบร้อยแล้ว ระบบจะพับกลับไปใช้พิกัดปักหมุดเดิม` });
-});
-
-// GET PENDING SHIPPING PINS QUEUE
-app.get('/api/admin/pending-shipping-pins', (req, res) => {
-  const db = readDb();
-  const queue = db.members.filter(m => m.shippingPinStatus === "PendingApproval");
-  res.json({ success: true, queue });
-});
-
-// AI DESCRIPTION REFINE ENDPOINT
-app.post('/api/ai/refine-description', async (req, res) => {
-  const { text } = req.body;
-  if (!text || !text.trim()) {
-    return res.status(400).json({ success: false, message: "กรุณาระบุข้อความที่ต้องการให้ AI ช่วยเรียบเรียง" });
-  }
-
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.warn("⚠️ GEMINI_API_KEY is not defined in environment variables. Falling back to simple simulated rewrite.");
-    const trimmed = text.trim().slice(0, 400);
-    const mockRefined = `🌿 ${trimmed} ✨ ปลอดภัย ได้มาตรฐานนทีพลัส 💯% (ปรับปรุงสรรพคุณตามข้อกำหนดกฎหมายเรียบร้อยแล้วค่ะ)`;
-    return res.json({ success: true, refinedText: mockRefined });
-  }
-
-  try {
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
-    });
-
-    const prompt = `คุณคือ AI ผู้ช่วยเขียนรายละเอียดสินค้าสำหรับร้านค้าบนระบบ Natee Plus
-หน้าที่ของคุณคือ นำข้อความสรรพคุณหรือคำอธิบายสินค้าที่ผู้ใช้กรอกมาเรียบเรียงใหม่ให้น่าอ่าน มีการใช้อิโมจิเล็กน้อยเพิ่มความดึงดูด และที่สำคัญที่สุดคือ ต้องปรับเปลี่ยนถ้อยคำให้ถูกต้องตามเกณฑ์ของกฎหมายไทย (เช่น พระราชบัญญัติอาหาร พ.ศ. 2522, พระราชบัญญัติเครื่องสำอาง พ.ศ. 2558, สมุนไพร ฯลฯ)
-- ต้องตัดหรือลดทอนคำอวดอ้างสรรพคุณเกินจริง คำโฆษณาต้องห้ามของ อย. (เช่น รักษาโรคหายขาด, ยาเทวดา, ดีที่สุดในโลก, ยับยั้งหรือป้องกันมะเร็ง, ขาวทันใจใน 3 วัน, ปลอดภัย 100%, เห็นผลทันที)
-- ปรับเปลี่ยนคำเหล่านั้นให้เป็นคำที่สุภาพ น่าเชื่อถือ ปลอดภัย และถูกกฎหมาย เช่น ช่วยบำรุง, ช่วยดูแลผิวพรรณ, สนับสนุนการทำงานของร่างกาย, อ่อนโยนต่อผิว
-- ความยาวของข้อความผลลัพธ์ห้ามเกิน 500 ตัวอักษรโดยเด็ดขาด
-- ให้ส่งกลับเฉพาะข้อความที่ปรับปรุงเสร็จแล้วเท่านั้น ไม่ต้องมีคำเกริ่นนำหรือคำอธิบายใดๆ ทั้งสิ้น
-
-ข้อความที่ต้องปรับปรุง: "${text}"`;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash',
-      contents: prompt,
-    });
-
-    const refinedText = response.text ? response.text.trim() : text;
-    const finalRefinedText = refinedText.slice(0, 500);
-
-    res.json({ success: true, refinedText: finalRefinedText });
-  } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI: " + error.message });
-  }
 });
 
 // GET PENDING COUPON PV
@@ -4080,9 +3452,6 @@ app.post('/api/admin/store-approve', (req, res) => {
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
   
   member.sellerStatus = "Active";
-  if (!member.sellerCode) {
-    member.sellerCode = generateSellerCode(db);
-  }
   writeDb(db);
   res.json({ success: true, message: `เปิดใช้งานพอร์ทัลผู้จัดจำหน่ายรหัสร้านค้า ${member.sellerCode} ของคุณเสร็จสิ้น!` });
 });
@@ -4165,41 +3534,6 @@ app.post('/api/admin/store-reject', (req, res) => {
   res.json({ success: true, message: `ปฏิเสธการขอเปิดร้านร่วมเสร็จสิ้น` });
 });
 
-// UPDATE STORE STATUS (Active / Rejected / Suspended / NotApplied)
-app.post('/api/admin/store-update-status', (req, res) => {
-  const { userId, status } = req.body;
-  const db = readDb();
-  const member = db.members.find(m => m.userId === userId);
-  if (!member) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
-
-  const validStatuses = ["Active", "Rejected", "Suspended", "NotApplied", "Pending"];
-  if (!validStatuses.includes(status)) {
-    return res.status(400).json({ success: false, message: "สถานะไม่ถูกต้อง" });
-  }
-
-  member.sellerStatus = status;
-
-  if (status === "Active" && !member.sellerCode) {
-    member.sellerCode = generateSellerCode(db);
-  }
-
-  // If set to NotApplied, we can clean up code or preserve it as a record
-  if (status === "NotApplied") {
-    // Optionally clean or keep
-  }
-
-  writeDb(db);
-
-  let statusMsg = "";
-  if (status === "Active") statusMsg = "อนุมัติร้านค้าเรียบร้อยแล้วค่ะ";
-  else if (status === "Rejected") statusMsg = "ปฏิเสธการขออนุมัติร้านค้าเรียบร้อยแล้วค่ะ";
-  else if (status === "Suspended") statusMsg = "ระงับการใช้งานร้านค้าชั่วคราวเรียบร้อยแล้วค่ะ";
-  else if (status === "NotApplied") statusMsg = "ยกเลิกร้านค้ากลับสู่สถานะยังไม่สมัครเรียบร้อยแล้วค่ะ";
-  else statusMsg = `เปลี่ยนสถานะร้านค้าเป็น ${status} เรียบร้อยแล้วค่ะ`;
-
-  res.json({ success: true, message: statusMsg, sellerStatus: status });
-});
-
 // ADMIN EDIT PRODUCT PRICE & DETAILS
 app.post('/api/admin/product-update-price', (req, res) => {
   const { productId, price, pv, cost } = req.body;
@@ -4248,12 +3582,12 @@ app.get('/api/admin/all-products', (req, res) => {
   res.json({ success: true, products: db.sellerProducts || [] });
 });
 
-// EDIT SELLER PRODUCT (Every edit forces re-approval unless admin override)
+// EDIT SELLER PRODUCT (Every edit forces re-approval)
 app.post('/api/seller/product/edit', (req, res) => {
   const { 
     userId, productId, productName, price, pv, imageFile, description, shortDescription, category, cost,
     subcategory, weight, width, length, height, volumetricWeight, chargeableWeight,
-    baseShippingCost, sellerCoPay, customerShippingFee, netPayout, approveInstantly
+    baseShippingCost, sellerCoPay, customerShippingFee, netPayout
   } = req.body;
   const db = readDb();
   
@@ -4303,55 +3637,17 @@ app.post('/api/seller/product/edit', (req, res) => {
   prod.customerShippingFee = parseFloat(customerShippingFee) || 35;
   prod.netPayout = parseFloat(netPayout) || 0;
   
-  const isApproved = !!approveInstantly;
-
-  if (isApproved) {
-    prod.status = "Approved";
-    if (prod.rejectReason) {
-      delete prod.rejectReason;
-    }
-    // Update copy in main store products
-    db.products = db.products.filter(p => p.id !== productId);
-    db.products.push({
-      id: prod.id,
-      name: prod.name,
-      price: prod.price,
-      pv: prod.pv,
-      cost: prod.cost,
-      image: prod.image,
-      description: prod.description,
-      shortDescription: prod.shortDescription || "",
-      category: prod.category || "General",
-      sellerCode: prod.sellerCode,
-      sellerStoreName: prod.sellerStoreName,
-      subcategory: prod.subcategory || "",
-      weight: prod.weight || 0,
-      width: prod.width || 0,
-      length: prod.length || 0,
-      height: prod.height || 0,
-      volumetricWeight: prod.volumetricWeight || 0,
-      chargeableWeight: prod.chargeableWeight || 0,
-      baseShippingCost: prod.baseShippingCost || 35,
-      sellerCoPay: prod.sellerCoPay || 0,
-      customerShippingFee: prod.customerShippingFee || 35,
-      netPayout: prod.netPayout || 0
-    });
-  } else {
-    prod.status = "Pending";
-    if (prod.rejectReason) {
-      delete prod.rejectReason;
-    }
-    // Remove from main store until approved again
-    db.products = db.products.filter(p => p.id !== productId);
+  // Every edit returns product to Pending (must re-approve)
+  prod.status = "Pending";
+  if (prod.rejectReason) {
+    delete prod.rejectReason;
   }
   
+  // Remove from main store until approved again
+  db.products = db.products.filter(p => p.id !== productId);
+  
   writeDb(db);
-  res.json({ 
-    success: true, 
-    message: isApproved 
-      ? "แอดมินใช้สิทธิ์แทรกแซง: แก้ไขข้อมูลและอนุมัติสินค้าทันทีสำเร็จ! ✨" 
-      : "แก้ไขรายละเอียดสินค้าสำเร็จ! นำส่งให้แอดมินอนุมัติใหม่อีกครั้งเพื่อความโปร่งใสเรียบร้อยแล้วค่ะ" 
-  });
+  res.json({ success: true, message: "แก้ไขรายละเอียดสินค้าสำเร็จ! นำส่งให้แอดมินอนุมัติใหม่อีกครั้งเพื่อความโปร่งใสเรียบร้อยแล้วค่ะ" });
 });
 
 // GET ALL ORDERS FOR ADMIN REPORT
