@@ -552,7 +552,7 @@ export default function App() {
   const [treeScale, setTreeScale] = useState<number>(0.85);
   const [maxTreeDepth, setMaxTreeDepth] = useState<number>(3);
   const [planBSubTab, setPlanBSubTab] = useState<'b1' | 'b2'>('b1');
-  const [adminSubTab, setAdminSubTab] = useState<'queues' | 'members' | 'couponPv' | 'systemReset' | 'memberApprovals' | 'shippingApprove' | 'manageShops' | 'orderStatus' | 'bankSettings' | 'depositApprove'>('queues');
+  const [adminSubTab, setAdminSubTab] = useState<'queues' | 'members' | 'couponPv' | 'systemReset' | 'memberApprovals' | 'shippingApprove' | 'manageShops' | 'orderStatus' | 'bankSettings' | 'depositApprove' | 'packageChoices' | 'companyAccountingReport'>('queues');
   const [adminSection, setAdminSection] = useState<'members_system' | 'seller_system' | 'admin_console'>('members_system');
   const [allSellerProducts, setAllSellerProducts] = useState<any[]>([]);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
@@ -669,11 +669,42 @@ export default function App() {
   // Admin Member Management
   const [adminMembersList, setAdminMembersList] = useState<any[]>([]);
   const [editingMember, setEditingMember] = useState<any | null>(null);
+  const [originalMember, setOriginalMember] = useState<any | null>(null);
+  const [managerOtp, setManagerOtp] = useState<string>('');
+  const [inputOtp, setInputOtp] = useState<string>('');
+  const [showOtpPrompt, setShowOtpPrompt] = useState<boolean>(false);
+
+  // Manual Company Expenses and Reporting States
+  const [manualExpenses, setManualExpenses] = useState<any[]>(() => {
+    try {
+      const stored = localStorage.getItem('company_manual_expenses');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showAddManualExpenseModal, setShowAddManualExpenseModal] = useState(false);
+  const [manualExpenseTitle, setManualExpenseTitle] = useState('');
+  const [manualExpenseAmount, setManualExpenseAmount] = useState('');
+  const [manualExpenseCategory, setManualExpenseCategory] = useState('อื่นๆ');
+  const [manualExpenseDate, setManualExpenseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [manualExpenseNotes, setManualExpenseNotes] = useState('');
+  const [accPackageFilter, setAccPackageFilter] = useState('All');
+  const [accDateFilter, setAccDateFilter] = useState('All');
+  const [accSearchQuery, setAccSearchQuery] = useState('');
+  const [adminActivePackageFilter, setAdminActivePackageFilter] = useState<string>('All');
   const [searchMemberQuery, setSearchMemberQuery] = useState('');
   const [showEditMemberModal, setShowEditMemberModal] = useState(false);
   const [adminNewChoicePackageId, setAdminNewChoicePackageId] = useState('pack_m');
   const [adminNewChoiceName, setAdminNewChoiceName] = useState('');
   const [adminNewChoiceCost, setAdminNewChoiceCost] = useState('');
+  const [adminNewChoiceProductPrice, setAdminNewChoiceProductPrice] = useState('');
+  const [adminNewChoiceShippingFee, setAdminNewChoiceShippingFee] = useState('');
+  const [adminNewChoiceHasVat, setAdminNewChoiceHasVat] = useState(false);
+  const [adminNewChoicePackagingCost, setAdminNewChoicePackagingCost] = useState('');
+  const [adminNewChoiceIsActive, setAdminNewChoiceIsActive] = useState(true);
+  const [expandedChoiceIds, setExpandedChoiceIds] = useState<Record<string, boolean>>({});
+  const [adminEditingChoiceId, setAdminEditingChoiceId] = useState<string | null>(null);
   const [withDeductions, setWithDeductions] = useState<{[key: string]: string}>({});
 
   // Google Sheets Export States
@@ -2099,6 +2130,49 @@ export default function App() {
       }
     }
 
+    // Role-based OTP Check
+    if (currentUser?.role === 'Admin') {
+      const hasFinancialChange = 
+        (editingMember.balanceECash !== (originalMember?.balanceECash ?? 0)) ||
+        (editingMember.balanceEMoney !== (originalMember?.balanceEMoney ?? 0)) ||
+        (editingMember.balanceECoupon !== (originalMember?.balanceECoupon ?? 0)) ||
+        (editingMember.eligibleRights !== (originalMember?.eligibleRights ?? 0));
+
+      const hasNameChange = 
+        (editingMember.name !== (originalMember?.name ?? '')) ||
+        (editingMember.surname !== (originalMember?.surname ?? ''));
+
+      const hasIdCardChange = 
+        (editingMember.idCard !== (originalMember?.idCard ?? ''));
+
+      const hasBankChange = 
+        (editingMember.bankAccountName !== (originalMember?.bankAccountName ?? '')) ||
+        (editingMember.bankName !== (originalMember?.bankName ?? '')) ||
+        (editingMember.bankAccount !== (originalMember?.bankAccount ?? ''));
+
+      const isSensitiveChange = hasFinancialChange || hasNameChange || hasIdCardChange || hasBankChange;
+
+      if (isSensitiveChange) {
+        if (!showOtpPrompt) {
+          const code = Math.floor(100000 + Math.random() * 900000).toString();
+          setManagerOtp(code);
+          setShowOtpPrompt(true);
+          setInputOtp('');
+          showNotif("🔒 ตรวจพบการแก้ไขข้อมูลสำคัญ จำเป็นต้องยืนยันรหัส OTP จาก Manager", "warning");
+          return;
+        } else {
+          if (inputOtp.trim() !== managerOtp) {
+            showNotif("❌ รหัส OTP ไม่ถูกต้อง กรุณากรอกรหัสใหม่อีกครั้ง", "error");
+            return;
+          }
+          // Reset OTP states after verification succeeds
+          setShowOtpPrompt(false);
+          setManagerOtp('');
+          setInputOtp('');
+        }
+      }
+    }
+
     try {
       const res = await fetch('/api/admin/member-update', {
         method: 'POST',
@@ -2110,6 +2184,7 @@ export default function App() {
         showNotif(data.message, 'success');
         setShowEditMemberModal(false);
         setEditingMember(null);
+        setOriginalMember(null);
         fetchAdminMembers();
         if (currentUser && editingMember.userId === currentUser.userId) {
           fetchProfile(true);
@@ -2120,6 +2195,47 @@ export default function App() {
     } catch (err) {
       showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
     }
+  };
+
+  const handleAddManualExpenseSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualExpenseTitle || !manualExpenseAmount) {
+      showNotif("กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน", "error");
+      return;
+    }
+    const amountVal = parseFloat(manualExpenseAmount) || 0;
+    if (amountVal <= 0) {
+      showNotif("จำนวนเงินต้องมากกว่า 0 บาท", "error");
+      return;
+    }
+    
+    const newExpense = {
+      id: "EXP_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+      title: manualExpenseTitle,
+      amount: amountVal,
+      category: manualExpenseCategory,
+      date: manualExpenseDate,
+      notes: manualExpenseNotes,
+      createdAt: new Date().toISOString()
+    };
+    
+    const updated = [newExpense, ...manualExpenses];
+    setManualExpenses(updated);
+    localStorage.setItem('company_manual_expenses', JSON.stringify(updated));
+    showNotif("💾 บันทึกค่าใช้จ่ายบริษัทเรียบร้อยแล้ว", "success");
+    
+    setManualExpenseTitle('');
+    setManualExpenseAmount('');
+    setManualExpenseCategory('อื่นๆ');
+    setManualExpenseNotes('');
+    setShowAddManualExpenseModal(false);
+  };
+
+  const handleRemoveManualExpense = (id: string) => {
+    const updated = manualExpenses.filter(e => e.id !== id);
+    setManualExpenses(updated);
+    localStorage.setItem('company_manual_expenses', JSON.stringify(updated));
+    showNotif("ลบรายการค่าใช้จ่ายสำเร็จ", "success");
   };
 
   // Handle Username Check
@@ -3351,7 +3467,7 @@ export default function App() {
 
   // Get package choices with robust fallbacks for all packages (S, M, L, XL, XXL)
   const getPackageChoicesForId = (pkgId: string) => {
-    const list = packageChoices.filter(c => c.packageId === pkgId);
+    const list = packageChoices.filter(c => c.packageId === pkgId && c.isActive !== false);
     if (list.length > 0) return list;
     
     // Hardcoded fallback for any package that has no database choices defined yet
@@ -3771,14 +3887,50 @@ export default function App() {
       showNotif('กรุณาระบุชื่อชุดสินค้า', 'error');
       return;
     }
+    
+    const packagePriceMap: Record<string, number> = {
+      pack_s: 100,
+      pack_m: 500,
+      pack_l: 1000,
+      pack_xl: 3000,
+      pack_xxl: 5000
+    };
+
+    const packagePrice = packagePriceMap[adminNewChoicePackageId] || 0;
+    const salesVat = packagePrice * 7 / 107;
+    const productCost = parseFloat(adminNewChoiceProductPrice) || 0;
+    const inputVat = adminNewChoiceHasVat ? (productCost * 0.07) : 0;
+    const productCostWithVat = productCost + inputVat;
+    const packagingCost = parseFloat(adminNewChoicePackagingCost) || 0;
+    const shippingFee = parseFloat(adminNewChoiceShippingFee) || 0;
+    const vatPayable = salesVat - inputVat;
+    const pvPayout = packagePrice * 0.5; // หัก 50% ของราคาตั้งขายเพื่อเป็น PV
+    const totalExpense = productCostWithVat + packagingCost + shippingFee + vatPayable + pvPayout;
+    const remaining = packagePrice - totalExpense;
+
     try {
       const res = await fetch('/api/admin/package-choices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: adminEditingChoiceId || undefined,
           packageId: adminNewChoicePackageId,
           name: adminNewChoiceName,
-          cost: adminNewChoiceCost
+          cost: totalExpense, // keep backwards compatibility
+          productPrice: productCost, // productCost
+          shippingFee: shippingFee,
+          packagePrice,
+          salesVat,
+          productCost,
+          hasVat: adminNewChoiceHasVat,
+          inputVat,
+          productCostWithVat,
+          packagingCost,
+          vatPayable,
+          totalExpense,
+          remaining,
+          pvPayout,
+          isActive: adminNewChoiceIsActive
         })
       });
       const d = await res.json();
@@ -3786,12 +3938,20 @@ export default function App() {
         showNotif(d.message, 'success');
         setAdminNewChoiceName('');
         setAdminNewChoiceCost('');
+        setAdminNewChoiceProductPrice('');
+        setAdminNewChoiceShippingFee('');
+        setAdminNewChoiceHasVat(false);
+        setAdminNewChoicePackagingCost('');
+        setAdminNewChoiceIsActive(true);
+        setAdminEditingChoiceId(null);
         // Refresh product choices
         fetchProducts();
       } else {
         showNotif(d.message, 'error');
       }
-    } catch (err) {}
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาด", "error");
+    }
   };
 
   const handleDeletePackageChoice = async (choiceId: string) => {
@@ -3813,6 +3973,23 @@ export default function App() {
         } catch (err) {}
       }
     );
+  };
+
+  const togglePackageChoiceStatus = async (choiceId: string) => {
+    try {
+      const res = await fetch(`/api/admin/package-choices/${choiceId}/toggle`, {
+        method: 'POST'
+      });
+      const d = await res.json();
+      if (d.success) {
+        showNotif(d.message, 'success');
+        fetchProducts();
+      } else {
+        showNotif(d.message, 'error');
+      }
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาดในการเปลี่ยนสถานะ", "error");
+    }
   };
 
   const handleCompleteOrder = async (orderId: string, customCompany?: string, customTrackingNo?: string, customNote?: string) => {
@@ -11215,38 +11392,58 @@ export default function App() {
                   </>
                 )}
 
-                {adminSection === 'admin_console' && (
-                  <>
-                    <button 
-                      onClick={() => setAdminSubTab('systemReset')} 
-                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
-                        adminSubTab === 'systemReset' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
-                      }`}
-                    >
-                      ⚙️ รีเซ็ตระบบ
-                    </button>
-
-                    <button 
-                      onClick={() => setAdminSubTab('systemConditions')} 
-                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
-                        adminSubTab === 'systemConditions' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
-                      }`}
-                    >
-                      📋 เงื่อนไขระบบ (ค่าคอมมิชชั่น)
-                    </button>
-
-                    {profile?.role === 'Manager' && (
-                      <button 
-                        onClick={() => setAdminSubTab('bankSettings')} 
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
-                          adminSubTab === 'bankSettings' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        🏦 ตั้งค่าธนาคาร & QR Code (Manager)
-                      </button>
-                    )}
-                  </>
-                )}
+                 {adminSection === 'admin_console' && (
+                   <>
+                     {profile?.role === 'Manager' && (
+                       <button 
+                         onClick={() => setAdminSubTab('systemReset')} 
+                         className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                           adminSubTab === 'systemReset' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                         }`}
+                       >
+                         ⚙️ รีเซ็ตระบบ (Manager)
+                       </button>
+                     )}
+ 
+                     <button 
+                       onClick={() => setAdminSubTab('systemConditions')} 
+                       className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                         adminSubTab === 'systemConditions' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                       }`}
+                     >
+                       📋 เงื่อนไขระบบ (ค่าคอมมิชชั่น)
+                     </button>
+ 
+                     <button 
+                       onClick={() => setAdminSubTab('packageChoices')} 
+                       className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                         adminSubTab === 'packageChoices' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                       }`}
+                     >
+                       📦 จัดการสินค้าแพ็กเกจ
+                     </button>
+ 
+                     <button 
+                       onClick={() => setAdminSubTab('companyAccountingReport')} 
+                       className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                         adminSubTab === 'companyAccountingReport' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                       }`}
+                     >
+                       📈 รายงานระบบบัญชีบริษัท
+                     </button>
+ 
+                     {profile?.role === 'Manager' && (
+                       <button 
+                         onClick={() => setAdminSubTab('bankSettings')} 
+                         className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                           adminSubTab === 'bankSettings' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                         }`}
+                       >
+                         🏦 ตั้งค่าธนาคาร & QR Code (Manager)
+                       </button>
+                     )}
+                   </>
+                 )}
               </div>
 
               {adminSubTab === 'queues' && (
@@ -11536,6 +11733,7 @@ export default function App() {
                                       <button 
                                         onClick={() => {
                                           setEditingMember({ ...member });
+                                          setOriginalMember({ ...member });
                                           setShowEditMemberModal(true);
                                         }}
                                         className="w-full bg-slate-800 hover:bg-rose-600 text-white hover:text-white px-3 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer text-center"
@@ -11573,101 +11771,6 @@ export default function App() {
                       </>
                     );
                   })()}
-                </div>
-              </div>
-
-              {/* ADMIN PACKAGE ITEMS MANAGER */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Form to Add New Choice */}
-                <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4 lg:col-span-1">
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    📦 เพิ่มตัวเลือกสินค้าแพ็กเกจ (Add Package Item Option)
-                  </h4>
-                  <form onSubmit={handleAddPackageChoice} className="space-y-3 text-xs text-slate-700">
-                    <div>
-                      <label className="block text-slate-600 font-semibold mb-1">เลือกแพ็กเกจหลัก</label>
-                      <select 
-                        value={adminNewChoicePackageId} 
-                        onChange={(e) => setAdminNewChoicePackageId(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
-                      >
-                        <option value="pack_m">M - ชุดครอบครัวประหยัด</option>
-                        <option value="pack_l">L - ชุดดูแลสุขภาพแบบองค์รวม</option>
-                        <option value="pack_xl">XL - ชุดนักขยายธุรกิจ</option>
-                        <option value="pack_xxl">XXL - ชุดผู้ประกอบการ</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-slate-600 font-semibold mb-1">ชื่อเซ็ตสินค้า (ภาษาไทย / รายการสินค้า)</label>
-                      <input 
-                        type="text" 
-                        required
-                        placeholder="เช่น มะหาดสบู่สมุนไพรออร์แกนิก 2 กล่อง + ยาสีฟัน"
-                        value={adminNewChoiceName}
-                        onChange={(e) => setAdminNewChoiceName(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-slate-600 font-semibold mb-1">ต้นทุนสินค้า (Cost / บาท)</label>
-                      <input 
-                        type="number" 
-                        step="any"
-                        placeholder="กรอกต้นทุนสินค้า เช่น 150"
-                        value={adminNewChoiceCost}
-                        onChange={(e) => setAdminNewChoiceCost(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
-                      />
-                    </div>
-                    <button 
-                      type="submit" 
-                      className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-2 rounded-xl transition shadow-sm text-xs cursor-pointer"
-                    >
-                      บันทึกเพิ่มรายการชุดสินค้า
-                    </button>
-                  </form>
-                </div>
-
-                {/* List of Existing Choices grouped by package */}
-                <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4 lg:col-span-2">
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    📋 รายการตัวเลือกชุดสินค้าแยกตามตำแหน่งปัจจุบัน
-                  </h4>
-                  <div className="max-h-[320px] overflow-y-auto space-y-3 pr-2 text-xs text-slate-700">
-                    {['pack_m', 'pack_l', 'pack_xl', 'pack_xxl'].map(pkgId => {
-                      const pkgName = products.find(p => p.id === pkgId)?.name || pkgId.toUpperCase();
-                      const choices = packageChoices.filter(c => c.packageId === pkgId);
-                      return (
-                        <div key={pkgId} className="border border-slate-100 p-3 rounded-2xl bg-slate-50/50">
-                          <h5 className="font-extrabold text-indigo-900 border-b border-indigo-100 pb-1 mb-2">
-                            {pkgName}
-                          </h5>
-                          {choices.length > 0 ? (
-                            <div className="space-y-1.5">
-                              {choices.map(choice => (
-                                <div key={choice.id} className="bg-white px-3 py-1.5 rounded-xl border border-slate-100 flex justify-between items-center text-[11px]">
-                                  <div className="flex flex-col">
-                                    <span className="font-medium text-slate-800">{choice.name}</span>
-                                    {choice.cost !== undefined && (
-                                      <span className="text-[10px] text-emerald-600 font-semibold font-mono">ต้นทุน: ฿{parseFloat(choice.cost).toLocaleString()} บาท</span>
-                                    )}
-                                  </div>
-                                  <button 
-                                    onClick={() => handleDeletePackageChoice(choice.id)}
-                                    className="text-rose-600 hover:text-rose-800 font-bold ml-2 text-[10px]"
-                                  >
-                                    ลบออก
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-[10px] text-slate-400 italic">ไม่มีข้อมูลชุดสินค้า แนะนำให้เพิ่มเซ็ตสินค้า</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
                 </div>
               </div>
 
@@ -11919,6 +12022,7 @@ export default function App() {
                                         <button 
                                           onClick={() => {
                                             setEditingMember({ ...member });
+                                            setOriginalMember({ ...member });
                                             setShowEditMemberModal(true);
                                           }}
                                           className="w-full bg-slate-800 hover:bg-rose-600 text-white hover:text-white px-3 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer text-center"
@@ -12248,6 +12352,7 @@ export default function App() {
                                 <button 
                                   onClick={() => {
                                     setEditingMember({ ...member });
+                                    setOriginalMember({ ...member });
                                     setShowEditMemberModal(true);
                                   }}
                                   className="bg-slate-800 hover:bg-rose-600 text-white hover:text-white px-3 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer"
@@ -12398,99 +12503,6 @@ export default function App() {
 
               {adminSubTab === 'shippingApprove' && (
                 <div className="space-y-6 animate-fadeIn">
-                  {/* Package choices manager */}
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4 lg:col-span-1">
-                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                        📦 เพิ่มตัวเลือกสินค้าแพ็กเกจ
-                      </h4>
-                      <form onSubmit={handleAddPackageChoice} className="space-y-3 text-xs text-slate-700">
-                        <div>
-                          <label className="block text-slate-600 font-semibold mb-1">เลือกแพ็กเกจหลัก</label>
-                          <select 
-                            value={adminNewChoicePackageId} 
-                            onChange={(e) => setAdminNewChoicePackageId(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                          >
-                            <option value="pack_m">M - ชุดครอบครัวประหยัด</option>
-                            <option value="pack_l">L - ชุดดูแลสุขภาพแบบองค์รวม</option>
-                            <option value="pack_xl">XL - ชุดนักขยายธุรกิจ</option>
-                            <option value="pack_xxl">XXL - ชุดผู้ประกอบการ</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-slate-600 font-semibold mb-1">ชื่อเซ็ตสินค้า (ภาษาไทย / รายการสินค้า)</label>
-                          <input 
-                            type="text" 
-                            required
-                            placeholder="เช่น มะหาดสบู่สมุนไพรออร์แกนิก 2 กล่อง + ยาสีฟัน"
-                            value={adminNewChoiceName}
-                            onChange={(e) => setAdminNewChoiceName(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-slate-600 font-semibold mb-1">ต้นทุนสินค้า (Cost / บาท)</label>
-                          <input 
-                            type="number" 
-                            step="any"
-                            placeholder="กรอกต้นทุนสินค้า เช่น 150"
-                            value={adminNewChoiceCost}
-                            onChange={(e) => setAdminNewChoiceCost(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                          />
-                        </div>
-                        <button 
-                          type="submit" 
-                          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-xl transition shadow-sm text-xs cursor-pointer"
-                        >
-                          บันทึกเพิ่มรายการชุดสินค้า
-                        </button>
-                      </form>
-                    </div>
-
-                    <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4 lg:col-span-2">
-                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                        📋 รายการตัวเลือกชุดสินค้าแยกตามตำแหน่งปัจจุบัน
-                      </h4>
-                      <div className="max-h-[320px] overflow-y-auto space-y-3 pr-2 text-xs text-slate-700">
-                        {['pack_m', 'pack_l', 'pack_xl', 'pack_xxl'].map(pkgId => {
-                          const pkgName = products.find(p => p.id === pkgId)?.name || pkgId.toUpperCase();
-                          const choices = packageChoices.filter(c => c.packageId === pkgId);
-                          return (
-                            <div key={pkgId} className="border border-slate-100 p-3 rounded-2xl bg-slate-50/50">
-                              <h5 className="font-extrabold text-indigo-900 border-b border-indigo-100 pb-1 mb-2 text-[11px]">
-                                {pkgName}
-                              </h5>
-                              {choices.length > 0 ? (
-                                <div className="space-y-1.5">
-                                  {choices.map(choice => (
-                                    <div key={choice.id} className="bg-white px-3 py-1.5 rounded-xl border border-slate-100 flex justify-between items-center text-[11px]">
-                                      <div className="flex flex-col">
-                                        <span className="font-medium text-slate-800">{choice.name}</span>
-                                        {choice.cost !== undefined && (
-                                          <span className="text-[10px] text-emerald-600 font-semibold font-mono">ต้นทุน: ฿{parseFloat(choice.cost).toLocaleString()} บาท</span>
-                                        )}
-                                      </div>
-                                      <button 
-                                        onClick={() => handleDeletePackageChoice(choice.id)}
-                                        className="text-rose-600 hover:text-rose-800 font-bold ml-2 text-[10px]"
-                                      >
-                                        ลบออก
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="text-[10px] text-slate-400 italic">ไม่มีข้อมูลชุดสินค้า แนะนำให้เพิ่มเซ็ตสินค้า</p>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-
                   {/* รายการจัดส่งสินค้าและอนุมัติการจัดส่ง */}
                   <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-100 pb-3">
@@ -13765,6 +13777,553 @@ export default function App() {
                 </div>
               )}
 
+              {adminSubTab === 'packageChoices' && (
+                <div className="space-y-6 animate-fadeIn text-slate-700">
+                  {/* Header */}
+                  <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-md border border-slate-800 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 -mt-8 -mr-8 w-32 h-32 rounded-full bg-indigo-600/20 blur-2xl"></div>
+                    <div className="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                      <div>
+                        <h3 className="text-lg font-black text-white flex items-center gap-2">
+                          📦 จัดการสินค้าแพ็กเกจ (Package Choices Manager)
+                        </h3>
+                        <p className="text-xs text-slate-300 mt-1">
+                          ระบบเพิ่ม แก้ไข และลบตัวเลือกชุดของขวัญสินค้าสำหรับแพ็กเกจสมัครสมาชิก (S, M, L, XL, XXL) 
+                          พร้อมระบบคำนวณต้นทุนการตั้งราคาวางขายภาษีและค่าจัดส่งสำหรับแอดมินค่ะ
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Form to Add/Edit Choice */}
+                    <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4 lg:col-span-1">
+                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        {adminEditingChoiceId ? '📝 แก้ไขตัวเลือกสินค้าแพ็กเกจ' : '➕ เพิ่มตัวเลือกสินค้าแพ็กเกจ'}
+                      </h4>
+                      <form onSubmit={handleAddPackageChoice} className="space-y-3.5 text-xs text-slate-700">
+                        <div>
+                          <label className="block text-slate-600 font-semibold mb-1">เลือกแพ็กเกจหลัก</label>
+                          <select 
+                            value={adminNewChoicePackageId}
+                            onChange={(e) => setAdminNewChoicePackageId(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700"
+                          >
+                            <option value="pack_s">S - ชุดของใช้เริ่มต้น</option>
+                            <option value="pack_m">M - ชุดครอบครัวประหยัด</option>
+                            <option value="pack_l">L - ชุดดูแลสุขภาพแบบองค์รวม</option>
+                            <option value="pack_xl">XL - ชุดนักขยายธุรกิจ</option>
+                            <option value="pack_xxl">XXL - ชุดผู้ประกอบการ</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-600 font-semibold mb-1">ชื่อเซ็ต / ชุดสินค้า (Set Name)</label>
+                          <input 
+                            type="text"
+                            placeholder="เช่น M-Set A: ชุดของใช้นทีพลัส 3 ชิ้น"
+                            value={adminNewChoiceName}
+                            onChange={(e) => setAdminNewChoiceName(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-600 font-semibold mb-1">สถานะการแสดงผล (สมาชิกเห็นหรือไม่)</label>
+                          <div className="flex gap-3 items-center">
+                            <label className="inline-flex items-center gap-1 cursor-pointer select-none font-bold text-slate-600">
+                              <input 
+                                type="radio"
+                                name="choiceIsActive"
+                                checked={adminNewChoiceIsActive}
+                                onChange={() => setAdminNewChoiceIsActive(true)}
+                                className="text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                              />
+                              <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md text-[10px]">🟢 เปิดให้เลือก</span>
+                            </label>
+                            <label className="inline-flex items-center gap-1 cursor-pointer select-none font-bold text-slate-600">
+                              <input 
+                                type="radio"
+                                name="choiceIsActive"
+                                checked={!adminNewChoiceIsActive}
+                                onChange={() => setAdminNewChoiceIsActive(false)}
+                                className="text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                              />
+                              <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md text-[10px]">🔴 ซ่อนไว้</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Cost Calculation Section */}
+                        {(() => {
+                          const packagePrices: Record<string, number> = {
+                            pack_s: 100,
+                            pack_m: 500,
+                            pack_l: 1000,
+                            pack_xl: 3000,
+                            pack_xxl: 5000
+                          };
+                          const computedSellingPrice = packagePrices[adminNewChoicePackageId] || 0;
+                          const computedSalesVat = computedSellingPrice * 7 / 107;
+                          const computedProductCost = parseFloat(adminNewChoiceProductPrice) || 0;
+                          const computedInputVat = adminNewChoiceHasVat ? (computedProductCost * 0.07) : 0;
+                          const computedProductCostWithVat = computedProductCost + computedInputVat;
+                          const computedPackagingCost = parseFloat(adminNewChoicePackagingCost) || 0;
+                          const computedShippingFee = parseFloat(adminNewChoiceShippingFee) || 0;
+                          const computedVatPayable = computedSalesVat - computedInputVat;
+                          const computedPvPayout = computedSellingPrice * 0.5; // หัก 50% ของราคาขาย เพื่อเป็น PV
+                          const computedTotalExpense = computedProductCostWithVat + computedPackagingCost + computedShippingFee + computedVatPayable + computedPvPayout;
+                          const computedRemaining = computedSellingPrice - computedTotalExpense;
+
+                          return (
+                            <div className="border border-slate-100 bg-slate-50/50 p-4 rounded-2xl space-y-4">
+                              <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider block border-b border-indigo-100/50 pb-1 flex justify-between items-center">
+                                <span>🧮 ระบบคำนวณและประมาณการภาษี</span>
+                                <span className="bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.2 rounded text-[8px] font-mono">
+                                  VAT & PV SYSTEM
+                                </span>
+                              </span>
+                              
+                              {/* 1. ราคาขายตามแพ็กเกจ (ล็อกตำแหน่ง) */}
+                              <div className="bg-white p-2.5 rounded-xl border border-slate-100/80 flex justify-between items-center text-xs">
+                                <span className="font-semibold text-slate-600">ราคาขายตามตำแหน่ง:</span>
+                                <span className="font-extrabold text-slate-800 font-mono text-[13px]">
+                                  ฿{computedSellingPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                </span>
+                              </div>
+
+                              {/* 2. ภาษีขาย 7% */}
+                              <div className="flex justify-between items-center text-[11px] text-slate-500 font-mono px-1">
+                                <span>ภาษีขาย (7% ในราคาขาย):</span>
+                                <span className="font-bold text-slate-700">
+                                  ฿{computedSalesVat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                </span>
+                              </div>
+
+                              {/* 3. ราคาทุนสินค้า */}
+                              <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                                <div className="flex justify-between items-center">
+                                  <label className="block text-slate-600 font-semibold text-[11px]">ราคาทุนสินค้า (บาท)</label>
+                                  {/* Checkbox สำหรับ มี Vat */}
+                                  <label className="inline-flex items-center gap-1 cursor-pointer select-none text-[10px] font-bold text-slate-500 hover:text-indigo-600 transition-colors">
+                                    <input 
+                                      type="checkbox"
+                                      checked={adminNewChoiceHasVat}
+                                      onChange={(e) => setAdminNewChoiceHasVat(e.target.checked)}
+                                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                                    />
+                                    <span>มี Vat 7%</span>
+                                  </label>
+                                </div>
+                                <input 
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="เช่น 150.00"
+                                  value={adminNewChoiceProductPrice}
+                                  onChange={(e) => setAdminNewChoiceProductPrice(e.target.value)}
+                                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+
+                                {/* แสดงผลคำนวณราคาทุนรวม VAT */}
+                                <div className="bg-white/80 p-2 rounded-xl border border-slate-100/50 text-[10px] space-y-1 font-mono text-slate-500">
+                                  <div className="flex justify-between">
+                                    <span>ภาษีซื้อต้นทุน (7%):</span>
+                                    <span>
+                                      {adminNewChoiceHasVat 
+                                        ? `+ ฿${computedInputVat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+                                        : '฿0.00 (ไม่คำนวณ)'
+                                      }
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between font-bold text-slate-700 border-t border-dashed border-slate-100 pt-1">
+                                    <span>ทุนรวม VAT:</span>
+                                    <span>฿{computedProductCostWithVat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 4. ราคาบรรจุภัณฑ์ */}
+                              <div>
+                                <label className="block text-slate-600 font-semibold mb-1 text-[11px]">ราคาบรรจุภัณฑ์ (Packaging Cost) (฿)</label>
+                                <input 
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="เช่น 15.00"
+                                  value={adminNewChoicePackagingCost}
+                                  onChange={(e) => setAdminNewChoicePackagingCost(e.target.value)}
+                                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                              </div>
+
+                              {/* 5. ค่าจัดส่ง */}
+                              <div>
+                                <label className="block text-slate-600 font-semibold mb-1 text-[11px]">ค่าจัดส่ง (Shipping Cost) (฿)</label>
+                                <input 
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="เช่น 50.00"
+                                  value={adminNewChoiceShippingFee}
+                                  onChange={(e) => setAdminNewChoiceShippingFee(e.target.value)}
+                                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                              </div>
+
+                              {/* 6. หักจ่าย PV (50% ของราคาขาย) */}
+                              <div className="bg-amber-50/70 p-2.5 rounded-xl border border-amber-200/50 text-[11px] space-y-1 font-mono text-slate-700">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-semibold">หักจ่าย PV (50% ของราคาตั้งขาย):</span>
+                                  <span className="font-extrabold text-amber-800">
+                                    ฿{computedPvPayout.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* 7. ภาษีนำส่ง ( ภาษีขาย-ภาษีต้นทุน ) */}
+                              <div className="bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100/50 text-[11px] space-y-1 font-mono text-slate-600">
+                                <div className="flex justify-between">
+                                  <span>ภาษีนำส่ง (ภาษีขาย - ภาษีต้นทุน):</span>
+                                  <span className="font-bold text-indigo-700">
+                                    ฿{computedVatPayable.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* 8 & 9. รวมค่าใช้จ่าย และ คงเหลือ */}
+                              <div className="border-t border-slate-100 pt-3 space-y-1.5 font-mono text-xs">
+                                <div className="flex justify-between font-bold text-slate-600">
+                                  <span>รวมค่าใช้จ่ายทั้งหมด (รวมจ่าย PV):</span>
+                                  <span className="text-rose-600 font-extrabold">
+                                    ฿{computedTotalExpense.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between font-black text-[13px] text-slate-800 bg-emerald-50 border border-emerald-100/80 p-2 rounded-xl">
+                                  <span className="text-emerald-800">คงเหลือสุทธิ (Net profit):</span>
+                                  <span className="text-emerald-700">
+                                    ฿{computedRemaining.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="text-[9px] text-slate-400 leading-normal bg-white p-2 rounded-lg border border-slate-100">
+                                📌 ระบบจะจัดเก็บข้อมูลลงในรายงานค่าใช้จ่ายบริษัท เพื่อแสดงผลกำไรสุทธิคงเหลือหลังหักภาษีมูลค่าเพิ่มนำส่งและต้นทุนจริงให้บริษัทค่ะ
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        <div className="flex gap-2 pt-2">
+                          <button 
+                            type="submit" 
+                            className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-3 rounded-xl transition shadow cursor-pointer text-center"
+                          >
+                            {adminEditingChoiceId ? '💾 อัปเดตข้อมูล' : '➕ บันทึกข้อมูล'}
+                          </button>
+                          {adminEditingChoiceId && (
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                setAdminNewChoiceName('');
+                                setAdminNewChoiceCost('');
+                                setAdminNewChoiceProductPrice('');
+                                setAdminNewChoiceShippingFee('');
+                                setAdminNewChoiceHasVat(false);
+                                setAdminNewChoicePackagingCost('');
+                                setAdminNewChoiceIsActive(true);
+                                setAdminEditingChoiceId(null);
+                              }}
+                              className="bg-slate-200 hover:bg-slate-300 text-slate-600 font-bold py-2 px-3 rounded-xl transition cursor-pointer"
+                            >
+                              ยกเลิก
+                            </button>
+                          )}
+                        </div>
+                      </form>
+                    </div>
+
+                    {/* List of Existing Choices grouped by package */}
+                    <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-5 lg:col-span-2">
+                      <div className="border-b border-slate-100 pb-3">
+                        <h4 className="text-sm font-black text-slate-850 uppercase tracking-tight flex items-center gap-1.5">
+                          📋 รายการตัวเลือกชุดของขวัญสินค้าแยกตามแพ็กเกจหลัก
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          กล่องสินค้าแต่ละแพ็กเกจจะแยกจากกันเพื่อความสะดวกในการจัดการราคาขายรวมภาษีมูลค่าเพิ่มและค่าจัดส่งค่ะ
+                        </p>
+                      </div>
+
+                      {/* Package Group Filter Tabs */}
+                      <div className="flex flex-wrap gap-1.5 border-b border-slate-100 pb-1">
+                        {[
+                          { id: 'All', label: '📋 ดูทั้งหมด' },
+                          { id: 'pack_s', label: '🌱 กลุ่ม S (100 บ.)' },
+                          { id: 'pack_m', label: '🏡 กลุ่ม M (1,000 บ.)' },
+                          { id: 'pack_l', label: '🥗 กลุ่ม L (5,000 บ.)' },
+                          { id: 'pack_xl', label: '⚡ กลุ่ม XL (10,000 บ.)' },
+                          { id: 'pack_xxl', label: '💎 กลุ่ม XXL (50,000 บ.)' },
+                        ].map(tab => (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setAdminActivePackageFilter(tab.id)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer border ${
+                              adminActivePackageFilter === tab.id
+                                ? 'bg-slate-850 text-white border-slate-850 shadow-sm'
+                                : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                            }`}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-h-[680px] overflow-y-auto pr-1">
+                        {[
+                          {
+                            id: 'pack_s',
+                            name: 'S - ชุดของใช้เริ่มต้น',
+                            cost: 'ราคาซื้อแพ็กเกจ 100 บาท (50 PV)',
+                            themeColor: 'emerald',
+                            gradient: 'from-emerald-500/10 via-emerald-500/5 to-transparent',
+                            borderColor: 'border-emerald-200/80',
+                            textMuted: 'text-emerald-800',
+                            bgBadge: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+                            accentBar: 'bg-emerald-500',
+                            desc: 'เซ็ตเริ่มต้นใช้สินค้าทดลองและขยายสายงานธุรกิจ',
+                            icon: '🌱'
+                          },
+                          {
+                            id: 'pack_m',
+                            name: 'M - ชุดครอบครัวประหยัด',
+                            cost: 'ราคาซื้อแพ็กเกจ 500 บาท (250 PV)',
+                            themeColor: 'blue',
+                            gradient: 'from-blue-500/10 via-blue-500/5 to-transparent',
+                            borderColor: 'border-blue-200/80',
+                            textMuted: 'text-blue-800',
+                            bgBadge: 'bg-blue-50 text-blue-800 border-blue-200',
+                            accentBar: 'bg-blue-500',
+                            desc: 'เซ็ตของใช้อุปโภคบริโภคขนาดประหยัดสำหรับครอบครัว',
+                            icon: '🏡'
+                          },
+                          {
+                            id: 'pack_l',
+                            name: 'L - ชุดดูแลสุขภาพแบบองค์รวม',
+                            cost: 'ราคาซื้อแพ็กเกจ 1,000 บาท (500 PV)',
+                            themeColor: 'amber',
+                            gradient: 'from-amber-500/10 via-amber-500/5 to-transparent',
+                            borderColor: 'border-amber-200/80',
+                            textMuted: 'text-amber-800',
+                            bgBadge: 'bg-amber-50 text-amber-800 border-amber-200',
+                            accentBar: 'bg-amber-500',
+                            desc: 'เซ็ตสมุนไพรรวมและเครื่องดื่มสุขภาพสกัดเข้มข้น',
+                            icon: '🥗'
+                          },
+                          {
+                            id: 'pack_xl',
+                            name: 'XL - ชุดนักขยายธุรกิจ',
+                            cost: 'ราคาซื้อแพ็กเกจ 3,000 บาท (1,500 PV)',
+                            themeColor: 'rose',
+                            gradient: 'from-rose-500/10 via-rose-500/5 to-transparent',
+                            borderColor: 'border-rose-200/80',
+                            textMuted: 'text-rose-800',
+                            bgBadge: 'bg-rose-50 text-rose-800 border-rose-200',
+                            accentBar: 'bg-rose-500',
+                            desc: 'ชุดเซ็ตสกินแคร์กู้ผิวพรีเมียมและเครื่องใช้ไฟฟ้าพกพา',
+                            icon: '⚡'
+                          },
+                          {
+                            id: 'pack_xxl',
+                            name: 'XXL - ชุดผู้ประกอบการจังหวัด',
+                            cost: 'ราคาซื้อแพ็กเกจ 5,000 บาท (2,500 PV)',
+                            themeColor: 'purple',
+                            gradient: 'from-purple-500/10 via-purple-500/5 to-transparent',
+                            borderColor: 'border-purple-200/80',
+                            textMuted: 'text-purple-800',
+                            bgBadge: 'bg-purple-50 text-purple-800 border-purple-200',
+                            accentBar: 'bg-purple-500',
+                            desc: 'เซ็ตเปิดศูนย์โมบายจุดกระจายสินค้าครบวงจร รับสิทธิ์สูงสุด',
+                            icon: '💎'
+                          }
+                        ].filter(pkg => adminActivePackageFilter === 'All' || pkg.id === adminActivePackageFilter).map(pkg => {
+                          const choices = packageChoices.filter(c => c.packageId === pkg.id);
+                          return (
+                            <div 
+                              key={pkg.id} 
+                              className={`border ${pkg.borderColor} rounded-2xl bg-white overflow-hidden shadow-sm hover:shadow transition-all duration-200 flex flex-col justify-between`}
+                            >
+                              {/* Card Header with Custom Gradient Background */}
+                              <div className={`p-4 bg-gradient-to-br ${pkg.gradient} border-b border-slate-100/60 relative`}>
+                                <div className="absolute top-3 right-3 text-lg opacity-80">{pkg.icon}</div>
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-2 h-2 rounded-full bg-slate-700 animate-pulse"></span>
+                                    <h5 className="font-black text-slate-900 text-xs tracking-tight">
+                                      {pkg.name}
+                                    </h5>
+                                  </div>
+                                  <p className="text-[10px] font-bold text-indigo-600 font-mono">
+                                    {pkg.cost}
+                                  </p>
+                                  <p className="text-[10px] text-slate-500 leading-normal line-clamp-1">
+                                    {pkg.desc}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Card Body - Package Option List */}
+                              <div className="p-4 flex-1 flex flex-col justify-between space-y-3 bg-slate-50/20">
+                                <div className="space-y-2">
+                                  <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                    <span>ตัวเลือกสินค้าภายในชุด</span>
+                                    <span className={`px-2 py-0.5 rounded-full ${pkg.bgBadge} text-[9px] font-mono`}>
+                                      {choices.length} รายการ
+                                    </span>
+                                  </div>
+
+                                  {choices.length > 0 ? (
+                                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                                      {choices.map(choice => (
+                                        <div 
+                                          key={choice.id} 
+                                          className="bg-white p-2.5 rounded-xl border border-slate-100/80 hover:border-slate-200 shadow-xs flex flex-col gap-1.5 text-xs transition-all"
+                                        >
+                                          {/* First Row: Name and Actions */}
+                                          <div className="flex justify-between items-start gap-2">
+                                            <div className="flex-1 flex flex-col space-y-1">
+                                              <span className="font-extrabold text-slate-800 leading-tight text-[11px] block">
+                                                {choice.name}
+                                              </span>
+                                              
+                                              {/* Toggle Status & View Details Inline Buttons */}
+                                              <div className="flex items-center gap-1.5 flex-wrap">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => togglePackageChoiceStatus(choice.id)}
+                                                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-[5px] text-[8.5px] font-bold transition-all cursor-pointer ${
+                                                    choice.isActive !== false 
+                                                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/50' 
+                                                      : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200/50'
+                                                  }`}
+                                                  title="คลิกเพื่อ เปิด-ปิด การแสดงผลให้สมาชิกเห็น"
+                                                >
+                                                  {choice.isActive !== false ? '🟢 เปิดให้เลือก' : '🔴 ปิด (ซ่อนไว้)'}
+                                                </button>
+
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setExpandedChoiceIds(prev => ({ ...prev, [choice.id]: !prev[choice.id] }))}
+                                                  className="text-indigo-600 hover:text-indigo-800 font-bold text-[8.5px] bg-slate-50 hover:bg-indigo-50 px-1.5 py-0.5 rounded-[5px] border border-slate-100 transition-colors cursor-pointer"
+                                                >
+                                                  {expandedChoiceIds[choice.id] ? '📖 ซ่อนรายละเอียด' : '🔍 ดูรายละเอียด'}
+                                                </button>
+                                              </div>
+                                            </div>
+
+                                            {/* Edit / Delete Buttons */}
+                                            <div className="flex gap-1 shrink-0">
+                                              <button 
+                                                onClick={() => {
+                                                  setAdminEditingChoiceId(choice.id);
+                                                  setAdminNewChoicePackageId(choice.packageId);
+                                                  setAdminNewChoiceName(choice.name);
+                                                  setAdminNewChoiceCost(choice.cost !== undefined ? choice.cost.toString() : '');
+                                                  setAdminNewChoiceProductPrice(choice.productPrice !== undefined ? choice.productPrice.toString() : '');
+                                                  setAdminNewChoiceShippingFee(choice.shippingFee !== undefined ? choice.shippingFee.toString() : '');
+                                                  setAdminNewChoiceHasVat(!!choice.hasVat);
+                                                  setAdminNewChoicePackagingCost(choice.packagingCost !== undefined ? choice.packagingCost.toString() : '');
+                                                  setAdminNewChoiceIsActive(choice.isActive !== false);
+                                                }}
+                                                className="text-indigo-600 hover:text-indigo-800 font-bold text-[10px] px-1 py-0.5 rounded hover:bg-indigo-50/80 transition-colors cursor-pointer"
+                                              >
+                                                แก้ไข
+                                              </button>
+                                              <button 
+                                                onClick={() => handleDeletePackageChoice(choice.id)}
+                                                className="text-rose-600 hover:text-rose-800 font-bold text-[10px] px-1 py-0.5 rounded hover:bg-rose-50/80 transition-colors cursor-pointer"
+                                              >
+                                                ลบ
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          {/* Detailed breakdown (only visible when expanded) */}
+                                          {expandedChoiceIds[choice.id] && (() => {
+                                            const pkgPrice = choice.packagePrice || (pkg.id === 'pack_s' ? 100 : pkg.id === 'pack_m' ? 500 : pkg.id === 'pack_l' ? 1000 : pkg.id === 'pack_xl' ? 3000 : 5000);
+                                            const slsVat = choice.salesVat !== undefined ? choice.salesVat : (pkgPrice * 7 / 107);
+                                            const prdCost = choice.productCost !== undefined ? choice.productCost : (choice.productPrice || 0);
+                                            const isVat = !!choice.hasVat;
+                                            const inpVat = choice.inputVat !== undefined ? choice.inputVat : (isVat ? prdCost * 0.07 : 0);
+                                            const prdCostWithVat = choice.productCostWithVat !== undefined ? choice.productCostWithVat : (prdCost + inpVat);
+                                            const pkgCost = choice.packagingCost || 0;
+                                            const shpFee = choice.shippingFee || 0;
+                                            const vtPayable = choice.vatPayable !== undefined ? choice.vatPayable : (slsVat - inpVat);
+                                            const pvPayout = choice.pvPayout !== undefined ? choice.pvPayout : (pkgPrice * 0.5);
+                                            const totExpense = prdCostWithVat + pkgCost + shpFee + vtPayable + pvPayout;
+                                            const remProfit = pkgPrice - totExpense;
+
+                                            return (
+                                              <div className="flex flex-col space-y-1 text-[10px] text-slate-500 font-mono mt-1 pt-2 border-t border-dashed border-slate-100">
+                                                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                                                  <div className="flex justify-between">
+                                                    <span>ราคาขาย:</span>
+                                                    <span className="font-bold text-slate-700">฿{pkgPrice.toLocaleString()}</span>
+                                                  </div>
+                                                  <div className="flex justify-between">
+                                                    <span>ภาษีขาย 7%:</span>
+                                                    <span>฿{slsVat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                                  </div>
+                                                  <div className="flex justify-between">
+                                                    <span>ราคาทุนสินค้า:</span>
+                                                    <span>
+                                                      ฿{prdCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                                      {isVat && <span className="text-indigo-600 text-[8px] font-sans font-bold ml-0.5">(Vat)</span>}
+                                                    </span>
+                                                  </div>
+                                                  <div className="flex justify-between">
+                                                    <span>กล่อง/บรรจุภัณฑ์:</span>
+                                                    <span>฿{pkgCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                                  </div>
+                                                  <div className="flex justify-between">
+                                                    <span>ค่าจัดส่ง:</span>
+                                                    <span>฿{shpFee.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                                  </div>
+                                                  <div className="flex justify-between">
+                                                    <span>ภาษีนำส่ง:</span>
+                                                    <span className="text-indigo-600 font-bold">฿{vtPayable.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                                  </div>
+                                                  <div className="flex justify-between col-span-2 border-t border-dashed border-slate-100 pt-0.5">
+                                                    <span>หักจ่าย PV (50%):</span>
+                                                    <span className="text-amber-600 font-bold">฿{pvPayout.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                                  </div>
+                                                </div>
+                                                <div className="flex justify-between items-center bg-slate-50/80 px-1.5 py-1 rounded mt-1 text-[10.5px] border border-slate-100">
+                                                  <span className="font-bold text-slate-600 text-[10px]">รวมคชจ: ฿{totExpense.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                                  <span className={`font-black ${remProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                                    คงเหลือ: ฿{remProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                                  </span>
+                                                </div>
+                                              </div>
+                                            );
+                                          })()}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="py-6 text-center border border-dashed border-slate-200 rounded-xl bg-white">
+                                      <p className="text-[10px] text-slate-400 italic">ไม่มีข้อมูลชุดของขวัญสินค้า</p>
+                                      <span className="text-[9px] text-slate-300 block mt-0.5">กรุณาเพิ่มรายการสินค้าที่ฟอร์มซ้ายมือนะคะ</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {adminSubTab === 'systemConditions' && (
                 <div className="space-y-6 animate-fadeIn max-w-5xl mx-auto text-slate-850">
                   {/* Header Banner */}
@@ -14923,6 +15482,607 @@ export default function App() {
                 </div>
               )}
 
+              {adminSubTab === 'companyAccountingReport' && (
+                <div className="space-y-6 animate-fadeIn text-slate-700">
+                  {/* Header */}
+                  <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-md border border-slate-800 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 -mt-8 -mr-8 w-32 h-32 rounded-full bg-rose-600/20 blur-2xl"></div>
+                    <div className="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                      <div>
+                        <h3 className="text-lg font-black text-white flex items-center gap-2">
+                          📈 รายงานระบบบัญชีบริษัท (Company Financial & Accounting Report)
+                        </h3>
+                        <p className="text-xs text-slate-300 mt-1">
+                          รายงานสรุปรายได้ รายจ่าย ผลกำไรสุทธิ และภาษีนำส่งสะสมจากการจำหน่ายแพ็กเกจสินค้า (S, M, L, XL, XXL) ของบริษัท นที พลัส จำกัด อย่างครบถ้วนโปร่งใสตามหลักกฎหมายสรรพากร
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setShowAddManualExpenseModal(true)}
+                          className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-md flex items-center gap-1.5 cursor-pointer"
+                        >
+                          💸 บันทึกค่าใช้จ่ายบริษัทเพิ่มเติม
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    // Compute package transaction entries
+                    const packageOrders = adminOrders.filter(order => {
+                      const isS = order.productId === 'pack_s' || order.productName?.toLowerCase().includes('package s');
+                      const isPackage = isS || order.productName?.toLowerCase().includes('package') || order.productId?.startsWith('pack_');
+                      return isPackage;
+                    });
+
+                    const mappedEntries = packageOrders.map(order => {
+                      const choice = packageChoices.find(c => c.id === order.selectedChoiceId);
+                      const isS = order.productId === 'pack_s' || order.productName?.toLowerCase().includes('package s');
+                      
+                      if (choice) {
+                        return {
+                          orderId: order.id,
+                          userId: order.userId,
+                          createdAt: order.createdAt,
+                          packageName: order.productName || "Package Choices",
+                          choiceName: choice.name,
+                          sellingPrice: choice.packagePrice || order.totalPrice || 0,
+                          pvPayout: choice.pvPayout || 0,
+                          productCost: choice.productCost || 0,
+                          hasVat: !!choice.hasVat,
+                          inputVat: choice.inputVat || 0,
+                          productCostWithVat: choice.productCostWithVat || 0,
+                          packagingCost: choice.packagingCost || 0,
+                          shippingFee: choice.shippingFee || 0,
+                          vatPayable: choice.vatPayable || 0,
+                          totalExpense: choice.totalExpense || 0,
+                          remaining: choice.remaining || 0,
+                          salesVat: choice.salesVat || 0,
+                        };
+                      } else {
+                        // Default S or Fallback calculation
+                        const price = order.totalPrice || 0;
+                        const pv = price * 0.5; // PV 50%
+                        const productCost = price * 0.3; // Raw Product Cost (30%)
+                        const hasVat = true;
+                        const inputVat = productCost * 0.07;
+                        const productCostWithVat = productCost + inputVat;
+                        const packagingCost = isS ? 5 : 20;
+                        const shippingFee = isS ? 25 : 50;
+                        const salesVat = price * 0.07;
+                        const vatPayable = salesVat - inputVat;
+                        const totalExpense = productCostWithVat + packagingCost + shippingFee + pv;
+                        const remaining = price - totalExpense;
+
+                        return {
+                          orderId: order.id,
+                          userId: order.userId,
+                          createdAt: order.createdAt,
+                          packageName: order.productName || (isS ? "Package S" : "Package Custom"),
+                          choiceName: order.selectedChoiceName || "เซ็ตมาตรฐาน",
+                          sellingPrice: price,
+                          pvPayout: pv,
+                          productCost: productCost,
+                          hasVat,
+                          inputVat,
+                          productCostWithVat,
+                          packagingCost,
+                          shippingFee,
+                          vatPayable,
+                          totalExpense,
+                          remaining,
+                          salesVat,
+                        };
+                      }
+                    });
+
+                    // Filtering
+                    const filteredEntries = mappedEntries.filter(entry => {
+                      // 1. Package filter
+                      if (accPackageFilter !== 'All') {
+                        const size = accPackageFilter.toUpperCase();
+                        const isMatch = entry.packageName?.toUpperCase().includes(size) || entry.packageName?.toUpperCase().endsWith(" " + size);
+                        if (!isMatch) return false;
+                      }
+
+                      // 2. Date filter
+                      if (accDateFilter !== 'All') {
+                        const entryDate = new Date(entry.createdAt);
+                        const today = new Date();
+                        if (accDateFilter === 'Today') {
+                          if (entryDate.toDateString() !== today.toDateString()) return false;
+                        } else if (accDateFilter === 'Week') {
+                          const weekAgo = new Date();
+                          weekAgo.setDate(today.getDate() - 7);
+                          if (entryDate < weekAgo) return false;
+                        } else if (accDateFilter === 'Month') {
+                          if (entryDate.getMonth() !== today.getMonth() || entryDate.getFullYear() !== today.getFullYear()) return false;
+                        }
+                      }
+
+                      // 3. Search query
+                      if (accSearchQuery) {
+                        const query = accSearchQuery.toLowerCase();
+                        const matchId = entry.userId?.toLowerCase().includes(query) || entry.orderId?.toLowerCase().includes(query);
+                        const matchChoice = entry.choiceName?.toLowerCase().includes(query) || entry.packageName?.toLowerCase().includes(query);
+                        if (!matchId && !matchChoice) return false;
+                      }
+
+                      return true;
+                    });
+
+                    // Financial Calculations (Package Revenue Only)
+                    const totalPackageSales = filteredEntries.reduce((sum, e) => sum + e.sellingPrice, 0);
+                    const totalPVPayout = filteredEntries.reduce((sum, e) => sum + e.pvPayout, 0);
+                    const totalProductCost = filteredEntries.reduce((sum, e) => sum + e.productCostWithVat, 0);
+                    const totalPackagingCost = filteredEntries.reduce((sum, e) => sum + e.packagingCost, 0);
+                    const totalShippingCost = filteredEntries.reduce((sum, e) => sum + e.shippingFee, 0);
+                    const totalSalesVat = filteredEntries.reduce((sum, e) => sum + e.salesVat, 0);
+                    const totalVatPayable = filteredEntries.reduce((sum, e) => sum + e.vatPayable, 0);
+                    const totalNetMargin = filteredEntries.reduce((sum, e) => sum + e.remaining, 0);
+
+                    // Operating Expenses Calculations (Manual logs)
+                    const filteredManualExpenses = manualExpenses.filter(exp => {
+                      if (accDateFilter !== 'All') {
+                        const expDate = new Date(exp.date);
+                        const today = new Date();
+                        if (accDateFilter === 'Today') {
+                          if (expDate.toDateString() !== today.toDateString()) return false;
+                        } else if (accDateFilter === 'Week') {
+                          const weekAgo = new Date();
+                          weekAgo.setDate(today.getDate() - 7);
+                          if (expDate < weekAgo) return false;
+                        } else if (accDateFilter === 'Month') {
+                          if (expDate.getMonth() !== today.getMonth() || expDate.getFullYear() !== today.getFullYear()) return false;
+                        }
+                      }
+                      if (accSearchQuery) {
+                        const query = accSearchQuery.toLowerCase();
+                        const matchTitle = exp.title?.toLowerCase().includes(query) || exp.notes?.toLowerCase().includes(query);
+                        if (!matchTitle) return false;
+                      }
+                      return true;
+                    });
+
+                    const totalManualExpenses = filteredManualExpenses.reduce((sum, e) => sum + e.amount, 0);
+                    const absoluteCompanyProfit = totalNetMargin - totalManualExpenses;
+
+                    return (
+                      <div className="space-y-6">
+                        {/* Summary Cards */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                          <div className="bg-gradient-to-br from-indigo-50 to-indigo-100/50 border border-indigo-100 rounded-3xl p-5 shadow-sm space-y-1">
+                            <span className="text-[10px] font-bold text-indigo-700 tracking-wider uppercase block">💰 ยอดรายรับแพ็กเกจรวม</span>
+                            <div className="text-xl font-black text-indigo-950 font-mono">
+                              ฿ {totalPackageSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <span className="text-[10px] text-indigo-600 block">จากทั้งหมด {filteredEntries.length} รายการสั่งซื้อ</span>
+                          </div>
+
+                          <div className="bg-gradient-to-br from-rose-50 to-rose-100/50 border border-rose-100 rounded-3xl p-5 shadow-sm space-y-1">
+                            <span className="text-[10px] font-bold text-rose-700 tracking-wider uppercase block">🎟️ หักจ่าย PV รวม (50%)</span>
+                            <div className="text-xl font-black text-rose-950 font-mono">
+                              ฿ {totalPVPayout.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <span className="text-[10px] text-rose-600 block">แปลงเข้าสู่สายงานเพื่อคำนวณโบนัส</span>
+                          </div>
+
+                          <div className="bg-gradient-to-br from-sky-50 to-sky-100/50 border border-sky-100 rounded-3xl p-5 shadow-sm space-y-1">
+                            <span className="text-[10px] font-bold text-sky-700 tracking-wider uppercase block">📦 ต้นทุนสินค้า & บรรจุภัณฑ์ & ส่ง</span>
+                            <div className="text-xl font-black text-sky-950 font-mono">
+                              ฿ {(totalProductCost + totalPackagingCost + totalShippingCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <span className="text-[10px] text-sky-600 block">รวมค่าขนส่งและกล่องบรรจุภัณฑ์</span>
+                          </div>
+
+                          <div className={`border rounded-3xl p-5 shadow-sm space-y-1 ${absoluteCompanyProfit >= 0 ? 'bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-emerald-100' : 'bg-gradient-to-br from-red-50 to-red-100/50 border-red-100'}`}>
+                            <span className="text-[10px] font-bold tracking-wider uppercase block text-emerald-800">📈 กำไรสุทธิบริษัทคงเหลือ</span>
+                            <div className={`text-xl font-black font-mono ${absoluteCompanyProfit >= 0 ? 'text-emerald-950' : 'text-red-950'}`}>
+                              ฿ {absoluteCompanyProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <span className="text-[10px] text-emerald-600 block">หักค่าใช้จ่ายส่วนกลางสะสมแล้ว</span>
+                          </div>
+                        </div>
+
+                        {/* Secondary KPIs */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 border border-slate-100 rounded-3xl p-4">
+                          <div className="text-center p-2 border-r border-slate-200/60 last:border-0">
+                            <span className="text-[10px] font-semibold text-slate-400 block">ราคาทุนสินค้าสุทธิ</span>
+                            <span className="font-extrabold text-sm font-mono text-slate-700">฿ {totalProductCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="text-center p-2 border-r border-slate-200/60 last:border-0">
+                            <span className="text-[10px] font-semibold text-slate-400 block">ภาษีขาย 7% (รวม)</span>
+                            <span className="font-extrabold text-sm font-mono text-slate-700">฿ {totalSalesVat.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="text-center p-2 border-r border-slate-200/60 last:border-0">
+                            <span className="text-[10px] font-semibold text-slate-400 block">ภาษีนำส่ง (สรรพากร)</span>
+                            <span className="font-extrabold text-sm font-mono text-slate-700">฿ {totalVatPayable.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="text-center p-2 last:border-0">
+                            <span className="text-[10px] font-semibold text-slate-400 block">ค่าใช้จ่ายบริหารทั่วไป</span>
+                            <span className="font-extrabold text-sm font-mono text-slate-700">฿ {totalManualExpenses.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        </div>
+
+                        {/* Controls Bar */}
+                        <div className="bg-white border border-slate-100 rounded-3xl p-4 shadow-sm flex flex-col md:flex-row gap-3 justify-between items-center">
+                          <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                            <div className="flex items-center gap-1.5 bg-slate-100 rounded-2xl px-3 py-1.5 border border-slate-200">
+                              <span className="text-xs font-bold text-slate-500">แพ็กเกจ:</span>
+                              <select 
+                                value={accPackageFilter}
+                                onChange={(e) => setAccPackageFilter(e.target.value)}
+                                className="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none"
+                              >
+                                <option value="All">ทั้งหมด (All Packages)</option>
+                                <option value="S">Package S (100 บาท)</option>
+                                <option value="M">Package M (1,000 บาท)</option>
+                                <option value="L">Package L (5,000 บาท)</option>
+                                <option value="XL">Package XL (10,000 บาท)</option>
+                                <option value="XXL">Package XXL (50,000 บาท)</option>
+                              </select>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 bg-slate-100 rounded-2xl px-3 py-1.5 border border-slate-200">
+                              <span className="text-xs font-bold text-slate-500">ช่วงเวลา:</span>
+                              <select 
+                                value={accDateFilter}
+                                onChange={(e) => setAccDateFilter(e.target.value)}
+                                className="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none"
+                              >
+                                <option value="All">ทุกช่วงเวลา</option>
+                                <option value="Today">วันนี้</option>
+                                <option value="Week">7 วันล่าสุด</option>
+                                <option value="Month">เดือนนี้</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="relative w-full md:w-80">
+                            <input 
+                              type="text"
+                              placeholder="ค้นหาด้วยรหัสสมาชิก, รหัสคำสั่งซื้อ, ชุดเซ็ต..."
+                              value={accSearchQuery}
+                              onChange={(e) => setAccSearchQuery(e.target.value)}
+                              className="w-full bg-slate-50 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-2xl px-4 py-2 text-xs font-semibold focus:outline-none"
+                            />
+                            <span className="absolute right-3 top-2.5 text-slate-400 text-xs">🔍</span>
+                          </div>
+                        </div>
+
+                        {/* Analysis Progress visualization (Visual breakdown of revenue destination) */}
+                        <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-4">
+                          <h4 className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                            📊 สรุปสัดส่วนการกระจายรายรับของบริษัท (Revenue Distribution Analysis)
+                          </h4>
+                          {totalPackageSales > 0 ? (
+                            <div className="space-y-3 pt-2">
+                              {/* Custom stacked progress bar */}
+                              <div className="h-6 w-full rounded-full overflow-hidden flex shadow-inner">
+                                <div 
+                                  style={{ width: `${(totalPVPayout / totalPackageSales) * 100}%` }} 
+                                  className="bg-rose-500 h-full flex items-center justify-center text-[10px] font-black text-white"
+                                  title={`หักจ่าย PV 50%: ${((totalPVPayout / totalPackageSales) * 100).toFixed(1)}%`}
+                                >
+                                  {((totalPVPayout / totalPackageSales) * 100) > 10 && "PV 50%"}
+                                </div>
+                                <div 
+                                  style={{ width: `${(totalProductCost / totalPackageSales) * 100}%` }} 
+                                  className="bg-sky-500 h-full flex items-center justify-center text-[10px] font-black text-white"
+                                  title={`ต้นทุนสินค้า: ${((totalProductCost / totalPackageSales) * 100).toFixed(1)}%`}
+                                >
+                                  {((totalProductCost / totalPackageSales) * 100) > 10 && "สินค้า"}
+                                </div>
+                                <div 
+                                  style={{ width: `${((totalPackagingCost + totalShippingCost) / totalPackageSales) * 100}%` }} 
+                                  className="bg-amber-500 h-full flex items-center justify-center text-[10px] font-black text-white"
+                                  title={`บรรจุภัณฑ์ & ส่ง: ${(((totalPackagingCost + totalShippingCost) / totalPackageSales) * 100).toFixed(1)}%`}
+                                >
+                                  {(((totalPackagingCost + totalShippingCost) / totalPackageSales) * 100) > 10 && "ส่ง&กล่อง"}
+                                </div>
+                                <div 
+                                  style={{ width: `${(totalNetMargin / totalPackageSales) * 100}%` }} 
+                                  className="bg-emerald-500 h-full flex items-center justify-center text-[10px] font-black text-white"
+                                  title={`รายได้คงเหลือบริษัท: ${((totalNetMargin / totalPackageSales) * 100).toFixed(1)}%`}
+                                >
+                                  {((totalNetMargin / totalPackageSales) * 100) > 10 && "คงเหลือบริษัท"}
+                                </div>
+                              </div>
+
+                              {/* Legends */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] font-medium pt-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-3 h-3 rounded bg-rose-500 block"></span>
+                                  <span className="text-slate-500">หักจ่าย PV (50% ของราคาตั้งขาย): <strong className="text-rose-600 font-bold font-mono">{((totalPVPayout / totalPackageSales) * 100).toFixed(1)}%</strong></span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="w-3 h-3 rounded bg-sky-500 block"></span>
+                                  <span className="text-slate-500">ทุนราคาสินค้านำเข้า (รวม Vat): <strong className="text-sky-600 font-bold font-mono">{((totalProductCost / totalPackageSales) * 100).toFixed(1)}%</strong></span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="w-3 h-3 rounded bg-amber-500 block"></span>
+                                  <span className="text-slate-500">ค่าบรรจุภัณฑ์กล่อง & ค่าขนส่ง: <strong className="text-amber-600 font-bold font-mono">{(((totalPackagingCost + totalShippingCost) / totalPackageSales) * 100).toFixed(1)}%</strong></span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="w-3 h-3 rounded bg-emerald-500 block"></span>
+                                  <span className="text-slate-500">คงเหลือสุทธิเข้าบริษัท: <strong className="text-emerald-600 font-bold font-mono">{((totalNetMargin / totalPackageSales) * 100).toFixed(1)}%</strong></span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-400 font-bold py-4 text-center">ไม่มีรายการบัญชีในฟิลเตอร์สำหรับแสดงสัดส่วนทางการเงิน</p>
+                          )}
+                        </div>
+
+                        {/* Multi-Tab Tables (1. Package purchases ledger, 2. Manual general ledger) */}
+                        <div className="bg-white border border-slate-100 rounded-3xl shadow-sm overflow-hidden">
+                          <div className="border-b border-slate-100 px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                            <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                              📋 บัญชีสรุปการเงินรายรับ-รายจ่ายตามแพ็กเกจ ({filteredEntries.length} รายการ)
+                            </h4>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse min-w-[1200px]">
+                              <thead>
+                                <tr className="bg-slate-50/75 text-slate-500 text-[10px] font-bold uppercase tracking-wider border-b border-slate-100">
+                                  <th className="px-4 py-3.5">วันที่ทำรายการ</th>
+                                  <th className="px-4 py-3.5 text-center">รหัสสมาชิก</th>
+                                  <th className="px-4 py-3.5">แพ็กเกจสมัคร</th>
+                                  <th className="px-4 py-3.5">ชุดสินค้าเซ็ต</th>
+                                  <th className="px-4 py-3.5 text-right text-indigo-700">ราคาตั้งขาย (บาท)</th>
+                                  <th className="px-4 py-3.5 text-right text-rose-600">หัก PV (50%)</th>
+                                  <th className="px-4 py-3.5 text-right">ทุนสินค้า</th>
+                                  <th className="px-4 py-3.5 text-center">ติ๊กมี Vat</th>
+                                  <th className="px-4 py-3.5 text-right">ทุนรวม Vat</th>
+                                  <th className="px-4 py-3.5 text-right">กล่อง/หีบห่อ</th>
+                                  <th className="px-4 py-3.5 text-right">ค่าจัดส่ง</th>
+                                  <th className="px-4 py-3.5 text-right text-red-600 font-extrabold">รวมค่าใช้จ่าย</th>
+                                  <th className="px-4 py-3.5 text-right">ภาษีขาย 7%</th>
+                                  <th className="px-4 py-3.5 text-right">ภาษีนำส่ง</th>
+                                  <th className="px-4 py-3.5 text-right text-emerald-600 font-black">คงเหลือบริษัท</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-[11px] font-medium text-slate-600">
+                                {filteredEntries.length > 0 ? (
+                                  filteredEntries.map((entry, idx) => (
+                                    <tr key={entry.orderId || idx} className="hover:bg-slate-50/50 transition">
+                                      <td className="px-4 py-3 font-mono text-slate-400">
+                                        {entry.createdAt ? new Date(entry.createdAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : "ไม่ระบุ"}
+                                      </td>
+                                      <td className="px-4 py-3 text-center font-bold text-slate-800 font-mono">
+                                        {entry.userId}
+                                      </td>
+                                      <td className="px-4 py-3 font-bold text-indigo-950">
+                                        {entry.packageName}
+                                      </td>
+                                      <td className="px-4 py-3 text-slate-500 font-bold truncate max-w-[150px]" title={entry.choiceName}>
+                                        {entry.choiceName}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-black text-indigo-600 font-mono">
+                                        {entry.sellingPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-bold text-rose-500 font-mono">
+                                        {entry.pvPayout.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-mono">
+                                        {entry.productCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-center">
+                                        {entry.hasVat ? (
+                                          <span className="bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded text-[9px]">มี Vat 7%</span>
+                                        ) : (
+                                          <span className="bg-slate-100 text-slate-400 font-bold px-1.5 py-0.5 rounded text-[9px]">-</span>
+                                        )}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-bold font-mono">
+                                        {entry.productCostWithVat.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-mono">
+                                        {entry.packagingCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-mono">
+                                        {entry.shippingFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-extrabold text-red-500 font-mono">
+                                        {entry.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-mono">
+                                        {entry.salesVat.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-bold font-mono text-slate-700">
+                                        {entry.vatPayable.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-black text-emerald-600 font-mono bg-emerald-50/10">
+                                        {entry.remaining.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan={15} className="px-4 py-8 text-center text-slate-400 font-extrabold">
+                                      ไม่พบรายการสั่งซื้อแพ็กเกจตามเงื่อนไขที่เลือก
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Manual operational expenditures list */}
+                        <div className="bg-white border border-slate-100 rounded-3xl shadow-sm overflow-hidden">
+                          <div className="border-b border-slate-100 px-6 py-4 flex justify-between items-center bg-slate-50/40">
+                            <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                              💸 บันทึกรายจ่ายบริหารจัดการทั่วไปของบริษัท (General Operating Expenses Ledger)
+                            </h4>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-white border px-2 py-0.5 rounded-full">
+                              รวมรายจ่าย: ฿ {totalManualExpenses.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50/75 text-slate-500 text-[10px] font-bold uppercase border-b border-slate-100">
+                                  <th className="px-6 py-3">รหัสธุรกรรม</th>
+                                  <th className="px-6 py-3">วันที่ใช้จ่าย</th>
+                                  <th className="px-6 py-3">ประเภท</th>
+                                  <th className="px-6 py-3">รายการใช้จ่าย</th>
+                                  <th className="px-6 py-3">หมายเหตุรายละเอียด</th>
+                                  <th className="px-6 py-3 text-right text-red-500 font-extrabold">จำนวนเงิน (บาท)</th>
+                                  <th className="px-6 py-3 text-center">จัดการ</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-[11px] text-slate-600">
+                                {filteredManualExpenses.length > 0 ? (
+                                  filteredManualExpenses.map((exp) => (
+                                    <tr key={exp.id} className="hover:bg-slate-50/50 transition">
+                                      <td className="px-6 py-3 font-mono text-slate-400">{exp.id}</td>
+                                      <td className="px-6 py-3 font-mono">
+                                        {new Date(exp.date).toLocaleDateString('th-TH', { dateStyle: 'medium' })}
+                                      </td>
+                                      <td className="px-6 py-3">
+                                        <span className="bg-slate-100 text-slate-700 font-extrabold px-2 py-0.5 rounded-lg text-[9px]">
+                                          {exp.category}
+                                        </span>
+                                      </td>
+                                      <td className="px-6 py-3 font-bold text-slate-800">{exp.title}</td>
+                                      <td className="px-6 py-3 text-slate-400 font-medium max-w-xs truncate" title={exp.notes}>
+                                        {exp.notes || "-"}
+                                      </td>
+                                      <td className="px-6 py-3 text-right font-black text-rose-600 font-mono">
+                                        - ฿ {exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-6 py-3 text-center">
+                                        <button
+                                          onClick={() => handleRemoveManualExpense(exp.id)}
+                                          className="text-red-500 hover:text-red-600 font-extrabold text-[10px] hover:underline cursor-pointer"
+                                        >
+                                          ลบรายการ
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan={7} className="px-6 py-6 text-center text-slate-400 font-medium">
+                                      ยังไม่มีรายการบันทึกค่าใช้จ่ายทั่วไปเพิ่มเติมในช่วงเวลานี้
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Modal Form for adding custom operating expenses */}
+                        {showAddManualExpenseModal && (
+                          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fadeIn">
+                            <div className="bg-white rounded-3xl shadow-xl border border-slate-100 max-w-md w-full p-6 space-y-4">
+                              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                                <h3 className="text-base font-extrabold text-slate-800 flex items-center gap-1.5">
+                                  💸 บันทึกค่าใช้จ่ายบริษัทเพิ่มเติม (General Operating Expense Form)
+                                </h3>
+                                <button
+                                  onClick={() => setShowAddManualExpenseModal(false)}
+                                  className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+
+                              <form onSubmit={handleAddManualExpenseSubmit} className="space-y-4">
+                                <div>
+                                  <label className="block text-slate-700 font-bold text-xs mb-1">ชื่อรายการใช้จ่าย *</label>
+                                  <input
+                                    type="text"
+                                    required
+                                    placeholder="เช่น คืนเงินสมาชิกร้านค้า, ซื้อเครื่องใช้สำนักงาน, ค่าเซิร์ฟเวอร์"
+                                    value={manualExpenseTitle}
+                                    onChange={(e) => setManualExpenseTitle(e.target.value)}
+                                    className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:border-indigo-500 bg-white font-semibold"
+                                  />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-slate-700 font-bold text-xs mb-1">จำนวนเงิน (บาท) *</label>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      required
+                                      placeholder="เช่น 1500"
+                                      value={manualExpenseAmount}
+                                      onChange={(e) => setManualExpenseAmount(e.target.value)}
+                                      className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:border-indigo-500 bg-white font-bold font-mono"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-slate-700 font-bold text-xs mb-1">วันที่ชำระเงิน *</label>
+                                    <input
+                                      type="date"
+                                      required
+                                      value={manualExpenseDate}
+                                      onChange={(e) => setManualExpenseDate(e.target.value)}
+                                      className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:border-indigo-500 bg-white font-bold"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-slate-700 font-bold text-xs mb-1">หมวดหมู่รายจ่าย *</label>
+                                  <select
+                                    value={manualExpenseCategory}
+                                    onChange={(e) => setManualExpenseCategory(e.target.value)}
+                                    className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:border-indigo-500 bg-white"
+                                  >
+                                    <option value="ค่าสินค้า">ค่าสินค้า (Product Supply)</option>
+                                    <option value="ค่าบรรจุภัณฑ์">ค่าบรรจุภัณฑ์ (Packaging)</option>
+                                    <option value="ค่าจัดส่ง">ค่าจัดส่ง / โลจิสติกส์ (Shipping)</option>
+                                    <option value="ค่าจ้าง/สวัสดิการ">ค่าจ้าง / สวัสดิการ (Salaries/Benefits)</option>
+                                    <option value="ค่าโฆษณา/การตลาด">ค่าโฆษณา / การตลาด (Marketing)</option>
+                                    <option value="ค่าเซิร์ฟเวอร์/ระบบ">ค่าเซิร์ฟเวอร์ / ซอฟต์แวร์ (IT/Server)</option>
+                                    <option value="อื่นๆ">อื่นๆ (Others / Petty Cash)</option>
+                                  </select>
+                                </div>
+
+                                <div>
+                                  <label className="block text-slate-700 font-bold text-xs mb-1">หมายเหตุ / ข้อมูลจำเพาะ</label>
+                                  <textarea
+                                    placeholder="กรอกรายละเอียดเพิ่มเติม เช่น ดำเนินการโดยแอดมินคนไหน หรือใบรับเงินเลขที่ใด"
+                                    value={manualExpenseNotes}
+                                    onChange={(e) => setManualExpenseNotes(e.target.value)}
+                                    className="w-full border border-slate-300 rounded-xl px-4 py-2 text-xs text-slate-800 focus:border-indigo-500 bg-white h-20"
+                                  />
+                                </div>
+
+                                <div className="flex gap-2 justify-end border-t border-slate-100 pt-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowAddManualExpenseModal(false)}
+                                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer"
+                                  >
+                                    ยกเลิก
+                                  </button>
+                                  <button
+                                    type="submit"
+                                    className="bg-rose-600 hover:bg-rose-500 text-white px-5 py-2 rounded-xl text-xs font-bold shadow transition cursor-pointer"
+                                  >
+                                    บันทึกค่าใช้จ่าย
+                                  </button>
+                                </div>
+                              </form>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
               {/* EDIT MEMBER MODAL FOR ADMIN */}
               {showEditMemberModal && editingMember && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fadeIn">
@@ -15216,6 +16376,51 @@ export default function App() {
                             lng={editingMember.warehouseLng || 100.5018} 
                             readOnly={true}
                           />
+                        </div>
+                      )}
+
+                      {/* OTP Verification Prompt */}
+                      {showOtpPrompt && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 space-y-3 animate-fadeIn mt-4">
+                          <div className="flex items-center gap-2 text-amber-800">
+                            <span className="text-lg">🔒</span>
+                            <span className="font-extrabold text-sm">การขออนุมัติสิทธิ์ OTP สำหรับแก้ไขข้อมูลสำคัญ (Manager Authorized OTP Required)</span>
+                          </div>
+                          <p className="text-[11px] text-amber-700 leading-relaxed">
+                            ระบบตรวจพบการแก้ไขข้อมูลสำคัญในบัญชีสมาชิก ได้แก่ ข้อมูลชื่อ-นามสกุล, เลขประจำตัวประชาชน, ข้อมูลบัญชีธนาคาร หรือจำนวนเงินและธุรกรรมทางการเงิน เนื่องจากสิทธิ์การใช้งานของคุณเป็น Admin คุณจำเป็นต้องนำรหัส OTP ผ่านการยืนยันจาก <strong>Manager (ผู้จัดการระบบ)</strong> เพื่อทำการอนุมัติบันทึกการแก้ไขในครั้งนี้
+                          </p>
+                          <div className="bg-slate-900 text-sky-300 p-4 rounded-2xl font-mono text-[11px] border border-slate-800 shadow-inner flex flex-col gap-1.5">
+                            <span className="font-bold text-slate-400">📲 กล่องข้อความแจ้งเตือน (SMS/Inbox) ของระบบ Manager:</span>
+                            <span className="text-white font-extrabold text-xs">
+                              [Natee Plus OTP] รหัสผ่าน OTP เพื่ออนุมัติแก้ไขข้อมูลสมาชิกคือ: <span className="text-yellow-300 text-sm font-black bg-yellow-400/10 px-2 py-0.5 rounded tracking-widest">{managerOtp}</span> (ใช้งานได้ภายในครั้งเดียว)
+                            </span>
+                          </div>
+                          <div className="flex flex-col sm:flex-row items-center gap-3">
+                            <div className="w-full flex-1">
+                              <label className="block text-amber-900 font-extrabold mb-1">กรอกรหัส OTP ยืนยัน (6 หลัก) *</label>
+                              <input 
+                                type="text"
+                                maxLength={6}
+                                required
+                                placeholder="กรอกรหัส OTP 6 หลัก เช่น 123456"
+                                value={inputOtp}
+                                onChange={(e) => setInputOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                className="w-full bg-white border border-amber-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 rounded-xl px-4 py-2.5 text-center text-sm font-black tracking-widest text-slate-800 font-mono"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const code = Math.floor(100000 + Math.random() * 900000).toString();
+                                setManagerOtp(code);
+                                setInputOtp('');
+                                showNotif("🔄 ส่งรหัส OTP ใหม่ไปยังระบบแจ้งเตือนของ Manager แล้ว", "success");
+                              }}
+                              className="sm:mt-5 bg-white text-amber-700 hover:bg-amber-100 border border-amber-300 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
+                            >
+                              🔄 ขอรหัส OTP อีกครั้ง
+                            </button>
+                          </div>
                         </div>
                       )}
 
