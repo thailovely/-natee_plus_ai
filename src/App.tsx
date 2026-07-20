@@ -1311,12 +1311,39 @@ export default function App() {
         safeSubscribe('members', (snapshot) => {
           if (snapshot.exists()) {
             const data = snapshot.data().data || [];
-            setAdminMembersList(data);
+            
+            // Only update adminMembersList if the incoming snapshot data is NOT older than our current list
+            setAdminMembersList((prevList: any[]) => {
+              if (prevList && prevList.length > 0) {
+                let incomingIsStale = false;
+                for (const m of data) {
+                  const prevM = prevList.find((pm: any) => pm.userId === m.userId);
+                  if (prevM && prevM.lastUpdated && m.lastUpdated && m.lastUpdated < prevM.lastUpdated) {
+                    incomingIsStale = true;
+                    break;
+                  }
+                }
+                if (incomingIsStale) {
+                  console.warn("⚠️ [Sync Bypass] Ignored stale Firestore adminMembersList snapshot.");
+                  return prevList;
+                }
+              }
+              return data;
+            });
             
             const currentMember = data.find((m: any) => m.userId === currentUser.userId);
             if (currentMember) {
               setProfile((prevProfile: any) => {
                 if (prevProfile) {
+                  // Only update the profile if the incoming Firestore update is NOT older than our current profile!
+                  if (prevProfile.lastUpdated && currentMember.lastUpdated && currentMember.lastUpdated < prevProfile.lastUpdated) {
+                    console.warn("⚠️ [Sync Bypass] Ignored stale Firestore profile snapshot. Local state is newer.", {
+                      localTime: prevProfile.lastUpdated,
+                      incomingTime: currentMember.lastUpdated
+                    });
+                    return prevProfile;
+                  }
+
                   // Check E-Cash (No audio sound per request, just notification)
                   const prevBalance = prevProfile.balanceECash;
                   const newBalance = currentMember.balanceECash;
@@ -1480,6 +1507,11 @@ export default function App() {
     if (profile?.role === 'Manager' || profile?.role === 'Admin') return 999999999;
     if (profile?.rank === 'Member') return 0;
 
+    // Use the exact server-calculated remaining eligibleRights directly to prevent client-side double deduction or mismatch
+    if (profile?.eligibleRights !== undefined) {
+      return Math.max(0, profile.eligibleRights);
+    }
+
     let basePackage = 0;
     const r = profile?.rank || 'S';
     if (r === 'S') basePackage = 100;
@@ -1489,41 +1521,7 @@ export default function App() {
     else if (r === 'XXL') basePackage = 5000;
     else basePackage = 100;
 
-    const maxRights = profile?.eligibleRights !== undefined ? profile.eligibleRights : (basePackage * 10);
-    
-    // Sum only E-Money income (Bonus/EShare/Commission) from the transactions list
-    const eMoneyEarnings = transactions
-      .filter((t: any) => {
-        const isEMoney = t.currency === 'E-Money' || t.currency === 'E-Cash';
-        const isIncome = t.type === 'Bonus' || t.type === 'EShare' || t.type === 'AllShare' || t.type === 'Commission';
-        return isEMoney && isIncome && (t.amount > 0);
-      })
-      .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
-
-    const isTwoChannels = bankSettings?.remainingRightsMode === '2_channels';
-    const eCouponEarnings = isTwoChannels
-      ? transactions
-          .filter((t: any) => {
-            const isECoupon = t.currency === 'E-Coupon';
-            const isIncome = t.type === 'Bonus' || t.type === 'EShare' || t.type === 'AllShare' || t.type === 'Commission';
-            return isECoupon && isIncome && (t.amount > 0);
-          })
-          .reduce((sum: number, t: any) => sum + (t.amount || 0), 0)
-      : 0;
-
-    // Fallback if transaction list is empty/loading
-    let usedRights = 0;
-    if (eMoneyEarnings > 0 || eCouponEarnings > 0) {
-      usedRights = eMoneyEarnings + eCouponEarnings;
-    } else {
-      usedRights = profile?.totalEarnings || 0;
-      if (isTwoChannels && profile?.totalCouponEarnings) {
-        usedRights += profile.totalCouponEarnings;
-      }
-    }
-
-    const remaining = maxRights - usedRights;
-    return Math.max(0, remaining);
+    return basePackage * 10;
   };
 
   const fetchProfile = async (shouldSyncEditStates = false) => {

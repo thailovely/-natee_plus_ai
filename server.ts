@@ -88,6 +88,7 @@ try {
 
 // In-Memory DB Cache
 let cacheDb: any = null;
+let isDatabaseLoadedFromFirestore = false;
 
 async function loadDbFromFirestore() {
   if (!dbFirestore) {
@@ -154,15 +155,22 @@ async function loadDbFromFirestore() {
             mergedMembers.push(localMember);
             hasMergedChanges = true;
           } else {
-            // Self-heal/merge: If the local member is Active but Firestore is Pending (e.g. write quota failed), preserve the approved active state!
+            // If local member's state is newer (based on lastUpdated), preserve the local member data completely!
             const fMember = mergedMembers[idx];
-            if (localMember.sellerStatus === 'Active' && fMember.sellerStatus !== 'Active') {
-              console.log(`🛠️ Self-healing member ${localMember.userId} (${localMember.sellerCode}) status to Active (restoring local approved state)`);
-              fMember.sellerStatus = 'Active';
-              if (localMember.sellerCode) {
-                fMember.sellerCode = localMember.sellerCode;
-              }
+            if (localMember.lastUpdated && (!fMember.lastUpdated || localMember.lastUpdated > fMember.lastUpdated)) {
+              console.log(`🛠️ [Self-Heal] Restoring newer local member data for ${localMember.userId} (Local: ${localMember.lastUpdated} > Firestore: ${fMember.lastUpdated || 0})`);
+              mergedMembers[idx] = { ...localMember };
               hasMergedChanges = true;
+            } else {
+              // Self-heal/merge: If the local member is Active but Firestore is Pending (e.g. write quota failed), preserve the approved active state!
+              if (localMember.sellerStatus === 'Active' && fMember.sellerStatus !== 'Active') {
+                console.log(`🛠️ Self-healing member ${localMember.userId} (${localMember.sellerCode}) status to Active (restoring local approved state)`);
+                fMember.sellerStatus = 'Active';
+                if (localMember.sellerCode) {
+                  fMember.sellerCode = localMember.sellerCode;
+                }
+                hasMergedChanges = true;
+              }
             }
           }
         }
@@ -367,6 +375,7 @@ async function loadDbFromFirestore() {
         console.log(`⚠️ No local file ${currentDbFile} found to seed Firestore.`);
       }
     }
+    isDatabaseLoadedFromFirestore = true;
   } catch (err: any) {
     console.error("❌ Error loading database from Firestore:", err);
     const isQuotaExceeded = err.message && (
@@ -383,9 +392,11 @@ async function loadDbFromFirestore() {
       if (fs.existsSync(currentDbFile)) {
         cacheDb = JSON.parse(fs.readFileSync(currentDbFile, 'utf8'));
         console.log(`💾 [Local Fallback] Successfully loaded database from local file ${currentDbFile} after Firestore error.`);
+        isDatabaseLoadedFromFirestore = true;
       } else if (isSandboxActive && fs.existsSync(DB_FILE)) {
         cacheDb = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
         console.log("💾 [Local Fallback] Successfully loaded database from production local file db.json for sandbox after Firestore error.");
+        isDatabaseLoadedFromFirestore = true;
       }
     } catch (localErr) {
       console.error("❌ [Local Fallback] Failed to load local database backup:", localErr);
@@ -400,6 +411,10 @@ let retryCount = 0;
 
 async function saveDbToFirestore(data: any) {
   if (!dbFirestore || isFirestoreQuotaExceeded) return;
+  if (!isDatabaseLoadedFromFirestore) {
+    console.warn("⚠️ [Firestore Save Blocked] Database was not successfully loaded from Firestore on startup. Refusing to write to prevent overwriting live data with stale fallback state!");
+    return;
+  }
   
   // Store the latest data to be saved
   pendingSaveData = data;
@@ -955,6 +970,34 @@ function writeDb(data) {
       seen.add(m.userId);
       return true;
     });
+
+    // Auto-update lastUpdated timestamp for any modified member!
+    if (cacheDb && cacheDb.members) {
+      for (const m of data.members) {
+        const prevM = cacheDb.members.find((pm: any) => pm.userId === m.userId);
+        if (prevM) {
+          const fieldsToCompare = ['balanceECash', 'balanceEMoney', 'balanceECoupon', 'balanceEShare', 'rank', 'sellerStatus', 'eligibleRights', 'statusKyc', 'name', 'surname', 'phone', 'email'];
+          let hasChanged = false;
+          for (const f of fieldsToCompare) {
+            if (m[f] !== prevM[f]) {
+              hasChanged = true;
+              break;
+            }
+          }
+          if (hasChanged) {
+            m.lastUpdated = Date.now();
+          } else {
+            m.lastUpdated = prevM.lastUpdated || m.lastUpdated || Date.now();
+          }
+        } else {
+          m.lastUpdated = Date.now();
+        }
+      }
+    } else {
+      for (const m of data.members) {
+        if (!m.lastUpdated) m.lastUpdated = Date.now();
+      }
+    }
   }
   cacheDb = data;
   const currentDbFile = isSandboxActive ? DB_FILE_SANDBOX : DB_FILE;
@@ -1093,11 +1136,14 @@ function calculateBinaryCommissions(db, buyerId, pvAmount, orderId) {
       // Income = 2.5% of PV (1 PV = 1 Baht in commission calculations)
       const commissionAmount = pvAmount * 0.025;
       
-      // Deduct from parent's eligible income rights
-      const actualPayout = isManagerOrAdmin ? commissionAmount : Math.min(commissionAmount, parentRights);
+      // Deduct only net E-Money (80% of commission) from parent's eligible income rights
+      const prospectiveNet = commissionAmount * 0.80;
+      const actualNet = isManagerOrAdmin ? prospectiveNet : Math.min(prospectiveNet, parentRights);
+      const actualPayout = isManagerOrAdmin ? commissionAmount : parseFloat((actualNet / 0.80).toFixed(4));
+      
       if (actualPayout > 0) {
         if (!isManagerOrAdmin) {
-          parent.eligibleRights = Math.max(0, parent.eligibleRights - actualPayout);
+          parent.eligibleRights = parseFloat(Math.max(0, parent.eligibleRights - actualNet).toFixed(4));
         }
         
         // Split actual payout immediately according to 20% flat deduction rule:
@@ -1214,11 +1260,15 @@ function distributeECashWithDeduction(db, recipient, grossAmount, detailsText, t
   
   const isManagerOrAdmin = recipient.role === 'Manager' || recipient.role === 'Admin';
   const currentRights = isManagerOrAdmin ? 999999999 : (recipient.eligibleRights || 0);
-  const actualPayout = isManagerOrAdmin ? grossAmount : Math.min(grossAmount, currentRights);
+  
+  // Deduct only net E-Money (80% of grossAmount) from eligible income rights
+  const prospectiveNet = grossAmount * 0.80;
+  const actualNet = isManagerOrAdmin ? prospectiveNet : Math.min(prospectiveNet, currentRights);
+  const actualPayout = isManagerOrAdmin ? grossAmount : parseFloat((actualNet / 0.80).toFixed(4));
   
   if (actualPayout > 0) {
     if (!isManagerOrAdmin) {
-      recipient.eligibleRights = Math.max(0, recipient.eligibleRights - actualPayout);
+      recipient.eligibleRights = parseFloat(Math.max(0, recipient.eligibleRights - actualNet).toFixed(4));
     }
     
     // Split actual payout immediately according to 20% flat deduction rule:
@@ -1906,6 +1956,7 @@ app.get('/api/member/profile/:userId', (req, res) => {
   res.json({
     success: true,
     isSandboxActive: isSandboxActive,
+    isFirestoreQuotaExceeded: isFirestoreQuotaExceeded || !isDatabaseLoadedFromFirestore,
     profile: {
       userId: member.userId,
       username: member.username,
@@ -4643,7 +4694,7 @@ app.get('/api/firebase-config', (req, res) => {
   };
 
   if (config.projectId && config.apiKey) {
-    res.json({ success: true, config, isFirestoreQuotaExceeded });
+    res.json({ success: true, config, isFirestoreQuotaExceeded: isFirestoreQuotaExceeded || !isDatabaseLoadedFromFirestore });
   } else {
     res.status(404).json({ success: false, message: 'Firebase configuration not found. Please set environment variables or config files.' });
   }
@@ -4663,7 +4714,7 @@ app.get('/api/sync-state', (req, res) => {
     res.json({
       success: true,
       isSandboxActive: isSandboxActive,
-      isFirestoreQuotaExceeded: isFirestoreQuotaExceeded,
+      isFirestoreQuotaExceeded: isFirestoreQuotaExceeded || !isDatabaseLoadedFromFirestore,
       data: {
         members: db.members || [],
         products: db.products || [],
@@ -5256,6 +5307,7 @@ app.post('/api/admin/system-reset', (req, res) => {
   // 9. Clear verification codes OTP
   db.otps = {};
 
+  isDatabaseLoadedFromFirestore = true;
   writeDb(db);
 
   res.json({
@@ -5267,6 +5319,7 @@ app.post('/api/admin/system-reset', (req, res) => {
 // FORCE RE-SYNC FROM FIRESTORE (FOR INSTANCE SYNC IN CLOUD RUN MULTI-INSTANCE ENV)
 app.post('/api/admin/sync-firestore', async (req, res) => {
   try {
+    isFirestoreQuotaExceeded = false; // Reset quota flag to attempt writing/reading again
     await loadDbFromFirestore();
     res.json({
       success: true,
