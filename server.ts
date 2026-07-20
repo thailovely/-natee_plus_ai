@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeApp } from 'firebase/app';
-import { initializeFirestore, memoryLocalCache, doc, getDoc, writeBatch } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache, doc, getDoc, writeBatch, onSnapshot } from 'firebase/firestore';
 import { GoogleGenAI } from '@google/genai';
 
 // Define path resolution supporting both ES Modules (dev) and CommonJS (compiled)
@@ -89,6 +89,61 @@ try {
 // In-Memory DB Cache
 let cacheDb: any = null;
 let isDatabaseLoadedFromFirestore = false;
+let activeServerSubscriptions: any[] = [];
+
+function setupServerRealTimeSync() {
+  if (!dbFirestore) return;
+  
+  // Unsubscribe existing ones first
+  for (const unsub of activeServerSubscriptions) {
+    try { unsub(); } catch (e) {}
+  }
+  activeServerSubscriptions = [];
+  
+  const collectionName = isSandboxActive ? 'app_sections_sandbox' : 'app_sections';
+  const keys = ['members', 'products', 'sellerProducts', 'orders', 'transactions', 'planB_Tree', 'csrFund', 'systemStats', 'otps', 'packageProductChoices', 'bankSettings'];
+  const currentDbFile = isSandboxActive ? DB_FILE_SANDBOX : DB_FILE;
+
+  console.log(`📡 [Server] Setting up real-time sync listeners for Firestore collection: ${collectionName}`);
+  
+  for (const key of keys) {
+    try {
+      const unsub = onSnapshot(doc(dbFirestore, collectionName, key), (snapshot) => {
+        if (snapshot.exists()) {
+          const incomingData = snapshot.data().data;
+          
+          if (cacheDb) {
+            // Verify if there are actual structural or value changes
+            const originalStr = JSON.stringify(cacheDb[key]);
+            const incomingStr = JSON.stringify(incomingData);
+            
+            if (originalStr !== incomingStr) {
+              cacheDb[key] = incomingData;
+              if (key === 'members') {
+                console.log(`🔔 [Server Real-Time Sync] Synced 'members' from Firestore. Total members: ${incomingData?.length || 0}`);
+              } else if (key === 'bankSettings') {
+                console.log(`🔔 [Server Real-Time Sync] Synced 'bankSettings' from Firestore.`);
+              } else {
+                console.log(`🔔 [Server Real-Time Sync] Synced '${key}' from Firestore.`);
+              }
+              
+              try {
+                fs.writeFileSync(currentDbFile, JSON.stringify(cacheDb, null, 2), 'utf8');
+              } catch (fsErr) {
+                console.error(`❌ [Server Real-Time Sync] Failed to write backup for '${key}':`, fsErr);
+              }
+            }
+          }
+        }
+      }, (err) => {
+        console.error(`❌ [Server Real-Time Sync] Subscription error on key '${key}':`, err);
+      });
+      activeServerSubscriptions.push(unsub);
+    } catch (err) {
+      console.error(`❌ [Server Real-Time Sync] Failed to subscribe to key '${key}':`, err);
+    }
+  }
+}
 
 async function loadDbFromFirestore() {
   if (!dbFirestore) {
@@ -157,8 +212,8 @@ async function loadDbFromFirestore() {
           } else {
             // If local member's state is newer (based on lastUpdated), preserve the local member data completely!
             const fMember = mergedMembers[idx];
-            if (localMember.lastUpdated && (!fMember.lastUpdated || localMember.lastUpdated > fMember.lastUpdated)) {
-              console.log(`🛠️ [Self-Heal] Restoring newer local member data for ${localMember.userId} (Local: ${localMember.lastUpdated} > Firestore: ${fMember.lastUpdated || 0})`);
+            if (localMember.lastUpdated && fMember.lastUpdated && localMember.lastUpdated > fMember.lastUpdated) {
+              console.log(`🛠️ [Self-Heal] Restoring newer local member data for ${localMember.userId} (Local: ${localMember.lastUpdated} > Firestore: ${fMember.lastUpdated})`);
               mergedMembers[idx] = { ...localMember };
               hasMergedChanges = true;
             } else {
@@ -376,6 +431,7 @@ async function loadDbFromFirestore() {
       }
     }
     isDatabaseLoadedFromFirestore = true;
+    setupServerRealTimeSync();
   } catch (err: any) {
     console.error("❌ Error loading database from Firestore:", err);
     const isQuotaExceeded = err.message && (
@@ -392,11 +448,12 @@ async function loadDbFromFirestore() {
       if (fs.existsSync(currentDbFile)) {
         cacheDb = JSON.parse(fs.readFileSync(currentDbFile, 'utf8'));
         console.log(`💾 [Local Fallback] Successfully loaded database from local file ${currentDbFile} after Firestore error.`);
-        isDatabaseLoadedFromFirestore = true;
+        // CRITICAL SECURE FIX: Keep isDatabaseLoadedFromFirestore = false to prevent overwriting the live Firestore database with stale local files on subsequent updates!
+        isDatabaseLoadedFromFirestore = false; 
       } else if (isSandboxActive && fs.existsSync(DB_FILE)) {
         cacheDb = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
         console.log("💾 [Local Fallback] Successfully loaded database from production local file db.json for sandbox after Firestore error.");
-        isDatabaseLoadedFromFirestore = true;
+        isDatabaseLoadedFromFirestore = false;
       }
     } catch (localErr) {
       console.error("❌ [Local Fallback] Failed to load local database backup:", localErr);
@@ -4628,7 +4685,7 @@ app.get('/api/bank-settings', (req, res) => {
 
 // UPDATE SYSTEM BANK SETTINGS FOR DEPOSIT
 app.post('/api/bank-settings', (req, res) => {
-  const { bankName, bankAccount, bankAccountName, qrCodeFile, editorUserId, remainingRightsMode } = req.body;
+  const { bankName, bankAccount, bankAccountName, qrCodeFile, editorUserId, remainingRightsMode, maintenanceMode } = req.body;
   const db = readDb();
   
   if (editorUserId) {
@@ -4661,7 +4718,8 @@ app.post('/api/bank-settings', (req, res) => {
     bankAccount: bankAccount !== undefined ? bankAccount : (db.bankSettings?.bankAccount || "111-222-3333"),
     bankAccountName: bankAccountName !== undefined ? bankAccountName : (db.bankSettings?.bankAccountName || "บริษัท นที พลัส จำกัด"),
     qrCodeUrl: qrCodeUrl,
-    remainingRightsMode: remainingRightsMode !== undefined ? remainingRightsMode : (db.bankSettings?.remainingRightsMode || "1_channel")
+    remainingRightsMode: remainingRightsMode !== undefined ? remainingRightsMode : (db.bankSettings?.remainingRightsMode || "1_channel"),
+    maintenanceMode: maintenanceMode !== undefined ? !!maintenanceMode : (db.bankSettings?.maintenanceMode || false)
   };
 
   writeDb(db);

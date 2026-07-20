@@ -106,6 +106,7 @@ export default function App() {
   const [isUsingPollingFallback, setIsUsingPollingFallback] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>('dash');
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
+  const [showStaffLogin, setShowStaffLogin] = useState<boolean>(false);
   const [notif, setNotif] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [isFirstLoginModal, setIsFirstLoginModal] = useState<boolean>(() => {
     try {
@@ -552,7 +553,7 @@ export default function App() {
   const [treeScale, setTreeScale] = useState<number>(0.85);
   const [maxTreeDepth, setMaxTreeDepth] = useState<number>(3);
   const [planBSubTab, setPlanBSubTab] = useState<'b1' | 'b2'>('b1');
-  const [adminSubTab, setAdminSubTab] = useState<'queues' | 'members' | 'couponPv' | 'systemReset' | 'memberApprovals' | 'shippingApprove' | 'manageShops' | 'orderStatus' | 'bankSettings' | 'depositApprove' | 'packageChoices' | 'companyAccountingReport'>('queues');
+  const [adminSubTab, setAdminSubTab] = useState<'queues' | 'members' | 'couponPv' | 'systemReset' | 'memberApprovals' | 'shippingApprove' | 'manageShops' | 'orderStatus' | 'bankSettings' | 'depositApprove' | 'packageChoices' | 'companyAccountingReport' | 'maintenance'>('queues');
   const [adminSection, setAdminSection] = useState<'members_system' | 'seller_system' | 'admin_console'>('members_system');
   const [allSellerProducts, setAllSellerProducts] = useState<any[]>([]);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
@@ -1175,6 +1176,28 @@ export default function App() {
                       showNotif(`ได้รับรายได้ปันผล/โบนัส E-Money! +${diffEMoney.toLocaleString()} บาท`, 'success');
                       playMoneySound(diffEMoney, 'bonus');
                     }
+
+                    // Optimizing reference to prevent unnecessary dashboard flickering and visual re-renders
+                    const isIdentical = 
+                      prevProfile.balanceECash === currentMember.balanceECash &&
+                      prevProfile.balanceEMoney === currentMember.balanceEMoney &&
+                      prevProfile.balanceECoupon === currentMember.balanceECoupon &&
+                      prevProfile.balanceEShare === currentMember.balanceEShare &&
+                      prevProfile.eligibleRights === currentMember.eligibleRights &&
+                      prevProfile.planBPoints === currentMember.planBPoints &&
+                      prevProfile.rank === currentMember.rank &&
+                      prevProfile.sellerStatus === currentMember.sellerStatus &&
+                      prevProfile.statusKyc === currentMember.statusKyc &&
+                      prevProfile.name === currentMember.name &&
+                      prevProfile.surname === currentMember.surname &&
+                      prevProfile.phone === currentMember.phone &&
+                      prevProfile.email === currentMember.email &&
+                      prevProfile.selectedPackageId === currentMember.selectedPackageId &&
+                      prevProfile.firstLogin === currentMember.firstLogin;
+                    
+                    if (isIdentical) {
+                      return prevProfile; // SKIP RE-RENDER!
+                    }
                   }
                   return currentMember;
                 });
@@ -1327,6 +1350,20 @@ export default function App() {
                   console.warn("⚠️ [Sync Bypass] Ignored stale Firestore adminMembersList snapshot.");
                   return prevList;
                 }
+
+                // Optimization: If arrays are completely identical (length & elements), skip reference change to avoid re-renders
+                if (prevList.length === data.length) {
+                  let hasChanges = false;
+                  for (let i = 0; i < data.length; i++) {
+                    if (data[i].userId !== prevList[i].userId || data[i].lastUpdated !== prevList[i].lastUpdated) {
+                      hasChanges = true;
+                      break;
+                    }
+                  }
+                  if (!hasChanges) {
+                    return prevList; // SKIP RE-RENDER!
+                  }
+                }
               }
               return data;
             });
@@ -1389,6 +1426,28 @@ export default function App() {
                     const diffEMoney = parseFloat((newEMoney - prevEMoney).toFixed(4));
                     showNotif(`ได้รับรายได้ปันผล/โบนัส E-Money! +${diffEMoney.toLocaleString()} บาท`, 'success');
                     playMoneySound(diffEMoney, 'bonus');
+                  }
+
+                  // Optimizing reference to prevent unnecessary dashboard flickering and visual re-renders
+                  const isIdentical = 
+                    prevProfile.balanceECash === currentMember.balanceECash &&
+                    prevProfile.balanceEMoney === currentMember.balanceEMoney &&
+                    prevProfile.balanceECoupon === currentMember.balanceECoupon &&
+                    prevProfile.balanceEShare === currentMember.balanceEShare &&
+                    prevProfile.eligibleRights === currentMember.eligibleRights &&
+                    prevProfile.planBPoints === currentMember.planBPoints &&
+                    prevProfile.rank === currentMember.rank &&
+                    prevProfile.sellerStatus === currentMember.sellerStatus &&
+                    prevProfile.statusKyc === currentMember.statusKyc &&
+                    prevProfile.name === currentMember.name &&
+                    prevProfile.surname === currentMember.surname &&
+                    prevProfile.phone === currentMember.phone &&
+                    prevProfile.email === currentMember.email &&
+                    prevProfile.selectedPackageId === currentMember.selectedPackageId &&
+                    prevProfile.firstLogin === currentMember.firstLogin;
+                  
+                  if (isIdentical) {
+                    return prevProfile; // SKIP RE-RENDER!
                   }
                 }
                 return currentMember;
@@ -2988,6 +3047,36 @@ export default function App() {
     } catch (err) {
       console.error("Error saving bank settings", err);
       showNotif("เกิดข้อผิดพลาดในการบันทึกข้อมูล", "error");
+    } finally {
+      setIsSavingBankSettings(false);
+    }
+  };
+
+  const handleToggleMaintenanceMode = async (targetVal: boolean) => {
+    setIsSavingBankSettings(true);
+    try {
+      const res = await fetch('/api/bank-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bankName: bankSettings.bankName,
+          bankAccount: bankSettings.bankAccount,
+          bankAccountName: bankSettings.bankAccountName,
+          qrCodeFile: null,
+          editorUserId: currentUser.userId,
+          maintenanceMode: targetVal
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(targetVal ? "เปิดใช้งานการพักหน้าจอเรียบร้อยแล้วค่ะ" : "เปิดใช้งานระบบการทำงานตามปกติแล้วค่ะ", "success");
+        setBankSettings(data.bankSettings);
+      } else {
+        showNotif(data.message || 'เกิดข้อผิดพลาด', 'error');
+      }
+    } catch (err) {
+      console.error("Error toggling maintenance mode", err);
+      showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อระบบ", "error");
     } finally {
       setIsSavingBankSettings(false);
     }
@@ -4682,6 +4771,99 @@ export default function App() {
     );
   };
 
+  // MAINTENANCE MODE INTERCEPT
+  const isUserExemptFromMaintenance = currentUser && (
+    profile?.role === 'Manager' || 
+    profile?.role === 'Admin' || 
+    currentUser.role === 'Manager' || 
+    currentUser.role === 'Admin'
+  );
+
+  const isMaintenanceActive = bankSettings?.maintenanceMode === true;
+
+  // Render maintenance screen if active, user is not exempt, and staff login is not toggled
+  if (isMaintenanceActive && !isUserExemptFromMaintenance && !showStaffLogin) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden select-none">
+        {/* Ambient background glows */}
+        <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-rose-500/10 blur-[100px] animate-pulse"></div>
+        <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 rounded-full bg-indigo-500/10 blur-[120px] animate-pulse"></div>
+
+        {/* Global Notification */}
+        {notif && (
+          <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[99999] p-5 rounded-2xl shadow-2xl border-2 text-base max-w-md w-[90%] flex items-center gap-3 backdrop-blur-md transition-all duration-300 animate-slideDown ${
+            notif.type === 'success' 
+              ? 'bg-emerald-600/95 text-white border-emerald-400 shadow-emerald-500/20' 
+              : notif.type === 'error'
+              ? 'bg-rose-600/95 text-white border-rose-400 shadow-rose-500/30 font-bold'
+              : 'bg-slate-800/95 text-white border-slate-600 shadow-slate-950/40'
+          }`}>
+            <AlertCircle size={22} className="shrink-0" />
+            <span className="flex-1 leading-snug">{notif.message}</span>
+          </div>
+        )}
+
+        <div className="w-full max-w-lg bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-3xl p-8 md:p-10 shadow-2xl relative overflow-hidden text-center space-y-6">
+          {/* Animated Settings Gears */}
+          <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+            {/* Outer gear */}
+            <div className="absolute inset-0 border-2 border-dashed border-rose-500/30 rounded-full animate-spin duration-[10000ms]"></div>
+            {/* Glowing ring */}
+            <div className="absolute w-16 h-16 bg-rose-500/10 rounded-full blur-md animate-pulse"></div>
+            {/* Core icon */}
+            <div className="relative z-10 p-4 bg-slate-900/90 border border-slate-700/50 rounded-2xl shadow-lg">
+              <Settings size={36} className="text-rose-500 animate-spin" style={{ animationDuration: '4s' }} />
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight leading-relaxed">
+              ขณะนี้ระบบกำลัง อัปเดต กรุณารอสักครู่
+            </h1>
+            <p className="text-slate-400 text-sm font-medium">
+              ระบบจะกลับมาในไม่ช้า ขออภัยในความไม่สะดวกค่ะ
+            </p>
+          </div>
+
+          {/* Important Action Notice as requested */}
+          <div className="bg-rose-950/40 border border-rose-500/20 rounded-2xl p-5 text-left space-y-2 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-16 h-16 bg-rose-500/5 rounded-full blur-xl"></div>
+            <h3 className="text-xs font-bold text-rose-400 flex items-center gap-1.5 uppercase tracking-wider">
+              ⚠️ คำแนะนำสำคัญสำหรับการเข้าใช้งาน
+            </h3>
+            <p className="text-xs text-rose-200/90 leading-relaxed font-semibold">
+              เมื่อระบบกลับมา แล้วหน้าจอเป็นสีขาว ให้กดล้างแคส ในแอปพิเคชั่นของท่าน เพื่อกลับเข้าสู่ระบบได้ปกติ
+            </p>
+          </div>
+
+          {/* Refresh/Check System Status button */}
+          <div className="pt-2">
+            <button
+              onClick={async () => {
+                showNotif("กำลังตรวจสอบสถานะระบบล่าสุด...", "info");
+                await fetchBankSettings();
+              }}
+              className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 rounded-xl text-xs transition duration-200 shadow-md flex items-center justify-center gap-2 cursor-pointer border border-slate-700 hover:border-slate-600"
+            >
+              <RefreshCw size={14} className="animate-spin" style={{ animationDuration: '3s' }} />
+              ตรวจสอบสถานะระบบและอัปเดตหน้าจอ
+            </button>
+          </div>
+        </div>
+
+        {/* Hidden / Subtle Staff Login portal */}
+        <div className="mt-8 text-center">
+          <button
+            onClick={() => setShowStaffLogin(true)}
+            className="text-[10px] text-slate-500 hover:text-slate-400 font-bold tracking-widest uppercase hover:underline transition cursor-pointer"
+          >
+            🔐 เข้าสู่ระบบสำหรับเจ้าหน้าที่ (Staff Login Portal)
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // NOT LOGGED IN
   if (!currentUser) {
     return (
@@ -4700,6 +4882,16 @@ export default function App() {
         )}
 
         <div className="w-full max-w-md bg-slate-900/40 backdrop-blur-md border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+          {/* Back to Maintenance banner if toggled */}
+          {isMaintenanceActive && showStaffLogin && (
+            <button
+              type="button"
+              onClick={() => setShowStaffLogin(false)}
+              className="w-full mb-6 bg-rose-950/40 hover:bg-rose-900/40 border border-rose-500/30 text-rose-200 font-bold py-2.5 rounded-xl text-[11px] flex items-center justify-center gap-2 cursor-pointer transition shadow-sm"
+            >
+              ⬅️ กลับสู่หน้าจอพักระบบอัปเดต (Back to Maintenance)
+            </button>
+          )}
           {/* Logo Brand heading */}
           <div className="text-center mb-8 relative flex flex-col items-center">
             {/* White bold 'N' with orange plus sign vector logo */}
@@ -9321,7 +9513,7 @@ export default function App() {
                                         <td className="p-3 text-right font-extrabold text-emerald-600">฿ {net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                         <td className="p-3 text-center">
                                           <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] font-bold ${
-                                            txn.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800 animate-pulse'
+                                            txn.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                                           }`}>
                                             {txn.status === 'Approved' ? '✓ สำเร็จแล้ว' : 'รอแอนมินอนุมัติ'}
                                           </span>
@@ -11477,14 +11669,24 @@ export default function App() {
                      </button>
  
                      {profile?.role === 'Manager' && (
-                       <button 
-                         onClick={() => setAdminSubTab('bankSettings')} 
-                         className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
-                           adminSubTab === 'bankSettings' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
-                         }`}
-                       >
-                         🏦 ตั้งค่าธนาคาร & QR Code (Manager)
-                       </button>
+                       <>
+                         <button 
+                           onClick={() => setAdminSubTab('bankSettings')} 
+                           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                             adminSubTab === 'bankSettings' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                           }`}
+                         >
+                           🏦 ตั้งค่าธนาคาร & QR Code (Manager)
+                         </button>
+                         <button 
+                           onClick={() => setAdminSubTab('maintenance')} 
+                           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                             adminSubTab === 'maintenance' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                           }`}
+                         >
+                           ⏸️ พักหน้าจอ (Manager)
+                         </button>
+                       </>
                      )}
                    </>
                  )}
@@ -12432,7 +12634,7 @@ export default function App() {
                         <p className="text-xs text-slate-400 mt-0.5">กรุณาตรวจสอบความถูกต้องของยอดโอนและภาพหลักฐานสลิป ก่อนกดปุ่มอนุมัติ</p>
                       </div>
                       {depositQueue.length > 0 && (
-                        <span className="bg-rose-100 text-rose-700 border border-rose-200 px-3 py-1 rounded-xl text-xs font-black animate-pulse">
+                        <span className="bg-rose-100 text-rose-700 border border-rose-200 px-3 py-1 rounded-xl text-xs font-black">
                           รออนุมัติ {depositQueue.length} รายการ
                         </span>
                       )}
@@ -12701,7 +12903,7 @@ export default function App() {
                     <h4 className="text-xs font-bold text-rose-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                       🏪 ตารางคำขออนุมัติเปิดร้านค้าพาร์ทเนอร์รายใหม่ (New Partner Store Approval Queue)
                       {adminMembersList.filter((m: any) => m.sellerStatus === 'Pending').length > 0 && (
-                        <span className="bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse">
+                        <span className="bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px]">
                           {adminMembersList.filter((m: any) => m.sellerStatus === 'Pending').length}
                         </span>
                       )}
@@ -15887,6 +16089,101 @@ export default function App() {
                       )}
                     </button>
                   </form>
+                </div>
+              )}
+
+              {adminSubTab === 'maintenance' && profile?.role === 'Manager' && (
+                <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-6 max-w-2xl mx-auto animate-fadeIn text-slate-700">
+                  <div className="text-center space-y-1">
+                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-rose-50 text-rose-600 mb-2 border border-rose-100">
+                      <Settings size={24} className={bankSettings.maintenanceMode ? "animate-spin text-rose-500" : "text-rose-600"} />
+                    </div>
+                    <h3 className="text-lg font-black text-slate-800">⏸️ ระบบตั้งค่าพักหน้าจอ (Maintenance Mode)</h3>
+                    <p className="text-xs text-slate-400">ควบคุมการแสดงผลหน้าจอปิดปรับปรุงระบบชั่วคราวสำหรับสมาชิกทั่วไปเพื่อทำการอัปเดตระบบ</p>
+                  </div>
+
+                  {/* Current Status Banner */}
+                  <div className={`p-5 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-4 transition-all duration-300 ${
+                    bankSettings.maintenanceMode 
+                      ? 'bg-rose-50/70 border-rose-200 text-rose-900 shadow-sm shadow-rose-100' 
+                      : 'bg-emerald-50/70 border-emerald-200 text-emerald-900 shadow-sm shadow-emerald-100'
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <span className="relative flex h-3 w-3">
+                        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                          bankSettings.maintenanceMode ? 'bg-rose-500' : 'bg-emerald-500'
+                        }`}></span>
+                        <span className={`relative inline-flex rounded-full h-3 w-3 ${
+                          bankSettings.maintenanceMode ? 'bg-rose-600' : 'bg-emerald-600'
+                        }`}></span>
+                      </span>
+                      <div>
+                        <h4 className="text-sm font-extrabold">
+                          {bankSettings.maintenanceMode ? "ขณะนี้ระบบเปิดใช้งานระบบพักหน้าจออยู่" : "ระบบเปิดทำงานปกติ"}
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {bankSettings.maintenanceMode 
+                            ? "สมาชิกทั่วไปที่ไม่ใช่ผู้ดูแลระบบจะเห็นหน้าจอแจ้งเตือนอัปเดตระบบทันที" 
+                            : "สมาชิกทุกคนสามารถเข้าสู่ระบบและทำรายการต่างๆ ได้ตามปกติ"
+                          }
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      disabled={isSavingBankSettings}
+                      onClick={() => handleToggleMaintenanceMode(!bankSettings.maintenanceMode)}
+                      className={`px-5 py-2.5 rounded-xl text-xs font-bold transition duration-200 cursor-pointer shadow-md flex items-center gap-1.5 ${
+                        bankSettings.maintenanceMode 
+                          ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-200' 
+                          : 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-200'
+                      }`}
+                    >
+                      {isSavingBankSettings ? (
+                        <>
+                          <RefreshCw size={12} className="animate-spin" /> กำลังดำเนินการ...
+                        </>
+                      ) : bankSettings.maintenanceMode ? (
+                        "▶️ ปิดระบบพักหน้าจอ (เปิดระบบทำงาน)"
+                      ) : (
+                        "⏸️ เปิดระบบพักหน้าจอ (ปิดปรับปรุง)"
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Information and Description */}
+                  <div className="bg-slate-50 p-5 rounded-2xl border border-slate-150 space-y-3">
+                    <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      💡 ข้อมูลและความปลอดภัยสำคัญ
+                    </h4>
+                    <ul className="text-[11px] text-slate-500 list-disc list-inside space-y-1.5 leading-relaxed font-medium">
+                      <li>เมื่อเปิดใช้งานพักหน้าจอ <strong className="text-slate-800 font-bold">ผู้แนะนำหรือเจ้าหน้าที่ระดับ Manager/Admin เท่านั้น</strong> ที่จะสามารถผ่านหน้าต่างพักหน้าจอเข้ามาทำงานหลังบ้านได้</li>
+                      <li>ระบบทำการบันทึกสถานะแบบ Real-time ลงฐานข้อมูล Firestore เมื่อเปิด/ปิด หน้าจอของสมาชิกทุกคนจะเด้งเข้าหน้าพักหน้าจอหรือกลับเข้าหน้าใช้งานได้ทันที</li>
+                      <li>หากต้องการล็อกอินเข้าตรวจระบบระหว่างอัปเดต ให้ไปที่หน้าจอพักหน้าจอของท่านแล้วกดปุ่มลิงก์สตาฟล็อกอินที่ซ่อนอยู่ด้านล่าง เพื่อล็อกอินเป็นแอดมินหรือผู้บริหารเข้ามาปิดใช้งานได้เลยค่ะ</li>
+                    </ul>
+                  </div>
+
+                  {/* Beautiful Live Preview of the Maintenance Screen */}
+                  <div className="border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
+                    <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-200 flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-slate-500 tracking-wider">👁️ ตัวอย่างหน้าจอที่สมาชิกทั่วไปเห็น (LIVE PREVIEW)</span>
+                      <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+                    </div>
+                    <div className="p-8 bg-slate-950 flex justify-center items-center rounded-b-3xl">
+                      <div className="max-w-md w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-6 text-center space-y-4">
+                        <div className="w-12 h-12 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto border border-amber-500/20 animate-pulse">
+                          <Settings size={24} className="animate-spin duration-3000 text-amber-400" />
+                        </div>
+                        <div className="space-y-1">
+                          <h4 className="text-sm font-extrabold text-white">⚙️ ขณะนี้ระบบกำลัง อัปเดต กรุณารอสักครู่</h4>
+                          <p className="text-[10px] text-slate-400">ระบบจะกลับมาในไม่ช้า ขออภัยในความไม่สะดวก</p>
+                        </div>
+                        <div className="bg-rose-500/10 border border-rose-500/25 p-3 rounded-xl text-left text-[10px] text-rose-300 leading-relaxed font-medium">
+                          ⚠️ เมื่อระบบกลับมา แล้วหน้าจอเป็นสีขาว ให้กดล้างแคส ในแอปพิเคชั่นของท่าน เพื่อกลับเข้าสู่ระบบได้ปกติ
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
