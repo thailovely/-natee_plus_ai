@@ -575,6 +575,9 @@ export default function App() {
   const [simMarketPrice, setSimMarketPrice] = useState('1000');
   const [simMlmCommission, setSimMlmCommission] = useState('10000');
   const [simPartnerPrice, setSimPartnerPrice] = useState('1000');
+  const [simRightsRank, setSimRightsRank] = useState('S');
+  const [simRightsCustom, setSimRightsCustom] = useState('1000');
+  const [simRightsEMoneyIncome, setSimRightsEMoneyIncome] = useState('500');
   const [systemCondTab, setSystemCondTab] = useState('registration');
   const [newProd, setNewProd] = useState({
     name: '',
@@ -1487,10 +1490,39 @@ export default function App() {
     else basePackage = 100;
 
     const maxRights = profile?.eligibleRights !== undefined ? profile.eligibleRights : (basePackage * 10);
-    const ecash = profile?.balanceECash || 0;
-    const ecoupon = profile?.balanceECoupon || 0;
     
-    const remaining = maxRights - (ecash + ecoupon);
+    // Sum only E-Money income (Bonus/EShare/Commission) from the transactions list
+    const eMoneyEarnings = transactions
+      .filter((t: any) => {
+        const isEMoney = t.currency === 'E-Money' || t.currency === 'E-Cash';
+        const isIncome = t.type === 'Bonus' || t.type === 'EShare' || t.type === 'AllShare' || t.type === 'Commission';
+        return isEMoney && isIncome && (t.amount > 0);
+      })
+      .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+
+    const isTwoChannels = bankSettings?.remainingRightsMode === '2_channels';
+    const eCouponEarnings = isTwoChannels
+      ? transactions
+          .filter((t: any) => {
+            const isECoupon = t.currency === 'E-Coupon';
+            const isIncome = t.type === 'Bonus' || t.type === 'EShare' || t.type === 'AllShare' || t.type === 'Commission';
+            return isECoupon && isIncome && (t.amount > 0);
+          })
+          .reduce((sum: number, t: any) => sum + (t.amount || 0), 0)
+      : 0;
+
+    // Fallback if transaction list is empty/loading
+    let usedRights = 0;
+    if (eMoneyEarnings > 0 || eCouponEarnings > 0) {
+      usedRights = eMoneyEarnings + eCouponEarnings;
+    } else {
+      usedRights = profile?.totalEarnings || 0;
+      if (isTwoChannels && profile?.totalCouponEarnings) {
+        usedRights += profile.totalCouponEarnings;
+      }
+    }
+
+    const remaining = maxRights - usedRights;
     return Math.max(0, remaining);
   };
 
@@ -2154,21 +2186,30 @@ export default function App() {
 
       if (isSensitiveChange) {
         if (!showOtpPrompt) {
-          const code = Math.floor(100000 + Math.random() * 900000).toString();
-          setManagerOtp(code);
-          setShowOtpPrompt(true);
-          setInputOtp('');
-          showNotif("🔒 ตรวจพบการแก้ไขข้อมูลสำคัญ จำเป็นต้องยืนยันรหัส OTP จาก Manager", "warning");
+          try {
+            const otpRes = await fetch('/api/admin/request-manager-otp', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ adminUserId: currentUser?.userId })
+            });
+            const otpData = await otpRes.json();
+            if (otpData.success) {
+              setManagerOtp(otpData.otpSimulated);
+              setShowOtpPrompt(true);
+              setInputOtp('');
+              showNotif("🔒 ตรวจพบการแก้ไขข้อมูลสำคัญ ระบบได้ส่งรหัส OTP อนุมัติไปยังผู้จัดการ (Manager) แล้วค่ะ", "warning");
+            } else {
+              showNotif(otpData.message || "ไม่สามารถขอ OTP อนุมัติจาก Manager ได้ค่ะ", "error");
+            }
+          } catch (err) {
+            showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์เพื่อขอ OTP", "error");
+          }
           return;
         } else {
           if (inputOtp.trim() !== managerOtp) {
-            showNotif("❌ รหัส OTP ไม่ถูกต้อง กรุณากรอกรหัสใหม่อีกครั้ง", "error");
+            showNotif("❌ รหัส OTP อนุมัติไม่ถูกต้อง กรุณากรอกรหัสใหม่อีกครั้ง", "error");
             return;
           }
-          // Reset OTP states after verification succeeds
-          setShowOtpPrompt(false);
-          setManagerOtp('');
-          setInputOtp('');
         }
       }
     }
@@ -2177,7 +2218,7 @@ export default function App() {
       const res = await fetch('/api/admin/member-update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...editingMember, editorUserId: currentUser?.userId })
+        body: JSON.stringify({ ...editingMember, editorUserId: currentUser?.userId, otp: inputOtp })
       });
       const data = await res.json();
       if (data.success) {
@@ -2185,6 +2226,9 @@ export default function App() {
         setShowEditMemberModal(false);
         setEditingMember(null);
         setOriginalMember(null);
+        setShowOtpPrompt(false);
+        setManagerOtp('');
+        setInputOtp('');
         fetchAdminMembers();
         if (currentUser && editingMember.userId === currentUser.userId) {
           fetchProfile(true);
@@ -11231,32 +11275,34 @@ export default function App() {
                   </div>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAdminSection('admin_console');
-                    setAdminSubTab('systemReset');
-                  }}
-                  className={`p-4 rounded-3xl text-left transition-all duration-300 border relative overflow-hidden cursor-pointer ${
-                    adminSection === 'admin_console'
-                      ? 'bg-slate-800 border-slate-700 text-white shadow-lg shadow-slate-800/20'
-                      : 'bg-white border-slate-100 hover:border-slate-300 text-slate-700 hover:bg-slate-50/10'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
-                      adminSection === 'admin_console' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
-                    }`}>
-                      <Settings size={20} />
+                {profile?.role === 'Manager' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminSection('admin_console');
+                      setAdminSubTab('systemReset');
+                    }}
+                    className={`p-4 rounded-3xl text-left transition-all duration-300 border relative overflow-hidden cursor-pointer ${
+                      adminSection === 'admin_console'
+                        ? 'bg-slate-800 border-slate-700 text-white shadow-lg shadow-slate-800/20'
+                        : 'bg-white border-slate-100 hover:border-slate-300 text-slate-700 hover:bg-slate-50/10'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
+                        adminSection === 'admin_console' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        <Settings size={20} />
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-sm">Admin Console</h3>
+                        <p className={`text-[10px] mt-0.5 ${
+                          adminSection === 'admin_console' ? 'text-slate-200' : 'text-slate-400'
+                        }`}>ตั้งค่าธนาคาร, รีเซ็ตระบบ และควบคุมส่วนกลาง</p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-extrabold text-sm">Admin Console</h3>
-                      <p className={`text-[10px] mt-0.5 ${
-                        adminSection === 'admin_console' ? 'text-slate-200' : 'text-slate-400'
-                      }`}>ตั้งค่าธนาคาร, รีเซ็ตระบบ และควบคุมส่วนกลาง</p>
-                    </div>
-                  </div>
-                </button>
+                  </button>
+                )}
               </div>
 
               {/* Admin Submenu rendered based on active adminSection */}
@@ -14351,6 +14397,7 @@ export default function App() {
                       { id: 'plana', label: '📊 แผน A ไบนารี่', icon: <Binary size={14} /> },
                       { id: 'planb', label: '🏆 แผน B B1-B15', icon: <Award size={14} /> },
                       { id: 'allshare', label: '💎 All-Share & ปันสุข', icon: <Heart size={14} /> },
+                      { id: 'remainingRights', label: '🛡️ เงื่อนไข สิทธิ์คงเหลือ', icon: <ShieldCheck size={14} /> },
                       { id: 'transfers', label: '💸 การโอน & การถอนเงิน', icon: <ArrowLeftRight size={14} /> },
                       { id: 'partner', label: '🤝 พาร์ทเนอร์ร้านค้า & GP', icon: <Store size={14} /> },
                       { id: 'accounting', label: '🏦 บัญชีแยกประเภท & ภาษี', icon: <Receipt size={14} /> },
@@ -14866,6 +14913,369 @@ export default function App() {
                               ระบบจะมีการเปิดเผยสถิติกองทุนปันสุข (CSR Fund Balance) พร้อมบอร์ดบันทึกประวัติการปันส่วนอย่างตรงไปตรงมาหน้าเว็บบอร์ด เพื่อแสดงความโปร่งใสและร่วมอนุโมทนาบุญของครอบครัว นที พลัส ทุกรหัส
                             </p>
                           </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Remaining Rights (สิทธิ์คงเหลือ) Tab */}
+                    {systemCondTab === 'remainingRights' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center text-lg shadow-inner">
+                            🛡️
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">เกณฑ์การคำนวณสิทธิ์รับรายได้คงเหลือ (Remaining Income Rights Policy)</h4>
+                            <p className="text-xs text-slate-400 font-medium">ระเบียบและข้อบังคับสิทธิ์การรับรายได้สะสมของสมาชิกเมื่อได้รับคอมมิชชันและปันส่วนระบบ</p>
+                          </div>
+                        </div>
+
+                        {/* Manager/Admin Settings Card to toggle calculation mode */}
+                        <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 space-y-4">
+                          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                              <h5 className="text-sm font-black text-slate-900 flex items-center gap-1.5 font-sans">
+                                ⚙️ ตั้งค่าเงื่อนไขการคิดคำนวณสิทธิ์คงเหลือของระบบ (System Configuration)
+                              </h5>
+                              <p className="text-xs text-slate-400 mt-0.5">
+                                {profile?.role === 'Manager' 
+                                  ? 'เฉพาะผู้จัดการ (Manager) เท่านั้นที่มีสิทธิ์เลือกโครงสร้างการคิดคำนวณสิทธิ์คงเหลือของทั้งระบบ'
+                                  : 'หน้าแสดงผลสิทธิ์คงเหลืออ้างอิงตามค่าที่ได้รับการอนุมัติจากผู้จัดการ (Manager)'}
+                              </p>
+                            </div>
+                            
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-bold text-xs border border-indigo-150">
+                              โหมดปัจจุบัน: {bankSettings?.remainingRightsMode === '2_channels' ? '2 ช่องทาง (E-Money + E-Coupon)' : '1 ช่องทาง (E-Money เท่านั้น)'}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <button
+                              type="button"
+                              disabled={profile?.role !== 'Manager'}
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch('/api/bank-settings', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ remainingRightsMode: '1_channel', editorUserId: currentUser?.userId })
+                                  });
+                                  const d = await res.json();
+                                  if (d.success) {
+                                    setBankSettings(d.bankSettings);
+                                    showNotif("✓ ปรับเปลี่ยนวิธีการคิดคำนวณสิทธิ์คงเหลือเป็นแบบ 1 ช่องทางเรียบร้อยแล้วค่ะ", "success");
+                                  } else {
+                                    showNotif(d.message, "error");
+                                  }
+                                } catch (e) {
+                                  showNotif("ไม่สามารถปรับการตั้งค่าระบบได้", "error");
+                                }
+                              }}
+                              className={`p-4 rounded-2xl border text-left transition-all ${
+                                bankSettings?.remainingRightsMode !== '2_channels'
+                                  ? 'bg-indigo-500/10 border-indigo-200 ring-2 ring-indigo-500/20'
+                                  : 'bg-white border-slate-200 hover:bg-slate-100/50'
+                              } ${profile?.role !== 'Manager' ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <span className="text-xl mt-0.5">🔹</span>
+                                <div>
+                                  <h6 className="font-extrabold text-xs text-slate-800">คิดสิทธิ์คงเหลือจาก 1 ช่องทาง (E-Money เท่านั้น)</h6>
+                                  <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                                    สิทธิ์คงเหลือ = สิทธิ์ที่ได้รับ - รายได้กระเป๋า E-Money สุทธิหลังหักค่าใช้จ่ายทั้งหมด (ปันสุข, All-Share, ค่าระบบ)
+                                  </p>
+                                </div>
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={profile?.role !== 'Manager'}
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch('/api/bank-settings', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ remainingRightsMode: '2_channels', editorUserId: currentUser?.userId })
+                                  });
+                                  const d = await res.json();
+                                  if (d.success) {
+                                    setBankSettings(d.bankSettings);
+                                    showNotif("✓ ปรับเปลี่ยนวิธีการคิดคำนวณสิทธิ์คงเหลือเป็นแบบ 2 ช่องทางเรียบร้อยแล้วค่ะ", "success");
+                                  } else {
+                                    showNotif(d.message, "error");
+                                  }
+                                } catch (e) {
+                                  showNotif("ไม่สามารถปรับการตั้งค่าระบบได้", "error");
+                                }
+                              }}
+                              className={`p-4 rounded-2xl border text-left transition-all ${
+                                bankSettings?.remainingRightsMode === '2_channels'
+                                  ? 'bg-indigo-500/10 border-indigo-200 ring-2 ring-indigo-500/20'
+                                  : 'bg-white border-slate-200 hover:bg-slate-100/50'
+                              } ${profile?.role !== 'Manager' ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <span className="text-xl mt-0.5">♊</span>
+                                <div>
+                                  <h6 className="font-extrabold text-xs text-slate-800">คิดสิทธิ์คงเหลือจาก 2 ช่องทาง (E-Money + E-Coupon)</h6>
+                                  <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                                    สิทธิ์คงเหลือ = สิทธิ์ที่ได้รับ - ผลรวมของ (รายได้กระเป๋า E-Money สุทธิ + รายได้กระเป๋า E-Coupon สุทธิ) หลังหักค่าใช้จ่ายทั้งหมด
+                                  </p>
+                                </div>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Core Policy Card */}
+                        <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-6 rounded-3xl border border-slate-800 shadow-lg space-y-4 relative overflow-hidden">
+                          <div className="absolute top-0 right-0 -mt-8 -mr-8 w-32 h-32 rounded-full bg-sky-500/10 blur-2xl"></div>
+                          <div className="relative space-y-2">
+                            <span className="text-[10px] uppercase font-black tracking-widest text-sky-400 bg-sky-500/10 px-2.5 py-1 rounded-full border border-sky-500/20">
+                              📢 สูตรเกณฑ์การคิดคำนวณสิทธิ์คงเหลืออย่างเป็นทางการ
+                            </span>
+                            <h5 className="text-lg font-bold text-white">
+                              เมื่อสมาชิกได้รับสิทธิ์ตามระดับแพ็กเกจแล้ว สิทธิ์คงเหลือจะถูกลดทอนด้วยช่องทางรายได้สุทธิ
+                            </h5>
+                            <p className="text-xs text-slate-300 leading-relaxed max-w-4xl">
+                              {bankSettings?.remainingRightsMode === '2_channels' ? (
+                                <>
+                                  ระบบจะหักสิทธิ์คงเหลือ <strong className="text-yellow-300">จาก 2 ช่องทางหลักรวมกัน คือ รายได้สุทธิที่โอนเข้ากระเป๋า E-Money และยอดคะแนน E-Coupon (หลังหักค่าใช้จ่าย/จัดสรรกองทุนระบบทั้งหมดแล้ว)</strong> โดยเมื่อยอดรายได้สะสมสูงขึ้นเรื่อยๆ สิทธิ์คงเหลือจะลดลงตามสัดส่วน จนกว่าจะเป็นศูนย์ (หลังจากนั้นต้องอัปเกรดแพ็กเกจเพื่อขยายสิทธิ์เพิ่ม)
+                                </>
+                              ) : (
+                                <>
+                                  ระบบจะหักสิทธิ์คงเหลือ <strong className="text-yellow-300">เฉพาะจากรายได้ใน 1 ช่องทางหลัก คือ รายได้สุทธิที่โอนเข้ากระเป๋า E-Money (หลังหักค่าใช้จ่าย/จัดสรรกองทุนระบบทั้งหมดแล้ว)</strong> โดยเมื่อยอดรายได้จาก E-Money นี้สะสมขึ้นเรื่อยๆ สิทธิ์คงเหลือจะลดลงตามสัดส่วน จนกว่าสิทธิ์คงเหลือจะเป็นศูนย์ (หลังจากนั้นต้องอัปเกรดแพ็กเกจเพื่อขยายสิทธิ์เพิ่ม)
+                                </>
+                              )}
+                            </p>
+                          </div>
+
+                          {/* Graphic Formula */}
+                          <div className="bg-black/30 border border-white/10 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-center gap-4 text-center">
+                            <div className="bg-sky-500/20 border border-sky-400/30 px-4 py-2.5 rounded-xl min-w-[150px]">
+                              <p className="text-[10px] text-sky-300 font-bold">🛡️ สิทธิ์คงเหลือ</p>
+                              <p className="text-sm font-black font-mono text-white">Remaining Rights</p>
+                            </div>
+                            <span className="text-lg font-black text-slate-400">=</span>
+                            <div className="bg-indigo-500/20 border border-indigo-400/30 px-4 py-2.5 rounded-xl min-w-[150px]">
+                              <p className="text-[10px] text-indigo-300 font-bold">📋 สิทธิ์ที่ได้รับ (ตามแพ็กเกจ)</p>
+                              <p className="text-sm font-black font-mono text-white">Eligible Rights</p>
+                            </div>
+                            <span className="text-lg font-black text-rose-400">-</span>
+                            <div className="bg-amber-500/20 border border-amber-400/30 px-4 py-2.5 rounded-xl min-w-[150px]">
+                              <p className="text-[10px] text-amber-300 font-bold">
+                                {bankSettings?.remainingRightsMode === '2_channels' ? '💰 ยอด E-Money + E-Coupon' : '💰 รายได้ E-Money สุทธิ'}
+                              </p>
+                              <p className="text-sm font-black font-mono text-white">
+                                {bankSettings?.remainingRightsMode === '2_channels' ? 'Net 2-Channels Income' : 'Net E-Money Income'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Two Columns: Explanation & Interactive Calculator */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
+                          
+                          {/* Left Column: Tables & Explanation */}
+                          <div className="space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                              📋 ตารางสิทธิ์ที่ได้รับมาตรฐาน (Default Eligible Rights by Package)
+                            </h5>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              โดยปกติ เมื่อเริ่มสมัครสมาชิกหรืออัปเกรดแพ็กเกจ สมาชิกจะได้รับสิทธิ์ในการรับรายได้ปันผลและโบนัสคิดเป็น <strong className="text-slate-800">10 เท่าของมูลค่าแพ็กเกจพื้นฐาน</strong> ดังนี้:
+                            </p>
+
+                            <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-sm text-xs bg-white">
+                              <table className="w-full text-left border-collapse">
+                                <thead className="bg-slate-50 border-b border-slate-150">
+                                  <tr className="text-slate-700 font-bold">
+                                    <th className="px-4 py-3">แพ็กเกจเปิดสิทธิ์</th>
+                                    <th className="px-4 py-3 text-right">ยอดซื้อแพ็กเกจ</th>
+                                    <th className="px-4 py-3 text-right text-indigo-600">สิทธิ์ที่ได้รับ (10 เท่า)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 text-slate-600 font-medium">
+                                  <tr>
+                                    <td className="px-4 py-2.5 flex items-center gap-1.5">🌱 <strong className="text-slate-800">กลุ่ม S</strong></td>
+                                    <td className="px-4 py-2.5 text-right font-mono">฿ 100.00</td>
+                                    <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-600">฿ 1,000.00</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-4 py-2.5 flex items-center gap-1.5">🏡 <strong className="text-slate-800">กลุ่ม M</strong></td>
+                                    <td className="px-4 py-2.5 text-right font-mono">฿ 1,000.00</td>
+                                    <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-600">฿ 10,000.00</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-4 py-2.5 flex items-center gap-1.5">🥗 <strong className="text-slate-800">กลุ่ม L</strong></td>
+                                    <td className="px-4 py-2.5 text-right font-mono">฿ 5,000.00</td>
+                                    <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-600">฿ 50,000.00</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-4 py-2.5 flex items-center gap-1.5">⚡ <strong className="text-slate-800">กลุ่ม XL</strong></td>
+                                    <td className="px-4 py-2.5 text-right font-mono">฿ 10,000.00</td>
+                                    <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-600">฿ 100,000.00</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-4 py-2.5 flex items-center gap-1.5">💎 <strong className="text-slate-800">กลุ่ม XXL</strong></td>
+                                    <td className="px-4 py-2.5 text-right font-mono">฿ 50,000.00</td>
+                                    <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-600">฿ 500,000.00</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+
+                            <div className="bg-slate-50 border border-slate-150 p-4 rounded-2xl text-[11px] text-slate-500 leading-relaxed space-y-2">
+                              <p className="font-bold text-slate-700 flex items-center gap-1">📌 ข้อควรรู้ด้านระบบบัญชีและค่าใช้จ่าย:</p>
+                              <ul className="list-disc list-inside space-y-1 text-slate-500">
+                                <li><strong>รายได้หลังหักค่าใช้จ่ายทั้งหมด</strong> หมายถึง ยอดเงินปันผล/โบนัสที่หักค่าจัดสรร All-Share, กองทุนช่วยเหลือ CSR ปันสุข, คูปอง และส่วนสร้างรหัสถัดไป (รวมการจัดสรร 20% ของแผน B) เรียบร้อยแล้ว</li>
+                                <li>ยอดโบนัสที่จ่ายจริงเข้าสู่กระเป๋า <strong>E-Money</strong> เท่านั้นที่จะถูกนำมาคิดลดทอนสิทธิ์รับรายได้คงเหลือ</li>
+                                <li>คะแนนโบนัสที่จัดสรรไปในรูปของ <strong>E-Coupon</strong> หรือสิทธิประโยชน์อื่น จะไม่นำมาหักลดสิทธิ์นี้ เพื่อปกป้องสิทธิประโยชน์สูงสุดในการช้อปปิ้งของสมาชิก</li>
+                              </ul>
+                            </div>
+                          </div>
+
+                          {/* Right Column: Live Simulator */}
+                          <div className="bg-slate-50 border border-slate-200 p-5 rounded-3xl space-y-4">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                              🧮 เครื่องคิดเลขจำลองสิทธิ์คงเหลือ (Interactive Calculator)
+                            </h5>
+                            <p className="text-xs text-slate-500">
+                              ทดลองเลือกแพ็กเกจและจำลองยอดรายได้สุทธิเพื่อดูการอัปเดตสิทธิ์คงเหลือแบบเรียลไทม์
+                            </p>
+
+                            {/* Rank Selection Buttons */}
+                            <div className="space-y-1.5">
+                              <label className="block text-slate-700 font-bold text-xs">เลือกแพ็กเกจจำลอง :</label>
+                              <div className="flex flex-wrap gap-1.5">
+                                {[
+                                  { id: 'S', label: '🌱 กลุ่ม S', val: 1000 },
+                                  { id: 'M', label: '🏡 กลุ่ม M', val: 10000 },
+                                  { id: 'L', label: '🥗 กลุ่ม L', val: 50000 },
+                                  { id: 'XL', label: '⚡ กลุ่ม XL', val: 100000 },
+                                  { id: 'XXL', label: '💎 กลุ่ม XXL', val: 500000 },
+                                  { id: 'Custom', label: '⚙️ กำหนดเอง', val: 0 },
+                                ].map(p => (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSimRightsRank(p.id);
+                                      if (p.id !== 'Custom') {
+                                        setSimRightsCustom(p.val.toString());
+                                      }
+                                    }}
+                                    className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer border ${
+                                      simRightsRank === p.id
+                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                        : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-200'
+                                    }`}
+                                  >
+                                    {p.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Input Eligible Rights */}
+                            <div>
+                              <label className="block text-slate-700 font-bold text-xs mb-1">
+                                {simRightsRank === 'Custom' ? 'ระบุสิทธิ์ที่ได้รับ (บาท) *' : 'สิทธิ์ที่ได้รับคงที่ตามแพ็กเกจ (บาท) :'}
+                              </label>
+                              <input
+                                type="number"
+                                disabled={simRightsRank !== 'Custom'}
+                                value={simRightsCustom}
+                                onChange={(e) => setSimRightsCustom(e.target.value)}
+                                className="w-full border border-slate-300 rounded-xl px-4 py-2 text-xs text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white font-bold disabled:bg-slate-100/80 disabled:text-slate-500"
+                              />
+                            </div>
+
+                            {/* Input E-Money Net Income */}
+                            <div>
+                              <label className="block text-slate-700 font-bold text-xs mb-1 flex justify-between">
+                                <span>
+                                  {bankSettings?.remainingRightsMode === '2_channels'
+                                    ? 'ยอดรวมรายได้สะสมจาก 2 ช่องทาง (E-Money + E-Coupon) (บาท) :'
+                                    : 'รายได้จาก E-Money สุทธิหลังหักค่าใช้จ่ายสะสม (บาท) :'}
+                                </span>
+                                <span className="font-mono text-amber-600 font-black">฿ {parseFloat(simRightsEMoneyIncome || '0').toLocaleString()}</span>
+                              </label>
+                              <input
+                                type="range"
+                                min="0"
+                                max={parseFloat(simRightsCustom || '1000') * 1.2}
+                                step="50"
+                                value={simRightsEMoneyIncome}
+                                onChange={(e) => setSimRightsEMoneyIncome(e.target.value)}
+                                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                              />
+                              <input
+                                type="number"
+                                value={simRightsEMoneyIncome}
+                                onChange={(e) => setSimRightsEMoneyIncome(e.target.value)}
+                                placeholder={bankSettings?.remainingRightsMode === '2_channels' ? "ระบุยอดรายได้รวมสะสม 2 ช่องทาง" : "ระบุรายได้ E-Money สะสม"}
+                                className="w-full border border-slate-300 rounded-xl px-4 py-2 mt-1.5 text-xs text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white font-bold"
+                              />
+                            </div>
+
+                            {/* Calculator Results Display Card */}
+                            {(() => {
+                              const eligible = parseFloat(simRightsCustom || '0');
+                              const income = parseFloat(simRightsEMoneyIncome || '0');
+                              const remaining = Math.max(0, eligible - income);
+                              const isDepleted = remaining === 0;
+
+                              return (
+                                <div className={`border rounded-2xl p-4 text-center space-y-3 transition-all ${
+                                  isDepleted 
+                                    ? 'bg-rose-50/50 border-rose-150 text-rose-950' 
+                                    : 'bg-indigo-50/50 border-indigo-150 text-indigo-950'
+                                }`}>
+                                  <div className="flex justify-between items-center text-xs">
+                                    <span className="font-bold">สถานะสิทธิ์รับรายได้:</span>
+                                    {isDepleted ? (
+                                      <span className="bg-rose-100 text-rose-700 font-extrabold px-2 py-0.5 rounded-full text-[9px] border border-rose-200 animate-pulse">
+                                        ⚠️ สิทธิ์หมด (ต้องอัปเกรด)
+                                      </span>
+                                    ) : (
+                                      <span className="bg-emerald-100 text-emerald-700 font-extrabold px-2 py-0.5 rounded-full text-[9px] border border-emerald-200">
+                                        🟢 ปกติ (สิทธิ์ยังใช้งานได้)
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="py-2">
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">สิทธิ์คงเหลือจำลองสุทธิ</p>
+                                    <p className={`text-2xl font-black font-mono tracking-tight ${isDepleted ? 'text-rose-600' : 'text-indigo-700'}`}>
+                                      ฿ {remaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+
+                                  <div className="text-[10px] text-slate-500 font-medium space-y-1 text-left border-t border-slate-200/80 pt-2.5 leading-relaxed">
+                                    <div className="flex justify-between">
+                                      <span>1. สิทธิ์ที่ได้รับทั้งหมด (Eligible Rights):</span>
+                                      <span className="font-mono font-bold text-slate-700">฿ {eligible.toLocaleString()}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span>
+                                        {bankSettings?.remainingRightsMode === '2_channels'
+                                          ? '2. ยอดรายได้สะสม 2 ช่องทาง (E-Money + E-Coupon):'
+                                          : '2. รายได้จาก E-Money หักรายการแล้ว (EMoney Income):'}
+                                      </span>
+                                      <span className="font-mono font-bold text-slate-700">- ฿ {income.toLocaleString()}</span>
+                                    </div>
+                                    <div className="flex justify-between border-t border-dashed border-slate-200 pt-1 font-bold text-slate-800">
+                                      <span>3. ผลลัพธ์สิทธิ์คงเหลือ (Remaining Rights):</span>
+                                      <span className="font-mono text-indigo-600">฿ {remaining.toLocaleString()}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
+                          </div>
+
                         </div>
                       </div>
                     )}

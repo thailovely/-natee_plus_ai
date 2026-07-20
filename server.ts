@@ -418,7 +418,7 @@ async function saveDbToFirestore(data: any) {
   saveTimeout = setTimeout(async () => {
     saveTimeout = null;
     await processFirestoreSave();
-  }, 3000); // 3 seconds debounce to group multiple MLM actions together
+  }, 300); // 300ms debounce to group multiple MLM actions together and provide instant responsiveness
 }
 
 async function processFirestoreSave() {
@@ -4577,41 +4577,44 @@ app.get('/api/bank-settings', (req, res) => {
 
 // UPDATE SYSTEM BANK SETTINGS FOR DEPOSIT
 app.post('/api/bank-settings', (req, res) => {
-  const { bankName, bankAccount, bankAccountName, qrCodeFile, editorUserId } = req.body;
+  const { bankName, bankAccount, bankAccountName, qrCodeFile, editorUserId, remainingRightsMode } = req.body;
   const db = readDb();
   
   if (editorUserId) {
     const editor = db.members.find(m => m.userId === editorUserId);
-    if (!editor || editor.role !== 'Manager') {
-      return res.status(403).json({ success: false, message: "ไม่มีสิทธิ์ในการแก้ไขข้อมูลบัญชีธนาคาร (เฉพาะสิทธิ์ Manager เท่านั้น)" });
+    if (!editor || (editor.role !== 'Manager' && editor.role !== 'Admin')) {
+      return res.status(403).json({ success: false, message: "ไม่มีสิทธิ์ในการแก้ไขตั้งค่าระบบ (เฉพาะสิทธิ์ Manager หรือ Admin เท่านั้น)" });
     }
   }
 
   let qrCodeUrl = db.bankSettings?.qrCodeUrl || "";
-  try {
-    if (qrCodeFile && qrCodeFile.startsWith("data:")) {
-      const ext = qrCodeFile.split(';')[0].split('/')[1] || 'png';
-      const base64Data = qrCodeFile.replace(/^data:image\/\w+;base64,/, "");
-      const fileName = `bank_qr_${Date.now()}.${ext}`;
-      fs.writeFileSync(path.join(UPLOADS_DIR, fileName), base64Data, 'base64');
-      qrCodeUrl = `/uploads/${fileName}`;
-    } else if (qrCodeFile === null || qrCodeFile === "") {
-      qrCodeUrl = "";
+  if (qrCodeFile !== undefined) {
+    try {
+      if (qrCodeFile && qrCodeFile.startsWith("data:")) {
+        const ext = qrCodeFile.split(';')[0].split('/')[1] || 'png';
+        const base64Data = qrCodeFile.replace(/^data:image\/\w+;base64,/, "");
+        const fileName = `bank_qr_${Date.now()}.${ext}`;
+        fs.writeFileSync(path.join(UPLOADS_DIR, fileName), base64Data, 'base64');
+        qrCodeUrl = `/uploads/${fileName}`;
+      } else if (qrCodeFile === null || qrCodeFile === "") {
+        qrCodeUrl = "";
+      }
+    } catch (err) {
+      console.error("Error saving QR Code file:", err);
+      return res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการบันทึกรูปภาพ QR Code" });
     }
-  } catch (err) {
-    console.error("Error saving QR Code file:", err);
-    return res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการบันทึกรูปภาพ QR Code" });
   }
 
   db.bankSettings = {
-    bankName: bankName || "",
-    bankAccount: bankAccount || "",
-    bankAccountName: bankAccountName || "",
-    qrCodeUrl: qrCodeUrl
+    bankName: bankName !== undefined ? bankName : (db.bankSettings?.bankName || "ธนาคารไทยพาณิชย์"),
+    bankAccount: bankAccount !== undefined ? bankAccount : (db.bankSettings?.bankAccount || "111-222-3333"),
+    bankAccountName: bankAccountName !== undefined ? bankAccountName : (db.bankSettings?.bankAccountName || "บริษัท นที พลัส จำกัด"),
+    qrCodeUrl: qrCodeUrl,
+    remainingRightsMode: remainingRightsMode !== undefined ? remainingRightsMode : (db.bankSettings?.remainingRightsMode || "1_channel")
   };
 
   writeDb(db);
-  res.json({ success: true, message: "บันทึกข้อมูลบัญชีธนาคารและ QR Code เรียบร้อยแล้วค่ะ", bankSettings: db.bankSettings });
+  res.json({ success: true, message: "บันทึกข้อมูลการตั้งค่าระบบเรียบร้อยแล้วค่ะ", bankSettings: db.bankSettings });
 });
 
 // GET FIREBASE CLIENT CONFIG FOR REAL-TIME SYNC
@@ -4878,6 +4881,30 @@ app.delete('/api/admin/delete-member/:userId', (req, res) => {
   res.json({ success: true, message: 'Member deleted' });
 });
 
+// REQUEST MANAGER OTP (For Admin sensitive actions)
+app.post('/api/admin/request-manager-otp', (req, res) => {
+  const { adminUserId } = req.body;
+  const db = readDb();
+  
+  // Verify request is from Admin
+  const admin = db.members.find(m => m.userId === adminUserId);
+  if (!admin || admin.role !== 'Admin') {
+    return res.status(403).json({ success: false, message: "ปฏิเสธการเข้าถึง: เฉพาะบัญชีสิทธิ์ Admin เท่านั้นที่มีสิทธิ์ขอ OTP อนุมัติได้ค่ะ" });
+  }
+
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  if (!db.otps) db.otps = {};
+  db.otps['MANAGER_APPROVAL_OTP'] = otpCode;
+  
+  writeDb(db);
+  
+  res.json({
+    success: true,
+    otpSimulated: otpCode,
+    message: `ส่งรหัส OTP อนุมัติ 6 หลักไปยังผู้จัดการ (Manager) เรียบร้อยแล้วค่ะ (รหัสสำหรับทดสอบคือ ${otpCode})`
+  });
+});
+
 // UPDATE MEMBER INFO FROM ADMIN CONSOLE
 app.post('/api/admin/member-update', (req, res) => {
   const { 
@@ -4889,7 +4916,8 @@ app.post('/api/admin/member-update', (req, res) => {
     parentId,
     side,
     planBPoints,
-    editorUserId
+    editorUserId,
+    otp
   } = req.body;
   
   if (!userId) {
@@ -4907,6 +4935,43 @@ app.post('/api/admin/member-update', (req, res) => {
   const member = db.members.find(m => m.userId === userId);
   if (!member) {
     return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกที่ต้องการแก้ไข" });
+  }
+
+  // Sensitive changes validation for Admin role requiring Manager OTP
+  if (editor.role === 'Admin') {
+    const hasFinancialChange = 
+      (balanceECash !== undefined && Number(balanceECash) !== Number(member.balanceECash || 0)) ||
+      (balanceEMoney !== undefined && Number(balanceEMoney) !== Number(member.balanceEMoney || 0)) ||
+      (balanceECoupon !== undefined && Number(balanceECoupon) !== Number(member.balanceECoupon || 0)) ||
+      (eligibleRights !== undefined && Number(eligibleRights) !== Number(member.eligibleRights || 0)) ||
+      (planBPoints !== undefined && Number(planBPoints) !== Number(member.planBPoints || 0));
+
+    const hasNameChange = 
+      (name !== undefined && name !== member.name) ||
+      (surname !== undefined && surname !== member.surname);
+
+    const hasIdCardChange = 
+      (idCard !== undefined && idCard !== member.idCard);
+
+    const hasBankChange = 
+      (bankName !== undefined && bankName !== member.bankName) ||
+      (bankAccount !== undefined && bankAccount !== member.bankAccount) ||
+      (bankAccountName !== undefined && bankAccountName !== member.bankAccountName);
+
+    const isSensitiveChange = hasFinancialChange || hasNameChange || hasIdCardChange || hasBankChange;
+
+    if (isSensitiveChange) {
+      const activeOtp = db.otps ? db.otps['MANAGER_APPROVAL_OTP'] : null;
+      if (!otp || otp !== activeOtp) {
+        return res.status(400).json({ 
+          success: false, 
+          requiresManagerOtp: true, 
+          message: "⚠️ การแก้ไขข้อมูลสำคัญโดยสิทธิ์ Admin จำเป็นต้องยืนยันรหัส OTP อนุมัติจาก Manager" 
+        });
+      }
+      // OTP verified successfully, clear it
+      delete db.otps['MANAGER_APPROVAL_OTP'];
+    }
   }
 
   // Validate username if changed
