@@ -1,11 +1,8 @@
-{
-  "projectId": "indigo-brand-j6rpq",
-  "appId": "1:418124597541:web:026505fa49e51a557072cc",
-  "apiKey": "AIzaSyBWdkOphH9pzJQuL1vZ3ujo_GxO5D-ViMs",
-  "authDomain": "indigo-brand-j6rpq.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-nateeplusshop-60eb5c6a-6455-4fa5-88c9-2dd825dc0804",
-  "storageBucket": "indigo-brand-j6rpq.firebasestorage.app",
-  "messagingSenderId": "418124597541",
-  "measurementId": "",
-  "oAuthClientId": "418124597541-uf0k8nfv0l1li5op9m3vd9i7sctj9jla.apps.googleusercontent.com"
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
 }
