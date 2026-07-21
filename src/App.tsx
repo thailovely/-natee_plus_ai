@@ -8,7 +8,7 @@ import {
   Eye, EyeOff, X, ClipboardList, Printer, Lock, FileSpreadsheet,
   Coins, FileText, Store, Bell, Truck, UserX, RotateCcw, 
   MessageSquare, BookOpen, BarChart2, Home, ShoppingCart, ChevronRight,
-  Binary, Award, Heart, ArrowLeftRight, Receipt, Calculator
+  Binary, Award, Heart, ArrowLeftRight, Receipt, Calculator, Database
 } from 'lucide-react';
 import { thaiAddressData } from './thaiAddressData';
 import { NateeWarehouseMap } from './components/NateeWarehouseMap';
@@ -305,6 +305,65 @@ export default function App() {
     } finally {
       setTogglingSandbox(false);
     }
+  };
+
+  const [importingDb, setImportingDb] = useState(false);
+  const [showImportConfirmModal, setShowImportConfirmModal] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState<string | null>(null);
+
+  const handleExportDatabase = async () => {
+    try {
+      window.open('/api/admin/export-db', '_blank');
+    } catch (err: any) {
+      setImportError("ไม่สามารถส่งออกฐานข้อมูลได้ค่ะ: " + err.message);
+      setShowImportConfirmModal(true);
+    }
+  };
+
+  const handleImportDatabase = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportFile(file);
+    setImportError(null);
+    setImportSuccess(null);
+    setShowImportConfirmModal(true);
+    e.target.value = ''; // Reset file input so same file can be selected again
+  };
+
+  const executeImportDatabase = async () => {
+    if (!importFile) return;
+
+    setImportingDb(true);
+    setImportError(null);
+    setImportSuccess(null);
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const jsonText = event.target?.result as string;
+        const dbData = JSON.parse(jsonText);
+
+        const res = await fetch('/api/admin/import-db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dbData })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setImportSuccess(data.message);
+        } else {
+          setImportError(data.message);
+        }
+      } catch (err: any) {
+        setImportError("เกิดข้อผิดพลาดในการประมวลผลไฟล์ JSON: " + err.message);
+      } finally {
+        setImportingDb(false);
+      }
+    };
+    reader.readAsText(importFile);
   };
 
   const [copied, setCopied] = useState(false);
@@ -1213,7 +1272,11 @@ export default function App() {
 
               // 2. Sync Transactions & Queues
               const transactions = data.transactions || [];
-              setTransactions(transactions.filter((t: any) => t.userId === currentUser.userId));
+              if (currentUser?.role === 'Admin' || currentUser?.role === 'Manager') {
+                setTransactions(transactions);
+              } else {
+                setTransactions(transactions.filter((t: any) => t.userId === currentUser.userId));
+              }
               setWithQueue(transactions.filter((t: any) => t.type === 'WithdrawalRequest' && t.status === 'Pending'));
               setDepositQueue(transactions.filter((t: any) => t.type === 'Deposit' && t.status === 'Pending'));
 
@@ -1482,7 +1545,11 @@ export default function App() {
         safeSubscribe('transactions', (snapshot) => {
           if (snapshot.exists()) {
             const data = snapshot.data().data || [];
-            setTransactions(data.filter((t: any) => t.userId === currentUser.userId));
+            if (currentUser?.role === 'Admin' || currentUser?.role === 'Manager') {
+              setTransactions(data);
+            } else {
+              setTransactions(data.filter((t: any) => t.userId === currentUser.userId));
+            }
             setWithQueue(data.filter((t: any) => t.type === 'WithdrawalRequest' && t.status === 'Pending'));
             setDepositQueue(data.filter((t: any) => t.type === 'Deposit' && t.status === 'Pending'));
           }
@@ -1969,9 +2036,17 @@ export default function App() {
 
   const fetchTransactions = async () => {
     try {
-      const res = await fetch(`/api/member/transactions/${currentUser.userId}`);
-      const data = await res.json();
-      if (data.success) setTransactions(data.transactions);
+      if (currentUser?.role === 'Admin' || currentUser?.role === 'Manager') {
+        const res = await fetch('/api/sync-state');
+        const data = await res.json();
+        if (data.success && data.data) {
+          setTransactions(data.data.transactions || []);
+        }
+      } else {
+        const res = await fetch(`/api/member/transactions/${currentUser.userId}`);
+        const data = await res.json();
+        if (data.success) setTransactions(data.transactions);
+      }
     } catch (err) {}
   };
 
@@ -5946,14 +6021,12 @@ export default function App() {
                   <span className="text-xs text-indigo-100 font-medium">E-Cash (บาท)</span>
                   <h3 className="text-3xl font-extrabold tracking-tight mt-3">{profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
                   <p className="text-[10px] text-indigo-200 mt-4">กระเป๋าเงินฝากเข้าจากภายนอก สำหรับซื้อแพ็กเกจหรือโอนเปลี่ยน</p>
-                  {(profile?.role === 'Admin' || profile?.role === 'Manager') && (
-                    <button 
-                      onClick={() => { setActiveTab('report'); setReportSubTab('ecash'); }}
-                      className="mt-4 text-[9px] bg-white text-indigo-700 font-bold px-3 py-1 rounded-lg hover:bg-indigo-50 transition"
-                    >
-                      ดูรายงาน E-Cash
-                    </button>
-                  )}
+                  <button 
+                    onClick={() => { setActiveTab('report'); setReportSubTab('ecash'); }}
+                    className="mt-4 text-[9px] bg-white text-indigo-700 font-bold px-3 py-1 rounded-lg hover:bg-indigo-50 transition"
+                  >
+                    ดูรายงาน E-Cash
+                  </button>
                 </div>
 
                 <div className="bg-gradient-to-br from-purple-600 to-indigo-800 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden">
@@ -8632,16 +8705,14 @@ export default function App() {
 
                 {/* Report Sub-tabs Selector */}
                 <div className="flex flex-wrap gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200">
-                  {(profile?.role === 'Admin' || profile?.role === 'Manager') && (
-                    <button 
-                      onClick={() => setReportSubTab('ecash')}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                        reportSubTab === 'ecash' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      💳 รายงาน E-Cash
-                    </button>
-                  )}
+                  <button 
+                    onClick={() => setReportSubTab('ecash')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      reportSubTab === 'ecash' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    💳 รายงาน E-Cash
+                  </button>
                   <button 
                     onClick={() => setReportSubTab('emoney')}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
@@ -8682,16 +8753,14 @@ export default function App() {
                   >
                     🕸️ ผังไบนารี
                   </button>
-                  {(profile?.role === 'Admin' || profile?.role === 'Manager') && (
-                    <button 
-                      onClick={() => setReportSubTab('memberTax')}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                        reportSubTab === 'memberTax' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      📄 ภาษี & 50 ทวิ (สมาชิก)
-                    </button>
-                  )}
+                  <button 
+                    onClick={() => setReportSubTab('memberTax')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      reportSubTab === 'memberTax' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    📄 ภาษี & 50 ทวิ (สมาชิก)
+                  </button>
                   {profile?.sellerStatus === 'Active' && (
                     <button 
                       onClick={() => setReportSubTab('sellerTax')}
@@ -8706,7 +8775,7 @@ export default function App() {
               </div>
 
               {/* REPORT E-CASH SUB-VIEW */}
-              {reportSubTab === 'ecash' && (profile?.role === 'Admin' || profile?.role === 'Manager') && (
+              {reportSubTab === 'ecash' && (
                 <div className="space-y-6">
                   {/* Ledger Balance Card */}
                   <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-3xl p-6 text-white shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -9426,7 +9495,7 @@ export default function App() {
               )}
 
               {/* REPORT MEMBER TAX SUB-VIEW */}
-              {reportSubTab === 'memberTax' && (profile?.role === 'Admin' || profile?.role === 'Manager') && (
+              {reportSubTab === 'memberTax' && (
                 <div className="space-y-6 animate-fadeIn">
                   <div className="bg-gradient-to-br from-indigo-900 to-indigo-950 rounded-3xl p-6 text-white shadow-sm space-y-4">
                     <div>
@@ -13923,6 +13992,168 @@ export default function App() {
                         )}
                       </button>
                     </div>
+                  </div>
+
+                  {/* Backup / JSON Migration Card */}
+                  <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
+                    <div className="text-center space-y-2">
+                      <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 mb-2 border border-indigo-100">
+                        <Database size={24} />
+                      </div>
+                      <h3 className="text-lg font-black text-slate-800">💾 นำเข้า / ส่งออกข้อมูลระบบ (Database Migration)</h3>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        ท่านสามารถย้ายข้อมูล, ทำการสำรองข้อมูล (Backup) หรือโคลนข้อมูลสมาชิกและสายงานทั้งหมดจากระบบจริงมาทดสอบใน Sandbox ได้อย่างปลอดภัย 100% ผ่านไฟล์ JSON โดยไม่ต้องอาศัยสิทธิ์เชื่อมต่อ Cloud ของสองฝั่งค่ะ
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Export Button */}
+                      <div className="border border-slate-100 rounded-2xl p-4 space-y-2 bg-slate-50/50 flex flex-col justify-between">
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                            <span>📤</span> ส่งออกฐานข้อมูล (Export Database)
+                          </h4>
+                          <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
+                            ดาวน์โหลดฐานข้อมูลสมาชิก, สินค้า, รายการธุรกรรม และสายงานปัจจุบันของโหมดนี้ {isSandboxActive ? '(Sandbox)' : '(Production)'} ออกมาเป็นไฟล์ .json สำรองเก็บไว้ในคอมพิวเตอร์ของคุณ
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleExportDatabase}
+                          className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-xl text-xs transition cursor-pointer shadow mt-2"
+                        >
+                          📤 ดาวน์โหลดไฟล์สำรองข้อมูล (.json)
+                        </button>
+                      </div>
+
+                      {/* Import Button */}
+                      <div className="border border-slate-100 rounded-2xl p-4 space-y-2 bg-slate-50/50 flex flex-col justify-between">
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                            <span>📥</span> นำเข้าฐานข้อมูล (Import Database)
+                          </h4>
+                          <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
+                            อัปโหลดไฟล์ข้อมูลสำรอง .json เพื่อเขียนทับฐานข้อมูลสมาชิกและธุรกรรมในโหมดที่เปิดใช้งานอยู่ {isSandboxActive ? '(Sandbox)' : '(Production)'} ทันที เหมาะสำหรับการคัดลอกข้อมูลสายงานมาทดลองอย่างสมบูรณ์แบบ
+                          </p>
+                        </div>
+                        <label className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded-xl text-xs transition cursor-pointer shadow text-center inline-block mt-2">
+                          {importingDb ? '⏳ กำลังนำเข้าข้อมูล...' : '📥 เลือกไฟล์ .json เพื่อนำเข้า'}
+                          <input
+                            type="file"
+                            accept=".json"
+                            onChange={handleImportDatabase}
+                            disabled={importingDb}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Custom Inline React Import Confirmation/Status Modal */}
+                    {showImportConfirmModal && (
+                      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+                        <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-5 animate-in fade-in zoom-in-95 duration-150 text-left">
+                          
+                          {importSuccess ? (
+                            // Success View
+                            <div className="space-y-4 text-center py-2">
+                              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 mb-2">
+                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                                </svg>
+                              </div>
+                              <h3 className="text-lg font-black text-emerald-800">🎉 นำเข้าข้อมูลเสร็จสมบูรณ์!</h3>
+                              <p className="text-xs text-slate-600 leading-relaxed bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100/50">
+                                {importSuccess}
+                              </p>
+                              <button
+                                onClick={() => {
+                                  setShowImportConfirmModal(false);
+                                  window.location.reload();
+                                }}
+                                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md transition"
+                              >
+                                🔄 โหลดหน้าเว็บใหม่เพื่ออัปเดตข้อมูล
+                              </button>
+                            </div>
+                          ) : importError ? (
+                            // Error View
+                            <div className="space-y-4 text-center py-2">
+                              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-rose-50 text-rose-600 border border-rose-100 mb-2">
+                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                              </div>
+                              <h3 className="text-lg font-black text-rose-800">❌ เกิดข้อผิดพลาดในการนำเข้า</h3>
+                              <p className="text-xs text-slate-600 leading-relaxed bg-rose-50/50 p-4 rounded-2xl border border-rose-100/50">
+                                {importError}
+                              </p>
+                              <button
+                                onClick={() => {
+                                  setShowImportConfirmModal(false);
+                                  setImportFile(null);
+                                  setImportError(null);
+                                }}
+                                className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition"
+                              >
+                                ปิดหน้าต่าง
+                              </button>
+                            </div>
+                          ) : (
+                            // Confirmation View
+                            <div className="space-y-4">
+                              <div className="flex items-start gap-3">
+                                <div className="p-2 bg-amber-50 text-amber-600 rounded-xl border border-amber-100 mt-1 shrink-0">
+                                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                  </svg>
+                                </div>
+                                <div className="space-y-1">
+                                  <h3 className="text-base font-black text-slate-800">⚠️ ยืนยันการนำเข้าไฟล์สำรองข้อมูล?</h3>
+                                  <p className="text-xs text-rose-600 font-bold">
+                                    คำเตือน: ข้อมูลเดิมทั้งหมดจะถูกเขียนทับทันที!
+                                  </p>
+                                </div>
+                              </div>
+
+                              <p className="text-xs text-slate-500 leading-relaxed">
+                                การนำเข้าไฟล์นี้จะทำการบันทึกข้อมูลทับระบบปัจจุบัน ({isSandboxActive ? 'ระบบจำลอง Sandbox' : 'ระบบจริง Production'}) ทั้งหมด รวมถึงผังสายงาน ประวัติธุรกรรม รายการสินค้า และประวัติทั้งหมด!
+                              </p>
+
+                              <div className="p-3 bg-indigo-50/50 rounded-2xl border border-indigo-100/40 space-y-1">
+                                <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">ไฟล์สำรองข้อมูลที่เลือก:</p>
+                                <p className="text-xs font-black text-slate-700 truncate">{importFile?.name}</p>
+                                <p className="text-[11px] text-slate-500">ขนาดไฟล์: {importFile?.size ? (importFile.size / 1024).toFixed(2) + ' KB' : 'ไม่ทราบขนาด'}</p>
+                              </div>
+
+                              <div className="flex gap-3 pt-2">
+                                <button
+                                  onClick={() => {
+                                    setShowImportConfirmModal(false);
+                                    setImportFile(null);
+                                  }}
+                                  disabled={importingDb}
+                                  className="w-1/3 border border-slate-200 text-slate-600 font-bold py-2.5 px-4 rounded-xl text-xs hover:bg-slate-50 disabled:opacity-50 transition"
+                                >
+                                  ยกเลิก
+                                </button>
+                                <button
+                                  onClick={executeImportDatabase}
+                                  disabled={importingDb}
+                                  className="w-2/3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-200 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md flex items-center justify-center gap-1.5 transition"
+                                >
+                                  {importingDb ? (
+                                    <>⏳ กำลังเขียนทับฐานข้อมูล...</>
+                                  ) : (
+                                    <>📥 ยืนยันนำเข้าข้อมูล</>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Firestore Manual Sync Card */}

@@ -156,7 +156,7 @@ function setupServerRealTimeSync() {
   }
 }
 
-async function loadDbFromFirestore() {
+async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
   if (!dbFirestore) {
     console.log("Firestore not initialized, loading from local db.json");
     return;
@@ -169,6 +169,83 @@ async function loadDbFromFirestore() {
     const collectionName = isSandboxActive ? 'app_sections_sandbox' : 'app_sections';
     const currentDbFile = isSandboxActive ? DB_FILE_SANDBOX : DB_FILE;
     
+    // 0. Force Reset sandbox from production if requested
+    if (isSandboxActive && forceResetFromProduction) {
+      console.log("📥 [Reset] Force cloning live production data into sandbox...");
+      let initialProdData: any = {};
+      let hasInitialProdData = false;
+      
+      // Load from local db.json first for instant recovery/cloning (0ms)
+      if (fs.existsSync(DB_FILE)) {
+        try {
+          initialProdData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+          hasInitialProdData = true;
+          console.log("✅ [Reset] Successfully read local db.json for instant clone.");
+        } catch (e) {
+          console.error("❌ [Reset] Failed to read local db.json:", e);
+        }
+      }
+      
+      if (hasInitialProdData && Object.keys(initialProdData).length > 0) {
+        cacheDb = JSON.parse(JSON.stringify(initialProdData));
+        fs.writeFileSync(DB_FILE_SANDBOX, JSON.stringify(cacheDb, null, 2), 'utf8');
+        isDatabaseLoadedFromFirestore = true;
+        setupServerRealTimeSync();
+        
+        // Start background high-fidelity synchronization from Firestore so it doesn't block HTTP response!
+        (async () => {
+          try {
+            console.log("📥 [Background Reset] Pulling latest live production data from Firestore 'app_sections' in parallel...");
+            const prodData: any = {};
+            let hasProdData = false;
+            
+            // Fetch all keys in parallel!
+            const fetchPromises = keys.map(async (key) => {
+              try {
+                const docRef = doc(dbFirestore, 'app_sections', key);
+                const snap = await getDoc(docRef);
+                if (snap.exists()) {
+                  return { key, data: snap.data().data };
+                }
+              } catch (e) {
+                console.error(`❌ [Background Reset] Failed to fetch production key '${key}':`, e);
+              }
+              return null;
+            });
+            
+            const results = await Promise.all(fetchPromises);
+            for (const res of results) {
+              if (res) {
+                prodData[res.key] = res.data;
+                hasProdData = true;
+              }
+            }
+            
+            if (hasProdData && Object.keys(prodData).length > 0) {
+              cacheDb = JSON.parse(JSON.stringify(prodData));
+              fs.writeFileSync(DB_FILE_SANDBOX, JSON.stringify(cacheDb, null, 2), 'utf8');
+              
+              // Write batch to Firestore sandbox collection
+              const batch = writeBatch(dbFirestore);
+              for (const key of keys) {
+                if (cacheDb[key] !== undefined) {
+                  const docRef = doc(dbFirestore, 'app_sections_sandbox', key);
+                  batch.set(docRef, { data: cacheDb[key] });
+                }
+              }
+              await batch.commit();
+              console.log("✅ [Background Reset] Sandbox Firestore successfully overwritten with live production data.");
+              setupServerRealTimeSync();
+            }
+          } catch (bgErr: any) {
+            console.error("❌ [Background Reset Error] Failed to complete Firestore background sync:", bgErr);
+          }
+        })();
+        
+        return;
+      }
+    }
+
     console.log(`📥 Loading app sections from Firestore (${collectionName})...`);
     for (const key of keys) {
       const docRef = doc(dbFirestore, collectionName, key);
@@ -212,7 +289,11 @@ async function loadDbFromFirestore() {
       // Merge members (union by userId)
       const mergedMembers = [...(loadedData.members || [])];
       let hasMergedChanges = false;
-      if (localDb && Array.isArray(localDb.members)) {
+      
+      const isProductionMode = process.env.NODE_ENV === 'production' || (typeof __filename !== 'undefined' && __filename.endsWith('.cjs'));
+      const skipLocalMerge = isProductionMode && mergedMembers.length > 0;
+
+      if (!skipLocalMerge && localDb && Array.isArray(localDb.members)) {
         for (const localMember of localDb.members) {
           if (!localMember || !localMember.userId) continue;
           const idx = mergedMembers.findIndex((m: any) => m.userId === localMember.userId);
@@ -4779,82 +4860,83 @@ app.get('/api/admin/sandbox-status', (req, res) => {
   });
 });
 
+// EXPORT WHOLE DATABASE AS JSON
+app.get('/api/admin/export-db', (req, res) => {
+  try {
+    if (!cacheDb) {
+      return res.status(404).json({ success: false, message: "ไม่มีข้อมูลในฐานข้อมูลให้ทำการส่งออกค่ะ" });
+    }
+    const filename = `nateeplus_db_${isSandboxActive ? 'sandbox' : 'production'}_${new Date().toISOString().slice(0, 10)}.json`;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+    return res.send(JSON.stringify(cacheDb, null, 2));
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// IMPORT WHOLE DATABASE FROM JSON
+app.post('/api/admin/import-db', async (req, res) => {
+  const { dbData } = req.body;
+  if (!dbData || typeof dbData !== 'object') {
+    return res.status(400).json({ success: false, message: "โครงสร้างข้อมูลไม่ถูกต้องค่ะ" });
+  }
+  if (!Array.isArray(dbData.members)) {
+    return res.status(400).json({ success: false, message: "ข้อมูลไม่ถูกต้อง: ไม่มีตารางสมาชิก (members) อยู่ในชุดข้อมูลนี้ค่ะ" });
+  }
+  
+  try {
+    console.log(`📥 [Import] Overwriting entire database... (Sandbox: ${isSandboxActive})`);
+    
+    // 1. Update in-memory DB
+    cacheDb = JSON.parse(JSON.stringify(dbData));
+    
+    // 2. Save to local JSON backup file
+    const currentDbFile = isSandboxActive ? DB_FILE_SANDBOX : DB_FILE;
+    fs.writeFileSync(currentDbFile, JSON.stringify(cacheDb, null, 2), 'utf8');
+    
+    // 3. Make sure database loading flag is true so saving works
+    isDatabaseLoadedFromFirestore = true;
+    
+    // 4. Force save to Firestore immediately!
+    await saveDbToFirestore(cacheDb);
+    
+    // 5. Restart realtime listeners with the new database context
+    setupServerRealTimeSync();
+    
+    console.log(`✅ [Import] Database imported successfully! (Total Members: ${cacheDb.members.length})`);
+    
+    return res.json({
+      success: true,
+      message: `นำเข้าข้อมูลฐานข้อมูลสำเร็จแล้วค่ะ! มีรายชื่อสมาชิกทั้งหมด ${cacheDb.members.length} ท่าน และอัปเดตไปยังระบบ Cloud เรียบร้อยแล้วค่ะ ✨`
+    });
+  } catch (err: any) {
+    console.error("❌ [Import] Error importing database:", err);
+    return res.status(500).json({ success: false, message: "การนำเข้าข้อมูลล้มเหลว: " + err.message });
+  }
+});
+
 // TOGGLE SANDBOX STATE
 app.post('/api/admin/sandbox-toggle', async (req, res) => {
   const { active, resetFromProduction } = req.body;
   
   try {
-    const oldState = isSandboxActive;
     isSandboxActive = !!active;
     
     // Save to status file
     fs.writeFileSync(SANDBOX_STATE_FILE, JSON.stringify({ active: isSandboxActive }, null, 2), 'utf8');
     
-    if (isSandboxActive) {
-      if (resetFromProduction || !fs.existsSync(DB_FILE_SANDBOX)) {
-        console.log("🔄 Resetting sandbox from production snapshot...");
-        
-        let prodData: any = {};
-        let hasProdData = false;
-        
-        // 1. Try to pull the absolute latest live production data directly from Firestore "app_sections"
-        if (dbFirestore) {
-          try {
-            console.log("📥 Pulling latest production data directly from Firestore 'app_sections' for sandbox reset...");
-            const keys = ['members', 'products', 'sellerProducts', 'orders', 'transactions', 'planB_Tree', 'csrFund', 'systemStats', 'otps', 'packageProductChoices', 'bankSettings'];
-            for (const key of keys) {
-              const docRef = doc(dbFirestore, 'app_sections', key);
-              const snap = await getDoc(docRef);
-              if (snap.exists()) {
-                prodData[key] = snap.data().data;
-                hasProdData = true;
-              }
-            }
-            if (hasProdData) {
-              console.log("✅ Successfully retrieved production data from Firestore.");
-            }
-          } catch (e: any) {
-            console.error("⚠️ Failed to pull production data from Firestore:", e);
-          }
-        }
-        
-        // 2. Fallback to local db.json if Firestore did not have any production data
-        if (!hasProdData && fs.existsSync(DB_FILE)) {
-          try {
-            console.log("⚠️ Production Firestore collection empty or offline. Falling back to local db.json...");
-            prodData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-            hasProdData = true;
-          } catch (e) {
-            console.error("⚠️ Failed to parse local db.json:", e);
-          }
-        }
-        
-        if (hasProdData && Object.keys(prodData).length > 0) {
-          cacheDb = JSON.parse(JSON.stringify(prodData));
-          fs.writeFileSync(DB_FILE_SANDBOX, JSON.stringify(cacheDb, null, 2), 'utf8');
-          await saveDbToFirestore(cacheDb);
-          console.log("✅ Sandbox database overwritten with latest production snapshot.");
-        } else {
-          // Initialize fresh sandbox database
-          cacheDb = null;
-          await loadDbFromFirestore();
-        }
-      } else {
-        // Just switch cache to sandbox database by loading it
-        cacheDb = null;
-        await loadDbFromFirestore();
-      }
-    } else {
-      // Switched off: reload production database
-      cacheDb = null;
-      await loadDbFromFirestore();
-    }
+    // Force reload/rebuild the correct database context
+    cacheDb = null;
+    await loadDbFromFirestore(!!resetFromProduction);
     
     res.json({
       success: true,
       isSandboxActive: isSandboxActive,
       message: isSandboxActive 
-        ? "เปิดใช้งานโหมดทดสอบระบบเรียบร้อยแล้วค่ะ (ข้อมูลจำลองถูกเตรียมพร้อมแล้ว)" 
+        ? (resetFromProduction 
+            ? "คัดลอกข้อมูลล่าสุดจากระบบจริงเข้าสู่โหมดทดสอบ และตั้งค่าเรียบร้อยแล้วค่ะ" 
+            : "เปิดใช้งานโหมดทดสอบระบบเรียบร้อยแล้วค่ะ (ข้อมูลจำลองถูกเตรียมพร้อมแล้ว)") 
         : "สลับกลับสู่โหมดข้อมูลจริง (Production Mode) เรียบร้อยแล้วค่ะ"
     });
   } catch (err: any) {
