@@ -101,7 +101,8 @@ export default function App() {
     }
   }, [originalAdmin]);
 
-
+  const profileFetchedAt = React.useRef<number>(0);
+  const packageChoicesFetchedAt = React.useRef<number>(0);
 
   const [isUsingPollingFallback, setIsUsingPollingFallback] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>('dash');
@@ -1112,6 +1113,7 @@ export default function App() {
     if (!currentUser) return;
     setIsUsingPollingFallback(false);
 
+    let isCancelled = false;
     let activeUnsubscribes: (() => void)[] = [];
     let fallbackInterval: NodeJS.Timeout | null = null;
     let usingPollingFallback = false;
@@ -1272,6 +1274,11 @@ export default function App() {
 
         const resConfig = await fetch('/api/firebase-config');
         const dConfig = await resConfig.json();
+        if (isCancelled) {
+          console.warn("🚫 [Sync Bypass] setupRealTimeSync aborted: user switched/impersonated during config fetch.");
+          return;
+        }
+
         if (!dConfig.success || !dConfig.config) {
           throw new Error("No Firebase config returned from server");
         }
@@ -1294,7 +1301,7 @@ export default function App() {
 
         // Safe helper to subscribe and add to unsubscribe list
         const safeSubscribe = (docName: string, onNext: (snapshot: any) => void) => {
-          if (usingPollingFallback) return;
+          if (isCancelled || usingPollingFallback) return;
           
           let unsub: (() => void) | null = null;
           const onError = (error: any) => {
@@ -1317,7 +1324,7 @@ export default function App() {
 
           try {
             unsub = onSnapshot(doc(dbFirestore, collectionName, docName), onNext, onError);
-            if (usingPollingFallback) {
+            if (isCancelled || usingPollingFallback) {
               if (unsub) {
                 try { unsub(); } catch (e) {}
               }
@@ -1378,6 +1385,12 @@ export default function App() {
                       localTime: prevProfile.lastUpdated,
                       incomingTime: currentMember.lastUpdated
                     });
+                    return prevProfile;
+                  }
+
+                  // Also ignore if we recently fetched from HTTP (within 4 seconds) to prevent any flicker!
+                  if (profileFetchedAt.current && (Date.now() - profileFetchedAt.current < 4000)) {
+                    console.warn("⚠️ [Sync Bypass] Ignored Firestore profile snapshot. HTTP state is newer (time-lock).");
                     return prevProfile;
                   }
 
@@ -1523,6 +1536,10 @@ export default function App() {
         // 8. Package product choices document listener
         safeSubscribe('packageProductChoices', (snapshot) => {
           if (snapshot.exists()) {
+            if (packageChoicesFetchedAt.current && (Date.now() - packageChoicesFetchedAt.current < 4000)) {
+              console.warn("⚠️ [Sync Bypass] Ignored Firestore packageProductChoices snapshot. HTTP state is newer (time-lock).");
+              return;
+            }
             const data = snapshot.data().data || [];
             setPackageChoices(data);
           }
@@ -1546,6 +1563,7 @@ export default function App() {
     setupRealTimeSync();
 
     return () => {
+      isCancelled = true;
       console.log("🧹 Tearing down real-time active listeners / timers");
       activeUnsubscribes.forEach(unsub => {
         try { unsub(); } catch (e) {}
@@ -1591,6 +1609,7 @@ export default function App() {
         if (data.isSandboxActive !== undefined) {
           setIsSandboxActive(data.isSandboxActive);
         }
+        profileFetchedAt.current = Date.now();
         setProfile(data.profile);
         setShippingAddress(data.profile.kycAddress || '');
         if (data.profile.firstLogin) {
@@ -2003,7 +2022,10 @@ export default function App() {
       
       const resChoices = await fetch('/api/shop/package-choices');
       const dChoices = await resChoices.json();
-      if (dChoices.success) setPackageChoices(dChoices.packageProductChoices || []);
+      if (dChoices.success) {
+        packageChoicesFetchedAt.current = Date.now();
+        setPackageChoices(dChoices.packageProductChoices || []);
+      }
     } catch (err) {}
   };
 
@@ -11987,17 +12009,21 @@ export default function App() {
                                       </button>
                                       <button 
                                         onClick={() => {
-                                          if (window.confirm(`คุณต้องการสวมสิทธิ์เพื่อเข้าใช้งานระบบในฐานะคุณ ${member.name} ใช่หรือไม่?`)) {
-                                            setOriginalAdmin(currentUser);
-                                            setCurrentUser({
-                                              userId: member.userId,
-                                              username: member.username,
-                                              role: member.role || 'Member',
-                                              firstLogin: member.firstLogin
-                                            });
-                                            setActiveTab('dash');
-                                            showNotif(`สวมสิทธิ์เข้าใช้งานในฐานะ @${member.username} สำเร็จ! ✨`, 'success');
-                                          }
+                                          triggerConfirm(
+                                            "ยืนยันการสวมสิทธิ์",
+                                            `คุณต้องการสวมสิทธิ์เพื่อเข้าใช้งานระบบในฐานะคุณ ${member.name} ใช่หรือไม่?`,
+                                            () => {
+                                              setOriginalAdmin(currentUser);
+                                              setCurrentUser({
+                                                userId: member.userId,
+                                                username: member.username,
+                                                role: member.role || 'Member',
+                                                firstLogin: member.firstLogin
+                                              });
+                                              setActiveTab('dash');
+                                              showNotif(`สวมสิทธิ์เข้าใช้งานในฐานะ @${member.username} สำเร็จ! ✨`, 'success');
+                                            }
+                                          );
                                         }}
                                         className="w-full bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer text-center"
                                       >
@@ -12276,17 +12302,21 @@ export default function App() {
                                         </button>
                                         <button 
                                           onClick={() => {
-                                            if (window.confirm(`คุณต้องการสวมสิทธิ์เพื่อเข้าใช้งานระบบในฐานะคุณ ${member.name} ใช่หรือไม่?`)) {
-                                              setOriginalAdmin(currentUser);
-                                              setCurrentUser({
-                                                userId: member.userId,
-                                                username: member.username,
-                                                role: member.role || 'Member',
-                                                firstLogin: member.firstLogin
-                                              });
-                                              setActiveTab('dash');
-                                              showNotif(`สวมสิทธิ์เข้าใช้งานในฐานะ @${member.username} สำเร็จ! ✨`, 'success');
-                                            }
+                                            triggerConfirm(
+                                              "ยืนยันการสวมสิทธิ์",
+                                              `คุณต้องการสวมสิทธิ์เพื่อเข้าใช้งานระบบในฐานะคุณ ${member.name} ใช่หรือไม่?`,
+                                              () => {
+                                                setOriginalAdmin(currentUser);
+                                                setCurrentUser({
+                                                  userId: member.userId,
+                                                  username: member.username,
+                                                  role: member.role || 'Member',
+                                                  firstLogin: member.firstLogin
+                                                });
+                                                setActiveTab('dash');
+                                                showNotif(`สวมสิทธิ์เข้าใช้งานในฐานะ @${member.username} สำเร็จ! ✨`, 'success');
+                                              }
+                                            );
                                           }}
                                           className="w-full bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer text-center"
                                         >
@@ -12470,46 +12500,56 @@ export default function App() {
                               
                               <div className="flex gap-2 border-t border-slate-200/60 pt-3">
                                 <button 
-                                  onClick={async () => {
-                                    if (!window.confirm(`ต้องการปฏิเสธคำขอแก้ไขพิกัดจัดส่งของ ${m.name} ใช่หรือไม่?`)) return;
-                                    try {
-                                      const res = await fetch('/api/admin/reject-shipping-pin', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ userId: m.userId })
-                                      });
-                                      const resData = await res.json();
-                                      if (resData.success) {
-                                        showNotif(resData.message, 'success');
-                                      } else {
-                                        showNotif(resData.message || 'เกิดข้อผิดพลาด', 'error');
+                                  onClick={() => {
+                                    triggerConfirm(
+                                      "ปฏิเสธพิกัดจัดส่ง",
+                                      `ต้องการปฏิเสธคำขอแก้ไขพิกัดจัดส่งของ ${m.name} ใช่หรือไม่?`,
+                                      async () => {
+                                        try {
+                                          const res = await fetch('/api/admin/reject-shipping-pin', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ userId: m.userId })
+                                          });
+                                          const resData = await res.json();
+                                          if (resData.success) {
+                                            showNotif(resData.message, 'success');
+                                          } else {
+                                            showNotif(resData.message || 'เกิดข้อผิดพลาด', 'error');
+                                          }
+                                        } catch (err) {
+                                          showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
+                                        }
                                       }
-                                    } catch (err) {
-                                      showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
-                                    }
+                                    );
                                   }}
                                   className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-xl text-[10px] font-bold transition cursor-pointer"
                                 >
                                   ❌ ปฏิเสธการแก้ไข
                                 </button>
                                 <button 
-                                  onClick={async () => {
-                                    if (!window.confirm(`ต้องการอนุมัติพิกัดแผนที่จัดส่งใหม่ของ ${m.name} ใช่หรือไม่?`)) return;
-                                    try {
-                                      const res = await fetch('/api/admin/approve-shipping-pin', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ userId: m.userId })
-                                      });
-                                      const resData = await res.json();
-                                      if (resData.success) {
-                                        showNotif(resData.message, 'success');
-                                      } else {
-                                        showNotif(resData.message || 'เกิดข้อผิดพลาด', 'error');
+                                  onClick={() => {
+                                    triggerConfirm(
+                                      "อนุมัติพิกัดจัดส่ง",
+                                      `ต้องการอนุมัติพิกัดแผนที่จัดส่งใหม่ของ ${m.name} ใช่หรือไม่?`,
+                                      async () => {
+                                        try {
+                                          const res = await fetch('/api/admin/approve-shipping-pin', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ userId: m.userId })
+                                          });
+                                          const resData = await res.json();
+                                          if (resData.success) {
+                                            showNotif(resData.message, 'success');
+                                          } else {
+                                            showNotif(resData.message || 'เกิดข้อผิดพลาด', 'error');
+                                          }
+                                        } catch (err) {
+                                          showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
+                                        }
                                       }
-                                    } catch (err) {
-                                      showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
-                                    }
+                                    );
                                   }}
                                   className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-white py-2 rounded-xl text-[10px] font-bold transition shadow-sm cursor-pointer"
                                 >

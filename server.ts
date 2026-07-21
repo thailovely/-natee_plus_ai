@@ -90,6 +90,10 @@ try {
 let cacheDb: any = null;
 let isDatabaseLoadedFromFirestore = false;
 let activeServerSubscriptions: any[] = [];
+let isSavingToFirestore = false;
+let pendingSaveData: any = null;
+let saveTimeout: NodeJS.Timeout | null = null;
+let retryCount = 0;
 
 function setupServerRealTimeSync() {
   if (!dbFirestore) return;
@@ -113,6 +117,13 @@ function setupServerRealTimeSync() {
           const incomingData = snapshot.data().data;
           
           if (cacheDb) {
+            // CRITICAL SECURE FIX: Check if we are currently saving to Firestore or have a pending save.
+            // If so, do not let Firestore overwrite our newer local state!
+            if (isSavingToFirestore || saveTimeout) {
+              console.log(`⏳ [Server Sync Blocked] Ignored Firestore snapshot for '${key}' because local write is in progress or pending.`);
+              return;
+            }
+
             // Verify if there are actual structural or value changes
             const originalStr = JSON.stringify(cacheDb[key]);
             const incomingStr = JSON.stringify(incomingData);
@@ -461,11 +472,7 @@ async function loadDbFromFirestore() {
   }
 }
 
-let isSavingToFirestore = false;
-let pendingSaveData: any = null;
-let saveTimeout: NodeJS.Timeout | null = null;
-let retryCount = 0;
-
+// Firestore Save Orchestration (Debounced to prevent Quota issues)
 async function saveDbToFirestore(data: any) {
   if (!dbFirestore || isFirestoreQuotaExceeded) return;
   if (!isDatabaseLoadedFromFirestore) {
@@ -2018,7 +2025,8 @@ app.get('/api/member/profile/:userId', (req, res) => {
       shippingAddress: member.shippingAddress || { province: '', district: '', subdistrict: '', zipcode: '', details: '' },
       useSameAddress: member.useSameAddress ?? false,
       selectedPackageId: member.selectedPackageId || "pack_s",
-      selectedPackageItems: member.selectedPackageItems || []
+      selectedPackageItems: member.selectedPackageItems || [],
+      lastUpdated: member.lastUpdated || Date.now()
     }
   });
 });
