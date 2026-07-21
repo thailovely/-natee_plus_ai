@@ -3598,15 +3598,13 @@ export default function App() {
 
   // Get package choices with robust fallbacks for all packages (S, M, L, XL, XXL)
   const getPackageChoicesForId = (pkgId: string) => {
+    if (pkgId === 'pack_s') return [];
     const list = packageChoices.filter(c => c.packageId === pkgId && c.isActive !== false);
     if (list.length > 0) return list;
     
     // Hardcoded fallback for any package that has no database choices defined yet
     if (pkgId === 'pack_s') {
-      return [
-        { id: "pc_s1_fallback", packageId: "pack_s", name: "S-Set A: สบู่สมุนไพรนทีพลัส ขนาดทดลอง 1 ชิ้น" },
-        { id: "pc_s2_fallback", packageId: "pack_s", name: "S-Set B: ยาสีฟันสมุนไพรนทีพลัส ขนาดพกพา 1 ชิ้น" }
-      ];
+      return [];
     }
     if (pkgId === 'pack_m') {
       return [
@@ -3667,7 +3665,8 @@ export default function App() {
     }
 
     // Since we unlock product lists for all positions, we show the choice modal first even if insufficient balance!
-    if (isPkg && !bypassChoice) {
+    // But for pack_s (S package) we don't have package choices, so we bypass this modal entirely.
+    if (isPkg && !bypassChoice && prodId !== 'pack_s') {
       const filteredChoices = getPackageChoicesForId(prodId);
       setPendingPurchaseProductId(prodId);
       setSelectedChoiceId(filteredChoices[0]?.id || ''); // default select the first one
@@ -14055,7 +14054,6 @@ export default function App() {
                             onChange={(e) => setAdminNewChoicePackageId(e.target.value)}
                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700"
                           >
-                            <option value="pack_s">S - ชุดของใช้เริ่มต้น</option>
                             <option value="pack_m">M - ชุดครอบครัวประหยัด</option>
                             <option value="pack_l">L - ชุดดูแลสุขภาพแบบองค์รวม</option>
                             <option value="pack_xl">XL - ชุดนักขยายธุรกิจ</option>
@@ -14301,7 +14299,6 @@ export default function App() {
                       <div className="flex flex-wrap gap-1.5 border-b border-slate-100 pb-1">
                         {[
                           { id: 'All', label: '📋 ดูทั้งหมด' },
-                          { id: 'pack_s', label: '🌱 กลุ่ม S (100 บ.)' },
                           { id: 'pack_m', label: '🏡 กลุ่ม M (1,000 บ.)' },
                           { id: 'pack_l', label: '🥗 กลุ่ม L (5,000 บ.)' },
                           { id: 'pack_xl', label: '⚡ กลุ่ม XL (10,000 บ.)' },
@@ -14324,19 +14321,6 @@ export default function App() {
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-h-[680px] overflow-y-auto pr-1">
                         {[
-                          {
-                            id: 'pack_s',
-                            name: 'S - ชุดของใช้เริ่มต้น',
-                            cost: 'ราคาซื้อแพ็กเกจ 100 บาท (50 PV)',
-                            themeColor: 'emerald',
-                            gradient: 'from-emerald-500/10 via-emerald-500/5 to-transparent',
-                            borderColor: 'border-emerald-200/80',
-                            textMuted: 'text-emerald-800',
-                            bgBadge: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-                            accentBar: 'bg-emerald-500',
-                            desc: 'เซ็ตเริ่มต้นใช้สินค้าทดลองและขยายสายงานธุรกิจ',
-                            icon: '🌱'
-                          },
                           {
                             id: 'pack_m',
                             name: 'M - ชุดครอบครัวประหยัด',

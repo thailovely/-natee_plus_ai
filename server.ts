@@ -954,8 +954,6 @@ function readDb() {
   }
   if (db && !db.packageProductChoices) {
     db.packageProductChoices = [
-      { id: "pc_s1", packageId: "pack_s", name: "S-Set A: สบู่สมุนไพรนทีพลัส ขนาดทดลอง 1 ชิ้น", cost: 50, productPrice: 46.73, shippingFee: 0 },
-      { id: "pc_s2", packageId: "pack_s", name: "S-Set B: ยาสีฟันสมุนไพรนทีพลัส ขนาดพกพา 1 ชิ้น", cost: 50, productPrice: 46.73, shippingFee: 0 },
       { id: "pc_m1", packageId: "pack_m", name: "M-Set A: ชุดของใช้สบู่สมุนไพรนทีพลัส 3 ชิ้น", cost: 150, productPrice: 140.19, shippingFee: 0 },
       { id: "pc_m2", packageId: "pack_m", name: "M-Set B: ชุดยาสีฟันสมุนไพรสูตรลดการเสียวเหงือก 2 ชิ้น", cost: 150, productPrice: 140.19, shippingFee: 0 },
       { id: "pc_l1", packageId: "pack_l", name: "L-Set A: ชุดกาแฟเอสเพรสโซ่พรีเมียม + ถ้วยกาแฟนทีพลัส", cost: 450, productPrice: 420.56, shippingFee: 0 },
@@ -969,32 +967,6 @@ function readDb() {
       { id: "pc_xxl3", packageId: "pack_xxl", name: "XXL-Set C: เซ็ตสกินแคร์กู้หน้าใสหน้าเด็กสูตรเคาน์เตอร์แบรนด์นที (ครบชุด 5 ชิ้น)", cost: 4500, productPrice: 4205.61, shippingFee: 0 }
     ];
     hasPopulatedMissing = true;
-  } else if (db && db.packageProductChoices) {
-    const defaultChoices = [
-      { id: "pc_s1", packageId: "pack_s", name: "S-Set A: สบู่สมุนไพรนทีพลัส ขนาดทดลอง 1 ชิ้น", cost: 50, productPrice: 46.73, shippingFee: 0 },
-      { id: "pc_s2", packageId: "pack_s", name: "S-Set B: ยาสีฟันสมุนไพรนทีพลัส ขนาดพกพา 1 ชิ้น", cost: 50, productPrice: 46.73, shippingFee: 0 },
-      { id: "pc_m1", packageId: "pack_m", name: "M-Set A: ชุดของใช้สบู่สมุนไพรนทีพลัส 3 ชิ้น", cost: 150, productPrice: 140.19, shippingFee: 0 },
-      { id: "pc_m2", packageId: "pack_m", name: "M-Set B: ชุดยาสีฟันสมุนไพรสูตรลดการเสียวเหงือก 2 ชิ้น", cost: 150, productPrice: 140.19, shippingFee: 0 },
-      { id: "pc_l1", packageId: "pack_l", name: "L-Set A: ชุดกาแฟเอสเพรสโซ่พรีเมียม + ถ้วยกาแฟนทีพลัส", cost: 450, productPrice: 420.56, shippingFee: 0 },
-      { id: "pc_l2", packageId: "pack_l", name: "L-Set B: เซ็ตสบู่สมุนไพรและยาสีฟันสูตรกู้เหงือก (รวม 5 ชิ้น)", cost: 450, productPrice: 420.56, shippingFee: 0 },
-      { id: "pc_l3", packageId: "pack_l", name: "L-Set C: อาหารเสริมบำรุงสายตานวัตกรรม (Lutein Plus) 1 กล่อง", cost: 450, productPrice: 420.56, shippingFee: 0 },
-      { id: "pc_xl1", packageId: "pack_xl", name: "XL-Set A: เซ็ตอาหารเสริมฟื้นฟูร่างกายแบบองค์รวม (Multivitamin + Eye care)", cost: 1500, productPrice: 1401.87, shippingFee: 0 },
-      { id: "pc_xl2", packageId: "pack_xl", name: "XL-Set B: เครื่องชงกาแฟเอสเพรสโซ่แรงดันสูงสำหรับใช้ในบ้าน", cost: 1500, productPrice: 1401.87, shippingFee: 0 },
-      { id: "pc_xl3", packageId: "pack_xl", name: "XL-Set C: เซ็ตเครื่องสำอางและเซรั่ม Gliss-Serum บำรุงลึก 3 ขวด", cost: 1500, productPrice: 1401.87, shippingFee: 0 },
-      { id: "pc_xxl1", packageId: "pack_xxl", name: "XXL-Set A: ชุดเปิดศูนย์จุดกระจายสินค้า (สินค้าอุปโภคบริโภคครบครัน 20 ชิ้น)", cost: 4500, productPrice: 4205.61, shippingFee: 0 },
-      { id: "pc_xxl2", packageId: "pack_xxl", name: "XXL-Set B: เซ็ตเครื่องใช้ไฟฟ้าพรีเมียม (เครื่องชงกาแฟเอสเพรสโซ่ + พาวเวอร์แบงค์ชาร์จเร็ว)", cost: 4500, productPrice: 4205.61, shippingFee: 0 },
-      { id: "pc_xxl3", packageId: "pack_xxl", name: "XXL-Set C: เซ็ตสกินแคร์กู้หน้าใสหน้าเด็กสูตรเคาน์เตอร์แบรนด์นที (ครบชุด 5 ชิ้น)", cost: 4500, productPrice: 4205.61, shippingFee: 0 }
-    ];
-
-    ['pack_s', 'pack_m', 'pack_l', 'pack_xl', 'pack_xxl'].forEach(pkgId => {
-      const hasAny = db.packageProductChoices.some((c: any) => c.packageId === pkgId);
-      if (!hasAny) {
-        console.log(`📦 Seeding missing package choices in Firestore memory for packageId: ${pkgId}`);
-        const toAdd = defaultChoices.filter(c => c.packageId === pkgId);
-        db.packageProductChoices.push(...toAdd);
-        hasPopulatedMissing = true;
-      }
-    });
   }
   if (db && (!db.bankSettings || db.bankSettings.bankAccount === "111-222-3333" || db.bankSettings.bankName === "ธนาคารไทยพาณิชย์")) {
     db.bankSettings = {
