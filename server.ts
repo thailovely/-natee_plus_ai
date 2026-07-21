@@ -767,7 +767,7 @@ function initDb() {
         id: "pack_s",
         name: "S - สมัครเปิดร้านค้าออนไลน์",
         price: 100,
-        pv: 0,
+        pv: 50,
         cost: 0,
         image: "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&q=80&w=300",
         description: "สิทธิ์เปิดร้านค้าออนไลน์ นทีพลัส พร้อมรับสิทธิ์แนะนำสมาชิกและโบนัสเบื้องต้น",

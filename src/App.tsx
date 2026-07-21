@@ -678,6 +678,26 @@ export default function App() {
   // CSR scrolling text state
   const [csrFeed, setCsrFeed] = useState<any[]>([]);
   const [csrBalance, setCsrBalance] = useState<number>(0);
+  
+  // Helper to update CSR feed and balance with reference protection to prevent scroll animations from bouncing/resetting on identical state syncs
+  const updateCsrState = (newFeed: any[], newBalance: number) => {
+    setCsrFeed((prevFeed) => {
+      const feedArray = newFeed || [];
+      if (!prevFeed || prevFeed.length !== feedArray.length) {
+        return feedArray;
+      }
+      const hasChanges = feedArray.some((item, idx) => {
+        const prevItem = prevFeed[idx];
+        return !prevItem || prevItem.id !== item.id || prevItem.amount !== item.amount || prevItem.username !== item.username;
+      });
+      return hasChanges ? feedArray : prevFeed;
+    });
+    setCsrBalance((prevBalance) => {
+      const bal = typeof newBalance === 'number' ? newBalance : parseFloat(newBalance || '0');
+      return prevBalance === bal ? prevBalance : bal;
+    });
+  };
+
   const [csrWithAmt, setCsrWithAmt] = useState('');
   const [csrWithPurpose, setCsrWithPurpose] = useState('');
   const [csrManagerOtp, setCsrManagerOtp] = useState('');
@@ -1297,8 +1317,7 @@ export default function App() {
 
               // 6. Sync CSR Fund
               const csrFund = data.csrFund || { balance: 0, history: [] };
-              setCsrFeed(csrFund.history || []);
-              setCsrBalance(csrFund.balance || 0);
+              updateCsrState(csrFund.history || [], csrFund.balance || 0);
 
               // 7. Sync System Stats
               setAdminStats(data.systemStats || null);
@@ -1587,8 +1606,7 @@ export default function App() {
         safeSubscribe('csrFund', (snapshot) => {
           if (snapshot.exists()) {
             const data = snapshot.data().data || { balance: 0, history: [] };
-            setCsrFeed(data.history || []);
-            setCsrBalance(data.balance || 0);
+            updateCsrState(data.history || [], data.balance || 0);
           }
         });
 
@@ -2109,8 +2127,7 @@ export default function App() {
       const res = await fetch('/api/csr/feed');
       const data = await res.json();
       if (data.success) {
-        setCsrFeed(data.feed);
-        setCsrBalance(data.balance);
+        updateCsrState(data.feed, data.balance);
       }
     } catch (err) {}
   };
@@ -6162,7 +6179,7 @@ export default function App() {
                       <span className="p-1.5 bg-sky-50 rounded-xl text-sky-500"><Copy size={18} /></span>
                       ลิงก์ขยายธุรกิจสำหรับสปอนเซอร์แนะนำเพื่อน
                     </h4>
-                    <p className="text-xs text-slate-400">ผู้แนะนำผู้สมัครจะได้รับสิทธิ์โบนัสทันที 50% ของคะแนน PV แรกเข้าสั่งซื้อแพ็กเกจ S</p>
+                    <p className="text-xs text-slate-400">ผู้แนะนำผู้สมัครจะได้รับสิทธิ์โบนัสแนะนำตรงทันที 50 บาท (50% ของราคาแพ็กเกจ) เมื่อเพื่อนสมัครซื้อแพ็กเกจ S</p>
                     
                     <div className="mt-6 space-y-4">
                       <div>
@@ -8800,6 +8817,7 @@ export default function App() {
 
                     {(() => {
                       const eCashTxns = transactions.filter((t) => {
+                        if (t.userId !== currentUser?.userId) return false;
                         if (t.type === 'Deposit_System') return false;
                         if (t.currency && t.currency !== 'E-Cash') return false;
                         
@@ -8929,13 +8947,18 @@ export default function App() {
 
                     {(() => {
                       const eMoneyTxns = transactions.filter((t) => {
+                        if (t.userId !== currentUser?.userId) return false;
                         if (t.type === 'Deposit_System') return false;
+                        if (t.currency && t.currency !== 'E-Money' && t.currency !== 'M-Cash') return false;
                         return (
                           t.currency === 'E-Money' ||
+                          t.currency === 'M-Cash' ||
                           t.type === 'Bonus' ||
                           t.type === 'AllShare' ||
                           t.type === 'EShare' ||
-                          t.type === 'Commission'
+                          t.type === 'Commission' ||
+                          t.type === 'Withdraw' ||
+                          t.type === 'WithdrawalRequest'
                         );
                       });
 
@@ -9054,6 +9077,7 @@ export default function App() {
 
                     {(() => {
                       const eCouponTxns = transactions.filter((t) => {
+                        if (t.userId !== currentUser?.userId) return false;
                         return (
                           t.currency === 'E-Coupon' ||
                           t.type === 'Coupon' ||
@@ -9165,7 +9189,10 @@ export default function App() {
                     </h4>
 
                     {(() => {
-                      const allShareTxns = transactions.filter(t => t.type === 'EShare');
+                      const allShareTxns = transactions.filter((t) => {
+                        if (t.userId !== currentUser?.userId) return false;
+                        return t.type === 'EShare';
+                      });
                       const itemsPerPage = 20;
                       const startIndex = (allSharePage - 1) * itemsPerPage;
                       const sortedAllShareTxns = [...allShareTxns].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
@@ -9292,6 +9319,9 @@ export default function App() {
                                     } else if (isComplete) {
                                       statusColor = 'bg-blue-500';
                                       statusText = 'สมาชิกสมบูรณ์';
+                                    } else if (!isNoRank) {
+                                      statusColor = 'bg-emerald-500';
+                                      statusText = `เปิดสิทธิ์แพ็กเกจ ${member.rank} แล้ว`;
                                     }
 
                                     return (
@@ -9430,6 +9460,9 @@ export default function App() {
                                     } else if (isComplete) {
                                       statusColor = 'bg-blue-500';
                                       statusText = 'สมบูรณ์';
+                                    } else if (!isNoRank) {
+                                      statusColor = 'bg-emerald-500';
+                                      statusText = `เปิดสิทธิ์แพ็กเกจ ${member.rank} แล้ว`;
                                     }
 
                                     return (

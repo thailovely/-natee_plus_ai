@@ -1372,7 +1372,7 @@
   "products": [
     {
       "image": "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&q=80&w=300",
-      "pv": 0,
+      "pv": 50,
       "category": "Package",
       "id": "pack_s",
       "name": "S - สมัครเปิดร้านค้าออนไลน์",
