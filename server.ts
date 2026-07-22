@@ -2016,6 +2016,9 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(400).json({ success: false, message: "รหัสผ่านไม่ถูกต้อง" });
   }
   
+  const isDefaultPass = member.password === "Natee!234" || member.password === "Natt!234" || member.password === "Netee!234";
+  const forceFirstLogin = member.firstLogin ?? (member.passwordReset || isDefaultPass);
+
   res.json({
     success: true,
     userId: member.userId,
@@ -2025,8 +2028,8 @@ app.post('/api/auth/login', (req, res) => {
     phone: member.phone,
     rank: member.rank,
     role: member.role,
-    firstLogin: member.firstLogin,
-    passwordReset: member.passwordReset
+    firstLogin: forceFirstLogin,
+    passwordReset: member.passwordReset || forceFirstLogin
   });
 });
 
@@ -2041,14 +2044,17 @@ app.post('/api/auth/update-security', (req, res) => {
   }
   
   if (newPassword) {
-    if (newPassword === "Natee!234") {
+    if (newPassword === "Natee!234" || newPassword === "Natt!234" || newPassword === "Netee!234") {
       return res.status(400).json({ success: false, message: "ห้ามใช้รหัสผ่านเริ่มต้นระบบเพื่อความปลอดภัย" });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: "รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษร" });
     }
     member.password = newPassword;
   }
   
   if (!newPin || newPin.length !== 6 || !/^\d+$/.test(newPin)) {
-    return res.status(400).json({ success: false, message: "รหัส PIN ต้องไม่ต่ำกว่า และ ไม่เกิน 6 หลัก และต้องเป็นตัวเลขเท่านัั้น" });
+    return res.status(400).json({ success: false, message: "รหัส PIN ต้องเป็นตัวเลข 6 หลักเท่านั้น" });
   }
   
   member.pin = newPin;
@@ -2056,7 +2062,7 @@ app.post('/api/auth/update-security', (req, res) => {
   member.passwordReset = false;
   
   writeDb(db);
-  res.json({ success: true, message: "ตั้งค่ารหัส PIN เรียบร้อยแล้ว!" });
+  res.json({ success: true, message: "ตั้งค่ารหัสผ่านใหม่และรหัส PIN เรียบร้อยแล้ว!" });
 });
 
 // SEND OTP FOR REGISTER

@@ -5,7 +5,7 @@ import {
   UserCheck, ShieldCheck, Settings, LogOut, Copy, Check, 
   TrendingUp, HelpCircle, ArrowRight, Upload, Search, 
   Trash2, Plus, Star, AlertCircle, RefreshCw, Layers, MapPin,
-  Eye, EyeOff, X, ClipboardList, Printer, Lock, FileSpreadsheet,
+  Eye, EyeOff, X, ClipboardList, Printer, Lock, Key, FileSpreadsheet,
   Coins, FileText, Store, Bell, Truck, UserX, RotateCcw, 
   MessageSquare, BookOpen, BarChart2, Home, ShoppingCart, ChevronRight,
   Binary, Award, Heart, ArrowLeftRight, Receipt, Calculator, Database
@@ -209,6 +209,7 @@ export default function App() {
   
   // Security Modal (First login PIN / pass change)
   const [newPass, setNewPass] = useState('');
+  const [newPassConfirm, setNewPassConfirm] = useState('');
   const [newPin, setNewPin] = useState('');
   const [newPinConfirm, setNewPinConfirm] = useState('');
   const [firstLoginOtpSent, setFirstLoginOtpSent] = useState(false);
@@ -2882,34 +2883,56 @@ export default function App() {
   // Security configuration on firstLogin
   const handleSecurityUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newPass) {
+      showNotif('กรุณาระบุกำหนดรหัสผ่านใหม่ส่วนตัวของท่านค่ะ', 'error');
+      return;
+    }
+    if (newPass === "Natee!234" || newPass === "Natt!234" || newPass === "Netee!234") {
+      showNotif('ห้ามใช้รหัสผ่านเริ่มต้นระบบเพื่อความปลอดภัยค่ะ', 'error');
+      return;
+    }
+    if (newPass.length < 6) {
+      showNotif('รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษรค่ะ', 'error');
+      return;
+    }
+    if (newPass !== newPassConfirm) {
+      showNotif('รหัสผ่านใหม่ทั้ง 2 ครั้งไม่ตรงกัน กรุณาตรวจสอบและพิมพ์ใหม่อีกครั้งค่ะ', 'error');
+      return;
+    }
+    if (!newPin || newPin.length !== 6 || !/^\d+$/.test(newPin)) {
+      showNotif('กรุณากรอกรหัสธุรกรรม PIN ตัวเลข 6 หลักให้ครบถ้วนค่ะ', 'error');
+      return;
+    }
     if (newPin !== newPinConfirm) {
-      showNotif('รหัสธุรกรรม PIN 6 หลักไม่ตรงกัน', 'error');
+      showNotif('รหัสธุรกรรม PIN 6 หลักทั้ง 2 ครั้งไม่ตรงกัน กรุณาตรวจสอบอีกครั้งค่ะ', 'error');
       return;
     }
-    if (newPin.length !== 6 || !/^\d+$/.test(newPin)) {
-      showNotif('รหัส PIN ต้องเป็นตัวเลข 6 หลักเท่านั้น', 'error');
-      return;
-    }
+
     try {
       const res = await fetch('/api/auth/update-security', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: currentUser.userId,
+          newPassword: newPass,
           newPin
         })
       });
       const d = await res.json();
       if (d.success) {
         // Update currentUser state and localStorage to prevent modal re-appearing
-        const updatedUser = { ...currentUser, firstLogin: false };
+        const updatedUser = { ...currentUser, firstLogin: false, passwordReset: false };
         setCurrentUser(updatedUser);
         setIsFirstLoginModal(false);
+        setNewPass('');
+        setNewPassConfirm('');
+        setNewPin('');
+        setNewPinConfirm('');
         
         // Show prominent warning popup
-        alert(`🔒 ตั้งค่ารหัส PIN สำเร็จเรียบร้อยแล้วค่ะ!\n\n⚠️ โปรดเก็บรหัส PIN 6 หลักนี้ไว้เป็นความลับสูงสุดของท่าน ห้ามเปิดเผยข้อมูลนี้ให้บุคคลอื่นทราบเด็ดขาด เนื่องจากรหัสนี้จะถูกใช้เพื่อยืนยันการทำธุรกรรมทางการเงิน โอนเงิน และถอนเงินทุกรายการในระบบ นที พลัส ค่ะ`);
+        alert(`🔒 ตั้งค่ารหัสผ่านใหม่และรหัส PIN สำเร็จเรียบร้อยแล้วค่ะ!\n\n⚠️ โปรดเก็บรักษารหัสผ่านใหม่และรหัส PIN 6 หลักนี้ไว้เป็นความลับสูงสุด ห้ามเปิดเผยข้อมูลนี้ให้บุคคลอื่นทราบเด็ดขาดค่ะ`);
         
-        showNotif('ยินดีด้วย! บัญชีสมาชิกของท่านได้รับการเปิดใช้งานสมบูรณ์เรียบร้อยแล้วค่ะ', 'success');
+        showNotif('ยินดีด้วย! บัญชีสมาชิกของท่านได้รับการเปิดใช้งานและตั้งค่าความปลอดภัยสมบูรณ์เรียบร้อยแล้วค่ะ', 'success');
         fetchProfile(true);
       } else {
         showNotif(d.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล', 'error');
@@ -5609,10 +5632,10 @@ export default function App() {
     );
   }
 
-  // FORCE PIN SETUP ON FIRST LOGIN
+  // FORCE PIN & PASSWORD SETUP ON FIRST LOGIN / RESET PASSWORD
   if (currentUser && isFirstLoginModal) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden">
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 flex flex-col justify-center items-center px-4 py-8 relative overflow-y-auto">
         {notif && (
           <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[99999] p-5 rounded-2xl shadow-2xl border-2 text-base max-w-md w-[90%] flex items-center gap-3 backdrop-blur-md transition-all duration-300 animate-slideDown ${
             notif.type === 'success' 
@@ -5626,73 +5649,125 @@ export default function App() {
           </div>
         )}
 
-        <div className="w-full max-w-md bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+        <div className="w-full max-w-md bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden my-auto">
           <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-sky-400 via-indigo-500 to-amber-500"></div>
           
-          <form onSubmit={handleSecurityUpdate} className="space-y-6">
+          <form onSubmit={handleSecurityUpdate} className="space-y-5">
             <div className="text-center">
-              <div className="mx-auto w-16 h-16 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mb-4 border border-amber-500/20">
-                <Lock size={32} />
+              <div className="mx-auto w-14 h-14 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mb-3 border border-amber-500/20">
+                <Lock size={28} />
               </div>
-              <h3 className="text-xl font-extrabold text-white tracking-wide">🔒 ตั้งรหัสธุรกรรม (PIN 6 หลัก)</h3>
-              <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
-                เนื่องจากเป็นการเข้าสู่ระบบครั้งแรก โปรดกำหนดรหัสธุรกรรม PIN 6 หลักของท่าน เพื่อความปลอดภัยและเปิดใช้งานบัญชีอย่างสมบูรณ์ค่ะ
+              <h3 className="text-lg font-extrabold text-white tracking-wide">🔒 กำหนดรหัสผ่านใหม่ & รหัส PIN</h3>
+              <p className="text-[11px] text-amber-300/90 mt-2 leading-relaxed bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20">
+                เนื่องจากเป็นรหัสผ่านเริ่มต้นระบบ (Natee!234) หรือเป็นการเข้าสู่ระบบครั้งแรก กรุณากำหนดรหัสผ่านใหม่ส่วนตัว (พิมพ์ยืนยัน 2 ครั้ง) และตั้งรหัส PIN 6 หลักเพื่อความปลอดภัยสูงสุดค่ะ
               </p>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-slate-300 text-xs font-bold mb-2">
-                  รหัสธุรกรรม PIN (6 หลัก) *
-                </label>
-                <input 
-                  type="password" 
-                  required
-                  maxLength={6}
-                  value={newPin}
-                  onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))}
-                  placeholder="กรอกตัวเลข 6 หลัก"
-                  className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm text-center font-mono tracking-[1em] focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400 transition"
-                />
+            <div className="space-y-4 pt-1">
+              {/* SECTION 1: NEW PASSWORD (ENTER 2 TIMES) */}
+              <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80 space-y-3">
+                <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                  <Key size={16} className="text-sky-400" />
+                  <span className="text-xs font-bold text-sky-300">1. กำหนดรหัสผ่านใหม่ (พิมพ์ยืนยัน 2 ครั้ง)</span>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 text-[11px] font-bold mb-1">
+                    รหัสผ่านใหม่ * <span className="text-[10px] text-slate-400 font-normal">(อย่างน้อย 6 ตัวอักษร)</span>
+                  </label>
+                  <input 
+                    type="password" 
+                    required
+                    minLength={6}
+                    value={newPass}
+                    onChange={(e) => setNewPass(e.target.value)}
+                    placeholder="กรอกรหัสผ่านใหม่ส่วนตัว"
+                    className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-xs focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400 transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 text-[11px] font-bold mb-1">
+                    ยืนยันรหัสผ่านใหม่อีกครั้ง *
+                  </label>
+                  <input 
+                    type="password" 
+                    required
+                    minLength={6}
+                    value={newPassConfirm}
+                    onChange={(e) => setNewPassConfirm(e.target.value)}
+                    placeholder="กรอกรหัสผ่านใหม่อีกครั้งให้ตรงกัน"
+                    className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-xs focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400 transition"
+                  />
+                  {newPassConfirm && newPass !== newPassConfirm && (
+                    <p className="text-[10px] text-rose-400 mt-1">⚠️ รหัสผ่านใหม่ทั้ง 2 ครั้งไม่ตรงกัน</p>
+                  )}
+                </div>
               </div>
 
-              <div>
-                <label className="block text-slate-300 text-xs font-bold mb-2">
-                  ยืนยัน PIN อีกครั้ง *
-                </label>
-                <input 
-                  type="password" 
-                  required
-                  maxLength={6}
-                  value={newPinConfirm}
-                  onChange={(e) => setNewPinConfirm(e.target.value.replace(/\D/g, ''))}
-                  placeholder="กรอกตัวเลข 6 หลักให้ตรงกัน"
-                  className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm text-center font-mono tracking-[1em] focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400 transition"
-                />
+              {/* SECTION 2: NEW PIN (ENTER 2 TIMES) */}
+              <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80 space-y-3">
+                <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                  <ShieldCheck size={16} className="text-emerald-400" />
+                  <span className="text-xs font-bold text-emerald-300">2. กำหนดรหัสธุรกรรม PIN (6 หลัก)</span>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 text-[11px] font-bold mb-1">
+                    รหัส PIN 6 หลัก * <span className="text-[10px] text-slate-400 font-normal">(เฉพาะตัวเลข 6 หลัก)</span>
+                  </label>
+                  <input 
+                    type="password" 
+                    required
+                    maxLength={6}
+                    value={newPin}
+                    onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))}
+                    placeholder="กรอกตัวเลข 6 หลัก"
+                    className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-xs text-center font-mono tracking-[0.8em] focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400 transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 text-[11px] font-bold mb-1">
+                    ยืนยัน PIN อีกครั้ง *
+                  </label>
+                  <input 
+                    type="password" 
+                    required
+                    maxLength={6}
+                    value={newPinConfirm}
+                    onChange={(e) => setNewPinConfirm(e.target.value.replace(/\D/g, ''))}
+                    placeholder="กรอก PIN 6 หลักอีกครั้งให้ตรงกัน"
+                    className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-xs text-center font-mono tracking-[0.8em] focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400 transition"
+                  />
+                  {newPinConfirm && newPin !== newPinConfirm && (
+                    <p className="text-[10px] text-rose-400 mt-1 text-center">⚠️ รหัส PIN ทั้ง 2 ครั้งไม่ตรงกัน</p>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="bg-amber-500/5 p-4 rounded-2xl border border-amber-500/20 space-y-2">
-              <span className="text-xs font-bold text-amber-400 flex items-center gap-1">
-                <AlertCircle size={14} /> คำเตือนความปลอดภัยสำคัญ
+            <div className="bg-amber-500/5 p-3 rounded-xl border border-amber-500/20 space-y-1">
+              <span className="text-[11px] font-bold text-amber-400 flex items-center gap-1">
+                <AlertCircle size={13} /> ข้อควรระวังความปลอดภัย
               </span>
               <p className="text-[10px] text-slate-300 leading-relaxed">
-                โปรดเก็บรักษารหัส PIN 6 หลักนี้ไว้เป็นความลับสูงสุด ห้ามบอกรหัสนี้กับบุคคลอื่นโดยเด็ดขาด เนื่องจากรหัสนี้ใช้สำหรับยืนยันการทำธุรกรรมทางการเงิน ซื้อคูปอง และการถอนเงินออกจากระบบ นที พลัส ค่ะ
+                โปรดจดจำรหัสผ่านใหม่และรหัส PIN 6 หลักนี้ไว้เพื่อใช้เข้าสู่ระบบและอนุมัติการทำธุรกรรมทางการเงิน / ถอนเงินนะคะ
               </p>
             </div>
 
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 pt-1">
               <button 
                 type="submit"
-                className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold py-3.5 rounded-xl transition cursor-pointer text-xs shadow-lg shadow-sky-500/10"
+                className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold py-3 rounded-xl transition cursor-pointer text-xs shadow-lg shadow-sky-500/10"
               >
-                บันทึกรหัส PIN เพื่อเปิดใช้งานบัญชี
+                บันทึกรหัสผ่านใหม่และรหัส PIN เพื่อเปิดใช้งาน
               </button>
               
               <button 
                 type="button"
                 onClick={handleLogout}
-                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-xl transition cursor-pointer text-xs border border-slate-700"
+                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl transition cursor-pointer text-xs border border-slate-700"
               >
                 กลับหน้าเข้าสู่ระบบ (ออกจากระบบ)
               </button>
