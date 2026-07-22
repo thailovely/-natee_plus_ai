@@ -561,7 +561,7 @@ export default function App() {
   const [bankSettings, setBankSettings] = useState<any>({
     bankName: "ธนาคารไทยพาณิชย์",
     bankAccount: "111-222-3333",
-    bankAccountName: "บริษัท นที พลัส จำกัด",
+    bankAccountName: "บริษัท นที พลัส มาร์เก็ต จำกัด",
     qrCodeUrl: ""
   });
   const [editingBankName, setEditingBankName] = useState("");
@@ -5012,7 +5012,7 @@ export default function App() {
               <img src="/favicon.svg" alt="Natee Plus Logo" className="w-full h-full object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)]" referrerPolicy="no-referrer" />
             </div>
             <h1 className="text-3xl font-extrabold tracking-wider text-white">
-              เปิดร้านค้า <span className="text-sky-400">นที</span> <span className="text-orange-500">พลัส</span>
+              <span className="text-sky-400">นที</span> <span className="text-orange-500">พลัส</span> <span className="text-sky-400">มาร์เก็ต</span>
             </h1>
             <p className="text-slate-400 text-xs mt-2 font-medium">
               ระบบร้านค้าอัจฉริยะ สัญชาติไทย
@@ -9965,7 +9965,7 @@ export default function App() {
                                   onClick={(e) => { e.preventDefault(); setShowPdpaModal(true); }}
                                   className="ml-1 text-indigo-600 hover:text-indigo-500 hover:underline font-extrabold inline-block"
                                 >
-                                  [คลิกอ่านนโยบายความปลอดภัยข้อมูลผู้ขาย บริษัท นที พลัส จำกัด]
+                                  [คลิกอ่านนโยบายความปลอดภัยข้อมูลผู้ขาย บริษัท นที พลัส มาร์เก็ต จำกัด]
                                 </button>
                               </label>
                             </div>
@@ -14978,7 +14978,7 @@ export default function App() {
                                   <tr>
                                     <td className="px-3 py-2.5 font-sans font-bold text-indigo-600">S (เปิดร้าน)</td>
                                     <td className="px-3 py-2.5 text-right font-bold">100</td>
-                                    <td className="px-3 py-2.5 text-right">50 PV</td>
+                                    <td className="px-3 py-2.5 text-right">0 PV</td>
                                     <td className="px-3 py-2.5 text-right text-emerald-600 font-bold">1,000 (10x)</td>
                                   </tr>
                                   <tr>
@@ -15007,6 +15007,46 @@ export default function App() {
                                   </tr>
                                 </tbody>
                               </table>
+                            </div>
+
+                            {/* กล่องบันทึกเงื่อนไขการจัดสรรรายได้แพ็กเกจ S (100 บาท / 0 PV) */}
+                            <div className="bg-amber-50/80 border border-amber-200/90 rounded-2xl p-4 space-y-3 text-xs text-slate-800 shadow-sm">
+                              <div className="flex items-center gap-2 font-black text-amber-900 border-b border-amber-200/80 pb-2">
+                                <span className="bg-amber-600 text-white rounded-lg px-2 py-0.5 text-[10px] uppercase font-bold tracking-wide">เงื่อนไขเฉพาะ</span>
+                                <span>เงื่อนไขการจัดสรรรายได้แพ็กเกจ S (เปิดร้านค้า 100 บาท - 0 PV)</span>
+                              </div>
+                              <p className="text-[11px] leading-relaxed text-slate-700 font-medium">
+                                <strong>แพ็กเกจ S (เปิดร้านค้า 100 บาท) ไม่มีคะแนน PV (0 PV)</strong> โดยรายได้จากการรับสมัครเปิดร้านค้า 100 บาท มีการแบ่งสัดส่วนจ่ายผลตอบแทน ดังนี้:
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                                <div className="bg-white/90 p-2.5 rounded-xl border border-amber-100/80 flex justify-between items-center shadow-2xs">
+                                  <span className="font-sans text-slate-600 font-medium">1. จ่ายผู้แนะนำ (ค่าแนะนำเปิดร้าน):</span>
+                                  <span className="font-bold font-mono text-emerald-700">50 บาท</span>
+                                </div>
+                                <div className="bg-white/90 p-2.5 rounded-xl border border-amber-100/80 flex justify-between items-center shadow-2xs">
+                                  <span className="font-sans text-slate-600 font-medium">2. เข้าคูปองสมาชิก:</span>
+                                  <span className="font-bold font-mono text-indigo-700">10 บาท</span>
+                                </div>
+                                <div className="bg-white/90 p-2.5 rounded-xl border border-amber-100/80 flex justify-between items-center shadow-2xs">
+                                  <span className="font-sans text-slate-600 font-medium">3. เข้ากองทุน All share:</span>
+                                  <span className="font-bold font-mono text-sky-700">10 บาท</span>
+                                </div>
+                                <div className="bg-white/90 p-2.5 rounded-xl border border-amber-100/80 flex justify-between items-center shadow-2xs">
+                                  <span className="font-sans text-slate-600 font-medium">4. โครงสร้าง Plan B:</span>
+                                  <span className="font-bold font-mono text-purple-700">5 บาท</span>
+                                </div>
+                                <div className="bg-white/90 p-2.5 rounded-xl border border-amber-100/80 flex justify-between items-center shadow-2xs">
+                                  <span className="font-sans text-slate-600 font-medium">5. เข้ากองทุนปันสุข:</span>
+                                  <span className="font-bold font-mono text-amber-700">5 บาท</span>
+                                </div>
+                                <div className="bg-white/90 p-2.5 rounded-xl border border-amber-100/80 flex justify-between items-center shadow-2xs">
+                                  <span className="font-sans text-slate-600 font-medium">6. ภาษีมูลค่าเพิ่ม (VAT 7%):</span>
+                                  <span className="font-bold font-mono text-slate-700">6.54 บาท <span className="font-sans text-[10px] text-slate-500 font-normal">(100/1.07 = 93.46)</span></span>
+                                </div>
+                              </div>
+                              <p className="text-[10.5px] text-slate-600 italic leading-relaxed pt-1.5 border-t border-amber-200/60">
+                                * หลังหักรายการจ่ายผลตอบแทนและภาษี Vat 7% ข้างต้นทั้งหมดแล้ว กำไรส่วนเหลือที่เหลืออยู่จะบันทึกเป็นค่าใช้จ่ายบริหารจัดการของบริษัท
+                              </p>
                             </div>
 
                             <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 space-y-2 text-[11px] text-slate-500 leading-relaxed">
@@ -15979,7 +16019,7 @@ export default function App() {
                               <div>
                                 <strong className="text-indigo-600">🛒 Natee Plus Market (B2C Retail):</strong>
                                 <p className="mt-1">
-                                  บริษัท นที พลัส จำกัด จดทะเบียนภาษีมูลค่าเพิ่มถูกต้องตามกฎหมาย (VAT 7%) ทุกรายการขายปลีกตรงสู่ผู้บริโภค ระบบจะคำนวณแยกภาษีมูลค่าเพิ่มพาสไว้ เพื่อออก <strong>"ใบกำกับภาษีเต็มรูป / ใบเสร็จรับเงิน (Receipt / Tax Invoice)"</strong> ส่งมอบให้ผู้ซื้อใช้หักลดหย่อนภาษี
+                                  บริษัท นที พลัส มาร์เก็ต จำกัด จดทะเบียนภาษีมูลค่าเพิ่มถูกต้องตามกฎหมาย (VAT 7%) ทุกรายการขายปลีกตรงสู่ผู้บริโภค ระบบจะคำนวณแยกภาษีมูลค่าเพิ่มพาสไว้ เพื่อออก <strong>"ใบกำกับภาษีเต็มรูป / ใบเสร็จรับเงิน (Receipt / Tax Invoice)"</strong> ส่งมอบให้ผู้ซื้อใช้หักลดหย่อนภาษี
                                 </p>
                               </div>
                               <div>
@@ -16200,14 +16240,14 @@ export default function App() {
                           </div>
                           <div>
                             <h4 className="text-base font-black text-slate-900">นโยบายความเป็นส่วนตัวและการคุ้มครองข้อมูลส่วนบุคคล (PDPA Privacy Policy)</h4>
-                            <p className="text-xs text-slate-400">มาตราฐานความปลอดภัยทางกฎหมายเกี่ยวกับข้อมูลผู้จัดจำหน่ายและคู่ค้าร่วม บริษัท นที พลัส จำกัด</p>
+                            <p className="text-xs text-slate-400">มาตราฐานความปลอดภัยทางกฎหมายเกี่ยวกับข้อมูลผู้จัดจำหน่ายและคู่ค้าร่วม บริษัท นที พลัส มาร์เก็ต จำกัด</p>
                           </div>
                         </div>
 
                         <div className="bg-slate-50 border border-slate-150 rounded-2xl p-6 space-y-6 text-xs text-slate-700 leading-relaxed max-w-4xl font-sans">
                           <div className="bg-indigo-600 text-white p-5 rounded-2xl border border-indigo-500 shadow-sm space-y-1">
                             <p className="text-[10px] uppercase font-bold tracking-wider text-indigo-200">🛡️ ผู้ควบคุมข้อมูลส่วนบุคคลตามกฎหมาย (Data Controller)</p>
-                            <h5 className="font-black text-base">บริษัท นที พลัส จำกัด (Natee Plus Co., Ltd.)</h5>
+                            <h5 className="font-black text-base">บริษัท นที พลัส มาร์เก็ต จำกัด (Natee Plus Market Co., Ltd.)</h5>
                             <p className="text-[11px] text-indigo-150 leading-relaxed">
                               จัดเก็บข้อมูลและประมวลผลเพื่อวัตถุประสงค์ในการจัดทำเอกสารทางการเงิน การนำส่งภาษีหัก ณ ที่จ่าย และการโอนเงินเข้าบัญชีอย่างถูกต้องโปร่งใสตามกฎหมาย
                             </p>
@@ -16304,7 +16344,7 @@ export default function App() {
                         required
                         value={editingBankAccountName}
                         onChange={(e) => setEditingBankAccountName(e.target.value)}
-                        placeholder="เช่น บริษัท นที พลัส จำกัด"
+                        placeholder="เช่น บริษัท นที พลัส มาร์เก็ต จำกัด"
                         className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white font-bold"
                       />
                     </div>
@@ -16486,7 +16526,7 @@ export default function App() {
                           📈 รายงานระบบบัญชีบริษัท (Company Financial & Accounting Report)
                         </h3>
                         <p className="text-xs text-slate-300 mt-1">
-                          รายงานสรุปรายได้ รายจ่าย ผลกำไรสุทธิ และภาษีนำส่งสะสมจากการจำหน่ายแพ็กเกจสินค้า (S, M, L, XL, XXL) ของบริษัท นที พลัส จำกัด อย่างครบถ้วนโปร่งใสตามหลักกฎหมายสรรพากร
+                          รายงานสรุปรายได้ รายจ่าย ผลกำไรสุทธิ และภาษีนำส่งสะสมจากการจำหน่ายแพ็กเกจสินค้า (S, M, L, XL, XXL) ของบริษัท นที พลัส มาร์เก็ต จำกัด อย่างครบถ้วนโปร่งใสตามหลักกฎหมายสรรพากร
                         </p>
                       </div>
                       <div className="flex gap-2">
@@ -18154,7 +18194,7 @@ export default function App() {
               {/* Printable Area ID */}
               <div id="receipt-print-area" className="p-4 bg-slate-50/50 rounded-2xl border border-slate-100 space-y-4 text-xs text-slate-700">
                 <div className="text-center space-y-1 pb-3 border-b border-dashed border-slate-200">
-                  <h3 className="text-sm font-extrabold text-indigo-900">บริษัท นที พลัส จำกัด (NATEE PLUS CO., LTD.)</h3>
+                  <h3 className="text-sm font-extrabold text-indigo-900">บริษัท นที พลัส มาร์เก็ต จำกัด (NATEE PLUS MARKET CO., LTD.)</h3>
                   <p className="text-[10px] text-slate-400">เลขประจำตัวผู้เสียภาษี: 0105565123456</p>
                   <p className="text-[10px] text-slate-400 font-medium">99/99 อาคารรุ่งเรืองทาวเวอร์ ถนนสุขุมวิท กรุงเทพมหานคร 10110</p>
                   <p className="text-[10px] text-indigo-600 font-bold uppercase mt-2 text-xs font-sans">ใบเสร็จรับเงินอย่างย่อ / Tax Invoice (ABB)</p>
@@ -18354,7 +18394,7 @@ export default function App() {
                   <div className="p-3 space-y-1.5">
                     <span className="font-extrabold text-slate-900 block border-b border-slate-100 pb-1">1. ผู้มีหน้าที่หักภาษี ณ ที่จ่าย (ผู้จ่ายเงิน):</span>
                     <div className="space-y-1 text-slate-700">
-                      <div>ชื่อ: <strong className="text-slate-900 font-bold">บริษัท นที พลัส จำกัด (NATEE PLUS CO., LTD.)</strong></div>
+                      <div>ชื่อ: <strong className="text-slate-900 font-bold">บริษัท นที พลัส มาร์เก็ต จำกัด (NATEE PLUS MARKET CO., LTD.)</strong></div>
                       <div>เลขประจำตัวผู้เสียภาษีอากร: <strong className="text-slate-900 font-mono font-bold">0105565123456</strong></div>
                       <div>ที่อยู่: <span className="text-slate-600">123/45 ถนนพระราม 9 แขวงห้วยขวาง เขตห้วยขวาง กรุงเทพมหานคร 10310</span></div>
                     </div>
@@ -18474,7 +18514,7 @@ export default function App() {
                     </div>
                     <div className="space-y-1 pt-4">
                       <p>ลงชื่อ ..................................................................... ผู้จ่ายเงิน</p>
-                      <p className="font-extrabold text-slate-800">( บริษัท นที พลัส จำกัด )</p>
+                      <p className="font-extrabold text-slate-800">( บริษัท นที พลัส มาร์เก็ต จำกัด )</p>
                       <p className="text-[9px] text-slate-400">ตัวแทนผู้มีหน้าที่หักภาษี ณ ที่จ่าย</p>
                     </div>
                   </div>
@@ -18829,7 +18869,7 @@ export default function App() {
               <div className="p-6 overflow-y-auto space-y-4 text-xs text-slate-600 leading-relaxed max-h-[60vh] font-sans">
                 <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50 space-y-1">
                   <p className="font-bold text-indigo-950">ผู้ควบคุมข้อมูลส่วนบุคคล (Data Controller):</p>
-                  <p className="font-extrabold text-indigo-700 text-sm">บริษัท นที พลัส จำกัด (Natee Plus Co., Ltd.)</p>
+                  <p className="font-extrabold text-indigo-700 text-sm">บริษัท นที พลัส มาร์เก็ต จำกัด (Natee Plus Market Co., Ltd.)</p>
                   <p className="text-[10px] text-slate-500">สำนักงานใหญ่จดทะเบียนอย่างถูกต้องตามกฎหมายแห่งประเทศไทย</p>
                 </div>
 
@@ -18838,7 +18878,7 @@ export default function App() {
                     1. ประเภทของข้อมูลส่วนบุคคลที่มีการจัดเก็บรวบรวม
                   </h4>
                   <p>
-                    เนื่องจากระบบ <strong>Natee Plus Partner (พอร์ทัลร้านค้าร่วมพันธมิตร)</strong> มีความจำเป็นในการประมวลผลธุรกรรมทางการเงินและยืนยันตัวตนคู่ค้าเพื่อส่งภาษีสรรพากร บริษัท นที พลัส จำกัด จึงจัดเก็บข้อมูลส่วนบุคคลของท่าน ดังต่อไปนี้:
+                    เนื่องจากระบบ <strong>Natee Plus Partner (พอร์ทัลร้านค้าร่วมพันธมิตร)</strong> มีความจำเป็นในการประมวลผลธุรกรรมทางการเงินและยืนยันตัวตนคู่ค้าเพื่อส่งภาษีสรรพากร บริษัท นที พลัส มาร์เก็ต จำกัด จึงจัดเก็บข้อมูลส่วนบุคคลของท่าน ดังต่อไปนี้:
                   </p>
                   <ul className="list-disc list-inside pl-2 space-y-1 text-slate-500">
                     <li><strong>ข้อมูลระบุตัวตนจริง:</strong> ชื่อ-นามสกุลจริง, หมายเลขบัตรประจำตัวประชาชนไทย, หรือหมายเลขหนังสือเดินทาง (Passport) พร้อมทั้งรูปถ่ายหน้าบัตรประจำตัวประชาชนเพื่อการยืนยันตัวตนทางกฎหมาย</li>
@@ -18878,7 +18918,7 @@ export default function App() {
                     4. การส่งต่อหรือเปิดเผยข้อมูลส่วนบุคคล
                   </h4>
                   <p>
-                    บริษัท นที พลัส จำกัด จะรักษาความลับของข้อมูลเป็นอย่างดีที่สุด โดยจะจำกัดการเปิดเผยเฉพาะกรณีจำเป็นตามกฎหมาย ได้แก่:
+                    บริษัท นที พลัส มาร์เก็ต จำกัด จะรักษาความลับของข้อมูลเป็นอย่างดีที่สุด โดยจะจำกัดการเปิดเผยเฉพาะกรณีจำเป็นตามกฎหมาย ได้แก่:
                   </p>
                   <ul className="list-disc list-inside pl-2 space-y-1 text-slate-500">
                     <li>ส่งข้อมูลภาษีและรายได้แก่ <strong>กรมสรรพากร ประเทศไทย</strong> ตามหน้าที่ทางกฎหมายภาษี</li>
@@ -18915,7 +18955,7 @@ export default function App() {
 
         {/* Global Footer */}
         <footer className="bg-white border-t border-slate-100 px-6 py-4 text-center text-[10px] text-slate-400">
-          © {new Date().getFullYear()} NaTee Plus (นที พลัส) • โครงสร้างเครือข่ายธุรกิจร้านค้านวัตกรรมอย่างโปร่งใส มั่งคั่ง มั่นคง ยั่งยืน • <button onClick={() => setShowPdpaModal(true)} className="text-indigo-600 hover:underline cursor-pointer">นโยบายความเป็นส่วนตัว (PDPA)</button>
+          © {new Date().getFullYear()} บริษัท นที พลัส มาร์เก็ต จำกัด (Natee Plus Market Co., Ltd.) • โครงสร้างเครือข่ายธุรกิจร้านค้านวัตกรรมอย่างโปร่งใส มั่งคั่ง มั่นคง ยั่งยืน • <button onClick={() => setShowPdpaModal(true)} className="text-indigo-600 hover:underline cursor-pointer">นโยบายความเป็นส่วนตัว (PDPA)</button>
         </footer>
       </main>
     </div>

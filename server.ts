@@ -6,6 +6,85 @@ import { fileURLToPath } from 'url';
 import { initializeApp } from 'firebase/app';
 import { initializeFirestore, memoryLocalCache, doc, getDoc, writeBatch, onSnapshot } from 'firebase/firestore';
 import { GoogleGenAI } from '@google/genai';
+import nodemailer from 'nodemailer';
+
+// Email Helper Function using Nodemailer (SMTP)
+async function sendSystemEmail({
+  to,
+  subject,
+  title,
+  otpCode,
+  bodyText
+}: {
+  to: string;
+  subject: string;
+  title: string;
+  otpCode?: string;
+  bodyText?: string;
+}) {
+  const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const smtpPort = parseInt(process.env.SMTP_PORT || '465', 10);
+  const smtpUser = process.env.SMTP_USER || process.env.SMTP_EMAIL || 'nateeplusmarket@gmail.com';
+  const smtpPass = process.env.SMTP_PASS || process.env.SMTP_APP_PASSWORD || 'tssfmgvjdocyvgwx';
+  const smtpFrom = process.env.SMTP_FROM || `Natee Plus <${smtpUser}>`;
+
+  if (!smtpUser || !smtpPass) {
+    console.log(`✉️ [SMTP Email] Credentials not configured in process.env (missing SMTP_USER/SMTP_PASS). Simulated email to: ${to} | Subject: ${subject} | OTP: ${otpCode || 'N/A'}`);
+    return { success: false, simulated: true, message: "SMTP credentials not configured" };
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpPort === 465,
+      auth: {
+        user: smtpUser,
+        pass: smtpPass,
+      },
+    });
+
+    const htmlContent = `
+      <div style="font-family: 'Sukhumvit Set', 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); padding: 24px; text-align: center;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">
+            <span style="color: #38bdf8;">นที</span> <span style="color: #f97316;">พลัส</span>
+          </h1>
+          <p style="color: #cbd5e1; margin: 6px 0 0 0; font-size: 13px;">ระบบร้านค้าออนไลน์และเครือข่ายความสุข</p>
+        </div>
+        <div style="padding: 32px 24px; text-align: center; color: #1e293b;">
+          <h2 style="font-size: 18px; margin-top: 0; margin-bottom: 12px; color: #0f172a;">${title}</h2>
+          <p style="font-size: 14px; color: #475569; margin-bottom: 24px; line-height: 1.6;">
+            ${bodyText || 'รหัสยืนยันตัวตน OTP ของท่านสำหรับทำรายการในระบบ Natee Plus คือ:'}
+          </p>
+          ${otpCode ? `
+            <div style="background-color: #f8fafc; border: 2px dashed #0284c7; border-radius: 12px; padding: 16px; margin: 0 auto 24px auto; max-width: 280px;">
+              <span style="font-family: monospace, Courier, monospace; font-size: 32px; font-weight: 900; letter-spacing: 6px; color: #0369a1;">${otpCode}</span>
+            </div>
+            <p style="font-size: 12px; color: #64748b; margin-bottom: 0;">รหัส OTP นี้มีอายุการใช้งาน 5 นาที และเป็นรหัสส่วนตัว โปรดอย่าเปิดเผยให้ผู้อื่นทราบ</p>
+          ` : ''}
+        </div>
+        <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0;">
+          <p style="margin: 0;">© ${new Date().getFullYear()} Natee Plus Co., Ltd. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+
+    const info = await transporter.sendMail({
+      from: smtpFrom,
+      to,
+      subject,
+      html: htmlContent,
+      text: `${title}\n\n${bodyText || 'รหัส OTP ของคุณคือ:'} ${otpCode || ''}`,
+    });
+
+    console.log(`✅ [SMTP Email Success] Email sent to ${to}. MessageId: ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
+  } catch (err: any) {
+    console.error(`❌ [SMTP Email Error] Failed to send email to ${to}:`, err);
+    return { success: false, error: err.message };
+  }
+}
 
 // Define path resolution supporting both ES Modules (dev) and CommonJS (compiled)
 const getAppDir = () => {
@@ -16,6 +95,20 @@ const appDir = getAppDir();
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Test Email Endpoint
+app.post('/api/admin/test-email', async (req, res) => {
+  const { to } = req.body;
+  const targetEmail = to || 'nateeplusmarket@gmail.com';
+  const result = await sendSystemEmail({
+    to: targetEmail,
+    subject: '[Natee Plus] ทดสอบระบบการส่งอีเมล (Test Email)',
+    title: 'ทดสอบการส่งอีเมลระบบ Natee Plus',
+    otpCode: '123456',
+    bodyText: 'ระบบส่งอีเมลด้วย Gmail SMTP (Nodemailer) ทำงานได้อย่างถูกต้องสมบูรณ์เรียบร้อยแล้วค่ะ'
+  });
+  return res.json(result);
+});
 
 const DB_FILE = path.join(appDir, 'db.json');
 const DB_FILE_SANDBOX = path.join(appDir, 'db_sandbox.json');
@@ -439,7 +532,7 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
           const currentNatee = cacheDb.members[nateeIndex];
           // Check if any critical property is different or outdated
           if (
-            currentNatee.name !== "บริษัท นที พลัส" ||
+            currentNatee.name !== "บริษัท นที พลัส มาร์เก็ต" ||
             currentNatee.surname !== "จำกัด" ||
             currentNatee.phone !== "0635161734" ||
             currentNatee.idCard !== "1233445566778" ||
@@ -455,7 +548,7 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
               username: "nateeplus",
               password: "@Tt12345678",
               pin: "123456",
-              name: "บริษัท นที พลัส",
+              name: "บริษัท นที พลัส มาร์เก็ต",
               surname: "จำกัด",
               phone: "0635161734",
               idCard: "1233445566778",
@@ -474,7 +567,7 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
             username: "nateeplus",
             password: "@Tt12345678",
             pin: "123456",
-            name: "บริษัท นที พลัส",
+            name: "บริษัท นที พลัส มาร์เก็ต",
             surname: "จำกัด",
             phone: "0635161734",
             idCard: "1233445566778",
@@ -670,14 +763,14 @@ function initDb() {
         username: "nateeplus",
         password: "@Tt12345678",
         pin: "123456",
-        name: "บริษัท นที พลัส",
+        name: "บริษัท นที พลัส มาร์เก็ต",
         surname: "จำกัด",
         phone: "0635161734",
         idCard: "1233445566778",
         email: "nateeplus@gmail.com",
         bankName: "",
         bankAccount: "",
-        bankAccountName: "บริษัท นที พลัส จำกัด",
+        bankAccountName: "บริษัท นที พลัส มาร์เก็ต จำกัด",
         sponsorId: "SYSTEM",
         parentId: "SYSTEM",
         side: "Left",
@@ -767,7 +860,7 @@ function initDb() {
         id: "pack_s",
         name: "S - สมัครเปิดร้านค้าออนไลน์",
         price: 100,
-        pv: 50,
+        pv: 0,
         cost: 0,
         image: "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&q=80&w=300",
         description: "สิทธิ์เปิดร้านค้าออนไลน์ นทีพลัส พร้อมรับสิทธิ์แนะนำสมาชิกและโบนัสเบื้องต้น",
@@ -974,7 +1067,7 @@ function readDb() {
         bankSettings: {
           bankName: "ธนาคารไทยพาณิชย์",
           bankAccount: "111-222-3333",
-          bankAccountName: "บริษัท นที พลัส จำกัด",
+          bankAccountName: "บริษัท นที พลัส มาร์เก็ต จำกัด",
           qrCodeUrl: ""
         }
       };
@@ -1967,20 +2060,30 @@ app.post('/api/auth/update-security', (req, res) => {
 });
 
 // SEND OTP FOR REGISTER
-app.post('/api/auth/send-register-otp', (req, res) => {
+app.post('/api/auth/send-register-otp', async (req, res) => {
   const { email, otp } = req.body;
   if (!email || !email.includes('@')) {
     return res.status(400).json({ success: false, message: "กรุณาระบุอีเมลที่ถูกต้องค่ะ" });
   }
+
+  // Trigger SMTP email sending
+  sendSystemEmail({
+    to: email,
+    subject: '[Natee Plus] รหัส OTP สำหรับสมัครสมาชิกใหม่',
+    title: 'รหัส OTP ยืนยันสมัครสมาชิก',
+    otpCode: otp,
+    bodyText: 'ท่านได้ทำการขอรหัส OTP เพื่อยืนยันการสมัครสมาชิกใหม่ในระบบ Natee Plus'
+  }).catch(err => console.error("Async email error:", err));
+
   res.json({
     success: true,
-    message: `ส่งรหัส OTP ไปยังอีเมล ${email} สำเร็จเรียบร้อยแล้วค่ะ`,
+    message: `ส่งรหัส OTP ไปยังอีเมล ${email} เรียบร้อยแล้วค่ะ`,
     otpSimulated: otp
   });
 });
 
 // REQUEST PASSWORD RESET (OTP Request via Email)
-app.post('/api/auth/forgot', (req, res) => {
+app.post('/api/auth/forgot', async (req, res) => {
   const { username, email } = req.body;
   const db = readDb();
   
@@ -1997,7 +2100,6 @@ app.post('/api/auth/forgot', (req, res) => {
     return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกที่มีชื่อผู้ใช้และอีเมลนี้ในระบบ" });
   }
   
-  // Simulate sending OTP to email
   const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
   if (!db.otps) {
     db.otps = {};
@@ -2006,11 +2108,20 @@ app.post('/api/auth/forgot', (req, res) => {
   
   writeDb(db);
   
+  // Trigger SMTP email sending
+  sendSystemEmail({
+    to: member.email,
+    subject: '[Natee Plus] รหัส OTP สำหรับรีเซ็ตรหัสผ่าน',
+    title: 'รหัส OTP รีเซ็ตรหัสผ่าน',
+    otpCode: otpCode,
+    bodyText: `เรียนคุณ ${member.name || member.username}\nท่านได้ทำการขอรหัส OTP เพื่อทำการรีเซ็ตรหัสผ่านในระบบ Natee Plus`
+  }).catch(err => console.error("Async email error:", err));
+
   res.json({
     success: true,
     otpSimulated: otpCode,
     email: member.email,
-    message: `ระบบได้ส่งรหัส OTP 6 หลักไปยังอีเมล ${member.email} ของท่านแล้ว (รหัสจำลองสำหรับทดสอบคือ ${otpCode})`
+    message: `ระบบได้ส่งรหัส OTP 6 หลักไปยังอีเมล ${member.email} ของท่านเรียบร้อยแล้วค่ะ`
   });
 });
 
@@ -2898,7 +3009,7 @@ app.post('/api/member/change-password', (req, res) => {
 });
 
 // SEND TRANSACTION OTP
-app.post('/api/member/send-transaction-otp', (req, res) => {
+app.post('/api/member/send-transaction-otp', async (req, res) => {
   const { userId } = req.body;
   const db = readDb();
   
@@ -2910,15 +3021,26 @@ app.post('/api/member/send-transaction-otp', (req, res) => {
   db.otps[userId] = otpCode;
   
   writeDb(db);
+
+  if (member.email && member.email.includes('@')) {
+    sendSystemEmail({
+      to: member.email,
+      subject: '[Natee Plus] รหัส OTP ยืนยันการทำธุรกรรม',
+      title: 'รหัส OTP ยืนยันธุรกรรมทางการเงิน',
+      otpCode: otpCode,
+      bodyText: `เรียนคุณ ${member.name || member.username}\nท่านได้ทำการขอรหัส OTP เพื่อยืนยันการทำธุรกรรมทางการเงินในระบบ Natee Plus`
+    }).catch(err => console.error("Async email error:", err));
+  }
+
   res.json({ 
     success: true, 
     otp: otpCode,
-    message: `ระบบได้ส่งรหัส OTP 6 หลักไปยังอีเมล ${member.email} ของท่านเรียบร้อยแล้วค่ะ` 
+    message: `ระบบได้ส่งรหัส OTP 6 หลักไปยังอีเมล ${member.email || 'ของท่าน'} เรียบร้อยแล้วค่ะ` 
   });
 });
 
 // SEND PIN CHANGE OTP
-app.post('/api/member/send-pin-otp', (req, res) => {
+app.post('/api/member/send-pin-otp', async (req, res) => {
   const { userId, email, otp } = req.body;
   const db = readDb();
   
@@ -2926,6 +3048,18 @@ app.post('/api/member/send-pin-otp', (req, res) => {
   db.otps[userId] = otp;
   
   writeDb(db);
+
+  const recipientEmail = email || db.members.find(m => m.userId === userId)?.email;
+  if (recipientEmail && recipientEmail.includes('@')) {
+    sendSystemEmail({
+      to: recipientEmail,
+      subject: '[Natee Plus] รหัส OTP เปลี่ยนรหัส PIN',
+      title: 'รหัส OTP ยืนยันเปลี่ยนรหัส PIN',
+      otpCode: otp,
+      bodyText: 'ท่านได้ทำการขอรหัส OTP เพื่อยืนยันการตั้งค่าหรือเปลี่ยนรหัส PIN ในระบบ Natee Plus'
+    }).catch(err => console.error("Async email error:", err));
+  }
+
   res.json({ success: true, message: "ส่งรหัส OTP เรียบร้อยแล้วค่ะ" });
 });
 
@@ -3669,7 +3803,7 @@ app.post('/api/seller/login', (req, res) => {
 });
 
 // 2. Request OTP for Seller Registration
-app.post('/api/seller/send-otp', (req, res) => {
+app.post('/api/seller/send-otp', async (req, res) => {
   const { username } = req.body;
   const db = readDb();
   
@@ -3695,12 +3829,20 @@ app.post('/api/seller/send-otp', (req, res) => {
   }
   db.otps[member.userId] = otpCode;
   writeDb(db);
+
+  sendSystemEmail({
+    to: member.email,
+    subject: '[Natee Plus] รหัส OTP สำหรับลงทะเบียนร้านค้า',
+    title: 'รหัส OTP ยืนยันการสมัครเปิดร้านค้า',
+    otpCode: otpCode,
+    bodyText: `เรียนคุณ ${member.name || member.username}\nท่านได้ทำการขอรหัส OTP เพื่อยืนยันการเปิดร้านค้าในระบบ Natee Plus`
+  }).catch(err => console.error("Async email error:", err));
   
   res.json({
     success: true,
     otpSimulated: otpCode,
     email: member.email,
-    message: `ระบบได้ส่งรหัส OTP ไปยังอีเมล ${member.email} เรียบร้อยแล้วค่ะ (รหัสจำลองสำหรับทดสอบคือ ${otpCode})`
+    message: `ระบบได้ส่งรหัส OTP ไปยังอีเมล ${member.email} เรียบร้อยแล้วค่ะ`
   });
 });
 
@@ -3884,7 +4026,7 @@ app.post('/api/seller/regulations', (req, res) => {
     db.bankSettings = {
       bankName: "ธนาคารไทยพาณิชย์",
       bankAccount: "111-222-3333",
-      bankAccountName: "บริษัท นที พลัส จำกัด",
+      bankAccountName: "บริษัท นที พลัส มาร์เก็ต จำกัด",
       qrCodeUrl: ""
     };
   }
@@ -4738,7 +4880,7 @@ app.get('/api/bank-settings', (req, res) => {
     bankSettings: db.bankSettings || {
       bankName: "ธนาคารไทยพาณิชย์",
       bankAccount: "111-222-3333",
-      bankAccountName: "บริษัท นที พลัส จำกัด",
+      bankAccountName: "บริษัท นที พลัส มาร์เก็ต จำกัด",
       qrCodeUrl: ""
     }
   });
@@ -4777,7 +4919,7 @@ app.post('/api/bank-settings', (req, res) => {
   db.bankSettings = {
     bankName: bankName !== undefined ? bankName : (db.bankSettings?.bankName || "ธนาคารไทยพาณิชย์"),
     bankAccount: bankAccount !== undefined ? bankAccount : (db.bankSettings?.bankAccount || "111-222-3333"),
-    bankAccountName: bankAccountName !== undefined ? bankAccountName : (db.bankSettings?.bankAccountName || "บริษัท นที พลัส จำกัด"),
+    bankAccountName: bankAccountName !== undefined ? bankAccountName : (db.bankSettings?.bankAccountName || "บริษัท นที พลัส มาร์เก็ต จำกัด"),
     qrCodeUrl: qrCodeUrl,
     remainingRightsMode: remainingRightsMode !== undefined ? remainingRightsMode : (db.bankSettings?.remainingRightsMode || "1_channel"),
     maintenanceMode: maintenanceMode !== undefined ? !!maintenanceMode : (db.bankSettings?.maintenanceMode || false)
@@ -5053,7 +5195,7 @@ app.delete('/api/admin/delete-member/:userId', (req, res) => {
 });
 
 // REQUEST MANAGER OTP (For Admin sensitive actions)
-app.post('/api/admin/request-manager-otp', (req, res) => {
+app.post('/api/admin/request-manager-otp', async (req, res) => {
   const { adminUserId } = req.body;
   const db = readDb();
   
@@ -5068,11 +5210,25 @@ app.post('/api/admin/request-manager-otp', (req, res) => {
   db.otps['MANAGER_APPROVAL_OTP'] = otpCode;
   
   writeDb(db);
+
+  // Send to Manager account(s) or admin
+  const managers = db.members.filter(m => m.role === 'Manager' && m.email && m.email.includes('@'));
+  const targetEmail = managers.length > 0 ? managers[0].email : admin.email;
+
+  if (targetEmail && targetEmail.includes('@')) {
+    sendSystemEmail({
+      to: targetEmail,
+      subject: '[Natee Plus Admin] รหัส OTP อนุมัติการแก้ไขข้อมูล (Manager Approval)',
+      title: 'รหัส OTP อนุมัติการแก้ไขข้อมูลสำคัญโดย Admin',
+      otpCode: otpCode,
+      bodyText: `แจ้งเตือนสิทธิ์ผู้จัดการ (Manager): แอดมิน ${admin.name || admin.username} ได้ขอรหัส OTP เพื่ออนุมัติรายการแก้ไขข้อมูลในระบบ`
+    }).catch(err => console.error("Async email error:", err));
+  }
   
   res.json({
     success: true,
     otpSimulated: otpCode,
-    message: `ส่งรหัส OTP อนุมัติ 6 หลักไปยังผู้จัดการ (Manager) เรียบร้อยแล้วค่ะ (รหัสสำหรับทดสอบคือ ${otpCode})`
+    message: `ส่งรหัส OTP อนุมัติ 6 หลักไปยังอีเมลผู้จัดการ (${targetEmail || 'Manager'}) เรียบร้อยแล้วค่ะ`
   });
 });
 
@@ -5306,14 +5462,14 @@ app.post('/api/admin/system-reset', (req, res) => {
         username: "nateeplus",
         password: "@Tt12345678",
         pin: "123456",
-        name: "บริษัท นที พลัส",
+        name: "บริษัท นที พลัส มาร์เก็ต",
         surname: "จำกัด",
         phone: "0635161734",
         idCard: "1233445566778",
         email: "nateeplus@gmail.com",
         bankName: "",
         bankAccount: "",
-        bankAccountName: "บริษัท นที พลัส จำกัด",
+        bankAccountName: "บริษัท นที พลัส มาร์เก็ต จำกัด",
         sponsorId: "SYSTEM",
         parentId: "SYSTEM",
         side: "Left",
@@ -5346,14 +5502,14 @@ app.post('/api/admin/system-reset', (req, res) => {
         member.username = "nateeplus";
         member.password = "@Tt12345678";
         member.pin = "123456";
-        member.name = "บริษัท นที พลัส";
+        member.name = "บริษัท นที พลัส มาร์เก็ต";
         member.surname = "จำกัด";
         member.phone = "0635161734";
         member.idCard = "1233445566778";
         member.email = "nateeplus@gmail.com";
         member.bankName = "";
         member.bankAccount = "";
-        member.bankAccountName = "บริษัท นที พลัส จำกัด";
+        member.bankAccountName = "บริษัท นที พลัส มาร์เก็ต จำกัด";
         member.sponsorId = "SYSTEM";
         member.parentId = "SYSTEM";
         member.side = "Left";
