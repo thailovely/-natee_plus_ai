@@ -2891,10 +2891,38 @@ export default function App() {
       showNotif('ห้ามใช้รหัสผ่านเริ่มต้นระบบเพื่อความปลอดภัยค่ะ', 'error');
       return;
     }
+
+    const passHasUpper = /[A-Z]/.test(newPass);
+    const passHasLower = /[a-z]/.test(newPass);
+    const passHasNum = /[0-9]/.test(newPass);
+    const passHasSpec = /[^A-Za-z0-9]/.test(newPass);
+    const passIsEng = /^[A-Za-z0-9!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/`~]*$/.test(newPass);
+
     if (newPass.length < 6) {
       showNotif('รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษรค่ะ', 'error');
       return;
     }
+    if (!passHasUpper) {
+      showNotif('รหัสผ่านใหม่ต้องมีอักษรภาษาอังกฤษตัวใหญ่ (A-Z) อย่างน้อย 1 ตัวค่ะ', 'error');
+      return;
+    }
+    if (!passHasLower) {
+      showNotif('รหัสผ่านใหม่ต้องมีอักษรภาษาอังกฤษตัวเล็ก (a-z) อย่างน้อย 1 ตัวค่ะ', 'error');
+      return;
+    }
+    if (!passHasNum) {
+      showNotif('รหัสผ่านใหม่ต้องมีตัวเลข (0-9) อย่างน้อย 1 ตัวค่ะ', 'error');
+      return;
+    }
+    if (!passHasSpec) {
+      showNotif('รหัสผ่านใหม่ต้องมีอักขระพิเศษอย่างน้อย 1 ตัว (เช่น @, #, $, !, %, *) ค่ะ', 'error');
+      return;
+    }
+    if (!passIsEng) {
+      showNotif('รหัสผ่านต้องใช้เฉพาะอักขระภาษาอังกฤษและอักขระพิเศษสากลเท่านั้นค่ะ', 'error');
+      return;
+    }
+
     if (newPass !== newPassConfirm) {
       showNotif('รหัสผ่านใหม่ทั้ง 2 ครั้งไม่ตรงกัน กรุณาตรวจสอบและพิมพ์ใหม่อีกครั้งค่ะ', 'error');
       return;
@@ -4984,13 +5012,15 @@ export default function App() {
     profile?.role === 'Manager' || 
     profile?.role === 'Admin' || 
     currentUser.role === 'Manager' || 
-    currentUser.role === 'Admin'
+    currentUser.role === 'Admin' ||
+    currentUser.role?.toLowerCase() === 'admin' ||
+    currentUser.role?.toLowerCase() === 'manager'
   );
 
   const isMaintenanceActive = bankSettings?.maintenanceMode === true;
 
-  // Render maintenance screen if active, user is not exempt, and staff login is not toggled
-  if (isMaintenanceActive && !isUserExemptFromMaintenance && !showStaffLogin) {
+  // Render maintenance screen if active and user is not exempt (Admin/Manager)
+  if (isMaintenanceActive && !isUserExemptFromMaintenance) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden select-none">
         {/* Ambient background glows */}
@@ -5011,62 +5041,105 @@ export default function App() {
           </div>
         )}
 
-        <div className="w-full max-w-lg bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-3xl p-8 md:p-10 shadow-2xl relative overflow-hidden text-center space-y-6">
-          {/* Animated Settings Gears */}
-          <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
-            {/* Outer gear */}
-            <div className="absolute inset-0 border-2 border-dashed border-rose-500/30 rounded-full animate-spin duration-[10000ms]"></div>
-            {/* Glowing ring */}
-            <div className="absolute w-16 h-16 bg-rose-500/10 rounded-full blur-md animate-pulse"></div>
-            {/* Core icon */}
-            <div className="relative z-10 p-4 bg-slate-900/90 border border-slate-700/50 rounded-2xl shadow-lg">
-              <Settings size={36} className="text-rose-500 animate-spin" style={{ animationDuration: '4s' }} />
+        <div className="w-full max-w-md bg-slate-900/40 backdrop-blur-md border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden text-center space-y-6">
+          {/* Logo Brand heading */}
+          <div className="text-center relative flex flex-col items-center">
+            <div className="relative w-20 h-20 select-none mb-3">
+              <img src="/favicon.svg" alt="Natee Plus Logo" className="w-full h-full object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)]" referrerPolicy="no-referrer" />
             </div>
-          </div>
-
-          <div className="space-y-3">
-            <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight leading-relaxed">
-              ขณะนี้ระบบกำลัง อัปเดต กรุณารอสักครู่
+            <h1 className="text-2xl font-extrabold tracking-wider text-white">
+              <span className="text-sky-400">นที</span> <span className="text-orange-500">พลัส</span> <span className="text-sky-400">มาร์เก็ต</span>
             </h1>
-            <p className="text-slate-400 text-sm font-medium">
-              ระบบจะกลับมาในไม่ช้า ขออภัยในความไม่สะดวกค่ะ
+            <p className="text-slate-400 text-xs mt-1 font-medium">
+              ระบบร้านค้าอัจฉริยะ สัญชาติไทย
             </p>
           </div>
 
-          {/* Important Action Notice as requested */}
-          <div className="bg-rose-950/40 border border-rose-500/20 rounded-2xl p-5 text-left space-y-2 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-16 h-16 bg-rose-500/5 rounded-full blur-xl"></div>
-            <h3 className="text-xs font-bold text-rose-400 flex items-center gap-1.5 uppercase tracking-wider">
-              ⚠️ คำแนะนำสำคัญสำหรับการเข้าใช้งาน
-            </h3>
-            <p className="text-xs text-rose-200/90 leading-relaxed font-semibold">
-              เมื่อระบบกลับมา แล้วหน้าจอเป็นสีขาว ให้กดล้างแคส ในแอปพิเคชั่นของท่าน เพื่อกลับเข้าสู่ระบบได้ปกติ
+          {/* Maintenance Message Banner */}
+          <div className="space-y-2 bg-rose-950/30 border border-rose-500/20 rounded-2xl p-5 text-center">
+            <div className="w-12 h-12 bg-rose-500/10 text-rose-400 rounded-full flex items-center justify-center mx-auto border border-rose-500/20 mb-2">
+              <Settings size={24} className="animate-spin text-rose-500" style={{ animationDuration: '4s' }} />
+            </div>
+            <h2 className="text-lg md:text-xl font-extrabold text-white leading-snug">
+              ขณะนี้ระบบกำลัง อัปเดต กรุณารอสักครู่
+            </h2>
+            <p className="text-slate-300 text-xs font-medium">
+              ระบบจะกลับมาในไม่ช้า ขออภัยในความไม่สะดวก
             </p>
+          </div>
+
+          {/* Important Action Notice Box */}
+          <div className="bg-rose-950/60 border border-rose-500/30 rounded-2xl p-4 text-left space-y-1.5">
+            <p className="text-xs text-rose-200 leading-relaxed font-bold">
+              ⚠️ เมื่อระบบกลับมา แล้วหน้าจอเป็นสีขาว ให้กดล้างแคส ในแอปพิเคชั่นของท่าน เพื่อกลับเข้าสู่ระบบได้ปกติ
+            </p>
+          </div>
+
+          {/* Admin / Manager Login Section */}
+          <div className="border-t border-slate-800/80 pt-5 text-left space-y-4">
+            <div className="text-center">
+              <span className="text-xs font-bold text-sky-400 tracking-wide uppercase bg-sky-950/50 border border-sky-500/20 px-3 py-1 rounded-full inline-block">
+                🔐 เข้าสู่ระบบสำหรับผู้ดูแลระบบ (Admin / Manager)
+              </span>
+            </div>
+
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-slate-300 text-xs font-bold mb-1.5">Username / รหัสสมาชิก</label>
+                <input 
+                  type="text" 
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                  required
+                  placeholder="กรอกชื่อผู้ใช้ผู้ดูแลระบบ"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:border-sky-400 focus:outline-none transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 text-xs font-bold mb-1.5">รหัสผ่าน</label>
+                <div className="relative">
+                  <input 
+                    type={showPassword ? "text" : "password"} 
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    placeholder="กรอกรหัสผ่านเพื่อปิด/เปิดระบบ"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-4 pr-10 py-3 text-white text-sm focus:border-sky-400 focus:outline-none transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 focus:outline-none"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+
+              <button 
+                type="submit"
+                className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 text-white font-bold py-3.5 rounded-xl hover:from-sky-400 hover:to-indigo-500 shadow-lg shadow-sky-500/20 active:scale-[0.98] transition cursor-pointer text-sm"
+              >
+                เข้าสู่ระบบ (สำหรับผู้ดูแลระบบ)
+              </button>
+            </form>
           </div>
 
           {/* Refresh/Check System Status button */}
-          <div className="pt-2">
+          <div className="pt-1">
             <button
+              type="button"
               onClick={async () => {
                 showNotif("กำลังตรวจสอบสถานะระบบล่าสุด...", "info");
                 await fetchBankSettings();
               }}
-              className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 rounded-xl text-xs transition duration-200 shadow-md flex items-center justify-center gap-2 cursor-pointer border border-slate-700 hover:border-slate-600"
+              className="w-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl text-xs transition duration-200 flex items-center justify-center gap-2 cursor-pointer border border-slate-700/60"
             >
-              <RefreshCw size={14} className="animate-spin" style={{ animationDuration: '3s' }} />
-              ตรวจสอบสถานะระบบและอัปเดตหน้าจอ
+              <RefreshCw size={14} />
+              ตรวจสอบสถานะระบบล่าสุด
             </button>
           </div>
-        </div>
-
-        {/* Hidden / Subtle Staff Login portal */}
-        <div className="mt-8 text-center">
-          <button
-            onClick={() => setShowStaffLogin(true)}
-            className="text-[10px] text-slate-500 hover:text-slate-400 font-bold tracking-widest uppercase hover:underline transition cursor-pointer"
-          >
-            🔐 เข้าสู่ระบบสำหรับเจ้าหน้าที่ (Staff Login Portal)
-          </button>
         </div>
       </div>
     );
@@ -5673,7 +5746,7 @@ export default function App() {
 
                 <div>
                   <label className="block text-slate-300 text-[11px] font-bold mb-1">
-                    รหัสผ่านใหม่ * <span className="text-[10px] text-slate-400 font-normal">(อย่างน้อย 6 ตัวอักษร)</span>
+                    รหัสผ่านใหม่ * <span className="text-[10px] text-slate-400 font-normal">(ตามเงื่อนไขความปลอดภัย)</span>
                   </label>
                   <input 
                     type="password" 
@@ -5684,6 +5757,31 @@ export default function App() {
                     placeholder="กรอกรหัสผ่านใหม่ส่วนตัว"
                     className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-xs focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400 transition"
                   />
+
+                  {/* Password Complexity Checklist Badges */}
+                  <div className="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800/80 mt-2 space-y-1 text-[10px]">
+                    <div className="font-bold text-slate-400 mb-1 border-b border-slate-800 pb-1">📋 เงื่อนไขรหัสผ่านใหม่ที่ต้องมี:</div>
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                      <div className={`flex items-center gap-1 ${newPass.length >= 6 ? 'text-emerald-400 font-bold' : 'text-slate-500'}`}>
+                        <span>{newPass.length >= 6 ? '✓' : '○'}</span> อย่างน้อย 6 ตัวอักษร
+                      </div>
+                      <div className={`flex items-center gap-1 ${/[A-Z]/.test(newPass) ? 'text-emerald-400 font-bold' : 'text-slate-500'}`}>
+                        <span>{/[A-Z]/.test(newPass) ? '✓' : '○'}</span> ตัวพิมพ์ใหญ่ (A-Z)
+                      </div>
+                      <div className={`flex items-center gap-1 ${/[a-z]/.test(newPass) ? 'text-emerald-400 font-bold' : 'text-slate-500'}`}>
+                        <span>{/[a-z]/.test(newPass) ? '✓' : '○'}</span> ตัวพิมพ์เล็ก (a-z)
+                      </div>
+                      <div className={`flex items-center gap-1 ${/[0-9]/.test(newPass) ? 'text-emerald-400 font-bold' : 'text-slate-500'}`}>
+                        <span>{/[0-9]/.test(newPass) ? '✓' : '○'}</span> ตัวเลข (0-9)
+                      </div>
+                      <div className={`flex items-center gap-1 ${/[^A-Za-z0-9]/.test(newPass) ? 'text-emerald-400 font-bold' : 'text-slate-500'}`}>
+                        <span>{/[^A-Za-z0-9]/.test(newPass) ? '✓' : '○'}</span> อักขระพิเศษ (!@#$)
+                      </div>
+                      <div className={`flex items-center gap-1 ${newPass && newPass !== 'Natee!234' && newPass !== 'Natt!234' && newPass !== 'Netee!234' ? 'text-emerald-400 font-bold' : newPass ? 'text-rose-400 font-bold' : 'text-slate-500'}`}>
+                        <span>{newPass && newPass !== 'Natee!234' && newPass !== 'Natt!234' && newPass !== 'Netee!234' ? '✓' : '✗'}</span> ไม่ใช้รหัสเริ่มต้นระบบ
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div>
@@ -12149,7 +12247,7 @@ export default function App() {
                        📈 รายงานระบบบัญชีบริษัท
                      </button>
  
-                     {profile?.role === 'Manager' && (
+                     {(profile?.role === 'Manager' || profile?.role === 'Admin' || currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
                        <>
                          <button 
                            onClick={() => setAdminSubTab('bankSettings')} 
@@ -15311,6 +15409,45 @@ export default function App() {
                               </li>
                             </ul>
 
+                            {/*🔐 PASSWORD COMPLEXITY REQUIREMENT BOX */}
+                            <div className="bg-amber-50/80 border border-amber-200/80 rounded-2xl p-4 space-y-2 text-xs text-amber-950">
+                              <p className="font-extrabold flex items-center gap-1 text-amber-900">
+                                🔐 เงื่อนไขรหัสผ่านใหม่และรหัส PIN (Mandatory Password & Security Policy):
+                              </p>
+                              <p className="leading-relaxed text-[11px] text-amber-900/90">
+                                ระบบบังคับให้เปลี่ยนรหัสผ่านเริ่มต้นระบบ (<code className="bg-amber-200/60 px-1 py-0.5 rounded font-mono font-bold">Natee!234</code>) ทันทีในการเข้าสู่ระบบครั้งแรก โดยรหัสผ่านใหม่ต้องตรงตามเงื่อนไขความปลอดภัยครบถ้วน:
+                              </p>
+                              <ul className="list-disc list-inside space-y-1 text-[11px] text-amber-950/90 pl-1">
+                                <li>ความยาวอย่างน้อย <strong>6 ตัวอักษรขึ้นไป</strong></li>
+                                <li>ต้องมีตัวอักษรภาษาอังกฤษตัวใหญ่ (<strong>A-Z</strong>) อย่างน้อย 1 ตัว</li>
+                                <li>ต้องมีตัวอักษรภาษาอังกฤษตัวเล็ก (<strong>a-z</strong>) อย่างน้อย 1 ตัว</li>
+                                <li>ต้องมีตัวเลข (<strong>0-9</strong>) อย่างน้อย 1 ตัว</li>
+                                <li>ต้องมีอักขระพิเศษ (เช่น <code className="bg-amber-200/60 px-1 rounded font-mono">! @ # $ % ^ & *</code>) อย่างน้อย 1 ตัว</li>
+                                <li>กำหนดรหัสธุรกรรม <strong>PIN ตัวเลข 6 หลัก</strong> เพื่อใช้ยืนยันการทำรายการการเงิน</li>
+                              </ul>
+                            </div>
+
+                            {/*🏦 ACCOUNT & BANK ACCEPTANCE REQUIREMENT BOX */}
+                            <div className="bg-emerald-50/80 border border-emerald-200/80 rounded-2xl p-4 space-y-2 text-xs text-emerald-950">
+                              <p className="font-extrabold flex items-center gap-1 text-emerald-900">
+                                🏦 เงื่อนไขการรับอนุมัติบัญชีและการผูกบัญชีธนาคาร (Account & Bank Binding Acceptance Policy):
+                              </p>
+                              <ul className="list-disc list-inside space-y-1.5 text-[11px] text-emerald-900 pl-1 leading-relaxed">
+                                <li>
+                                  <strong>ชื่อบัญชีธนาคารตรงกัน 100%:</strong> บัญชีธนาคารสำหรับรับโอนคอมมิชชัน ต้องมีชื่อ-นามสกุลตรงกับผู้ถือบัตรประชาชนในระบบ 100% (เพื่อป้องกันนอมินีและการฟอกเงิน)
+                                </li>
+                                <li>
+                                  <strong>1 สิทธิ์ต่อ 1 บัญชีรับเงิน:</strong> จำกัด 1 เลขบัตรประชาชน ต่อ 1 บัญชีรับผลประโยชน์หลัก เพื่อความถูกต้องในระบบนำส่งภาษีหัก ณ ที่จ่าย 3% แก่กรมสรรพากร
+                                </li>
+                                <li>
+                                  <strong>การรับสิทธิ์อนุมัติบัญชี:</strong> สมาชิกต้องส่งเอกสารภาพถ่ายหน้าบัตรประชาชนและสมุดบัญชีธนาคาร (Bookbank) คมชัด เพื่อผ่านการอนุมัติสิทธิ์ถอนเงินจากระบบ
+                                </li>
+                                <li>
+                                  <strong>การเปลี่ยนบัญชีรับเงิน:</strong> ต้องยื่นเรื่องพร้อมภาพถ่ายถือบัตรคู่กับหน้าสมุดบัญชีใหม่ เพื่อให้ฝ่ายบริหาร (Admin) ตรวจสอบและอนุมัติเท่านั้น
+                                </li>
+                              </ul>
+                            </div>
+
                             <div className="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-4 space-y-2 text-xs text-indigo-950">
                               <p className="font-bold flex items-center gap-1">⚡ กฎการซื้อครั้งแรก (First Purchase rule):</p>
                               <p className="leading-relaxed">
@@ -16660,7 +16797,7 @@ export default function App() {
                 </div>
               )}
 
-              {adminSubTab === 'bankSettings' && profile?.role === 'Manager' && (
+              {adminSubTab === 'bankSettings' && (profile?.role === 'Manager' || profile?.role === 'Admin' || currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
                 <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-6 max-w-2xl mx-auto animate-fadeIn">
                   <div className="text-center space-y-1">
                     <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-rose-50 text-rose-600 mb-2 border border-rose-100">
@@ -16778,7 +16915,7 @@ export default function App() {
                 </div>
               )}
 
-              {adminSubTab === 'maintenance' && profile?.role === 'Manager' && (
+              {adminSubTab === 'maintenance' && (profile?.role === 'Manager' || profile?.role === 'Admin' || currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
                 <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-6 max-w-2xl mx-auto animate-fadeIn text-slate-700">
                   <div className="text-center space-y-1">
                     <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-rose-50 text-rose-600 mb-2 border border-rose-100">

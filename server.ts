@@ -2015,6 +2015,17 @@ app.post('/api/auth/login', (req, res) => {
   if (member.password !== password) {
     return res.status(400).json({ success: false, message: "รหัสผ่านไม่ถูกต้อง" });
   }
+
+  // CHECK MAINTENANCE MODE: Only Admin/Manager can login when active
+  const isMaintenance = db.bankSettings?.maintenanceMode === true;
+  const isAdminOrManager = member.role === 'Admin' || member.role === 'Manager' || member.role?.toLowerCase() === 'admin' || member.role?.toLowerCase() === 'manager';
+
+  if (isMaintenance && !isAdminOrManager) {
+    return res.status(403).json({
+      success: false,
+      message: "ขณะนี้ระบบอยู่ระหว่างการอัปเดต อนุญาตเฉพาะสิทธิ์ผู้ดูแลระบบ (Admin/Manager) เข้าสู่ระบบเท่านั้นค่ะ"
+    });
+  }
   
   const isDefaultPass = member.password === "Natee!234" || member.password === "Natt!234" || member.password === "Netee!234";
   const forceFirstLogin = member.firstLogin ?? (member.passwordReset || isDefaultPass);
@@ -2045,10 +2056,19 @@ app.post('/api/auth/update-security', (req, res) => {
   
   if (newPassword) {
     if (newPassword === "Natee!234" || newPassword === "Natt!234" || newPassword === "Netee!234") {
-      return res.status(400).json({ success: false, message: "ห้ามใช้รหัสผ่านเริ่มต้นระบบเพื่อความปลอดภัย" });
+      return res.status(400).json({ success: false, message: "ห้ามใช้รหัสผ่านเริ่มต้นระบบเพื่อความปลอดภัยค่ะ" });
     }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ success: false, message: "รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษร" });
+    const hasUpper = /[A-Z]/.test(newPassword);
+    const hasLower = /[a-z]/.test(newPassword);
+    const hasNum = /[0-9]/.test(newPassword);
+    const hasSpec = /[^A-Za-z0-9]/.test(newPassword);
+    const isEng = /^[A-Za-z0-9!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/`~]*$/.test(newPassword);
+    
+    if (newPassword.length < 6 || !hasUpper || !hasLower || !hasNum || !hasSpec || !isEng) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษร ประกอบด้วยตัวอักษรใหญ่ (A-Z), ตัวเล็ก (a-z), ตัวเลข (0-9) และอักขระพิเศษ (เช่น @, #, $, !)" 
+      });
     }
     member.password = newPassword;
   }
@@ -3005,8 +3025,21 @@ app.post('/api/member/change-password', (req, res) => {
     return res.status(400).json({ success: false, message: "รหัสธุรกรรม PIN ไม่ถูกต้องค่ะ" });
   }
 
-  if (newPassword === "Natee!234") {
-    return res.status(400).json({ success: false, message: "ห้ามใช้รหัสผ่านเริ่มต้นระบบเพื่อความปลอดภัย" });
+  if (newPassword === "Natee!234" || newPassword === "Natt!234" || newPassword === "Netee!234") {
+    return res.status(400).json({ success: false, message: "ห้ามใช้รหัสผ่านเริ่มต้นระบบเพื่อความปลอดภัยค่ะ" });
+  }
+
+  const hasUpper = /[A-Z]/.test(newPassword);
+  const hasLower = /[a-z]/.test(newPassword);
+  const hasNum = /[0-9]/.test(newPassword);
+  const hasSpec = /[^A-Za-z0-9]/.test(newPassword);
+  const isEng = /^[A-Za-z0-9!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/`~]*$/.test(newPassword);
+
+  if (newPassword.length < 6 || !hasUpper || !hasLower || !hasNum || !hasSpec || !isEng) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษร ประกอบด้วยตัวอักษรใหญ่ (A-Z), ตัวเล็ก (a-z), ตัวเลข (0-9) และอักขระพิเศษ (เช่น @, #, $, !)" 
+    });
   }
 
   member.password = newPassword;
