@@ -1885,7 +1885,7 @@ app.post('/api/auth/register', (req, res) => {
     userId: newUserId,
     username: username.toLowerCase().trim(),
     email: email || `${username.toLowerCase().trim()}@gmail.com`,
-    password: password || "Netee!234",
+    password: password || "Natee!234",
     pin: "000000", // Default pin code
     name,
     surname,
@@ -1928,7 +1928,7 @@ app.post('/api/auth/register', (req, res) => {
     message: "สมัครสมาชิกสำเร็จเรียบร้อย!",
     userId: newUserId,
     username: username,
-    defaultPassword: password || "Netee!234",
+    defaultPassword: password || "Natee!234",
     sponsorName: `${sponsor.name} ${sponsor.surname}`
   });
 });
@@ -2041,7 +2041,7 @@ app.post('/api/auth/update-security', (req, res) => {
   }
   
   if (newPassword) {
-    if (newPassword === "Netee!234") {
+    if (newPassword === "Natee!234") {
       return res.status(400).json({ success: false, message: "ห้ามใช้รหัสผ่านเริ่มต้นระบบเพื่อความปลอดภัย" });
     }
     member.password = newPassword;
@@ -2145,7 +2145,7 @@ app.post('/api/auth/forgot-verify', (req, res) => {
   }
   
   // Set to temporary default password and mandate password reset flag
-  member.password = "Netee!234";
+  member.password = "Natee!234";
   member.passwordReset = true;
   member.firstLogin = false;
   
@@ -2156,7 +2156,7 @@ app.post('/api/auth/forgot-verify', (req, res) => {
   
   res.json({
     success: true,
-    message: "ยืนยันรหัส OTP ถูกต้อง! ระบบได้ทำการกำหนดรหัสผ่านชั่วคราวของท่านเป็น Netee!234 เรียบร้อยแล้ว (ท่านจะต้องเปลี่ยนรหัสผ่านใหม่ทันทีเมื่อล็อกอินเข้าระบบ)"
+    message: "ยืนยันรหัส OTP ถูกต้อง! ระบบได้ทำการกำหนดรหัสผ่านชั่วคราวของท่านเป็น Natee!234 เรียบร้อยแล้ว (ท่านจะต้องเปลี่ยนรหัสผ่านใหม่ทันทีเมื่อล็อกอินเข้าระบบ)"
   });
 });
 
@@ -2999,7 +2999,7 @@ app.post('/api/member/change-password', (req, res) => {
     return res.status(400).json({ success: false, message: "รหัสธุรกรรม PIN ไม่ถูกต้องค่ะ" });
   }
 
-  if (newPassword === "Netee!234") {
+  if (newPassword === "Natee!234") {
     return res.status(400).json({ success: false, message: "ห้ามใช้รหัสผ่านเริ่มต้นระบบเพื่อความปลอดภัย" });
   }
 

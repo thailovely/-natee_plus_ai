@@ -2841,7 +2841,7 @@ export default function App() {
       showNotif('กรุณาระบุกำหนดรหัสผ่านใหม่ส่วนตัวของท่านค่ะ', 'error');
       return;
     }
-    if (newPass === "Netee!234") {
+    if (newPass === "Natee!234") {
       showNotif('ห้ามใช้รหัสผ่านเริ่มต้นระบบเพื่อความปลอดภัยค่ะ', 'error');
       return;
     }
