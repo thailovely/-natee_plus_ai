@@ -4092,9 +4092,10 @@ app.post('/api/seller/reset-status', (req, res) => {
 // ADD PRODUCT
 app.post('/api/seller/product', (req, res) => {
   const { 
-    userId, productName, price, pv, imageFile, description, shortDescription, category, cost,
+    userId, productName, price, pv, imageFile, images, description, shortDescription, category, cost,
     subcategory, weight, width, length, height, volumetricWeight, chargeableWeight,
-    baseShippingCost, sellerCoPay, customerShippingFee, netPayout, approveInstantly
+    baseShippingCost, sellerCoPay, customerShippingFee, netPayout, approveInstantly,
+    discountPercent, shippingFeeBase, shippingDiscount, affiliateCommission
   } = req.body;
   const db = readDb();
   
@@ -4103,20 +4104,48 @@ app.post('/api/seller/product', (req, res) => {
     return res.status(403).json({ success: false, message: "เฉพาะผู้ขายที่ผ่านการอนุมัติร้านค้าเท่านั้นที่เพิ่มสินค้าได้" });
   }
   
-  let imageUrl = "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=300";
-  if (imageFile && imageFile.startsWith("data:")) {
+  let processedImages: string[] = [];
+  if (Array.isArray(images) && images.length > 0) {
+    for (let i = 0; i < Math.min(5, images.length); i++) {
+      const img = images[i];
+      if (typeof img === 'string' && img.trim()) {
+        if (img.startsWith("data:")) {
+          try {
+            const ext = img.split(';')[0].split('/')[1] || 'png';
+            const base64Data = img.replace(/^data:image\/\w+;base64,/, "");
+            const fileName = `prod_${userId}_${Date.now()}_${i}.${ext}`;
+            fs.writeFileSync(path.join(UPLOADS_DIR, fileName), base64Data, 'base64');
+            processedImages.push(`/uploads/${fileName}`);
+          } catch (e) {
+            console.error(e);
+          }
+        } else {
+          processedImages.push(img.trim());
+        }
+      }
+    }
+  }
+
+  if (processedImages.length === 0 && imageFile && typeof imageFile === 'string' && imageFile.startsWith("data:")) {
     try {
       const ext = imageFile.split(';')[0].split('/')[1] || 'png';
       const base64Data = imageFile.replace(/^data:image\/\w+;base64,/, "");
-      const fileName = `prod_${userId}_${Date.now()}.${ext}`;
+      const fileName = `prod_${userId}_${Date.now()}_0.${ext}`;
       fs.writeFileSync(path.join(UPLOADS_DIR, fileName), base64Data, 'base64');
-      imageUrl = `/uploads/${fileName}`;
+      processedImages.push(`/uploads/${fileName}`);
     } catch (e) {
       console.error(e);
     }
+  } else if (processedImages.length === 0 && imageFile && typeof imageFile === 'string') {
+    processedImages.push(imageFile);
   }
-  
-  const priceVal = parseFloat(price);
+
+  if (processedImages.length === 0) {
+    processedImages.push("https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=300");
+  }
+
+  const primaryImage = processedImages[0];
+  const priceVal = parseFloat(price) || 0;
   const costVal = cost !== undefined && cost !== "" ? parseFloat(cost) : Math.floor(priceVal * 0.30);
 
   const isApproved = !!approveInstantly;
@@ -4130,7 +4159,8 @@ app.post('/api/seller/product', (req, res) => {
     price: priceVal,
     pv: parseFloat(pv) || 0,
     cost: costVal,
-    image: imageUrl,
+    image: primaryImage,
+    images: processedImages,
     description,
     shortDescription: shortDescription || "",
     category,
@@ -4143,8 +4173,12 @@ app.post('/api/seller/product', (req, res) => {
     volumetricWeight: parseFloat(volumetricWeight) || 0,
     chargeableWeight: parseFloat(chargeableWeight) || 0,
     baseShippingCost: parseFloat(baseShippingCost) || 35,
+    shippingFeeBase: parseFloat(shippingFeeBase) || 35,
     sellerCoPay: parseFloat(sellerCoPay) || 0,
     customerShippingFee: parseFloat(customerShippingFee) || 35,
+    discountPercent: parseFloat(discountPercent) || 0,
+    shippingDiscount: parseFloat(shippingDiscount) || 0,
+    affiliateCommission: parseFloat(affiliateCommission) || 0,
     netPayout: parseFloat(netPayout) || 0
   };
   
@@ -4152,28 +4186,8 @@ app.post('/api/seller/product', (req, res) => {
 
   if (isApproved) {
     db.products.push({
-      id: newProduct.id,
-      name: newProduct.name,
-      price: newProduct.price,
-      pv: newProduct.pv,
-      cost: newProduct.cost,
-      image: newProduct.image,
-      description: newProduct.description,
-      shortDescription: newProduct.shortDescription || "",
-      category: newProduct.category || "General",
-      sellerCode: newProduct.sellerCode,
-      sellerStoreName: newProduct.sellerStoreName,
-      subcategory: newProduct.subcategory || "",
-      weight: newProduct.weight || 0,
-      width: newProduct.width || 0,
-      length: newProduct.length || 0,
-      height: newProduct.height || 0,
-      volumetricWeight: newProduct.volumetricWeight || 0,
-      chargeableWeight: newProduct.chargeableWeight || 0,
-      baseShippingCost: newProduct.baseShippingCost || 35,
-      sellerCoPay: newProduct.sellerCoPay || 0,
-      customerShippingFee: newProduct.customerShippingFee || 35,
-      netPayout: newProduct.netPayout || 0
+      ...newProduct,
+      status: "Approved"
     });
   }
 
@@ -4203,7 +4217,7 @@ app.get('/api/seller/orders/:userId', (req, res) => {
   res.json({ success: true, orders });
 });
 
-// SELLER UPDATE ORDER TRACKING
+// SELLER UPDATE ORDER TRACKING (Includes 15-day cutoff date calculation)
 app.post('/api/seller/order-ship', (req, res) => {
   const { orderId, sellerId, trackingCompany, trackingNo, shippingNote } = req.body;
   const db = readDb();
@@ -4214,13 +4228,20 @@ app.post('/api/seller/order-ship', (req, res) => {
     return res.status(403).json({ success: false, message: "คุณไม่มีสิทธิ์จัดการบิลสั่งซื้อนี้" });
   }
   
+  const shipDate = new Date();
+  const cutoffDate = new Date(shipDate);
+  cutoffDate.setDate(cutoffDate.getDate() + 15);
+
   order.status = "Completed";
+  order.shippedAt = shipDate.toISOString();
+  order.payoutCutoffDate = cutoffDate.toISOString();
+  order.payoutStatus = order.payoutStatus || "PendingCutoff";
   order.trackingCompany = trackingCompany || "";
   order.trackingNo = trackingNo || "";
   order.shippingNote = shippingNote || "";
   
   writeDb(db);
-  res.json({ success: true, message: "บันทึกข้อมูลจัดส่งและจัดส่งสินค้าสำเร็จ!" });
+  res.json({ success: true, message: `บันทึกข้อมูลจัดส่งเรียบร้อยแล้ว! กำหนดวันตัดรอบโอนเงินคือ ${cutoffDate.toLocaleDateString('th-TH')}` });
 });
 
 // -------------------------------------------------------------

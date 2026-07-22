@@ -640,20 +640,29 @@ export default function App() {
   const [simRightsCustom, setSimRightsCustom] = useState('1000');
   const [simRightsEMoneyIncome, setSimRightsEMoneyIncome] = useState('500');
   const [systemCondTab, setSystemCondTab] = useState('registration');
+  const [sellerTaxType, setSellerTaxType] = useState<'individual' | 'juristic'>('individual');
+  const [sellerReportStartDate, setSellerReportStartDate] = useState(() => new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]);
+  const [sellerReportEndDate, setSellerReportEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [newProd, setNewProd] = useState({
     name: '',
-    price: '',
+    price: '100',
+    discountPercent: '0',
+    shippingFeeBase: '35',
+    shippingDiscount: '0',
+    affiliateCommission: '0',
+    stock: '100',
     pv: '',
     description: '',
     shortDescription: '',
     category: 'General',
     subcategory: '',
+    images: [] as string[],
     imageFile: '',
     cost: '',
-    weight: '',
-    width: '',
-    length: '',
-    height: ''
+    weight: '350',
+    width: '10',
+    length: '10',
+    height: '10'
   });
   const [shopSubTab, setShopSubTab] = useState<'packages' | 'shop'>('packages');
   const [shopPortalView, setShopPortalView] = useState<'portal' | 'store' | 'packages'>('portal');
@@ -4534,94 +4543,132 @@ export default function App() {
     } catch (err) {}
   };
 
-  const calculateShippingAndPricing = (priceStr: string, weightStr: string, widthStr: string, lengthStr: string, heightStr: string) => {
-    const price = parseFloat(priceStr) || 0;
-    const weight = parseFloat(weightStr) || 0; // in grams
-    const width = parseFloat(widthStr) || 0; // in cm
-    const length = parseFloat(lengthStr) || 0; // in cm
-    const height = parseFloat(heightStr) || 0; // in cm
+  const calculateShippingAndPricing = (
+    priceStr: string,
+    weightStr: string = '350',
+    widthStr: string = '10',
+    lengthStr: string = '10',
+    heightStr: string = '10',
+    discountPercentStr: string = '0',
+    shippingFeeBaseStr: string = '35',
+    shippingDiscountStr: string = '0',
+    quantity: number = 1
+  ) => {
+    const originalPrice = parseFloat(priceStr) || 0;
+    const discountPercent = parseFloat(discountPercentStr) || 0;
+    const baseShippingFee = Math.max(35, parseFloat(shippingFeeBaseStr) || 35);
+    const shippingDiscount = parseFloat(shippingDiscountStr) || 0;
+    const qty = Math.max(1, quantity);
 
-    // 1. Volumetric weight: (width * length * height) / 5000 in kg
+    // 1. Discounted product price
+    const discountedPrice = Math.max(0, originalPrice * (1 - discountPercent / 100));
+
+    // 2. Shipping calculation per quantity with 50% tiered increment reduction:
+    // Item 1: base (35)
+    // Item 2: + 50% = +17.50
+    // Item 3: + 50% = +8.75
+    // Item 4: + 50% = +4.375...
+    // Max cap = 100 THB.
+    let calculatedShipping = baseShippingFee;
+    let currentIncrement = baseShippingFee;
+    for (let i = 2; i <= qty; i++) {
+      currentIncrement = currentIncrement * 0.5;
+      calculatedShipping += currentIncrement;
+    }
+    const cappedShipping = Math.min(100, calculatedShipping);
+    const customerShippingFee = Math.max(0, cappedShipping - shippingDiscount);
+
+    // 3. Customer total payment
+    const totalCustomerPaid = (discountedPrice * qty) + customerShippingFee;
+
+    // Step 1: VAT 7% Extraction (e.g. 135 / 1.07 = 126.17 before VAT, VAT = 8.83)
+    const priceExVat = totalCustomerPaid / 1.07;
+    const vat = totalCustomerPaid - priceExVat;
+
+    // Step 2: Platform GP Fee 20% (from price before VAT)
+    const gpAmount = priceExVat * 0.20;
+
+    // Step 3: Net Earnings to Seller (เงินเข้าร้านจริง)
+    const netPayout = Math.max(0, priceExVat - gpAmount);
+
+    // Step 4: PV Points Calculation (50% of GP, integer floor)
+    const pv = Math.floor(gpAmount * 0.50);
+
+    // Parcel Dimensions
+    const weight = parseFloat(weightStr) || 0;
+    const width = parseFloat(widthStr) || 0;
+    const length = parseFloat(lengthStr) || 0;
+    const height = parseFloat(heightStr) || 0;
     const volumetricWeight = (width * length * height) / 5000;
     const actualWeightKg = weight / 1000;
     const chargeableWeight = Math.max(actualWeightKg, volumetricWeight);
 
-    // 2. Base shipping cost using the tiered weight formula:
-    // - <= 2 kg: 40 Baht/kg
-    // - <= 5 kg: 35 Baht/kg
-    // - > 5 kg: 30 Baht/kg
-    // With a minimum base shipping cost of 35 Baht for parcel handling.
-    const baseShippingCost = (() => {
-      const w = chargeableWeight;
-      let cost = 0;
-      if (w <= 2) {
-        cost = w * 40;
-      } else if (w <= 5) {
-        cost = w * 35;
-      } else {
-        cost = w * 30;
-      }
-      return Math.max(35, Math.ceil(cost));
-    })();
-
-    // 3. Enhanced Seller co-pay: 15% of product price, capped at 40 Baht to reduce customer's burden
-    const sellerCoPay = Math.min(price * 0.15, 40);
-
-    // 4. Customer shipping fee: Remaining fee after seller co-pay (can go down to 0 Baht for FREE SHIPPING)
-    const customerShippingFee = Math.max(0, baseShippingCost - sellerCoPay);
-
-    // 5. VAT 7%
-    const vat = price - (price / 1.07);
-    const priceExVat = price / 1.07;
-
-    // 6. GP 20%
-    const gpAmount = price * 0.20;
-
-    // 7. GP difference and expenses, หักกำไรบริษัท 25% ของเงินที่เหลือ, ส่วนที่เหลือคือ PV (Saved in system, hidden from member view)
-    const remainingGp = Math.max(0, gpAmount - sellerCoPay);
-    const companyProfit = remainingGp * 0.25;
-    const pv = remainingGp * 0.75;
-
-    // 8. Net Payout for seller: Price - VAT 7% - GP 20% - Seller Co-pay Shipping
-    const netPayout = Math.max(0, price - vat - gpAmount - sellerCoPay);
-
     return {
-      price,
+      price: originalPrice,
+      originalPrice,
+      discountPercent,
+      discountedPrice,
+      baseShippingCost: baseShippingFee,
+      shippingFeeBase: baseShippingFee,
+      shippingDiscount,
+      customerShippingFee,
+      totalCustomerPaid,
+      quantity: qty,
+      vat,
+      priceExVat,
+      gpAmount,
+      netPayout,
+      pv,
       weight,
       width,
       length,
       height,
       volumetricWeight,
       chargeableWeight,
-      baseShippingCost,
-      sellerCoPay,
-      customerShippingFee,
-      vat,
-      priceExVat,
-      gpAmount,
-      remainingGp,
-      companyProfit,
-      pv,
-      netPayout
+      sellerCoPay: shippingDiscount
     };
   };
 
   const handleSellerProdSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const sellerId = sellerSessionUser?.userId || currentUser?.userId;
+    if (!sellerId) {
+      showNotif("กรุณาเข้าสู่ระบบพาร์ทเนอร์ร้านค้าก่อนยื่นอนุมัติสินค้าค่ะ", "error");
+      return;
+    }
+    if (!newProd.name || !newProd.name.trim()) {
+      showNotif("กรุณาระบุชื่อเรียกผลิตภัณฑ์ด้วยค่ะ", "error");
+      return;
+    }
     try {
-      const calc = calculateShippingAndPricing(newProd.price, newProd.weight, newProd.width, newProd.length, newProd.height);
+      const calc = calculateShippingAndPricing(
+        newProd.price,
+        newProd.weight,
+        newProd.width,
+        newProd.length,
+        newProd.height,
+        newProd.discountPercent,
+        newProd.shippingFeeBase,
+        newProd.shippingDiscount,
+        1
+      );
       const res = await fetch('/api/seller/product', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: currentUser.userId,
+          userId: sellerId,
           productName: newProd.name,
           price: newProd.price,
-          pv: calc.pv.toFixed(2), // Auto-calculated PV according to user formula
+          discountPercent: newProd.discountPercent,
+          shippingFeeBase: newProd.shippingFeeBase,
+          shippingDiscount: newProd.shippingDiscount,
+          affiliateCommission: newProd.affiliateCommission,
+          pv: calc.pv,
           description: newProd.description,
           category: newProd.category,
           subcategory: newProd.subcategory,
-          imageFile: newProd.imageFile,
+          images: newProd.images.length > 0 ? newProd.images : [newProd.imageFile].filter(Boolean),
+          imageFile: newProd.images[0] || newProd.imageFile,
           cost: newProd.cost,
           weight: newProd.weight,
           width: newProd.width,
@@ -4630,76 +4677,101 @@ export default function App() {
           volumetricWeight: calc.volumetricWeight.toFixed(3),
           chargeableWeight: calc.chargeableWeight.toFixed(3),
           baseShippingCost: calc.baseShippingCost,
-          sellerCoPay: calc.sellerCoPay,
+          sellerCoPay: calc.shippingDiscount,
           customerShippingFee: calc.customerShippingFee,
-          netPayout: calc.netPayout
+          netPayout: calc.netPayout.toFixed(2),
+          approveInstantly: (currentUser?.role === 'Admin' || sellerSessionUser?.role === 'Admin' || !!originalAdmin)
         })
       });
       const d = await res.json();
       if (d.success) {
-        showNotif(d.message, 'success');
+        showNotif(d.message || "ยื่นอนุมัติเพิ่มรายการสินค้าเรียบร้อยแล้วค่ะ", 'success');
         setNewProd({ 
-          name: '', price: '', pv: '', description: '', shortDescription: '', category: 'General', subcategory: '', imageFile: '', cost: '',
-          weight: '', width: '', length: '', height: '' 
+          name: '', price: '100', discountPercent: '0', shippingFeeBase: '35', shippingDiscount: '0',
+          affiliateCommission: '0', stock: '100', pv: '', description: '', shortDescription: '',
+          category: 'General', subcategory: '', images: [], imageFile: '', cost: '', weight: '350',
+          width: '10', length: '10', height: '10' 
         });
-        // Refresh products list for seller
-        const r = await fetch(`/api/seller/products/${currentUser.userId}`);
-        const data = await r.json();
-        if (data.success) setSellerProducts(data.products);
+        fetchSellerData(sellerId);
       } else {
-        showNotif(d.message, 'error');
+        showNotif(d.message || "เกิดข้อผิดพลาดในการยื่นอนุมัติสินค้า", 'error');
       }
-    } catch (err) {}
+    } catch (err: any) {
+      console.error("Seller product submission error:", err);
+      showNotif("เกิดข้อผิดพลาดในการส่งข้อมูลสินค้า: " + (err.message || err), 'error');
+    }
   };
 
   const handleSellerProdEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct) return;
+    const sellerId = sellerSessionUser?.userId || currentUser?.userId;
+    if (!sellerId) {
+      showNotif("กรุณาเข้าสู่ระบบพาร์ทเนอร์ร้านค้าก่อนทำรายการค่ะ", "error");
+      return;
+    }
     try {
-      const calc = calculateShippingAndPricing(editingProduct.price, editingProduct.weight, editingProduct.width, editingProduct.length, editingProduct.height);
+      const calc = calculateShippingAndPricing(
+        editingProduct.price,
+        editingProduct.weight,
+        editingProduct.width,
+        editingProduct.length,
+        editingProduct.height,
+        editingProduct.discountPercent,
+        editingProduct.shippingFeeBase,
+        editingProduct.shippingDiscount,
+        1
+      );
       const res = await fetch('/api/seller/product/edit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: currentUser.userId,
+          userId: sellerId,
           productId: editingProduct.id,
           productName: editingProduct.name,
           price: editingProduct.price,
-          pv: calc.pv.toFixed(2), // Auto-calculated PV according to user formula
+          discountPercent: editingProduct.discountPercent,
+          shippingFeeBase: editingProduct.shippingFeeBase,
+          shippingDiscount: editingProduct.shippingDiscount,
+          affiliateCommission: editingProduct.affiliateCommission,
+          pv: calc.pv,
           description: editingProduct.description,
           category: editingProduct.category,
           subcategory: editingProduct.subcategory || '',
-          imageFile: editingProduct.imageFile,
+          images: Array.isArray(editingProduct.images) && editingProduct.images.length > 0 ? editingProduct.images : [editingProduct.imageFile || editingProduct.image].filter(Boolean),
+          imageFile: (editingProduct.images && editingProduct.images[0]) || editingProduct.imageFile || editingProduct.image,
           cost: editingProduct.cost,
-          weight: editingProduct.weight || '0',
-          width: editingProduct.width || '0',
-          length: editingProduct.length || '0',
-          height: editingProduct.height || '0',
+          weight: editingProduct.weight || '350',
+          width: editingProduct.width || '10',
+          length: editingProduct.length || '10',
+          height: editingProduct.height || '10',
           volumetricWeight: calc.volumetricWeight.toFixed(3),
           chargeableWeight: calc.chargeableWeight.toFixed(3),
           baseShippingCost: calc.baseShippingCost,
-          sellerCoPay: calc.sellerCoPay,
+          sellerCoPay: calc.shippingDiscount,
           customerShippingFee: calc.customerShippingFee,
-          netPayout: calc.netPayout,
-          approveInstantly: (currentUser?.role === 'Admin' || !!originalAdmin)
+          netPayout: calc.netPayout.toFixed(2),
+          approveInstantly: (currentUser?.role === 'Admin' || sellerSessionUser?.role === 'Admin' || !!originalAdmin)
         })
       });
       const d = await res.json();
       if (d.success) {
-        showNotif(d.message, 'success');
+        showNotif(d.message || "แก้ไขรายการสินค้าเรียบร้อยแล้วค่ะ", 'success');
         setShowEditProductModal(false);
         setEditingProduct(null);
-        // Refresh products list for seller
-        const r = await fetch(`/api/seller/products/${currentUser.userId}`);
-        const data = await r.json();
-        if (data.success) setSellerProducts(data.products);
+        fetchSellerData(sellerId);
       } else {
-        showNotif(d.message, 'error');
+        showNotif(d.message || "เกิดข้อผิดพลาดในการแก้ไขสินค้า", 'error');
       }
-    } catch (err) {}
+    } catch (err: any) {
+      console.error("Seller product edit error:", err);
+      showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อ: " + (err.message || err), 'error');
+    }
   };
 
   const handleSellerShipOrder = async (orderId: string) => {
+    const sellerId = sellerSessionUser?.userId || currentUser?.userId;
+    if (!sellerId) return;
     try {
       const tracking = sellerShippingTracking[orderId] || { company: 'Flash Express', trackingNo: '', note: '' };
       if (!tracking.trackingNo) {
@@ -4711,7 +4783,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderId,
-          sellerId: currentUser.userId,
+          sellerId: sellerId,
           trackingCompany: tracking.company,
           trackingNo: tracking.trackingNo,
           shippingNote: tracking.note
@@ -4725,7 +4797,7 @@ export default function App() {
           delete updated[orderId];
           return updated;
         });
-        fetchSellerData();
+        fetchSellerData(sellerId);
       } else {
         showNotif(d.message, 'error');
       }
@@ -5658,7 +5730,7 @@ export default function App() {
               <img src="/favicon.svg" alt="Natee Plus Logo" className="w-full h-full object-contain filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)]" referrerPolicy="no-referrer" />
             </div>
             <h2 className="text-xl font-extrabold tracking-wider text-white">
-              <span className="text-sky-400">นที</span> <span className="text-orange-500">พลัส</span>
+              <span className="text-sky-400">นที</span> <span className="text-orange-500">พลัส</span> <span className="text-sky-400">มาร์เก็ต</span>
             </h2>
           </div>
           <button onClick={() => setSidebarOpen(false)} className="md:hidden text-slate-400 hover:text-white">✕</button>
@@ -5960,11 +6032,11 @@ export default function App() {
                     <div className="flex items-center gap-2 bg-slate-50/90 px-3 py-1 rounded-2xl border border-slate-100 shadow-sm">
                       <img src="/favicon.svg" alt="Natee Plus Logo" className="w-7 h-7 object-contain" referrerPolicy="no-referrer" />
                       <span className="text-lg font-extrabold tracking-wider">
-                        <span className="text-sky-500">นที</span> <span className="text-orange-500">พลัส</span>
+                        <span className="text-sky-500">นที</span> <span className="text-orange-500">พลัส</span> <span className="text-sky-400">มาร์เก็ต</span>
                       </span>
                     </div>
                   </div>
-                  <p className="text-xs text-slate-500">ภาพรวมความสุขของกระเป๋าร้านค้าออนไลน์ นทีพลัส ของคุณวันนี้</p>
+                  <p className="text-xs text-slate-500">ภาพรวมความสุขของกระเป๋าร้านค้าออนไลน์ นที พลัส มาร์เก็ต ของคุณวันนี้</p>
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-3 ml-auto md:ml-0 shrink-0">
@@ -7149,10 +7221,10 @@ export default function App() {
                       <span className="text-xs font-extrabold text-indigo-900 tracking-wider">NATEE PLUS MARKET PORTAL</span>
                     </div>
                     <h2 className="text-3xl font-black text-indigo-950 tracking-tight">
-                      เลือกบริการของ <span className="text-indigo-950 font-bold">นที</span> <span className="text-orange-500 font-bold">พลัส</span>
+                      เลือกบริการของ <span className="text-sky-500 font-bold">นที</span> <span className="text-orange-500 font-bold">พลัส</span> <span className="text-sky-400 font-bold">มาร์เก็ต</span>
                     </h2>
                     <p className="text-xs text-slate-500 max-w-md mx-auto">
-                      ยินดีต้อนรับเข้าสู่ช่องทางการซื้อขายสินค้าและขยายเครือข่ายธุรกิจที่ปลอดภัยและทันสมัยที่สุดในระบบ นที พลัส
+                      ยินดีต้อนรับเข้าสู่ช่องทางการซื้อขายสินค้าและขยายเครือข่ายธุรกิจที่ปลอดภัยและทันสมัยที่สุดในระบบ นที พลัส มาร์เก็ต
                     </p>
                   </div>
 
@@ -10169,8 +10241,10 @@ export default function App() {
                 // ACTIVE SELLER DASHBOARD VIEW
                 <div className="space-y-6">
                   {/* PROFILE HEADER BLOCK (โปรไฟล์ร้านค้า ชื่อสกุล รูประฆังแจ้งเตือน) */}
-                  <div className="bg-gradient-to-r from-slate-900 to-slate-850 text-white rounded-3xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-xl border border-slate-750/50 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+                  <div className="bg-gradient-to-r from-slate-900 to-slate-850 text-white rounded-3xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-xl border border-slate-750/50 relative overflow-visible z-30">
+                    <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
+                      <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+                    </div>
                     
                     <div className="flex items-center gap-4 relative z-10">
                       {/* Logo 100% untreated frame */}
@@ -10201,9 +10275,9 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 relative z-10 self-stretch md:self-auto justify-end">
+                    <div className="flex items-center gap-3 relative z-20 self-stretch md:self-auto justify-end">
                       {/* Bell Notification Bell Dropdown */}
-                      <div className="relative">
+                      <div className="relative z-50">
                         <button
                           type="button"
                           onClick={() => setShowSellerNotifs(!showSellerNotifs)}
@@ -10218,7 +10292,7 @@ export default function App() {
                         </button>
 
                         {showSellerNotifs && (
-                          <div className="absolute right-0 mt-2.5 w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-4 text-xs z-50 animate-fadeIn space-y-3">
+                          <div className="absolute right-0 mt-2.5 w-80 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl p-4 text-xs z-[99999] animate-fadeIn space-y-3">
                             <div className="flex justify-between items-center border-b border-slate-800 pb-2">
                               <span className="font-bold text-slate-200">การแจ้งเตือนร้านค้า</span>
                               <button 
@@ -10675,109 +10749,172 @@ export default function App() {
                       <div className="space-y-6">
                         {/* Add New Product Form */}
                         <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
-                          <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
-                            ➕ ขอยื่นอนุมัติเพิ่มรายการสินค้าแบรนด์คุณ (Submit New Product to Natee Market)
-                          </h4>
-                          <form onSubmit={handleSellerProdSubmit} className="space-y-4 text-xs">
+                          <div className="flex flex-wrap items-center justify-between border-b border-slate-100 pb-3 gap-2">
+                            <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                              <span className="p-1.5 bg-indigo-600 text-white rounded-xl text-xs">🛍️</span>
+                              <span>ลงทะเบียนและยื่นอนุมัติสินค้าใหม่ (Natee Plus Partner)</span>
+                            </h4>
+                            <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
+                              อัตราส่วนรูปภาพ 1:1 (สูงสุด 5 รูป)
+                            </span>
+                          </div>
+
+                          <form onSubmit={handleSellerProdSubmit} className="space-y-5 text-xs">
+                            {/* 1:1 Image Upload Gallery Section (Max 5 Images) */}
+                            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-3">
+                              <div className="flex justify-between items-center">
+                                <label className="block text-slate-800 font-bold text-xs flex items-center gap-1.5">
+                                  <span>📷 รูปภาพผลิตภัณฑ์ (ขนาด 1:1 Square)</span>
+                                  <span className="text-rose-500 font-bold">*</span>
+                                </label>
+                                <span className="text-[10px] text-slate-500 font-medium">
+                                  {newProd.images.length}/5 ภาพ (รองรับไฟล์ PNG, JPG)
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                                {newProd.images.map((imgUrl, idx) => (
+                                  <div key={idx} className="relative aspect-square rounded-2xl overflow-hidden border-2 border-indigo-200 bg-white shadow-xs group">
+                                    <img src={imgUrl} alt={`Product ${idx + 1}`} className="w-full h-full object-cover" />
+                                    {idx === 0 && (
+                                      <span className="absolute top-1 left-1 bg-indigo-600 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-md shadow-xs">
+                                        รูปหลัก
+                                      </span>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setNewProd(prev => ({
+                                          ...prev,
+                                          images: prev.images.filter((_, i) => i !== idx)
+                                        }));
+                                      }}
+                                      className="absolute top-1 right-1 bg-rose-600 hover:bg-rose-700 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md cursor-pointer transition opacity-90 group-hover:opacity-100"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ))}
+
+                                {newProd.images.length < 5 && (
+                                  <label className="aspect-square rounded-2xl border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50/30 flex flex-col items-center justify-center cursor-pointer transition p-2 text-center group">
+                                    <span className="text-xl text-slate-400 group-hover:text-indigo-600 font-bold">+</span>
+                                    <span className="text-[10px] text-slate-500 group-hover:text-indigo-600 font-bold mt-1">
+                                      เพิ่มรูป (1:1)
+                                    </span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      multiple
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        const files = Array.from(e.target.files || []);
+                                        const remainingSlots = 5 - newProd.images.length;
+                                        const filesToProcess = files.slice(0, remainingSlots);
+                                        
+                                        filesToProcess.forEach(f => {
+                                          const reader = new FileReader();
+                                          reader.onloadend = () => {
+                                            if (reader.result) {
+                                              setNewProd(prev => {
+                                                if (prev.images.length >= 5) return prev;
+                                                return { ...prev, images: [...prev.images, reader.result as string] };
+                                              });
+                                            }
+                                          };
+                                          reader.readAsDataURL(f);
+                                        });
+                                      }}
+                                    />
+                                  </label>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Basic Product Info */}
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                              <div>
-                                <label className="block text-slate-700 font-semibold mb-1">ชื่อเรียกผลิตภัณฑ์ (ภาษาไทย)</label>
+                              <div className="sm:col-span-2">
+                                <label className="block text-slate-700 font-semibold mb-1">
+                                  ชื่อเรียกผลิตภัณฑ์ (ภาษาไทย) <span className="text-rose-500">*</span>
+                                </label>
                                 <input 
                                   type="text" 
                                   required
                                   value={newProd.name}
                                   onChange={(e) => setNewProd(prev => ({ ...prev, name: e.target.value }))}
                                   placeholder="เช่น เซรั่มบำรุงผิวหน้าพลัสออร์แกนิค"
-                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-400 outline-none"
                                 />
                               </div>
                               <div>
-                                <label className="block text-slate-700 font-semibold mb-1">ราคาตั้งจำหน่ายหน้าร้าน (฿)</label>
-                                <input 
-                                  type="number" 
-                                  required
-                                  value={newProd.price}
-                                  onChange={(e) => {
-                                    setNewProd(prev => ({ ...prev, price: e.target.value }));
-                                    // Keep target payout synced if manually edited
-                                    const p = parseFloat(e.target.value) || 0;
-                                    if (p > 0) {
-                                      setNewProdTargetPayout((p * 0.80).toString());
-                                    } else {
-                                      setNewProdTargetPayout('');
-                                    }
-                                  }}
-                                  placeholder="เช่น 390"
-                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-indigo-600"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-slate-700 font-semibold mb-1">ปริมาณสต็อกพร้อมจำหน่าย (ชิ้น)</label>
+                                <label className="block text-slate-700 font-semibold mb-1">
+                                  ปริมาณสต็อกพร้อมจำหน่าย (ชิ้น) <span className="text-rose-500">*</span>
+                                </label>
                                 <input 
                                   type="number" 
                                   required
                                   value={newProd.stock}
                                   onChange={(e) => setNewProd(prev => ({ ...prev, stock: e.target.value }))}
-                                  placeholder="เช่น 150"
-                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                                  placeholder="เช่น 100"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-400 outline-none"
                                 />
                               </div>
                             </div>
 
-                            {/* Auto-Calculate helper container */}
-                            <div className="bg-amber-50/70 border border-amber-100 rounded-2xl p-3 space-y-2 font-sans">
-                              <div className="flex justify-between items-center">
-                                <span className="font-bold text-amber-900 text-[11px] flex items-center gap-1">
-                                  💡 ระบบคำนวณราคาขายอัตโนมัติ (รวม GP 20% และ VAT 7%)
-                                </span>
-                                <span className="text-[10px] text-amber-700 font-semibold bg-amber-100/50 px-2 py-0.5 rounded-full">
-                                  เพื่อป้องกันพาร์ทเนอร์ขาดทุนสุทธิ
-                                </span>
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                            {/* Pricing & Financial Setup */}
+                            <div className="bg-amber-50/50 border border-amber-200/60 rounded-2xl p-4 space-y-3">
+                              <h5 className="font-bold text-amber-950 text-xs flex items-center gap-1.5">
+                                🏷️ กำหนดราคาและส่วนลดสินค้า
+                              </h5>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div>
-                                  <label className="block text-slate-600 text-[10px] font-bold mb-1">ระบุ รายรับที่พาร์ทเนอร์ต้องการได้รับจริง (ก่อนหักภาษี ณ ที่จ่าย 3%):</label>
-                                  <div className="relative">
-                                    <input 
-                                      type="number"
-                                      placeholder="เช่น ใส่ 800 หากต้องการรับ 800 บาท"
-                                      value={newProdTargetPayout}
-                                      onChange={(e) => {
-                                        const inputVal = e.target.value;
-                                        setNewProdTargetPayout(inputVal);
-                                        const targetVal = parseFloat(inputVal) || 0;
-                                        if (targetVal > 0) {
-                                          // Formula: Price = Target / 0.80
-                                          const calculatedPrice = Math.ceil(targetVal / 0.80);
-                                          setNewProd(prev => ({ ...prev, price: calculatedPrice.toString() }));
-                                        } else {
-                                          setNewProd(prev => ({ ...prev, price: '' }));
-                                        }
-                                      }}
-                                      className="w-full bg-white border border-amber-200 rounded-xl pl-3 pr-10 py-2 text-xs text-amber-950 placeholder-amber-400 font-extrabold focus:ring-2 focus:ring-amber-300 outline-none"
-                                    />
-                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-600 font-bold text-[10px]">บาท</span>
-                                  </div>
+                                  <label className="block text-slate-700 font-semibold mb-1">
+                                    ราคาตั้งขายปกติ (บาท) <span className="text-rose-500">*</span>
+                                  </label>
+                                  <input 
+                                    type="number" 
+                                    required
+                                    value={newProd.price}
+                                    onChange={(e) => setNewProd(prev => ({ ...prev, price: e.target.value }))}
+                                    placeholder="เช่น 100"
+                                    className="w-full border border-amber-300 bg-white rounded-xl px-3 py-2 text-xs font-bold text-indigo-700 focus:ring-2 focus:ring-amber-400 outline-none"
+                                  />
                                 </div>
-                                <div className="bg-amber-100/30 p-2.5 rounded-xl border border-amber-200/50 text-[11px] text-amber-900 space-y-1">
-                                  <p className="font-bold text-amber-950 flex justify-between">
-                                    <span>ราคาจำหน่ายหน้าเว็บที่จะตั้งให้:</span>
-                                    <span className="text-sm font-extrabold text-amber-700 font-mono">฿ {newProd.price || 0}</span>
-                                  </p>
-                                  <p className="text-[10px] text-amber-700/80 leading-relaxed">
-                                    คำนวณจากสูตร: ยอดรับ {newProdTargetPayout || 0} ÷ 0.80 = ราคาขายจริง <strong>{newProd.price || 0} บาท</strong> (หัก GP 20% แล้วจะได้ยอดรับตามต้องการพอดี โดยราคาหน้าเว็บนี้รวมภาษีมูลค่าเพิ่ม VAT 7% เรียบร้อยแล้ว)
-                                  </p>
+                                <div>
+                                  <label className="block text-slate-700 font-semibold mb-1">
+                                    ส่วนลดโปรโมชั่น (%)
+                                  </label>
+                                  <input 
+                                    type="number" 
+                                    value={newProd.discountPercent}
+                                    onChange={(e) => setNewProd(prev => ({ ...prev, discountPercent: e.target.value }))}
+                                    placeholder="เช่น 0 หรือ 10"
+                                    className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2 text-xs text-rose-600 font-bold focus:ring-2 focus:ring-amber-400 outline-none"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-slate-700 font-semibold mb-1">
+                                    ค่าขนส่งขั้นต่ำร้านค้า (บาท) <span className="text-xs text-slate-400">(ขั้นต่ำ 35)</span>
+                                  </label>
+                                  <input 
+                                    type="number" 
+                                    value={newProd.shippingFeeBase}
+                                    onChange={(e) => setNewProd(prev => ({ ...prev, shippingFeeBase: e.target.value }))}
+                                    placeholder="35"
+                                    className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-amber-400 outline-none"
+                                  />
                                 </div>
                               </div>
                             </div>
 
+                            {/* Category & Subcategory */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               <div>
                                 <label className="block text-slate-700 font-semibold mb-1">หมวดหมู่หลักผลิตภัณฑ์ (Category)</label>
                                 <select 
                                   value={newProd.category}
                                   onChange={(e) => setNewProd(prev => ({ ...prev, category: e.target.value, subcategory: '' }))}
-                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white text-slate-800"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white text-slate-800 focus:ring-2 focus:ring-indigo-400 outline-none"
                                 >
                                   <option value="Fashion">👗 เสื้อผ้า แฟชั่น และเครื่องแต่งกาย (Fashion)</option>
                                   <option value="Electronics">🔌 อุปกรณ์ไอที และอิเล็กทรอนิกส์ (Electronics)</option>
@@ -10797,83 +10934,26 @@ export default function App() {
                                   type="text" 
                                   value={newProd.subcategory}
                                   onChange={(e) => setNewProd(prev => ({ ...prev, subcategory: e.target.value }))}
-                                  placeholder="พิมพ์เอง หรือคลิกเลือกประเภทด้านล่าง"
-                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                                  placeholder="ระบุประเภทสินค้าย่อย"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-400 outline-none"
                                 />
                               </div>
                             </div>
 
-                            {/* Subcategory suggestions chips */}
-                            <div>
-                              <span className="block text-[10px] text-slate-400 mb-1">เลือกประเภทสินค้าด่วนตามหมวดหมู่:</span>
-                              <div className="flex flex-wrap gap-1">
-                                {newProd.category === 'Fashion' && ['เสื้อผ้าผู้หญิง/ผู้ชาย', 'รองเท้า', 'กระเป๋า', 'เครื่องประดับ', 'นาฬิกา'].map(chip => (
-                                  <button
-                                    key={chip}
-                                    type="button"
-                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
-                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                                  >
-                                    {chip}
-                                  </button>
-                                ))}
-                                {newProd.category === 'Electronics' && ['สมาร์ทโฟน', 'คอมพิวเตอร์', 'อุปกรณ์เกม', 'กล้อง', 'เครื่องใช้ไฟฟ้าภายในบ้าน'].map(chip => (
-                                  <button
-                                    key={chip}
-                                    type="button"
-                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
-                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                                  >
-                                    {chip}
-                                  </button>
-                                ))}
-                                {newProd.category === 'Beauty' && ['เครื่องสำอาง', 'ผลิตภัณฑ์บำรุงผิว', 'น้ำหอม', 'ของใช้ส่วนตัว'].map(chip => (
-                                  <button
-                                    key={chip}
-                                    type="button"
-                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
-                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                                  >
-                                    {chip}
-                                  </button>
-                                ))}
-                                {newProd.category === 'Health' && ['อาหารเสริม', 'อุปกรณ์ทางการแพทย์', 'วิตามิน', 'สินค้าสำหรับฟิตเนส'].map(chip => (
-                                  <button
-                                    key={chip}
-                                    type="button"
-                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
-                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                                  >
-                                    {chip}
-                                  </button>
-                                ))}
-                                {newProd.category === 'Home' && ['อุปกรณ์ตกแต่งบ้าน', 'เครื่องครัว', 'เครื่องนอน', 'อุปกรณ์จัดเก็บ', 'ไฟแต่งบ้าน'].map(chip => (
-                                  <button
-                                    key={chip}
-                                    type="button"
-                                    onClick={() => setNewProd(prev => ({ ...prev, subcategory: chip }))}
-                                    className={`px-2 py-1 rounded-lg border text-[10px] cursor-pointer transition ${newProd.subcategory === chip ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                                  >
-                                    {chip}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            {/* Shipping Calculation Parameters */}
+                            {/* Package Weight & Dimensions */}
                             <div className="bg-indigo-50/40 border border-indigo-100 p-4 rounded-2xl space-y-3">
                               <h5 className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5 text-indigo-900">
-                                📦 ขนาดกล่องพัสดุและน้ำหนัก (เพื่อคำนวณค่าจัดส่ง Shippop Base)
+                                📦 ขนาดกล่องพัสดุและน้ำหนัก (เพื่อประเมินค่าจัดส่ง)
                               </h5>
                               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                                 <div>
-                                  <label className="block text-slate-600 text-[10px] font-semibold mb-0.5">น้ำหนักจริง (กรัม)</label>
+                                  <label className="block text-slate-600 text-[10px] font-semibold mb-0.5">น้ำหนัก (กรัม)</label>
                                   <input 
                                     type="number" 
                                     required
                                     value={newProd.weight}
                                     onChange={(e) => setNewProd(prev => ({ ...prev, weight: e.target.value }))}
-                                    placeholder="เช่น 350"
+                                    placeholder="350"
                                     className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white"
                                   />
                                 </div>
@@ -10884,7 +10964,7 @@ export default function App() {
                                     required
                                     value={newProd.width}
                                     onChange={(e) => setNewProd(prev => ({ ...prev, width: e.target.value }))}
-                                    placeholder="W"
+                                    placeholder="10"
                                     className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white"
                                   />
                                 </div>
@@ -10895,7 +10975,7 @@ export default function App() {
                                     required
                                     value={newProd.length}
                                     onChange={(e) => setNewProd(prev => ({ ...prev, length: e.target.value }))}
-                                    placeholder="L"
+                                    placeholder="10"
                                     className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white"
                                   />
                                 </div>
@@ -10906,121 +10986,117 @@ export default function App() {
                                     required
                                     value={newProd.height}
                                     onChange={(e) => setNewProd(prev => ({ ...prev, height: e.target.value }))}
-                                    placeholder="H"
+                                    placeholder="10"
                                     className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white"
                                   />
                                 </div>
                               </div>
                             </div>
 
-                            {/* Live Financial Calculator Widget */}
+                            {/* Live Calculation Preview Box */}
                             {(() => {
-                              const calc = calculateShippingAndPricing(newProd.price, newProd.weight, newProd.width, newProd.length, newProd.height);
+                              const calc = calculateShippingAndPricing(
+                                newProd.price,
+                                newProd.weight,
+                                newProd.width,
+                                newProd.length,
+                                newProd.height,
+                                newProd.discountPercent,
+                                newProd.shippingFeeBase,
+                                newProd.shippingDiscount,
+                                1
+                              );
                               return (
-                                <div className="bg-slate-900 text-slate-200 p-4 rounded-2xl space-y-3 font-sans shadow-md border border-slate-850">
+                                <div className="bg-slate-900 text-slate-100 p-4.5 rounded-2xl space-y-3 font-sans shadow-md border border-slate-800">
                                   <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                                    <span className="font-extrabold text-[11px] text-amber-400 uppercase tracking-wider">📊 สรุปผลลัพธ์สูตรการคำนวณอัตโนมัติ (Live Preview)</span>
-                                    <span className="text-[9px] text-slate-400 font-mono">Formula v1.2</span>
+                                    <span className="font-extrabold text-[11px] text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                                      📊 สรุปตารางคำนวณราคาสินค้า & หักค่าธรรมเนียมสุทธิ (Live Preview)
+                                    </span>
+                                    <span className="text-[9px] bg-slate-800 text-emerald-400 px-2 py-0.5 rounded-full font-mono font-bold">
+                                      สูตร นที พลัส มาร์เก็ต
+                                    </span>
                                   </div>
 
-                                  <div className="grid grid-cols-2 gap-3 text-[10px]">
-                                    <div className="space-y-1.5">
-                                      <div className="flex justify-between">
-                                        <span className="text-slate-400">สูตรน้ำหนักปริมาตร:</span>
-                                        <span className="font-mono text-slate-300">((W×L×H) / 5000) = <strong>{calc.volumetricWeight.toFixed(3)}</strong> kg</span>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px]">
+                                    <div className="space-y-1.5 bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+                                      <div className="flex justify-between text-slate-300">
+                                        <span>ราคาสินค้าที่ร้านตั้ง:</span>
+                                        <span className="font-mono font-bold">฿ {calc.originalPrice.toLocaleString()}</span>
                                       </div>
-                                      <div className="flex justify-between">
-                                        <span className="text-slate-400">น้ำหนักคิดค่าจัดส่งจริง:</span>
-                                        <span className="font-mono text-amber-300 font-bold">{calc.chargeableWeight.toFixed(3)} kg</span>
+                                      {calc.discountPercent > 0 && (
+                                        <div className="flex justify-between text-rose-400">
+                                          <span>ส่วนลดสินค้า ({calc.discountPercent}%):</span>
+                                          <span className="font-mono font-bold">- ฿ {(calc.originalPrice - calc.discountedPrice).toFixed(2)}</span>
+                                        </div>
+                                      )}
+                                      <div className="flex justify-between text-sky-400">
+                                        <span>+ ค่าจัดส่งลูกค้า (1 ชิ้น):</span>
+                                        <span className="font-mono font-bold">+ ฿ {calc.customerShippingFee.toFixed(2)}</span>
                                       </div>
-                                      <div className="flex justify-between border-t border-slate-800 pt-1.5">
-                                        <span className="text-slate-400">ค่าขนส่งเบื้องต้น:</span>
-                                        <span className="font-mono text-slate-300">฿ {calc.baseShippingCost}</span>
-                                      </div>
-                                      <div className="flex justify-between text-rose-400">
-                                        <span>ร้านค้าช่วยจ่ายขนส่ง (15% สูงสุด 40):</span>
-                                        <span className="font-mono font-bold">- ฿ {calc.sellerCoPay.toFixed(2)}</span>
-                                      </div>
-                                      <div className="flex justify-between text-emerald-400 font-semibold border-t border-slate-800 pt-1">
-                                        <span>ลูกค้าจ่ายค่าจัดส่งเริ่มต้น:</span>
-                                        <span className="font-mono font-bold">฿ {calc.customerShippingFee.toFixed(2)}</span>
+                                      <div className="flex justify-between border-t border-slate-700 pt-1.5 text-amber-300 font-extrabold">
+                                        <span>ยอดรวมที่ลูกค้าชำระเงินจริง:</span>
+                                        <span className="font-mono text-sm">฿ {calc.totalCustomerPaid.toFixed(2)}</span>
                                       </div>
                                     </div>
 
-                                    <div className="space-y-1.5 border-l border-slate-800 pl-3">
+                                    <div className="space-y-1.5 bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+                                      <div className="flex justify-between text-slate-300">
+                                        <span>ยอดขายก่อน VAT (÷ 1.07):</span>
+                                        <span className="font-mono">฿ {calc.priceExVat.toFixed(2)}</span>
+                                      </div>
                                       <div className="flex justify-between text-rose-400">
                                         <span>หัก VAT 7%:</span>
                                         <span className="font-mono">- ฿ {calc.vat.toFixed(2)}</span>
                                       </div>
                                       <div className="flex justify-between text-rose-400">
-                                        <span>หักพอร์ทัล GP 20%:</span>
+                                        <span>หักค่าธรรมเนียม GP 20%:</span>
                                         <span className="font-mono">- ฿ {calc.gpAmount.toFixed(2)}</span>
                                       </div>
-                                      <div className="flex justify-between text-purple-400 font-bold border-t border-slate-800 pt-1.5">
-                                        <span>คะแนน PV ที่จัดสรรให้สินค้า:</span>
-                                        <span className="font-mono text-purple-300 font-extrabold">{calc.pv.toFixed(2)} PV</span>
+                                      <div className="flex justify-between text-emerald-400 border-t border-slate-700 pt-1.5 font-extrabold">
+                                        <span>ยอดโอนรับสุทธิร้านค้า (Net Payout):</span>
+                                        <span className="font-mono text-sm text-emerald-300">฿ {calc.netPayout.toFixed(2)}</span>
                                       </div>
-                                      <div className="flex justify-between text-indigo-400 font-bold border-t border-slate-800 pt-1">
-                                        <span>ยอดรับสุทธิร้านค้า (หลังหักค่าฟีด):</span>
-                                        <span className="font-mono text-indigo-300 font-extrabold">฿ {calc.netPayout.toFixed(2)}</span>
+                                      <div className="flex justify-between text-purple-300 text-[10px] pt-1">
+                                        <span>จัดสรร PV ให้ระบบ (50% ของ GP):</span>
+                                        <span className="font-mono font-extrabold text-purple-300">{calc.pv} PV</span>
                                       </div>
                                     </div>
                                   </div>
+
+                                  <p className="text-[10px] text-slate-400 italic leading-snug pt-1">
+                                    📌 หมายเหตุ: PV จะถูกซ่อนและมองเห็นเฉพาะสมาชิกที่มีตำแหน่ง S, M, L, XL, XXL ขึ้นไปเท่านั้น
+                                  </p>
                                 </div>
                               );
                             })()}
 
                             <div>
-                              <div className="flex justify-between items-center mb-1">
-                                <label className="block text-slate-700 font-semibold">คำอธิบายรายละเอียดสรรพคุณ (สูงสุด 500 ตัวอักษร)</label>
-                              </div>
+                              <label className="block text-slate-700 font-semibold mb-1">คำอธิบายรายละเอียดสรรพคุณสินค้า</label>
                               <textarea 
                                 rows={2}
                                 value={newProd.description}
                                 maxLength={500}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val.length <= 500) {
-                                    setNewProd(prev => ({ ...prev, description: val }));
-                                  }
-                                }}
-                                placeholder="อธิบายสรรพคุณสินค้าสั้นๆ และวิธีการใช้งานเบื้องต้น"
-                                className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800"
+                                onChange={(e) => setNewProd(prev => ({ ...prev, description: e.target.value }))}
+                                placeholder="อธิบายสรรพคุณสินค้าสั้นๆ และวิธีการใช้งาน"
+                                className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-indigo-400 outline-none"
                               />
                             </div>
 
-                            <div>
-                              <label className="block text-slate-700 font-semibold mb-1">📷 รูปภาพหลักของสินค้า</label>
-                              <input 
-                                type="file" 
-                                accept="image/*"
-                                onChange={(e) => {
-                                  const f = e.target.files?.[0];
-                                  if (f) {
-                                    const r = new FileReader();
-                                    r.onloadend = () => setNewProd(prev => ({ ...prev, imageFile: r.result as string }));
-                                    r.readAsDataURL(f);
-                                  }
-                                }}
-                                className="w-full text-xs"
-                              />
-                            </div>
-
-                            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs shadow-lg cursor-pointer transition active:scale-95">
-                              เพิ่มรายการและส่งแอดมินอนุมัติผลิตภัณฑ์
+                            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl text-xs shadow-md cursor-pointer transition active:scale-95">
+                              ยื่นอนุมัติเพิ่มรายการสินค้า (Natee Plus Market)
                             </button>
                           </form>
                         </div>
 
                         {/* Submitted Products List */}
-                        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
-                          <h4 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-1.5">
+                        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+                          <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
                             🛍️ รายการสินค้าของคุณทั้งหมด ({sellerProducts.length} รายการ)
                           </h4>
                           {sellerProducts.length === 0 ? (
                             <p className="text-xs text-slate-400 italic text-center py-6">คุณยังไม่ได้ส่งผลิตภัณฑ์เข้าพิจารณาค่ะ</p>
                           ) : (
-                            <div className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               {sellerProducts.map((p: any) => {
                                 let badgeColor = "bg-amber-100 text-amber-800";
                                 let statusTxt = "รอแอดมินอนุมัติ";
@@ -11032,22 +11108,59 @@ export default function App() {
                                   statusTxt = "ปฏิเสธ";
                                 }
 
+                                const imgList = Array.isArray(p.images) && p.images.length > 0 
+                                  ? p.images 
+                                  : [p.imageFile || p.image].filter(Boolean);
+
                                 return (
-                                  <div key={p.id} className="flex gap-4 p-4 border border-slate-100 rounded-2xl hover:bg-slate-50/50 transition">
-                                    <img src={p.image} alt={p.name} className="w-16 h-16 rounded-xl object-cover border border-slate-100 shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-start justify-between gap-2">
-                                        <h5 className="text-xs font-bold text-slate-900 truncate">{p.name}</h5>
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badgeColor}`}>
-                                          {statusTxt}
-                                        </span>
+                                  <div key={p.id} className="border border-slate-150 rounded-2xl p-4 bg-white hover:border-indigo-200 transition space-y-3 shadow-2xs">
+                                    <div className="flex gap-3">
+                                      <div className="w-20 h-20 aspect-square rounded-xl overflow-hidden border border-slate-100 shrink-0 relative bg-slate-50">
+                                        <img src={imgList[0] || p.image} alt={p.name} className="w-full h-full object-cover" />
+                                        {imgList.length > 1 && (
+                                          <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[8px] font-bold px-1 rounded">
+                                            +{imgList.length - 1} รูป
+                                          </span>
+                                        )}
                                       </div>
-                                      <p className="text-[10px] text-slate-400 mt-1 truncate">{p.description || "ไม่มีคำอธิบาย"}</p>
-                                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[10px]">
-                                        <span className="text-slate-600 font-medium">ราคา: <strong className="text-indigo-600">฿{p.price.toLocaleString()}</strong></span>
-                                        <span className="text-slate-600 font-medium">คะแนน: <strong className="text-teal-600">{p.pv} PV</strong></span>
-                                        <span className="text-slate-600 font-medium">ส่วนแบ่งร้านค้า (80%): <strong className="text-emerald-600">฿{(p.price * 0.8).toFixed(2)}</strong></span>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-start justify-between gap-1">
+                                          <h5 className="text-xs font-bold text-slate-900 truncate">{p.name}</h5>
+                                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 ${badgeColor}`}>
+                                            {statusTxt}
+                                          </span>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{p.description || "ไม่มีคำอธิบาย"}</p>
+                                        <div className="mt-2 text-[10px] space-y-0.5">
+                                          <div className="flex justify-between">
+                                            <span className="text-slate-500">ราคาขาย:</span>
+                                            <strong className="text-indigo-600 font-bold">฿{p.price?.toLocaleString()}</strong>
+                                          </div>
+                                          <div className="flex justify-between">
+                                            <span className="text-slate-500">ยอดรับสุทธิร้านค้า:</span>
+                                            <strong className="text-emerald-600 font-bold">฿{parseFloat(p.netPayout || p.price * 0.8).toFixed(2)}</strong>
+                                          </div>
+                                        </div>
                                       </div>
+                                    </div>
+
+                                    <div className="flex justify-end pt-2 border-t border-slate-100">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingProduct({
+                                            ...p,
+                                            images: imgList,
+                                            discountPercent: p.discountPercent || '0',
+                                            shippingFeeBase: p.shippingFeeBase || '35',
+                                            shippingDiscount: p.shippingDiscount || '0'
+                                          });
+                                          setShowEditProductModal(true);
+                                        }}
+                                        className="text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1 rounded-lg transition cursor-pointer"
+                                      >
+                                        ✏️ แก้ไขไขรายละเอียดสินค้า
+                                      </button>
                                     </div>
                                   </div>
                                 );
@@ -11223,63 +11336,233 @@ export default function App() {
 
                     {sellerPortalSubTab === 'finance' && (
                       <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
-                        <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                          <h4 className="text-sm font-bold text-slate-800">💰 การเงิน และบัญชีรายรับร้านค้า (Finance Dashboard)</h4>
-                          <span className="text-xs text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-xl font-bold font-mono">
-                            E-Cash สะสม: ฿{(sellerOrders.filter((o: any) => o.status === 'Completed').reduce((acc: number, o: any) => acc + o.totalPrice * 0.8, 0)).toLocaleString()}
+                        <div className="flex flex-wrap justify-between items-center border-b border-slate-100 pb-3 gap-2">
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                              <span>💰 การเงิน และ บัญชีรายรับร้านค้า (Finance & Tax Hub)</span>
+                            </h4>
+                            <p className="text-[11px] text-slate-400 mt-0.5">บริษัท นที พลัส มาร์เก็ต จำกัด (Natee Plus Market Co., LTD)</p>
+                          </div>
+                          <span className="text-xs text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-xl font-bold font-mono border border-indigo-100 shadow-2xs">
+                            E-Cash สะสมพร้อมถอน: ฿{(sellerOrders.filter((o: any) => o.status === 'Completed').reduce((acc: number, o: any) => acc + (o.totalPrice * 0.8), 0)).toLocaleString()}
                           </span>
                         </div>
 
-                        {/* Financial Ledger Details */}
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
-                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-0.5">
-                            <div className="text-lg font-bold text-slate-900">
-                              ฿{(sellerOrders.reduce((acc: number, o: any) => acc + o.totalPrice, 0)).toLocaleString()}
+                        {/* Financial Summary Cards */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                          <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 space-y-1">
+                            <div className="text-base font-extrabold text-slate-900 font-mono">
+                              ฿{(sellerOrders.reduce((acc: number, o: any) => acc + (o.totalPrice || 0), 0)).toLocaleString()}
                             </div>
-                            <div className="text-[10px] text-slate-500">ยอดจำหน่ายสะสมรวม</div>
+                            <div className="text-[10px] text-slate-500 font-medium">ยอดขายรวมทั้งหมด</div>
                           </div>
-                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-0.5">
-                            <div className="text-lg font-bold text-indigo-600">
-                              ฿{(sellerOrders.filter((o: any) => o.status === 'Completed').reduce((acc: number, o: any) => acc + o.totalPrice * 0.8, 0)).toLocaleString()}
+                          <div className="bg-emerald-50/50 p-3.5 rounded-2xl border border-emerald-100 space-y-1">
+                            <div className="text-base font-extrabold text-emerald-700 font-mono">
+                              ฿{(sellerOrders.filter((o: any) => o.status === 'Completed').reduce((acc: number, o: any) => acc + (o.totalPrice * 0.8), 0)).toLocaleString()}
                             </div>
-                            <div className="text-[10px] text-slate-500">รายรับสุทธิ (80% แชร์)</div>
+                            <div className="text-[10px] text-emerald-800 font-semibold">ยอดโอนรับสุทธิ (Net Payout)</div>
                           </div>
-                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-0.5">
-                            <div className="text-lg font-bold text-rose-500">
-                              ฿{(sellerOrders.filter((o: any) => o.status === 'Completed').reduce((acc: number, o: any) => acc + o.totalPrice * 0.2, 0)).toLocaleString()}
+                          <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 space-y-1">
+                            <div className="text-base font-extrabold text-rose-600 font-mono">
+                              ฿{(sellerOrders.filter((o: any) => o.status === 'Completed').reduce((acc: number, o: any) => acc + (o.totalPrice * 0.2), 0)).toLocaleString()}
                             </div>
-                            <div className="text-[10px] text-slate-500">หักค่าบริหารจัดการ (20% GP)</div>
+                            <div className="text-[10px] text-slate-500 font-medium">ค่าบริการระบบ (GP 20%)</div>
                           </div>
-                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-0.5">
-                            <div className="text-lg font-bold text-teal-600">
-                              ฿{(sellerOrders.filter((o: any) => o.status === 'Completed').reduce((acc: number, o: any) => acc + o.totalPrice * 0.03, 0)).toFixed(2)}
+                          <div className="bg-purple-50/50 p-3.5 rounded-2xl border border-purple-100 space-y-1">
+                            <div className="text-base font-extrabold text-purple-700 font-mono">
+                              ฿{(sellerOrders.filter((o: any) => o.status === 'Completed').reduce((acc: number, o: any) => acc + (o.totalPrice * 0.03), 0)).toFixed(2)}
                             </div>
-                            <div className="text-[10px] text-slate-500">หักภาษี ณ ที่จ่าย 3%</div>
+                            <div className="text-[10px] text-purple-800 font-semibold">หักภาษี ณ ที่จ่าย (3%)</div>
                           </div>
                         </div>
 
-                        {/* Bank Settings & Tax Documents */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-                          <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-3">
-                            <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">🏦 บัญชีธนาคารสำหรับโอนรายได้อัตโนมัติ</h5>
-                            <div className="text-xs text-slate-600 space-y-1 bg-white p-3 rounded-xl border border-slate-150">
-                              <p><strong>ธนาคารพันธมิตร:</strong> ธนาคารกสิกรไทย (K-Bank)</p>
-                              <p><strong>ชื่อบัญชีจัดเก็บ:</strong> {sellerSessionUser.sellerStoreName}</p>
-                              <p><strong>หมายเลขบัญชี:</strong> 059-3-xxx98-2</p>
-                              <p><strong>ความถี่ในการโอน:</strong> ทุกๆ วันศุกร์เวลา 18:00 น. อัตโนมัติ</p>
+                        {/* Tax Type Registration Selection */}
+                        <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-3">
+                          <div className="flex flex-wrap justify-between items-center gap-2">
+                            <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                              📄 รูปแบบการเสียภาษี & เอกสารสถาบันการเงิน (Tax Entity Profile)
+                            </h5>
+                            <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                              กรมสรรพากร / นที พลัส มาร์เก็ต
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <label className={`p-3 rounded-xl border-2 cursor-pointer transition flex items-start gap-3 bg-white ${taxType === 'personal' ? 'border-indigo-600 ring-1 ring-indigo-200' : 'border-slate-200 hover:border-slate-300'}`}>
+                              <input 
+                                type="radio" 
+                                name="taxType" 
+                                value="personal" 
+                                checked={taxType === 'personal'} 
+                                onChange={() => setTaxType('personal')} 
+                                className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
+                              />
+                              <div className="text-xs space-y-0.5">
+                                <span className="font-bold text-slate-900 block">👤 บุคคลธรรมดา (Personal Taxpayer)</span>
+                                <span className="text-[11px] text-slate-500 block">
+                                  หักภาษี ณ ที่จ่าย 3% นำส่งกรมสรรพากร (ภ.ง.ด.3) ออกใบรับรอง 50 ทวิ ทุกสิ้นปี
+                                </span>
+                              </div>
+                            </label>
+
+                            <label className={`p-3 rounded-xl border-2 cursor-pointer transition flex items-start gap-3 bg-white ${taxType === 'corporate' ? 'border-indigo-600 ring-1 ring-indigo-200' : 'border-slate-200 hover:border-slate-300'}`}>
+                              <input 
+                                type="radio" 
+                                name="taxType" 
+                                value="corporate" 
+                                checked={taxType === 'corporate'} 
+                                onChange={() => setTaxType('corporate')} 
+                                className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
+                              />
+                              <div className="text-xs space-y-0.5">
+                                <span className="font-bold text-slate-900 block">🏢 นิติบุคคล / บริษัทจำกัด (Corporate Taxpayer)</span>
+                                <span className="text-[11px] text-slate-500 block">
+                                  นำส่ง ภ.ง.ด.53 และออกใบกำกับภาษีเต็มรูปแบบในนาม บริษัท นที พลัส มาร์เก็ต จำกัด
+                                </span>
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Date Range Sales Report Filter */}
+                        <div className="bg-indigo-50/40 border border-indigo-100 rounded-2xl p-4 space-y-3">
+                          <div className="flex flex-wrap justify-between items-center gap-2">
+                            <h5 className="font-bold text-indigo-950 text-xs flex items-center gap-1.5">
+                              📅 กรองรายงานสรุปยอดขายตามช่วงเวลา (Sales Date Range Report)
+                            </h5>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                showNotif("กำลังส่งออกรายงานยอดขาย PDF และ Excel ตามช่วงเวลา...", "info");
+                              }}
+                              className="text-[10px] font-bold text-indigo-700 bg-white hover:bg-indigo-100 px-3 py-1 rounded-lg border border-indigo-200 transition cursor-pointer"
+                            >
+                              📥 ดาวน์โหลดรายงาน (Excel/PDF)
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-700 mb-1">วันที่เริ่มต้น:</label>
+                              <input 
+                                type="date" 
+                                value={salesReportStartDate}
+                                onChange={(e) => setSalesReportStartDate(e.target.value)}
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-indigo-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-700 mb-1">วันที่สิ้นสุด:</label>
+                              <input 
+                                type="date" 
+                                value={salesReportEndDate}
+                                onChange={(e) => setSalesReportEndDate(e.target.value)}
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-indigo-400"
+                              />
+                            </div>
+                            <div className="bg-white border border-indigo-100 rounded-xl p-2.5 text-[11px] font-medium text-slate-700 flex justify-between items-center">
+                              <span>ช่วงเวลาที่เลือก:</span>
+                              <strong className="text-indigo-700 font-mono font-bold">
+                                {salesReportStartDate || 'ทั้งหมด'} ถึง {salesReportEndDate || 'ปัจจุบัน'}
+                              </strong>
                             </div>
                           </div>
-                          <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-3">
-                            <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">📄 เอกสารภาษีมูลค่าเพิ่ม (VAT & Withholding Tax)</h5>
-                            <div className="text-xs text-slate-600 space-y-2 bg-white p-3 rounded-xl border border-slate-150">
-                              <p className="text-[11px] leading-relaxed">ท่านสามารถเรียกดูและออกหนังสือรับรองการหักภาษี ณ ที่จ่ายตามมาตรา 50 ทวิ ได้ที่ปุ่มด้านล่าง:</p>
-                              <button
-                                type="button"
-                                onClick={() => showNotif("ระบบจัดเตรียมเอกสารยื่นภาษี ภ.ง.ด. 53 เรียบร้อย ส่งไฟล์เข้าระบบสมาชิกแล้วค่ะ", "success")}
-                                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-1.5 rounded-lg text-[10px] cursor-pointer transition-all"
-                              >
-                                📥 ดาวน์โหลดเอกสารยื่นภาษี (PDF)
-                              </button>
+                        </div>
+
+                        {/* 15-Day Cutoff Payout Schedule Table */}
+                        <div className="space-y-3 pt-2">
+                          <div className="flex flex-wrap justify-between items-center gap-2 border-b border-slate-100 pb-2">
+                            <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                              ⏳ ตารางกำหนดวันโอนเงินรายรับร้านค้า (ตัดรอบ 15 วันหลังจัดส่ง)
+                            </h5>
+                            <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
+                              เงื่อนไข: ครบ 15 วันนับจากวันส่งพัสดุ
+                            </span>
+                          </div>
+
+                          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px]">
+                                  <th className="p-3">เลขที่คำสั่งซื้อ</th>
+                                  <th className="p-3">วันที่จัดส่งพัสดุ</th>
+                                  <th className="p-3">วันครบกำหนดโอน (Cutoff +15)</th>
+                                  <th className="p-3 text-right">ยอดรับสุทธิ</th>
+                                  <th className="p-3 text-center">สถานะการโอน</th>
+                                  <th className="p-3 text-center">เอกสารรับเงิน</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-slate-700 text-[11px]">
+                                {sellerOrders.filter(o => o.status === 'Completed').length === 0 ? (
+                                  <tr>
+                                    <td colSpan={6} className="text-center py-6 text-slate-400 italic">
+                                      ยังไม่มีรายการพัสดุที่จัดส่งสำเร็จค่ะ
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  sellerOrders.filter(o => o.status === 'Completed').map((order) => {
+                                    const shipDate = order.shippedAt ? new Date(order.shippedAt) : new Date(order.createdAt);
+                                    const cutoffDate = order.payoutCutoffDate 
+                                      ? new Date(order.payoutCutoffDate) 
+                                      : new Date(shipDate.getTime() + (15 * 24 * 60 * 60 * 1000));
+                                    
+                                    const isMatured = new Date() >= cutoffDate;
+                                    const netPayout = order.totalPrice * 0.8;
+
+                                    return (
+                                      <tr key={order.id} className="hover:bg-slate-50/50">
+                                        <td className="p-3 font-mono font-bold text-slate-900">{order.id}</td>
+                                        <td className="p-3 font-mono text-slate-600">{shipDate.toLocaleDateString('th-TH')}</td>
+                                        <td className="p-3 font-mono font-bold text-indigo-700">{cutoffDate.toLocaleDateString('th-TH')}</td>
+                                        <td className="p-3 text-right font-mono font-bold text-emerald-600">
+                                          ฿{netPayout.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="p-3 text-center">
+                                          {isMatured ? (
+                                            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-emerald-200">
+                                              ✓ โอนเข้า E-Cash แล้ว
+                                            </span>
+                                          ) : (
+                                            <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-200">
+                                              ⏳ รอครบกำหนด 15 วัน
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="p-3 text-center">
+                                          <button
+                                            type="button"
+                                            onClick={() => showNotif(`กำลังดาวน์โหลดใบเสร็จรับเงินสำหรับบิล ${order.id}`, "success")}
+                                            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                                          >
+                                            📄 ใบเสร็จ (PDF)
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Bank Account Info */}
+                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-2">
+                          <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                            🏦 บัญชีธนาคารรับโอนเงินของร้านค้า
+                          </h5>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-600 bg-white p-3 rounded-xl border border-slate-150">
+                            <div>
+                              <span className="text-[10px] text-slate-400 block">ธนาคาร:</span>
+                              <strong className="text-slate-800 font-semibold">ธนาคารกสิกรไทย (K-Bank)</strong>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-400 block">ชื่อบัญชี:</span>
+                              <strong className="text-slate-800 font-semibold">{sellerSessionUser.sellerStoreName || "บริษัท นที พลัส มาร์เก็ต จำกัด"}</strong>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-400 block">รอบโอนอัตโนมัติ:</span>
+                              <strong className="text-indigo-600 font-semibold">ทุกวันศุกร์ (เวลา 18:00 น.)</strong>
                             </div>
                           </div>
                         </div>
