@@ -3925,6 +3925,74 @@ app.get('/api/mlm/referral-tree/:userId', (req, res) => {
   res.json({ success: true, tree, parentId: targetMember.sponsorId || null });
 });
 
+// SEARCH MEMBERS UNDER DOWNLINE (By Name, Username, or last 3+ digits of User ID)
+app.get('/api/mlm/search-downline', (req, res) => {
+  const callerId = req.query.callerId as string;
+  const q = ((req.query.query as string) || '').trim().toLowerCase();
+
+  if (!q) {
+    return res.json({ success: true, results: [] });
+  }
+
+  const db = readDb();
+  const caller = db.members.find((m: any) => m.userId === callerId);
+  const isAdminOrManager = caller && (caller.role === 'Admin' || caller.role === 'Manager');
+
+  let candidateMembers: any[] = [];
+
+  if (isAdminOrManager || !callerId) {
+    candidateMembers = db.members || [];
+  } else {
+    // Find all downlines of callerId in both binary tree and sponsor tree
+    const downlineIds = new Set<string>();
+    downlineIds.add(callerId);
+
+    let queue = [callerId];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const children = db.members.filter((m: any) => 
+        (m.parentId === current || m.sponsorId === current) && !downlineIds.has(m.userId)
+      );
+      for (const child of children) {
+        downlineIds.add(child.userId);
+        queue.push(child.userId);
+      }
+    }
+
+    candidateMembers = db.members.filter((m: any) => downlineIds.has(m.userId));
+  }
+
+  // Filter candidate members matching the query
+  const matches = candidateMembers.filter((m: any) => {
+    const uId = (m.userId || '').toLowerCase();
+    const uName = (m.username || '').toLowerCase();
+    const fName = (m.name || '').toLowerCase();
+    const lName = (m.surname || '').toLowerCase();
+    const fullName = `${fName} ${lName}`.trim();
+
+    return uId.includes(q) ||
+           uId.endsWith(q) ||
+           uName.includes(q) ||
+           fName.includes(q) ||
+           lName.includes(q) ||
+           fullName.includes(q);
+  }).slice(0, 20);
+
+  res.json({
+    success: true,
+    results: matches.map((m: any) => ({
+      userId: m.userId,
+      username: m.username,
+      name: m.name,
+      surname: m.surname,
+      rank: m.rank,
+      sponsorId: m.sponsorId,
+      parentId: m.parentId,
+      side: m.side
+    }))
+  });
+});
+
 // GET PLAN B LISTINGS
 app.get('/api/mlm/plan-b/:userId', (req, res) => {
   const { userId } = req.params;
@@ -4467,6 +4535,97 @@ app.post('/api/seller/order-ship', (req, res) => {
   
   writeDb(db);
   res.json({ success: true, message: `บันทึกข้อมูลจัดส่งเรียบร้อยแล้ว! กำหนดวันตัดรอบโอนเงินคือ ${cutoffDate.toLocaleDateString('th-TH')}` });
+});
+
+// GET ORDER CHAT MESSAGES
+app.get('/api/order/chat/:orderId', (req, res) => {
+  const { orderId } = req.params;
+  const db = readDb();
+  const order = db.orders.find((o: any) => o.id === orderId);
+  if (!order) return res.status(404).json({ success: false, message: "ไม่พบบิลคำสั่งซื้อ" });
+
+  if (!order.chatMessages) order.chatMessages = [];
+
+  // Check 10-minute inactivity auto-end
+  const now = Date.now();
+  if (order.chatLastActivity && (now - order.chatLastActivity > 10 * 60 * 1000)) {
+    order.chatEnded = true;
+  }
+
+  res.json({
+    success: true,
+    messages: order.chatMessages,
+    chatEnded: !!order.chatEnded,
+    lastActivity: order.chatLastActivity || null
+  });
+});
+
+// SEND ORDER CHAT MESSAGE
+app.post('/api/order/chat/send', (req, res) => {
+  const { orderId, sender, text, imageUrl } = req.body;
+  const db = readDb();
+  const order = db.orders.find((o: any) => o.id === orderId);
+  if (!order) return res.status(404).json({ success: false, message: "ไม่พบบิลคำสั่งซื้อ" });
+
+  if (!order.chatMessages) order.chatMessages = [];
+
+  const now = Date.now();
+
+  // If chat is ended by customer and sender is seller, reject
+  if (order.chatEnded && sender === 'seller') {
+    return res.status(400).json({ 
+      success: false, 
+      message: "ลูกค้าได้กดสิ้นสุดการสนทนาแล้ว ร้านค้าจะไม่สามารถส่งข้อความได้จนกว่าลูกค้าจะทักข้อความใหม่เข้ามาค่ะ" 
+    });
+  }
+
+  // If sender is customer, automatically re-open chat session
+  if (sender === 'customer') {
+    order.chatEnded = false;
+  }
+
+  const newMsg = {
+    id: "MSG_" + Math.random().toString(36).substr(2, 9),
+    sender,
+    text: text || '',
+    imageUrl: imageUrl || null,
+    createdAt: new Date().toISOString()
+  };
+
+  order.chatMessages.push(newMsg);
+  order.chatLastActivity = now;
+
+  writeDb(db);
+
+  res.json({
+    success: true,
+    message: "ส่งข้อความสำเร็จ",
+    chatMessages: order.chatMessages,
+    chatEnded: !!order.chatEnded
+  });
+});
+
+// END ORDER CHAT CONVERSATION (CUSTOMER ONLY)
+app.post('/api/order/chat/end', (req, res) => {
+  const { orderId, userId } = req.body;
+  const db = readDb();
+  const order = db.orders.find((o: any) => o.id === orderId);
+  if (!order) return res.status(404).json({ success: false, message: "ไม่พบบิลคำสั่งซื้อ" });
+
+  if (order.userId !== userId) {
+    return res.status(403).json({ success: false, message: "เฉพาะลูกค้าผู้สั่งซื้อสินค้าเท่านั้นที่มีสิทธิ์กดสิ้นสุดการสนทนาค่ะ" });
+  }
+
+  order.chatEnded = true;
+  order.chatLastActivity = Date.now();
+
+  writeDb(db);
+
+  res.json({
+    success: true,
+    message: "การสนทนาสิ้นสุดลงเรียบร้อยแล้วค่ะ",
+    chatEnded: true
+  });
 });
 
 // -------------------------------------------------------------

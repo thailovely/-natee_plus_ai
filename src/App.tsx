@@ -514,8 +514,50 @@ export default function App() {
   // Shop States
   const [products, setProducts] = useState<any[]>([]);
   const [cart, setCart] = useState<{ product: any; qty: number } | null>(null);
+  const [marketProductQty, setMarketProductQty] = useState<number>(1);
+  const [showMarketCheckoutModal, setShowMarketCheckoutModal] = useState<boolean>(false);
+  const [checkoutMarketProduct, setCheckoutMarketProduct] = useState<any>(null);
+  const [activeTrackingOrder, setActiveTrackingOrder] = useState<any | null>(null);
+  const [activeOrderChat, setActiveOrderChat] = useState<any | null>(null);
+  const [orderChatMessages, setOrderChatMessages] = useState<any[]>([]);
+  const [orderChatEnded, setOrderChatEnded] = useState<boolean>(false);
+  const [chatInputText, setChatInputText] = useState<string>('');
+  const [chatInputImage, setChatInputImage] = useState<string>('');
   const [shippingAddress, setShippingAddress] = useState('');
   const [packageChoices, setPackageChoices] = useState<any[]>([]);
+
+  // PDPA Privacy Helper (Display Name only, remove surname)
+  const formatPdpaFirstName = (fullName: string) => {
+    if (!fullName) return '-';
+    return fullName.trim().split(/\s+/)[0];
+  };
+
+  // Sound Alert for Store Order ("มีออร์เดอร์เข้าแล้วค่ะ")
+  const playOrderAlertSound = () => {
+    try {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance("มีออร์เดอร์เข้าแล้วค่ะ");
+        msg.lang = 'th-TH';
+        msg.rate = 0.95;
+        window.speechSynthesis.speak(msg);
+      }
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1320, audioCtx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.5);
+    } catch (e) {
+      console.error(e);
+    }
+  };
   const [selectedChoiceId, setSelectedChoiceId] = useState<string>('');
   const [showPackageChoiceModal, setShowPackageChoiceModal] = useState<boolean>(false);
   const [pendingPurchaseProductId, setPendingPurchaseProductId] = useState<string>('');
@@ -643,6 +685,9 @@ export default function App() {
   const [referralTree, setReferralTree] = useState<any>(null);
   const [planBData, setPlanBData] = useState<any>(null);
   const [mlmSearchId, setMlmSearchId] = useState('');
+  const [mlmSearchResults, setMlmSearchResults] = useState<any[]>([]);
+  const [isSearchingMlm, setIsSearchingMlm] = useState<boolean>(false);
+  const [showMlmSearchDropdown, setShowMlmSearchDropdown] = useState<boolean>(false);
   const [treeScale, setTreeScale] = useState<number>(0.85);
   const [maxTreeDepth, setMaxTreeDepth] = useState<number>(3);
   const [planBSubTab, setPlanBSubTab] = useState<'b1' | 'b2'>('b1');
@@ -699,7 +744,7 @@ export default function App() {
     length: '10',
     height: '10'
   });
-  const [shopSubTab, setShopSubTab] = useState<'packages' | 'shop'>('packages');
+  const [shopSubTab, setShopSubTab] = useState<'packages' | 'shop' | 'myOrders'>('packages');
   const [shopPortalView, setShopPortalView] = useState<'portal' | 'store' | 'packages'>('portal');
   const [sellerProducts, setSellerProducts] = useState<any[]>([]);
   const [sellerOrders, setSellerOrders] = useState<any[]>([]);
@@ -1310,11 +1355,11 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // 5 Minutes Idle Timeout Logout (300,000 ms)
+  // 10 Minutes Idle Timeout Logout (600,000 ms)
   useEffect(() => {
     if (!currentUser && !sellerSessionUser) return;
 
-    const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+    const TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
     let timeoutId: NodeJS.Timeout;
 
     const resetTimer = () => {
@@ -1323,7 +1368,7 @@ export default function App() {
         // Log out immediately!
         if (currentUser) {
           handleLogout();
-          showNotif("คุณถูกออกจากระบบเนื่องจากไม่มีการเคลื่อนไหวในระบบเกิน 5 นาทีค่ะ", "warning");
+          showNotif("คุณถูกออกจากระบบเนื่องจากไม่มีการเคลื่อนไหวในระบบเกิน 10 นาทีค่ะ", "warning");
         }
         if (sellerSessionUser) {
           setSellerSessionUser(null);
@@ -1359,6 +1404,37 @@ export default function App() {
       fetchSellerData(sellerSessionUser.userId);
     }
   }, [sellerSessionUser]);
+
+  // Auto-login to Partner Portal if member shop is approved ('Active') and not registering
+  useEffect(() => {
+    if (activeTab === 'seller' && !sellerSessionUser && !isRegisteringSeller) {
+      const activeObj = (profile?.sellerStatus === 'Active' ? profile : currentUser?.sellerStatus === 'Active' ? currentUser : null);
+      if (activeObj) {
+        setSellerSessionUser(activeObj);
+      }
+    }
+  }, [activeTab, sellerSessionUser, profile, currentUser, isRegisteringSeller]);
+
+  // Real-time Chat Sync for Active Order Chat
+  useEffect(() => {
+    if (activeOrderChat) {
+      const fetchChat = async () => {
+        try {
+          const res = await fetch(`/api/order/chat/${activeOrderChat.id}`);
+          const data = await res.json();
+          if (data.success) {
+            setOrderChatMessages(data.messages || []);
+            setOrderChatEnded(data.chatEnded);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      };
+      fetchChat();
+      const interval = setInterval(fetchChat, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [activeOrderChat]);
 
   // Handle real-time Firestore synchronization for all application data
   useEffect(() => {
@@ -2348,6 +2424,29 @@ export default function App() {
       const d3 = await res3.json();
       if (d3.success) setPlanBData(d3.planB);
     } catch (err) {}
+  };
+
+  const handleSearchMlmDownline = async (searchTerm?: string) => {
+    const term = searchTerm !== undefined ? searchTerm : mlmSearchId;
+    if (!term || !term.trim()) {
+      setMlmSearchResults([]);
+      setShowMlmSearchDropdown(false);
+      return;
+    }
+
+    setIsSearchingMlm(true);
+    try {
+      const res = await fetch(`/api/mlm/search-downline?callerId=${currentUser?.userId}&query=${encodeURIComponent(term.trim())}`);
+      const data = await res.json();
+      if (data.success) {
+        setMlmSearchResults(data.results || []);
+        setShowMlmSearchDropdown(true);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSearchingMlm(false);
+    }
   };
 
   const viewMemberInTree = (userId: string, treeType: 'binary' | 'referral') => {
@@ -5121,7 +5220,7 @@ export default function App() {
             @{node.username}
           </div>
           <div className="text-[10px] font-medium opacity-90 truncate">
-            {node.name}
+            {formatPdpaFirstName(node.name)}
           </div>
           <div className="text-[9px] mt-1 bg-white/70 px-1 py-0.5 rounded font-bold inline-block border border-slate-200/50">
             ตำแหน่ง: {node.rank || 'Member'}
@@ -5167,7 +5266,7 @@ export default function App() {
           <div className="bg-indigo-500 text-white text-[10px] px-1.5 py-0.5 rounded font-mono font-bold">
             {node.userId}
           </div>
-          <div className="text-xs font-medium text-slate-800">{node.username || node.name}</div>
+          <div className="text-xs font-medium text-slate-800">{node.username || formatPdpaFirstName(node.name)}</div>
           <div className="text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-500">
             {node.rank}
           </div>
@@ -8158,39 +8257,123 @@ export default function App() {
                       </button>
                       <div>
                         <h2 className="text-sm font-bold text-indigo-950">
-                          {shopSubTab === 'packages' ? "📦 แพ็กเกจอัปเกรดตำแหน่ง" : "🏪 เว็บร้านค้า Natee Plus Market"}
+                          {shopSubTab === 'packages' ? "📦 แพ็กเกจอัปเกรดตำแหน่ง" : shopSubTab === 'shop' ? "🏪 เว็บร้านค้า Natee Plus Market" : "🧾 ประวัติสั่งซื้อ & ใบเสร็จ"}
                         </h2>
                         <p className="text-[10px] text-slate-400">ระบบ นที พลัส มาร์เก็ต</p>
                       </div>
                     </div>
 
-                    <div className="flex gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200/50">
+                    <div className="flex gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200/50 flex-wrap">
                       <button 
                         onClick={() => {
                           setShopSubTab('packages');
                           setShopPortalView('packages');
                         }}
-                        className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                        className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                           shopSubTab === 'packages' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        📦 แพ็กเกจอัปเกรดตำแหน่ง
+                        📦 แพ็กเกจอัปเกรด
                       </button>
                       <button 
                         onClick={() => {
                           setShopSubTab('shop');
                           setShopPortalView('store');
                         }}
-                        className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                        className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                           shopSubTab === 'shop' ? 'bg-white text-amber-700 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        🏪 เว็บร้านค้า Natee Plus Market
+                        🏪 ร้านค้าออนไลน์
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setShopSubTab('myOrders');
+                          setShopPortalView('store');
+                        }}
+                        className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          shopSubTab === 'myOrders' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        🧾 ประวัติสั่งซื้อ & ใบเสร็จ
                       </button>
                     </div>
                   </div>
 
-                  {shopSubTab === 'packages' ? (
+                  {shopSubTab === 'myOrders' ? (
+                    <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-6 animate-fadeIn">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-100 pb-4">
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                            🧾 ประวัติการสั่งซื้อสินค้า และใบเสร็จรับเงินของท่าน
+                          </h3>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            แสดงรายการสั่งซื้อทั้งหมด สามารถกด "ดู / สั่งปริ๊นใบเสร็จ" เพื่อเปิดใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อและสั่งพิมพ์เอกสารได้ทันที
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px]">
+                              <th className="p-3">เลขที่สั่งซื้อ / วันที่</th>
+                              <th className="p-3">รายการสินค้า / ชุดแพ็กเกจ</th>
+                              <th className="p-3 text-right">จำนวนเงิน / PV</th>
+                              <th className="p-3 text-center">สถานะ</th>
+                              <th className="p-3 text-center">ใบเสร็จรับเงิน</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white text-[11px]">
+                            {memberOrders.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} className="text-center py-10 text-slate-400">
+                                  ยังไม่มีประวัติการสั่งซื้อสินค้าในบัญชีนี้
+                                </td>
+                              </tr>
+                            ) : (
+                              memberOrders.map((order: any) => (
+                                <tr key={order.id} className="hover:bg-slate-50/50 transition">
+                                  <td className="p-3">
+                                    <span className="font-mono font-bold text-indigo-600 block">{order.id}</span>
+                                    <span className="text-[10px] text-slate-400 block">{new Date(order.createdAt).toLocaleString('th-TH')}</span>
+                                  </td>
+                                  <td className="p-3">
+                                    <span className="font-bold text-slate-900 block">{order.productName}</span>
+                                    {order.selectedChoiceName && (
+                                      <span className="inline-block mt-0.5 bg-amber-50 text-amber-800 border border-amber-100 text-[9px] px-2 py-0.5 rounded font-bold">
+                                        🎁 เซ็ต: {order.selectedChoiceName}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="p-3 text-right font-bold">
+                                    <span className="text-emerald-600 block">฿ {(order.totalPrice || 0).toLocaleString()}</span>
+                                    <span className="text-[10px] text-slate-400 font-mono block">+{(order.totalPv || 0).toLocaleString()} PV</span>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${
+                                      order.status === 'Completed' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'
+                                    }`}>
+                                      {order.status === 'Completed' ? 'จัดส่งเรียบร้อย' : 'รอดำเนินการ'}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedReceiptOrder(order)}
+                                      className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-xl text-[10px] transition cursor-pointer shadow-sm flex items-center justify-center gap-1 mx-auto"
+                                    >
+                                      <Printer size={12} /> ดู / สั่งปริ๊นใบเสร็จ
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : shopSubTab === 'packages' ? (
                 <div className="space-y-6">
                   <div className="bg-sky-50 border border-sky-100 p-4 rounded-3xl text-xs text-sky-800 flex items-center gap-3">
                     <span className="p-2 bg-white rounded-full text-sky-600 font-bold">📢</span>
@@ -8625,15 +8808,39 @@ export default function App() {
                                   </div>
                                 )}
 
+                                {/* Quantity Selector (+ / -) */}
+                                <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                                  <span className="text-xs font-bold text-slate-700">จำนวนสินค้าที่ต้องการ:</span>
+                                  <div className="flex items-center gap-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => setMarketProductQty(prev => Math.max(1, prev - 1))}
+                                      className="w-8 h-8 rounded-xl bg-white border border-slate-300 text-slate-700 font-black hover:bg-slate-100 flex items-center justify-center transition active:scale-95 cursor-pointer shadow-sm"
+                                    >
+                                      -
+                                    </button>
+                                    <span className="font-mono font-black text-sm text-indigo-700 min-w-[24px] text-center">
+                                      {marketProductQty}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setMarketProductQty(prev => prev + 1)}
+                                      className="w-8 h-8 rounded-xl bg-white border border-slate-300 text-slate-700 font-black hover:bg-slate-100 flex items-center justify-center transition active:scale-95 cursor-pointer shadow-sm"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                </div>
+
                                 <button
                                   onClick={() => {
-                                    const prodId = selectedMarketProduct.id;
+                                    setCheckoutMarketProduct(selectedMarketProduct);
+                                    setShowMarketCheckoutModal(true);
                                     setSelectedMarketProduct(null);
-                                    handlePurchaseProduct(prodId);
                                   }}
                                   className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold py-3.5 rounded-2xl shadow-lg hover:shadow transition cursor-pointer text-sm flex items-center justify-center gap-2"
                                 >
-                                  🛒 สั่งซื้อสินค้าชิ้นนี้ทันที (฿{selectedMarketProduct.price?.toLocaleString()})
+                                  🛒 กดลงตะกร้า / ไปหน้าสรุปรายการสั่งซื้อ (฿{(selectedMarketProduct.price * marketProductQty).toLocaleString()})
                                 </button>
                               </div>
                             </div>
@@ -8787,24 +8994,97 @@ export default function App() {
                         <p className="text-xs text-slate-400 mt-0.5">แสดงแผนผังโครงสร้างสายงานระบบสองสายงาน (Binary Plan A) ใต้องค์กรของท่าน</p>
                       </div>
 
-                      <div className="flex gap-2 w-full md:w-auto">
-                        <input 
-                          type="text" 
-                          placeholder="ค้นหารหัสสมาชิกใต้สายงาน"
-                          value={mlmSearchId}
-                          onChange={(e) => setMlmSearchId(e.target.value.toUpperCase())}
-                          className="border border-slate-200 rounded-xl px-4 py-2 text-xs bg-white focus:outline-none w-full md:w-56"
-                        />
+                      <div className="relative flex gap-2 w-full md:w-auto">
+                        <div className="relative flex-1 md:w-64">
+                          <input 
+                            type="text" 
+                            placeholder="พิมพ์ชื่อ/ชื่อผู้ใช้/รหัส 3 ตัวหลัง..."
+                            value={mlmSearchId}
+                            onChange={(e) => {
+                              const val = e.target.value.toUpperCase();
+                              setMlmSearchId(val);
+                              handleSearchMlmDownline(val);
+                            }}
+                            onFocus={() => {
+                              if (mlmSearchResults.length > 0) setShowMlmSearchDropdown(true);
+                            }}
+                            className="border border-slate-200 rounded-xl px-4 py-2 text-xs bg-white focus:outline-none focus:border-indigo-500 w-full"
+                          />
+
+                          {/* Autocomplete Dropdown List */}
+                          {showMlmSearchDropdown && (
+                            <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-40 max-h-64 overflow-y-auto min-w-[280px]">
+                              <div className="p-2 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
+                                <span className="text-[10px] font-extrabold text-slate-600">
+                                  🔍 ผลการค้นหาสมาชิกใต้สายงาน ({mlmSearchResults.length})
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowMlmSearchDropdown(false)}
+                                  className="text-slate-400 hover:text-slate-600 text-xs font-bold px-1.5 cursor-pointer"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+
+                              {isSearchingMlm ? (
+                                <div className="p-4 text-center text-xs text-slate-400 animate-pulse">
+                                  กำลังค้นหาสมาชิกใต้สายงาน...
+                                </div>
+                              ) : mlmSearchResults.length === 0 ? (
+                                <div className="p-4 text-center text-xs text-slate-400">
+                                  ไม่พบข้อมูลสมาชิกตรงกับคำค้นหานี้ใต้สายงาน
+                                </div>
+                              ) : (
+                                <div className="divide-y divide-slate-100">
+                                  {mlmSearchResults.map((m: any) => (
+                                    <div
+                                      key={m.userId}
+                                      onClick={() => {
+                                        setMlmSearchId(m.userId);
+                                        setShowMlmSearchDropdown(false);
+                                        fetchMlmTrees(m.userId);
+                                        showNotif(`แสดงผังของ ${m.username} (${formatPdpaFirstName(m.name)}) เรียบร้อยค่ะ`, 'success');
+                                      }}
+                                      className="p-2.5 hover:bg-indigo-50/70 cursor-pointer transition flex items-center justify-between gap-2"
+                                    >
+                                      <div>
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="font-extrabold text-xs text-slate-900">{m.username}</span>
+                                          <span className="font-mono text-[10px] bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded">
+                                            {m.userId}
+                                          </span>
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 font-medium">
+                                          {formatPdpaFirstName(m.name)} • ผู้แนะนำ: {m.sponsorId || '-'}
+                                        </div>
+                                      </div>
+                                      <span className="text-[10px] font-extrabold bg-slate-100 px-2 py-0.5 rounded text-slate-700">
+                                        {m.rank || 'Member'}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
                         <button 
-                          onClick={fetchMlmTrees}
-                          className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                          onClick={() => handleSearchMlmDownline(mlmSearchId)}
+                          className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
                         >
                           <Search size={14} /> ค้นหา
                         </button>
                         {mlmSearchId && (
                           <button 
-                            onClick={() => { setMlmSearchId(''); setTimeout(() => fetchMlmTrees(), 50); }}
-                            className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 rounded-xl text-xs font-bold"
+                            onClick={() => { 
+                              setMlmSearchId(''); 
+                              setMlmSearchResults([]); 
+                              setShowMlmSearchDropdown(false); 
+                              setTimeout(() => fetchMlmTrees(currentUser?.userId), 50); 
+                            }}
+                            className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 rounded-xl text-xs font-bold shrink-0 cursor-pointer"
                           >
                             ล้าง
                           </button>
@@ -10565,7 +10845,7 @@ export default function App() {
                                         </td>
                                         <td className="px-4 py-3 font-mono text-[11px] text-slate-500">{member.sponsorId || '-'}</td>
                                         <td className="px-4 py-3 font-semibold text-slate-800">{member.username}</td>
-                                        <td className="px-4 py-3">{member.name}</td>
+                                        <td className="px-4 py-3">{formatPdpaFirstName(member.name)}</td>
                                         <td className="px-4 py-3 font-bold">
                                           <span className={`px-2.5 py-0.5 rounded text-[10px] ${
                                             member.rank === 'XXL' ? 'bg-purple-100 text-purple-700' :
@@ -10706,7 +10986,7 @@ export default function App() {
                                         </td>
                                         <td className="px-4 py-3 font-mono text-[11px] text-slate-500">{member.sponsorId || '-'}</td>
                                         <td className="px-4 py-3 font-semibold text-slate-800">{member.username}</td>
-                                        <td className="px-4 py-3">{member.name}</td>
+                                        <td className="px-4 py-3">{formatPdpaFirstName(member.name)}</td>
                                         <td className="px-4 py-3">
                                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                             member.side === 'Left' ? 'bg-sky-50 text-sky-700' : 'bg-pink-50 text-pink-700'
@@ -12624,6 +12904,16 @@ export default function App() {
                                               </button>
                                             </div>
                                           )}
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setActiveOrderChat(order);
+                                              setOrderChatMessages([]);
+                                            }}
+                                            className="w-full mt-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold py-1 px-2.5 rounded-lg text-[10px] transition cursor-pointer border border-emerald-200 flex items-center justify-center gap-1"
+                                          >
+                                            <MessageCircle size={12} /> แชทกับลูกค้า
+                                          </button>
                                         </td>
                                       </tr>
                                     );
@@ -13822,12 +14112,13 @@ export default function App() {
                               <th className="px-4 py-3 text-right">ยอดชำระ / PV</th>
                               <th className="px-4 py-3">ที่อยู่จัดส่งสินค้า</th>
                               <th className="px-4 py-3 text-center">สถานะ</th>
+                              <th className="px-4 py-3 text-center">ใบเสร็จ</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 bg-white text-[11px]">
                             {paginatedOrders.length === 0 ? (
                               <tr>
-                                <td colSpan={6} className="text-center py-8 text-slate-400">
+                                <td colSpan={7} className="text-center py-8 text-slate-400">
                                   ไม่มีประวัติการสั่งซื้อสินค้าใดๆ ในขณะนี้
                                 </td>
                               </tr>
@@ -13874,6 +14165,15 @@ export default function App() {
                                         จัดส่งเรียบร้อย
                                       </span>
                                     )}
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedReceiptOrder(order)}
+                                      className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                                    >
+                                      📄 ดู/ปริ๊นใบเสร็จ
+                                    </button>
                                   </td>
                                 </tr>
                               ))
@@ -20748,6 +21048,375 @@ export default function App() {
                 >
                   ✓ อนุมัติจำหน่าย
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: MARKET CHECKOUT SUMMARY WITH SEPARATE ITEM SHIPPING AND GUARANTEE */}
+        {showMarketCheckoutModal && checkoutMarketProduct && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto space-y-5 animate-fadeIn">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🛒</span>
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-900">สรุปรายการสั่งซื้อสินค้า (Order Summary)</h3>
+                    <p className="text-[11px] text-slate-400">ร้านค้า: {checkoutMarketProduct.sellerStoreName || checkoutMarketProduct.sellerId || 'นที พลัส มาร์เก็ต'}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowMarketCheckoutModal(false)}
+                  className="text-slate-400 hover:text-slate-600 font-bold p-1.5 rounded-full hover:bg-slate-100 text-sm cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Order Item Details */}
+              <div className="flex gap-4 bg-slate-50 p-3.5 rounded-2xl border border-slate-100 items-center">
+                <img
+                  src={checkoutMarketProduct.image}
+                  className="w-16 h-16 object-cover rounded-xl border border-slate-200 shrink-0"
+                  alt={checkoutMarketProduct.name}
+                  referrerPolicy="no-referrer"
+                />
+                <div className="flex-1 space-y-1">
+                  <h4 className="font-extrabold text-slate-900 text-xs leading-snug">{checkoutMarketProduct.name}</h4>
+                  <p className="text-[11px] text-slate-500 font-medium">ราคาต่อชิ้น: ฿{(checkoutMarketProduct.price || 0).toLocaleString()} | จำนวน: {marketProductQty} ชิ้น</p>
+                  <p className="text-[10px] text-emerald-700 font-bold">ค่าจัดส่งต่อชิ้น: ฿{checkoutMarketProduct.shippingFee || 35} (แยกตามรายการ)</p>
+                </div>
+              </div>
+
+              {/* Financial Breakdown */}
+              <div className="bg-slate-900 text-white p-4 rounded-2xl space-y-2 font-sans text-xs">
+                <div className="flex justify-between text-slate-300">
+                  <span>ราคาสินค้ารวม ({marketProductQty} ชิ้น):</span>
+                  <span className="font-mono font-bold">฿ {((checkoutMarketProduct.price || 0) * marketProductQty).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between text-slate-300">
+                  <span>ค่าจัดส่งรวม (คำนวณแยกตามรายการ):</span>
+                  <span className="font-mono font-bold text-emerald-400">฿ {((checkoutMarketProduct.shippingFee || 35) * marketProductQty).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="border-t border-slate-800 pt-2 flex justify-between items-baseline font-black">
+                  <span className="text-amber-400 text-sm">ยอดชำระสุทธิ (Total Amount):</span>
+                  <span className="text-emerald-400 text-lg font-mono">฿ {(((checkoutMarketProduct.price || 0) * marketProductQty) + ((checkoutMarketProduct.shippingFee || 35) * marketProductQty)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+
+              {/* Random Related Products Suggestion Section */}
+              <div className="border-t border-slate-100 pt-4 space-y-3">
+                <h4 className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                  🎁 สินค้าแนะนำอื่นๆ สุ่มเลือกสำหรับคุณ
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {(allSellerProducts && allSellerProducts.length > 0 ? allSellerProducts : products)
+                    .filter((p: any) => p.id !== checkoutMarketProduct.id)
+                    .sort(() => 0.5 - Math.random())
+                    .slice(0, 2)
+                    .map((item: any) => (
+                      <div
+                        key={item.id}
+                        onClick={() => {
+                          setShowMarketCheckoutModal(false);
+                          setSelectedMarketProduct(item);
+                          setMarketProductQty(1);
+                        }}
+                        className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex items-center gap-2 cursor-pointer hover:bg-indigo-50/60 transition"
+                      >
+                        <img src={item.image} className="w-10 h-10 object-cover rounded-lg shrink-0" alt="" referrerPolicy="no-referrer" />
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-bold text-slate-800 truncate">{item.name}</p>
+                          <p className="text-[10px] text-indigo-600 font-black">฿ {item.price?.toLocaleString()}</p>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              {/* 7-Day Money Back Guarantee Notice */}
+              <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl text-center space-y-1">
+                <span className="text-amber-800 font-extrabold text-xs block">🛡️ การรับประกันความพึงพอใจ 100%</span>
+                <p className="text-[11px] font-bold text-amber-900 leading-tight">
+                  สินค้ารับประกัน หากไม่พอใจยินดีคืนเงิน 7 วัน นับจากวันรับสินค้า
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowMarketCheckoutModal(false)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-2xl font-bold text-xs transition cursor-pointer"
+                >
+                  ย้อนกลับ
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch('/api/shop/purchase', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          userId: currentUser?.userId || profile?.userId,
+                          productId: checkoutMarketProduct.id,
+                          quantity: marketProductQty
+                        })
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        setShowMarketCheckoutModal(false);
+                        playOrderAlertSound();
+                        showNotif(`สั่งซื้อสินค้าสำเร็จแล้ว! ${data.message || ''}`, 'success');
+                        if (currentUser) {
+                          fetchProfile(currentUser.userId);
+                        }
+                      } else {
+                        showNotif(data.message || 'เกิดข้อผิดพลาดในการสั่งซื้อสินค้า', 'error');
+                      }
+                    } catch (err) {
+                      showNotif('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์สั่งซื้อสินค้าได้', 'error');
+                    }
+                  }}
+                  className="flex-2 bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-2xl font-black text-xs transition shadow-lg cursor-pointer"
+                >
+                  ✓ ยืนยันการสั่งซื้อสินค้า (สั่งกระจายไปยังร้านค้า)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: ORDER TRACKING DETAILS FOR CUSTOMER */}
+        {activeTrackingOrder && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-4 animate-fadeIn">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">📦 ติดตามสถานะการจัดส่งพัสดุ</h3>
+                  <p className="text-[10px] text-slate-400 font-mono">เลขบิล: {activeTrackingOrder.id}</p>
+                </div>
+                <button
+                  onClick={() => setActiveTrackingOrder(null)}
+                  className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-full hover:bg-slate-100 text-xs cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-1.5 text-xs">
+                <p className="font-bold text-slate-800">สินค้า: {activeTrackingOrder.productName} (x{activeTrackingOrder.quantity || 1})</p>
+                <p className="text-slate-600">ขนส่ง: <span className="font-bold text-indigo-700">{activeTrackingOrder.courier || 'นที เอ็กซ์เพรส / ขนส่งพันธมิตร'}</span></p>
+                <p className="text-slate-600">เลขพัสดุ: <span className="font-mono font-black text-emerald-600">{activeTrackingOrder.trackingNumber || 'กำลังจัดเตรียมหมายเลขพัสดุ'}</span></p>
+              </div>
+
+              {/* Timeline Progress */}
+              <div className="space-y-3 pl-2 border-l-2 border-indigo-200 my-4 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-emerald-500 shrink-0"></span>
+                  <span className="font-bold text-slate-800">1. ชำระเงินและรับออร์เดอร์สำเร็จ</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`w-3 h-3 rounded-full ${activeTrackingOrder.status === 'Shipped' || activeTrackingOrder.status === 'Delivered' ? 'bg-emerald-500' : 'bg-amber-400 animate-pulse'} shrink-0`}></span>
+                  <span className="font-bold text-slate-800">2. ร้านค้ากำลังบรรจุหีบห่อและเตรียมจัดส่ง</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`w-3 h-3 rounded-full ${activeTrackingOrder.status === 'Shipped' || activeTrackingOrder.status === 'Delivered' ? 'bg-emerald-500' : 'bg-slate-200'} shrink-0`}></span>
+                  <span className="font-bold text-slate-800">3. มอบให้บริษัทขนส่งพัสดุแล้ว</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`w-3 h-3 rounded-full ${activeTrackingOrder.status === 'Delivered' ? 'bg-emerald-500' : 'bg-slate-200'} shrink-0`}></span>
+                  <span className="font-bold text-slate-800">4. พัสดุจัดส่งถึงมือผู้รับเรียบร้อย</span>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setActiveTrackingOrder(null)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer"
+                >
+                  ปิด
+                </button>
+                <button
+                  onClick={() => {
+                    const orderToChat = activeTrackingOrder;
+                    setActiveTrackingOrder(null);
+                    setActiveOrderChat(orderToChat);
+                  }}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl font-extrabold text-xs transition cursor-pointer flex items-center justify-center gap-1"
+                >
+                  💬 ติดต่อร้านค้า
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: LIVE CHAT BETWEEN CUSTOMER AND SELLER STORE */}
+        {activeOrderChat && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-100 flex flex-col h-[520px] overflow-hidden animate-fadeIn">
+              {/* Header */}
+              <div className="p-4 bg-indigo-900 text-white flex justify-between items-center shadow-md">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">💬</span>
+                  <div>
+                    <h3 className="text-xs font-black">แชทติดต่อเกี่ยวกับออร์เดอร์ #{activeOrderChat.id}</h3>
+                    <p className="text-[10px] text-indigo-200">สินค้า: {activeOrderChat.productName}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  {/* Customer Only End Conversation Button */}
+                  {(currentUser?.userId === activeOrderChat.userId || profile?.userId === activeOrderChat.userId) && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('/api/order/chat/end', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              orderId: activeOrderChat.id,
+                              userId: currentUser?.userId || profile?.userId
+                            })
+                          });
+                          const data = await res.json();
+                          if (data.success) {
+                            setOrderChatEnded(true);
+                            showNotif('สิ้นสุดการสนทนาเรียบร้อยแล้วค่ะ', 'success');
+                          }
+                        } catch (e) {
+                          showNotif('เกิดข้อผิดพลาดในการสิ้นสุดการสนทนา', 'error');
+                        }
+                      }}
+                      className="bg-rose-500 hover:bg-rose-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg transition cursor-pointer shadow-sm"
+                    >
+                      🛑 สิ้นสุดการสนทนา
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setActiveOrderChat(null)}
+                    className="text-white/80 hover:text-white font-bold p-1 rounded-full hover:bg-white/10 text-xs cursor-pointer ml-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              {/* Chat Message Thread */}
+              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50">
+                {orderChatMessages.length === 0 ? (
+                  <div className="text-center text-slate-400 py-10 space-y-2">
+                    <p className="text-2xl">💬</p>
+                    <p className="text-xs">ยังไม่มีข้อความโต้ตอบ เริ่มพิมพ์ข้อความแรกสอบถามร้านค้าได้เลยค่ะ</p>
+                  </div>
+                ) : (
+                  orderChatMessages.map((msg: any) => {
+                    const isMe = (sellerSessionUser && msg.sender === 'seller') || (!sellerSessionUser && msg.sender === 'customer');
+                    return (
+                      <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                        <div className={`max-w-[80%] rounded-2xl p-3 text-xs ${
+                          isMe ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none shadow-sm'
+                        }`}>
+                          {msg.text && <p className="leading-relaxed">{msg.text}</p>}
+                          {msg.imageUrl && (
+                            <img src={msg.imageUrl} className="mt-2 rounded-xl max-h-40 object-cover border border-slate-200" alt="chat attachment" referrerPolicy="no-referrer" />
+                          )}
+                          <span className={`text-[9px] block mt-1 ${isMe ? 'text-indigo-200 text-right' : 'text-slate-400'}`}>
+                            {new Date(msg.createdAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+
+                {orderChatEnded && (
+                  <div className="bg-rose-50 border border-rose-200 text-rose-800 p-2.5 rounded-xl text-center text-[11px] font-bold">
+                    🔒 การสนทนานี้สิ้นสุดลงแล้ว (ลูกค้าได้กดสิ้นสุดการสนทนา)
+                  </div>
+                )}
+              </div>
+
+              {/* Input Area */}
+              <div className="p-3 bg-white border-t border-slate-200 space-y-2">
+                {chatInputImage && (
+                  <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl">
+                    <img src={chatInputImage} className="w-8 h-8 rounded object-cover" alt="" referrerPolicy="no-referrer" />
+                    <span className="text-[10px] text-slate-600 truncate flex-1">แนบรูปภาพแล้ว</span>
+                    <button onClick={() => setChatInputImage('')} className="text-rose-600 font-bold text-xs p-1">✕</button>
+                  </div>
+                )}
+
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!chatInputText.trim() && !chatInputImage) return;
+
+                    const isSeller = !!sellerSessionUser;
+                    const senderRole = isSeller ? 'seller' : 'customer';
+
+                    try {
+                      const res = await fetch('/api/order/chat/send', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          orderId: activeOrderChat.id,
+                          sender: senderRole,
+                          text: chatInputText,
+                          imageUrl: chatInputImage
+                        })
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        setChatInputText('');
+                        setChatInputImage('');
+                        setOrderChatMessages(data.chatMessages);
+                        setOrderChatEnded(data.chatEnded);
+                      } else {
+                        showNotif(data.message || 'ไม่สามารถส่งข้อความได้', 'error');
+                      }
+                    } catch (err) {
+                      showNotif('เกิดข้อผิดพลาดในการส่งข้อความ', 'error');
+                    }
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <label className="cursor-pointer text-slate-500 hover:text-indigo-600 p-2 rounded-xl bg-slate-100 transition">
+                    📷
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setChatInputImage(reader.result as string);
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+                  <input
+                    type="text"
+                    disabled={orderChatEnded && !!sellerSessionUser}
+                    placeholder={orderChatEnded && !!sellerSessionUser ? "ลูกค้ากดสิ้นสุดการสนทนาแล้ว ร้านค้าส่งข้อความไม่ได้" : "พิมพ์ข้อความโต้ตอบที่นี่..."}
+                    value={chatInputText}
+                    onChange={(e) => setChatInputText(e.target.value)}
+                    className="flex-1 bg-slate-100 border border-slate-200 focus:bg-white focus:border-indigo-500 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 disabled:bg-slate-200 disabled:text-slate-400"
+                  />
+                  <button
+                    type="submit"
+                    disabled={orderChatEnded && !!sellerSessionUser}
+                    className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 text-white font-bold px-3 py-2 rounded-xl text-xs transition cursor-pointer shadow-sm"
+                  >
+                    ส่ง
+                  </button>
+                </form>
               </div>
             </div>
           </div>
