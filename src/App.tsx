@@ -178,6 +178,26 @@ export default function App() {
   const [adminEditLat, setAdminEditLat] = useState(13.7563);
   const [adminEditLng, setAdminEditLng] = useState(100.5018);
 
+  // Warehouse Map & Address States (for Shop Home page)
+  const [warehouseHouseNo, setWarehouseHouseNo] = useState('');
+  const [warehouseMoo, setWarehouseMoo] = useState('');
+  const [warehouseRoad, setWarehouseRoad] = useState('');
+  const [warehouseProvince, setWarehouseProvince] = useState('');
+  const [warehouseDistrict, setWarehouseDistrict] = useState('');
+  const [warehouseSubdistrict, setWarehouseSubdistrict] = useState('');
+  const [warehouseZipcode, setWarehouseZipcode] = useState('');
+  const [warehouseAddressQuery, setWarehouseAddressQuery] = useState('');
+  const [warehouseTambonResults, setWarehouseTambonResults] = useState<any[]>([]);
+
+  // System Notification Bell States
+  const [systemNotifications, setSystemNotifications] = useState<any[]>([]);
+  const [showMemberNotifs, setShowMemberNotifs] = useState(false);
+  const [broadcastTitle, setBroadcastTitle] = useState('');
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+
+  // Seller Approved Notice Dismissal State
+  const [hasDismissedApprovedNotice, setHasDismissedApprovedNotice] = useState(false);
+
   const [idCardStatus, setIdCardStatus] = useState<'checking' | 'valid' | 'dup' | 'invalid' | null>(null);
   const [idCardMessage, setIdCardMessage] = useState('');
   const [phoneStatus, setPhoneStatus] = useState<'checking' | 'valid' | 'dup' | 'invalid' | null>(null);
@@ -419,11 +439,18 @@ export default function App() {
   const [idSub, setIdSub] = useState('');
   const [idZip, setIdZip] = useState('');
   const [idDetails, setIdDetails] = useState('');
+  const [idHouseNo, setIdHouseNo] = useState('');
+  const [idRoadSoi, setIdRoadSoi] = useState('');
+  const [idMoo, setIdMoo] = useState('');
+
   const [shipProv, setShipProv] = useState('');
   const [shipDist, setShipDist] = useState('');
   const [shipSub, setShipSub] = useState('');
   const [shipZip, setShipZip] = useState('');
   const [shipDetails, setShipDetails] = useState('');
+  const [shipHouseNo, setShipHouseNo] = useState('');
+  const [shipRoadSoi, setShipRoadSoi] = useState('');
+  const [shipMoo, setShipMoo] = useState('');
   const [useSameAddress, setUseSameAddress] = useState(false);
   const [editUsernameStatus, setEditUsernameStatus] = useState<'avail' | 'taken' | null>(null);
   const [checkedEditUsername, setCheckedEditUsername] = useState(true);
@@ -1115,9 +1142,138 @@ export default function App() {
     }
   }, []);
 
+  // Fetch system notifications on startup and when user changes
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch('/api/notifications');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.notifications)) {
+        setSystemNotifications(data.notifications);
+      }
+    } catch (err) {}
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  // Sync profile warehouse address fields
+  useEffect(() => {
+    if (profile) {
+      setWarehouseHouseNo(profile.warehouseHouseNo || '');
+      setWarehouseMoo(profile.warehouseMoo || '');
+      setWarehouseRoad(profile.warehouseRoad || '');
+      setWarehouseProvince(profile.warehouseProvince || '');
+      setWarehouseDistrict(profile.warehouseDistrict || '');
+      setWarehouseSubdistrict(profile.warehouseSubdistrict || '');
+      setWarehouseZipcode(profile.warehouseZipcode || '');
+      if (profile.shippingLat) setWarehouseLat(profile.shippingLat);
+      if (profile.shippingLng) setWarehouseLng(profile.shippingLng);
+    }
+  }, [profile]);
+
+  // Sync dismissed approval notice from localStorage
+  useEffect(() => {
+    if (currentUser?.userId) {
+      const isDismissed = localStorage.getItem('dismissed_approved_banner_' + currentUser.userId) === 'true';
+      if (isDismissed) {
+        setHasDismissedApprovedNotice(true);
+      }
+    }
+  }, [currentUser]);
+
+  const handleWarehouseTambonSearch = (query: string) => {
+    setWarehouseAddressQuery(query);
+    if (!query || query.trim().length < 2) {
+      setWarehouseTambonResults([]);
+      return;
+    }
+    const q = query.trim().toLowerCase();
+    const matches = thaiAddressData.filter((item: any) => 
+      item.tambon.toLowerCase().includes(q) ||
+      item.amphoe.toLowerCase().includes(q) ||
+      item.province.toLowerCase().includes(q) ||
+      String(item.zipcode).includes(q)
+    ).slice(0, 8);
+    setWarehouseTambonResults(matches);
+  };
+
+  const selectWarehouseTambon = (item: any) => {
+    setWarehouseSubdistrict(item.tambon);
+    setWarehouseDistrict(item.amphoe);
+    setWarehouseProvince(item.province);
+    setWarehouseZipcode(String(item.zipcode));
+    setWarehouseAddressQuery(`${item.tambon} > ${item.amphoe} > ${item.province} (${item.zipcode})`);
+    setWarehouseTambonResults([]);
+  };
+
+  const handleSaveWarehousePinAndAddress = async () => {
+    if (!profile?.userId) return;
+    const fullWarehouseAddr = `${warehouseHouseNo ? 'บ้านเลขที่ ' + warehouseHouseNo + ' ' : ''}${warehouseMoo ? 'หมู่/ซอย ' + warehouseMoo + ' ' : ''}${warehouseRoad ? 'ถนน ' + warehouseRoad + ' ' : ''}ต.${warehouseSubdistrict || ''} อ.${warehouseDistrict || ''} จ.${warehouseProvince || ''} ${warehouseZipcode || ''}`.trim();
+    
+    try {
+      const res = await fetch('/api/member/update-shipping-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: profile.userId,
+          lat: warehouseLat || profile?.shippingLat,
+          lng: warehouseLng || profile?.shippingLng,
+          warehouseAddress: fullWarehouseAddr,
+          warehouseHouseNo,
+          warehouseMoo,
+          warehouseRoad,
+          warehouseProvince,
+          warehouseDistrict,
+          warehouseSubdistrict,
+          warehouseZipcode
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(data.message, "success");
+        if (data.profile) {
+          setProfile(data.profile);
+        }
+      } else {
+        showNotif(data.message, "error");
+      }
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาดในการบันทึกข้อมูลคลังสินค้า", "error");
+    }
+  };
+
+  const handleAdminBroadcastNotification = async () => {
+    if (!broadcastMessage || !broadcastMessage.trim()) {
+      showNotif("กรุณากรอกข้อความสั้นที่ต้องการแจ้งเตือนค่ะ", "error");
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/broadcast-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: broadcastTitle.trim() || '📢 ประกาศจากระบบ Natee Plus',
+          message: broadcastMessage.trim()
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(data.message, "success");
+        setBroadcastMessage('');
+        fetchNotifications();
+      } else {
+        showNotif(data.message, "error");
+      }
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาดในการส่งข้อความแจ้งเตือน", "error");
+    }
+  };
+
   // Fetch initial profile & dashboard data on login
   useEffect(() => {
     if (currentUser) {
+      fetchNotifications();
       fetchProfile(true);
       fetchTransactions();
       fetchProducts();
@@ -1732,6 +1888,9 @@ export default function App() {
           setIdSub(idAddr.subdistrict || '');
           setIdZip(idAddr.zipcode || '');
           setIdDetails(idAddr.details || '');
+          setIdHouseNo(idAddr.houseNo || '');
+          setIdRoadSoi(idAddr.roadSoi || idAddr.details || '');
+          setIdMoo(idAddr.moo || '');
           
           if (idAddr.subdistrict && idAddr.district && idAddr.province && idAddr.zipcode) {
             setIdAddressSearch(`${idAddr.subdistrict} » ${idAddr.district} » ${idAddr.province} » ${idAddr.zipcode}`);
@@ -1745,6 +1904,9 @@ export default function App() {
           setShipSub(shipAddr.subdistrict || '');
           setShipZip(shipAddr.zipcode || '');
           setShipDetails(shipAddr.details || '');
+          setShipHouseNo(shipAddr.houseNo || '');
+          setShipRoadSoi(shipAddr.roadSoi || shipAddr.details || '');
+          setShipMoo(shipAddr.moo || '');
 
           if (shipAddr.subdistrict && shipAddr.district && shipAddr.province && shipAddr.zipcode) {
             setShipAddressSearch(`${shipAddr.subdistrict} » ${shipAddr.district} » ${shipAddr.province} » ${shipAddr.zipcode}`);
@@ -1861,14 +2023,22 @@ export default function App() {
             district: idDist,
             subdistrict: idSub,
             zipcode: idZip,
-            details: idDetails
+            houseNo: idHouseNo,
+            roadSoi: idRoadSoi,
+            moo: idMoo,
+            details: [idHouseNo ? 'บ้านเลขที่ ' + idHouseNo : '', idMoo ? 'หมู่ ' + idMoo : '', idRoadSoi].filter(Boolean).join(' ') || idDetails
           },
           shippingAddress: {
-            province: shipProv,
-            district: shipDist,
-            subdistrict: shipSub,
-            zipcode: shipZip,
-            details: shipDetails
+            province: useSameAddress ? idProv : shipProv,
+            district: useSameAddress ? idDist : shipDist,
+            subdistrict: useSameAddress ? idSub : shipSub,
+            zipcode: useSameAddress ? idZip : shipZip,
+            houseNo: useSameAddress ? idHouseNo : shipHouseNo,
+            roadSoi: useSameAddress ? idRoadSoi : shipRoadSoi,
+            moo: useSameAddress ? idMoo : shipMoo,
+            details: useSameAddress 
+              ? ([idHouseNo ? 'บ้านเลขที่ ' + idHouseNo : '', idMoo ? 'หมู่ ' + idMoo : '', idRoadSoi].filter(Boolean).join(' ') || idDetails)
+              : ([shipHouseNo ? 'บ้านเลขที่ ' + shipHouseNo : '', shipMoo ? 'หมู่ ' + shipMoo : '', shipRoadSoi].filter(Boolean).join(' ') || shipDetails)
           },
           useSameAddress
         })
@@ -6418,6 +6588,57 @@ export default function App() {
                     {(profile?.planBPoints ?? planBData?.points ?? 0).toFixed(4)} pt
                   </span>
                 </div>
+
+                {/* Member Notification Bell Button & Dropdown */}
+                <div className="relative shrink-0 ml-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowMemberNotifs(!showMemberNotifs)}
+                    className="w-10 h-10 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl flex items-center justify-center border border-indigo-200/60 transition-all cursor-pointer relative shadow-sm"
+                    title="กระดิ่งแจ้งเตือนข่าวสารจากระบบ"
+                  >
+                    <Bell size={18} className={systemNotifications.length > 0 ? "text-indigo-600" : ""} />
+                    {systemNotifications.length > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white rounded-full text-[9px] font-extrabold flex items-center justify-center border border-white">
+                        {systemNotifications.length}
+                      </span>
+                    )}
+                  </button>
+
+                  {showMemberNotifs && (
+                    <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-4 animate-fadeIn space-y-3">
+                      <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                        <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                          <Bell size={14} className="text-indigo-600" /> การแจ้งเตือนจากแอดมิน
+                        </span>
+                        <button
+                          onClick={() => setShowMemberNotifs(false)}
+                          className="text-[10px] text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+                        >
+                          ปิด
+                        </button>
+                      </div>
+                      
+                      <div className="max-h-60 overflow-y-auto space-y-2 no-scrollbar text-xs">
+                        {systemNotifications.length === 0 ? (
+                          <p className="text-slate-400 text-center py-4 text-[11px]">ไม่มีการแจ้งเตือนใหม่ในขณะนี้</p>
+                        ) : (
+                          systemNotifications.map((n: any) => (
+                            <div key={n.id} className="p-3 rounded-xl bg-indigo-50/50 border border-indigo-100 space-y-1">
+                              <div className="font-bold text-indigo-950 text-[11px] flex justify-between items-center">
+                                <span>{n.title}</span>
+                                <span className="text-[9px] text-slate-400 font-normal">
+                                  {new Date(n.createdAt).toLocaleDateString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              <p className="text-slate-700 text-[11px] leading-relaxed whitespace-pre-wrap">{n.message}</p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -6716,61 +6937,81 @@ export default function App() {
                     <p className="text-xs text-slate-400">ผู้แนะนำผู้สมัครจะได้รับสิทธิ์โบนัสแนะนำตรงทันที 50 บาท (50% ของราคาแพ็กเกจ) เมื่อเพื่อนสมัครซื้อแพ็กเกจ S</p>
                     
                     <div className="mt-6 space-y-4">
-                      <div>
-                        <label className="block text-slate-600 text-xs font-bold mb-2">ลิงก์ลงทะเบียนสัญชาติไทยของคุณ</label>
-                        <div className="flex gap-2">
-                          <input 
-                            type="text" 
-                            readOnly
-                            value={`${window.location.origin}/join?sponsor=${profile?.userId}`}
-                            onClick={() => {
-                              if (profile?.username === 'nateeplus' || profile?.userId === 'A260600001' || profile?.userId === 'A260700001') {
-                                handleLogout();
-                                clearRegisterForm(profile?.userId || '');
-                                setAuthMode('register');
-                                showNotif(`สลับไปหน้าสมัครสมาชิกใหม่โดยมีคุณ (${profile?.userId}) เป็นผู้แนะนำ`, 'success');
+                      {(['S','M','L','XL','XXL'].includes(profile?.rank || '') || profile?.role === 'Admin' || profile?.username === 'nateeplus' || profile?.userId === 'A260600001' || profile?.userId === 'A260700001') ? (
+                        <div>
+                          <label className="block text-slate-600 text-xs font-bold mb-2">ลิงก์ลงทะเบียนสัญชาติไทยของคุณ</label>
+                          <div className="flex gap-2">
+                            <input 
+                              type="text" 
+                              readOnly
+                              value={`${window.location.origin}/join?sponsor=${profile?.userId}`}
+                              onClick={() => {
+                                if (profile?.username === 'nateeplus' || profile?.userId === 'A260600001' || profile?.userId === 'A260700001') {
+                                  handleLogout();
+                                  clearRegisterForm(profile?.userId || '');
+                                  setAuthMode('register');
+                                  showNotif(`สลับไปหน้าสมัครสมาชิกใหม่โดยมีคุณ (${profile?.userId}) เป็นผู้แนะนำ`, 'success');
+                                }
+                              }}
+                              className={`flex-1 ${
+                                (profile?.username === 'nateeplus' || profile?.userId === 'A260600001' || profile?.userId === 'A260700001')
+                                  ? 'bg-indigo-50/30 hover:bg-indigo-50 border-indigo-200 text-indigo-700 cursor-pointer'
+                                  : 'bg-slate-50 border-slate-200 text-slate-500'
+                              } border rounded-xl px-4 py-3 text-xs focus:outline-none transition-all duration-200 font-semibold`}
+                              title={
+                                (profile?.username === 'nateeplus' || profile?.userId === 'A260600001' || profile?.userId === 'A260700001')
+                                  ? "คลิกเพื่อไปยังหน้าสมัครสมาชิกด้วยรหัสสปอนเซอร์ของคุณ"
+                                  : "ลิงก์สปอนเซอร์แนะนำเพื่อนของคุณ"
                               }
-                            }}
-                            className={`flex-1 ${
-                              (profile?.username === 'nateeplus' || profile?.userId === 'A260600001' || profile?.userId === 'A260700001')
-                                ? 'bg-indigo-50/30 hover:bg-indigo-50 border-indigo-200 text-indigo-700 cursor-pointer'
-                                : 'bg-slate-50 border-slate-200 text-slate-500'
-                            } border rounded-xl px-4 py-3 text-xs focus:outline-none transition-all duration-200 font-semibold`}
-                            title={
-                              (profile?.username === 'nateeplus' || profile?.userId === 'A260600001' || profile?.userId === 'A260700001')
-                                ? "คลิกเพื่อไปยังหน้าสมัครสมาชิกด้วยรหัสสปอนเซอร์ของคุณ"
-                                : "ลิงก์สปอนเซอร์แนะนำเพื่อนของคุณ"
-                            }
-                          />
-                          {(profile?.username === 'nateeplus' || profile?.userId === 'A260600001' || profile?.userId === 'A260700001') && (
+                            />
+                            {(profile?.username === 'nateeplus' || profile?.userId === 'A260600001' || profile?.userId === 'A260700001') && (
+                              <button 
+                                onClick={() => {
+                                  handleLogout();
+                                  clearRegisterForm(profile?.userId || '');
+                                  setAuthMode('register');
+                                  showNotif(`สลับไปหน้าสมัครสมาชิกใหม่โดยมีคุณ (${profile?.userId}) เป็นผู้แนะนำ`, 'success');
+                                }}
+                                className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-4 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                                title="ไปยังหน้าสมัครสมาชิกใหม่"
+                              >
+                                <Plus size={14} />
+                                สมัครสมาชิก
+                              </button>
+                            )}
                             <button 
                               onClick={() => {
-                                handleLogout();
-                                clearRegisterForm(profile?.userId || '');
-                                setAuthMode('register');
-                                showNotif(`สลับไปหน้าสมัครสมาชิกใหม่โดยมีคุณ (${profile?.userId}) เป็นผู้แนะนำ`, 'success');
+                                navigator.clipboard.writeText(`${window.location.origin}/join?sponsor=${profile?.userId}`);
+                                setCopied(true);
+                                setTimeout(() => setCopied(false), 2000);
+                                showNotif('คัดลอกลิงก์แนะนำเข้าคลิปบอร์ดแล้ว!', 'success');
                               }}
-                              className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-4 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-                              title="ไปยังหน้าสมัครสมาชิกใหม่"
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
                             >
-                              <Plus size={14} />
-                              สมัครสมาชิก
+                              {copied ? <Check size={14} /> : <Copy size={14} />}
+                              {copied ? 'คัดลอกแล้ว' : 'คัดลอก'}
                             </button>
-                          )}
-                          <button 
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-amber-50 border border-amber-200/80 p-4 rounded-2xl text-xs space-y-1.5 text-amber-950">
+                          <p className="font-extrabold flex items-center gap-1.5 text-amber-900">
+                            🔒 สมาชิกตำแหน่ง Member จะยังไม่มีลิงก์สปอนเซอร์แนะนำเพื่อนค่ะ
+                          </p>
+                          <p className="text-slate-600 leading-relaxed text-[11px]">
+                            เพื่อป้องกันการสร้างบัญชีสปอนเซอร์ซ้ำ สมาชิกต้องทำการเลือกสั่งซื้อแพ็กเกจเปิดตำแหน่ง <strong>Silver (S) ขึ้นไป (S, M, L, XL, XXL)</strong> ก่อนนะคะ จึงจะได้รับสิทธิ์และลิงก์สปอนเซอร์เพื่อส่งให้เพื่อนสมัครต่อ
+                          </p>
+                          <button
                             onClick={() => {
-                              navigator.clipboard.writeText(`${window.location.origin}/join?sponsor=${profile?.userId}`);
-                              setCopied(true);
-                              setTimeout(() => setCopied(false), 2000);
-                              showNotif('คัดลอกลิงก์แนะนำเข้าคลิปบอร์ดแล้ว!', 'success');
+                              setActiveTab('shopping');
+                              setShopSubTab('packages');
                             }}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                            className="mt-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition shadow-sm cursor-pointer inline-flex items-center gap-1"
                           >
-                            {copied ? <Check size={14} /> : <Copy size={14} />}
-                            {copied ? 'คัดลอกแล้ว' : 'คัดลอก'}
+                            🛒 ไปซื้อแพ็กเกจเปิดตำแหน่ง S ขึ้นไป
                           </button>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
 
@@ -7076,149 +7317,284 @@ export default function App() {
                   {/* Cascading Address Grid */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-100">
                     
-                    {/* ID Card Address (Cascading Selector) */}
-                    <div className="bg-indigo-50/30 p-5 rounded-2xl border border-slate-100/80 space-y-3">
-                      <span className="text-xs font-bold text-indigo-700 block flex items-center gap-1">
-                        <MapPin size={14} />
-                        ที่อยู่ตามบัตรประชาชน
-                      </span>
+                    {/* ID Card Address */}
+                    <div className="bg-indigo-50/40 p-5 rounded-2xl border border-indigo-100 space-y-3.5">
+                      <div className="flex justify-between items-center border-b border-indigo-100/60 pb-2">
+                        <span className="text-xs font-bold text-indigo-800 flex items-center gap-1.5">
+                          <MapPin size={15} className="text-indigo-600" />
+                          ที่อยู่ตามบัตรประชาชน (Tambon Database System)
+                        </span>
+                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100/80 px-2 py-0.5 rounded-full">
+                          ค้นหาอัตโนมัติ
+                        </span>
+                      </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      {/* 1. Address Search Auto-complete from Tambon Database */}
+                      <div className="relative">
+                        <label className="block text-slate-700 text-[10px] font-bold mb-1 flex justify-between items-center">
+                          <span>🔍 ค้นหา ตำบล / อำเภอ / จังหวัด / รหัสไปรษณีย์</span>
+                          <span className="text-[9px] text-slate-400 font-normal">(พิมพ์เพื่อเลือกจากฐานข้อมูล)</span>
+                        </label>
+                        <input 
+                          type="text" 
+                          value={idAddressSearch}
+                          onChange={(e) => {
+                            setIdAddressSearch(e.target.value);
+                            triggerAddressSearch(e.target.value, setIdSearchSuggestions);
+                          }}
+                          placeholder="พิมพ์ชื่อตำบล อำเภอ จังหวัด หรือรหัสไปรษณีย์ เช่น 10280..."
+                          className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm"
+                        />
+
+                        {/* Search Dropdown Suggestions */}
+                        {idSearchSuggestions.length > 0 && (
+                          <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-30 max-h-48 overflow-y-auto divide-y divide-slate-100">
+                            {idSearchSuggestions.map((sug, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                  setIdProv(sug.province);
+                                  setIdDist(sug.district);
+                                  setIdSub(sug.subdistrict);
+                                  setIdZip(sug.zipcode);
+                                  setIdAddressSearch(`${sug.subdistrict} » ${sug.district} » ${sug.province} » ${sug.zipcode}`);
+                                  setIdSearchSuggestions([]);
+                                }}
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50/80 transition flex items-center justify-between text-slate-800"
+                              >
+                                <span className="font-medium">{sug.subdistrict} » {sug.district} » {sug.province}</span>
+                                <span className="font-mono text-indigo-600 bg-indigo-100/60 px-1.5 py-0.5 rounded text-[10px] font-bold">{sug.zipcode}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Auto-filled Location Display Badges */}
+                      <div className="grid grid-cols-2 gap-2 bg-white/70 p-2.5 rounded-xl border border-indigo-100 text-[11px]">
                         <div>
-                          <label className="block text-slate-700 text-[10px] font-bold mb-1">จังหวัด *</label>
-                          <input 
-                            type="text" 
-                            value={idProv}
-                            onChange={(e) => setIdProv(e.target.value)}
-                            placeholder="ระบุจังหวัด"
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                          />
+                          <span className="text-slate-400 text-[9px] block">ตำบล / แขวง</span>
+                          <span className="font-semibold text-slate-800">{idSub || '—'}</span>
                         </div>
-
                         <div>
-                          <label className="block text-slate-700 text-[10px] font-bold mb-1">อำเภอ/เขต *</label>
-                          <input 
-                            type="text" 
-                            value={idDist}
-                            onChange={(e) => setIdDist(e.target.value)}
-                            placeholder="ระบุอำเภอ/เขต"
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                          />
+                          <span className="text-slate-400 text-[9px] block">อำเภอ / เขต</span>
+                          <span className="font-semibold text-slate-800">{idDist || '—'}</span>
                         </div>
-
                         <div>
-                          <label className="block text-slate-700 text-[10px] font-bold mb-1">ตำบล/แขวง *</label>
-                          <input 
-                            type="text" 
-                            value={idSub}
-                            onChange={(e) => setIdSub(e.target.value)}
-                            placeholder="ระบุตำบล/แขวง"
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                          />
+                          <span className="text-slate-400 text-[9px] block">จังหวัด</span>
+                          <span className="font-semibold text-slate-800">{idProv || '—'}</span>
                         </div>
-
                         <div>
-                          <label className="block text-slate-700 text-[10px] font-bold mb-1">รหัสไปรษณีย์ *</label>
-                          <input 
-                            type="text" 
-                            value={idZip}
-                            onChange={(e) => setIdZip(e.target.value.replace(/\D/g, ''))}
-                            placeholder="ระบุรหัสไปรษณีย์"
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                          />
+                          <span className="text-slate-400 text-[9px] block">รหัสไปรษณีย์</span>
+                          <span className="font-mono font-bold text-indigo-600">{idZip || '—'}</span>
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-slate-700 text-[10px] font-bold mb-1">รายละเอียดที่อยู่ (บ้านเลขที่, ถนน, ซอย) *</label>
-                        <textarea 
-                          rows={2}
-                          value={idDetails}
-                          onChange={(e) => setIdDetails(e.target.value)}
-                          placeholder="เช่น 123/45 หมู่ 6 ซอยพัฒนา ถนนสุขุมวิท"
-                          className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none"
-                        />
+                      {/* 2. Three Dedicated Input Fields requested by user */}
+                      <div className="pt-1 space-y-2">
+                        <p className="text-[10px] font-bold text-indigo-900 border-t border-indigo-100 pt-2">
+                          🏠 สมาชิกกรอกเฉพาะรายละเอียดที่อยู่ (3 ช่อง):
+                        </p>
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-slate-700 text-[10px] font-bold mb-1">1. บ้านเลขที่ / อาคาร *</label>
+                            <input 
+                              type="text" 
+                              value={idHouseNo}
+                              onChange={(e) => {
+                                setIdHouseNo(e.target.value);
+                                const details = [e.target.value ? 'บ้านเลขที่ ' + e.target.value : '', idMoo ? 'หมู่ ' + idMoo : '', idRoadSoi].filter(Boolean).join(' ');
+                                setIdDetails(details);
+                              }}
+                              placeholder="เช่น 123/45 หรือ อาคาร A"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-700 text-[10px] font-bold mb-1">2. หมู่ที่</label>
+                            <input 
+                              type="text" 
+                              value={idMoo}
+                              onChange={(e) => {
+                                setIdMoo(e.target.value);
+                                const details = [idHouseNo ? 'บ้านเลขที่ ' + idHouseNo : '', e.target.value ? 'หมู่ ' + e.target.value : '', idRoadSoi].filter(Boolean).join(' ');
+                                setIdDetails(details);
+                              }}
+                              placeholder="เช่น 5 (ถ้าไม่มีเว้นว่างไว้)"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-700 text-[10px] font-bold mb-1">3. ถนน / ซอย</label>
+                          <input 
+                            type="text" 
+                            value={idRoadSoi}
+                            onChange={(e) => {
+                              setIdRoadSoi(e.target.value);
+                              const details = [idHouseNo ? 'บ้านเลขที่ ' + idHouseNo : '', idMoo ? 'หมู่ ' + idMoo : '', e.target.value].filter(Boolean).join(' ');
+                              setIdDetails(details);
+                            }}
+                            placeholder="เช่น ถนนสุขุมวิท ซอยสุขุมวิท 101/1"
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
                       </div>
                     </div>
 
                     {/* Shipping Address */}
-                    <div className="bg-amber-50/10 p-5 rounded-2xl border border-slate-100/80 space-y-3">
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs font-bold text-amber-600 block flex items-center gap-1">
-                          <ShoppingBag size={14} />
-                          ที่อยู่สำหรับจัดส่งสินค้า
+                    <div className="bg-amber-50/40 p-5 rounded-2xl border border-amber-100 space-y-3.5">
+                      <div className="flex justify-between items-center border-b border-amber-100/60 pb-2">
+                        <span className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
+                          <ShoppingBag size={15} className="text-amber-600" />
+                          ที่อยู่สำหรับจัดส่งสินค้า (Tambon Database System)
                         </span>
                         <label className="flex items-center gap-1.5 text-[11px] text-indigo-600 font-semibold cursor-pointer">
                           <input 
                             type="checkbox"
                             checked={useSameAddress}
-                            onChange={(e) => setUseSameAddress(e.target.checked)}
+                            onChange={(e) => {
+                              setUseSameAddress(e.target.checked);
+                              if (e.target.checked) {
+                                setShipProv(idProv);
+                                setShipDist(idDist);
+                                setShipSub(idSub);
+                                setShipZip(idZip);
+                                setShipHouseNo(idHouseNo);
+                                setShipRoadSoi(idRoadSoi);
+                                setShipMoo(idMoo);
+                                setShipDetails(idDetails);
+                                setShipAddressSearch(idAddressSearch);
+                              }
+                            }}
                             className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
                           />
                           ใช้ที่อยู่เดียวกัน
                         </label>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-slate-700 text-[10px] font-bold mb-1">จังหวัด *</label>
-                          <input 
-                            type="text" 
-                            value={shipProv}
-                            onChange={(e) => setShipProv(e.target.value)}
-                            disabled={useSameAddress}
-                            placeholder="ระบุจังหวัด"
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-50 disabled:text-slate-400"
-                          />
-                        </div>
+                      {/* 1. Address Search Auto-complete from Tambon Database */}
+                      <div className="relative">
+                        <label className="block text-slate-700 text-[10px] font-bold mb-1 flex justify-between items-center">
+                          <span>🔍 ค้นหา ตำบล / อำเภอ / จังหวัด / รหัสไปรษณีย์</span>
+                          <span className="text-[9px] text-slate-400 font-normal">(พิมพ์เพื่อเลือกจากฐานข้อมูล)</span>
+                        </label>
+                        <input 
+                          type="text" 
+                          disabled={useSameAddress}
+                          value={shipAddressSearch}
+                          onChange={(e) => {
+                            setShipAddressSearch(e.target.value);
+                            triggerAddressSearch(e.target.value, setShipSearchSuggestions);
+                          }}
+                          placeholder="พิมพ์ชื่อตำบล อำเภอ จังหวัด หรือรหัสไปรษณีย์..."
+                          className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-xs focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 shadow-sm disabled:bg-slate-100 disabled:text-slate-400"
+                        />
 
-                        <div>
-                          <label className="block text-slate-700 text-[10px] font-bold mb-1">อำเภอ/เขต *</label>
-                          <input 
-                            type="text" 
-                            value={shipDist}
-                            onChange={(e) => setShipDist(e.target.value)}
-                            disabled={useSameAddress}
-                            placeholder="ระบุอำเภอ/เขต"
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-50 disabled:text-slate-400"
-                          />
-                        </div>
+                        {/* Search Dropdown Suggestions */}
+                        {shipSearchSuggestions.length > 0 && !useSameAddress && (
+                          <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-30 max-h-48 overflow-y-auto divide-y divide-slate-100">
+                            {shipSearchSuggestions.map((sug, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                  setShipProv(sug.province);
+                                  setShipDist(sug.district);
+                                  setShipSub(sug.subdistrict);
+                                  setShipZip(sug.zipcode);
+                                  setShipAddressSearch(`${sug.subdistrict} » ${sug.district} » ${sug.province} » ${sug.zipcode}`);
+                                  setShipSearchSuggestions([]);
+                                }}
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-amber-50/80 transition flex items-center justify-between text-slate-800"
+                              >
+                                <span className="font-medium">{sug.subdistrict} » {sug.district} » {sug.province}</span>
+                                <span className="font-mono text-amber-600 bg-amber-100/60 px-1.5 py-0.5 rounded text-[10px] font-bold">{sug.zipcode}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
 
+                      {/* Auto-filled Location Display Badges */}
+                      <div className="grid grid-cols-2 gap-2 bg-white/70 p-2.5 rounded-xl border border-amber-100 text-[11px]">
                         <div>
-                          <label className="block text-slate-700 text-[10px] font-bold mb-1">ตำบล/แขวง *</label>
-                          <input 
-                            type="text" 
-                            value={shipSub}
-                            onChange={(e) => setShipSub(e.target.value)}
-                            disabled={useSameAddress}
-                            placeholder="ระบุตำบล/แขวง"
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-50 disabled:text-slate-400"
-                          />
+                          <span className="text-slate-400 text-[9px] block">ตำบล / แขวง</span>
+                          <span className="font-semibold text-slate-800">{useSameAddress ? idSub : (shipSub || '—')}</span>
                         </div>
-
                         <div>
-                          <label className="block text-slate-700 text-[10px] font-bold mb-1">รหัสไปรษณีย์ *</label>
-                          <input 
-                            type="text" 
-                            value={shipZip}
-                            onChange={(e) => setShipZip(e.target.value.replace(/\D/g, ''))}
-                            disabled={useSameAddress}
-                            placeholder="ระบุรหัสไปรษณีย์"
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-50 disabled:text-slate-400"
-                          />
+                          <span className="text-slate-400 text-[9px] block">อำเภอ / เขต</span>
+                          <span className="font-semibold text-slate-800">{useSameAddress ? idDist : (shipDist || '—')}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[9px] block">จังหวัด</span>
+                          <span className="font-semibold text-slate-800">{useSameAddress ? idProv : (shipProv || '—')}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 text-[9px] block">รหัสไปรษณีย์</span>
+                          <span className="font-mono font-bold text-amber-600">{useSameAddress ? idZip : (shipZip || '—')}</span>
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-slate-700 text-[10px] font-bold mb-1">รายละเอียดที่อยู่สำหรับจัดส่งสินค้า *</label>
-                        <textarea 
-                          rows={2}
-                          value={shipDetails}
-                          onChange={(e) => setShipDetails(e.target.value)}
-                          disabled={useSameAddress}
-                          placeholder="กรอกรายละเอียดที่อยู่ปลายทางสำหรับส่งของ"
-                          className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none disabled:bg-slate-50 disabled:text-slate-400"
-                        />
+                      {/* 2. Three Dedicated Input Fields requested by user */}
+                      <div className="pt-1 space-y-2">
+                        <p className="text-[10px] font-bold text-amber-900 border-t border-amber-100 pt-2">
+                          🏠 สมาชิกกรอกเฉพาะรายละเอียดที่อยู่สำหรับส่งของ (3 ช่อง):
+                        </p>
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-slate-700 text-[10px] font-bold mb-1">1. บ้านเลขที่ / อาคาร *</label>
+                            <input 
+                              type="text" 
+                              disabled={useSameAddress}
+                              value={useSameAddress ? idHouseNo : shipHouseNo}
+                              onChange={(e) => {
+                                setShipHouseNo(e.target.value);
+                                const details = [e.target.value ? 'บ้านเลขที่ ' + e.target.value : '', shipMoo ? 'หมู่ ' + shipMoo : '', shipRoadSoi].filter(Boolean).join(' ');
+                                setShipDetails(details);
+                              }}
+                              placeholder="เช่น 123/45 หรือ อาคาร A"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-400"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-700 text-[10px] font-bold mb-1">2. หมู่ที่</label>
+                            <input 
+                              type="text" 
+                              disabled={useSameAddress}
+                              value={useSameAddress ? idMoo : shipMoo}
+                              onChange={(e) => {
+                                setShipMoo(e.target.value);
+                                const details = [shipHouseNo ? 'บ้านเลขที่ ' + shipHouseNo : '', e.target.value ? 'หมู่ ' + e.target.value : '', shipRoadSoi].filter(Boolean).join(' ');
+                                setShipDetails(details);
+                              }}
+                              placeholder="เช่น 5"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-400"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-700 text-[10px] font-bold mb-1">3. ถนน / ซอย</label>
+                          <input 
+                            type="text" 
+                            disabled={useSameAddress}
+                            value={useSameAddress ? idRoadSoi : shipRoadSoi}
+                            onChange={(e) => {
+                              setShipRoadSoi(e.target.value);
+                              const details = [shipHouseNo ? 'บ้านเลขที่ ' + shipHouseNo : '', shipMoo ? 'หมู่ ' + shipMoo : '', e.target.value].filter(Boolean).join(' ');
+                              setShipDetails(details);
+                            }}
+                            placeholder="เช่น ถนนสุขุมวิท ซอยสุขุมวิท 101/1"
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-400"
+                          />
+                        </div>
                       </div>
 
                       {/* Pinned Shipping Map Coordinates Section */}
@@ -7879,10 +8255,6 @@ export default function App() {
                           <span className="p-1.5 bg-amber-500 text-white rounded-xl text-sm font-bold shadow-sm">🏪</span>
                           <h3 className="text-sm font-extrabold text-amber-950">เว็บร้านค้า "Natee Plus Market"</h3>
                         </div>
-                        <p className="text-slate-600 leading-relaxed font-medium">
-                          แหล่งศูนย์รวมสินค้าคุณภาพที่ผ่านการคัดสรรจากระบบร้านร่วมค้า ซึ่งลงทะเบียนและสมัครวางจำหน่ายโดยสมาชิกผ่านระบบเว็บ 
-                          <span className="font-extrabold text-indigo-600"> "Natee Plus Partner"</span> (สามารถสมัครเข้าร่วมเป็น Partner ได้ตั้งแต่ตำแหน่ง Manager ขึ้นไป เพื่อสิทธิ์ในการเปิดร้านค้าลงขายสินค้าและรับยอดขายได้)
-                        </p>
                         <div className="flex flex-wrap items-center gap-3 pt-2 text-[11px] text-amber-900/95 font-bold border-t border-amber-200/40 mt-1">
                           <span className="flex items-center gap-1">
                             💳 ชำระด้วย: <span className="underline decoration-amber-500 font-extrabold">E-Coupon เป็นอันดับแรก</span>
@@ -7894,41 +8266,62 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Shopee-style Category Selector */}
-                      <div className="flex flex-wrap gap-2 pb-2">
-                        {[
-                          { id: 'All', label: 'ทั้งหมด (All)' },
-                          { id: 'Fashion', label: '👗 แฟชั่น' },
-                          { id: 'Electronics', label: '🔌 อุปกรณ์อิเล็กทรอนิกส์' },
-                          { id: 'Beauty', label: '💄 ความงามและของใช้ส่วนตัว' },
-                          { id: 'Health', label: '💊 สุขภาพ' },
-                          { id: 'Baby', label: '🍼 แม่และเด็ก' },
-                          { id: 'Home', label: '🏠 บ้านและที่อยู่อาศัย' },
-                          { id: 'Food', label: '🍎 อาหารและเครื่องดื่ม' },
-                          { id: 'Pets', label: '🐶 สัตว์เลี้ยง' },
-                          { id: 'Lifestyle', label: '🎨 ไลฟ์สไตล์และงานอดิเรก' },
-                          { id: 'General', label: '📦 ทั่วไป (General)' }
-                        ].map(cat => (
-                          <button
-                            key={cat.id}
-                            onClick={() => {
-                              // We will use a local state or simple component variable
-                              (window as any)._shopCategory = cat.id;
-                              fetchProducts(); // Refresh products
-                              setMlmSearchId(prev => prev); // Force re-render trick
-                            }}
-                            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition border cursor-pointer ${
-                              ((window as any)._shopCategory || 'All') === cat.id 
-                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
-                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            {cat.label}
-                          </button>
-                        ))}
+                      {/* Unified Search Bar & Category Filter Bar */}
+                      <div className="bg-white border border-slate-100 rounded-3xl p-4 shadow-sm space-y-3">
+                        <div className="relative">
+                          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="text"
+                            value={shopSearchQuery}
+                            onChange={(e) => setShopSearchQuery(e.target.value)}
+                            placeholder="🔍 ค้นหาสินค้าตาม หมวดหมู่, ชื่อร้านค้า, ยี่ห้อแบรนด์, ชื่อสินค้า หรือตัวอักษร (เช่น ก.)..."
+                            className="w-full border border-slate-200 rounded-2xl pl-10 pr-10 py-3 text-xs focus:outline-none focus:border-indigo-500 bg-slate-50/60 transition"
+                          />
+                          {shopSearchQuery && (
+                            <button
+                              onClick={() => setShopSearchQuery('')}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-bold text-xs"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Category Buttons Selector */}
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {[
+                            { id: 'All', label: 'ทั้งหมด (All)' },
+                            { id: 'Fashion', label: '👗 แฟชั่น' },
+                            { id: 'Electronics', label: '🔌 อุปกรณ์อิเล็กทรอนิกส์' },
+                            { id: 'Beauty', label: '💄 ความงามและของใช้ส่วนตัว' },
+                            { id: 'Health', label: '💊 สุขภาพ' },
+                            { id: 'Baby', label: '🍼 แม่และเด็ก' },
+                            { id: 'Home', label: '🏠 บ้านและที่อยู่อาศัย' },
+                            { id: 'Food', label: '🍎 อาหารและเครื่องดื่ม' },
+                            { id: 'Pets', label: '🐶 สัตว์เลี้ยง' },
+                            { id: 'Lifestyle', label: '🎨 ไลฟ์สไตล์และงานอดิเรก' },
+                            { id: 'General', label: '📦 ทั่วไป (General)' }
+                          ].map(cat => (
+                            <button
+                              key={cat.id}
+                              onClick={() => {
+                                (window as any)._shopCategory = cat.id;
+                                fetchProducts();
+                                setMlmSearchId(prev => prev);
+                              }}
+                              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition border cursor-pointer ${
+                                ((window as any)._shopCategory || 'All') === cat.id 
+                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
+                                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                              }`}
+                            >
+                              {cat.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
 
-                      {/* Dynamic Shopee Product List */}
+                      {/* Dynamic Shopee Product List with Fair Rotation & Search Filtering */}
                       {(() => {
                         const getProductShopRating = (p: any): number => {
                           if (p?.sellerRating) return parseFloat(p.sellerRating);
@@ -7954,55 +8347,49 @@ export default function App() {
 
                         const nonPackages = products.filter(p => p.category !== 'Package');
                         const currentCat = (window as any)._shopCategory || 'All';
+                        const q = shopSearchQuery.toLowerCase().trim();
 
-                        let displayList: any[] = [];
-                        if (currentCat !== 'All') {
-                          displayList = nonPackages.filter(p => p.category === currentCat);
-                        } else {
-                          // For 'All', prioritize Best Sellers & Top Rated Shops (Rating >= 4.8 or High Sales), then interleave categories!
-                          const bestSellersAndTopShops: any[] = [];
-                          const regularProducts: any[] = [];
+                        // Search Filter: Category, Store Name, Brand Name, Product Name, Thai letters
+                        let filtered = nonPackages.filter(p => {
+                          const matchesCat = currentCat === 'All' || p.category === currentCat;
+                          if (!matchesCat) return false;
 
-                          nonPackages.forEach((p: any) => {
-                            const rating = getProductShopRating(p);
-                            const sales = getProductSalesCount(p);
-                            if (p.isBestSeller || sales >= 150 || rating >= 4.8) {
-                              bestSellersAndTopShops.push(p);
-                            } else {
-                              regularProducts.push(p);
-                            }
-                          });
+                          if (!q) return true;
 
-                          // Interleave regular products round-robin across categories so they don't group sequentially
-                          const catGroups: Record<string, any[]> = {};
-                          regularProducts.forEach((p: any) => {
-                            const cat = p.category || 'General';
-                            if (!catGroups[cat]) catGroups[cat] = [];
-                            catGroups[cat].push(p);
-                          });
+                          const pName = (p.name || '').toLowerCase();
+                          const pBrand = (p.brand || p.brandName || '').toLowerCase();
+                          const pStore = (p.sellerStoreName || '').toLowerCase();
+                          const pCategory = (p.category || '').toLowerCase();
+                          const pSubcat = (p.subcategory || '').toLowerCase();
 
-                          const interleaved: any[] = [];
-                          const keys = Object.keys(catGroups);
-                          let hasMore = true;
-                          let round = 0;
-                          while (hasMore) {
-                            hasMore = false;
-                            for (const k of keys) {
-                              if (round < catGroups[k].length) {
-                                interleaved.push(catGroups[k][round]);
-                                hasMore = true;
-                              }
-                            }
-                            round++;
+                          return pName.includes(q) || pBrand.includes(q) || pStore.includes(q) || pCategory.includes(q) || pSubcat.includes(q);
+                        });
+
+                        // Fair Rotation & Shuffle based on user ID seed + shop rating weight
+                        // Customer A and Customer B searching same query get randomized rotation order!
+                        const userSeed = (profile?.userId || 'guest_user').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                        
+                        const displayList = [...filtered].sort((a, b) => {
+                          const ratingA = getProductShopRating(a);
+                          const ratingB = getProductShopRating(b);
+                          
+                          // High ratings generally stay top, but pseudo-random shuffle per user creates varied exposure
+                          const pseudoA = (a.id.charCodeAt(0) + userSeed) % 17;
+                          const pseudoB = (b.id.charCodeAt(0) + userSeed) % 17;
+                          
+                          if (Math.abs(ratingA - ratingB) > 0.3) {
+                            return ratingB - ratingA;
                           }
+                          return pseudoA - pseudoB;
+                        });
 
-                          displayList = [...bestSellersAndTopShops, ...interleaved];
-                        }
+                        const canSeePv = ['S','M','L','XL','XXL'].includes(profile?.rank || '') || profile?.role === 'Admin' || profile?.role === 'Manager';
 
                         if (displayList.length === 0) {
                           return (
-                            <div className="py-16 text-center text-slate-400 text-xs bg-white rounded-3xl border border-slate-100">
-                              ยังไม่มีสินค้าจำหน่ายร่วมในหมวดหมู่นี้ค่ะ
+                            <div className="py-16 text-center text-slate-400 text-xs bg-white rounded-3xl border border-slate-100 space-y-2">
+                              <p className="font-bold text-slate-600">ไม่พบรายการสินค้าที่ค้นหาค่ะ</p>
+                              <p className="text-[11px] text-slate-400">ลองค้นหาด้วยคำอื่น หรือเลือกหมวดหมู่ใหม่อีกครั้งนะคะ</p>
                             </div>
                           );
                         }
@@ -8046,7 +8433,7 @@ export default function App() {
 
                                   <div>
                                     <div className="overflow-hidden rounded-2xl mb-3 h-40 relative mt-4">
-                                      <img src={p.image} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                                      <img src={p.image} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt={p.name} />
                                       {(p.isBestSeller || sales >= 150) && (
                                         <span className="absolute bottom-2 left-2 bg-rose-500 text-white text-[9px] font-black px-2 py-0.5 rounded-md shadow-sm animate-pulse">
                                           🔥 ขายดี ({sales} ชิ้น)
@@ -8056,6 +8443,13 @@ export default function App() {
 
                                     <h4 className="text-xs font-bold text-slate-900 leading-snug group-hover:text-indigo-600 transition line-clamp-2">{p.name}</h4>
                                     
+                                    {/* Brand Name if present */}
+                                    {(p.brand || p.brandName) && (
+                                      <p className="text-[10px] text-indigo-600 font-bold mt-1">
+                                        🏷️ แบรนด์: {p.brand || p.brandName}
+                                      </p>
+                                    )}
+
                                     <div className="flex flex-wrap gap-1 mt-1.5">
                                       <span className="inline-block bg-slate-100 text-slate-600 text-[8px] font-bold px-1.5 py-0.5 rounded-md">
                                         {catLabel}
@@ -8076,9 +8470,15 @@ export default function App() {
                                   <div className="mt-2 pt-3 border-t border-slate-100">
                                     <div className="flex justify-between items-center text-xs mb-2.5">
                                       <span className="text-indigo-600 font-black text-sm">฿ {p.price?.toLocaleString()}</span>
-                                      <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[9px] font-bold">
-                                        +{displayPv} PV
-                                      </span>
+                                      {canSeePv ? (
+                                        <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[9px] font-bold">
+                                          +{displayPv} PV
+                                        </span>
+                                      ) : (
+                                        <span className="bg-slate-100 text-slate-400 px-2 py-0.5 rounded text-[9px] font-medium" title="คะแนน PV เฉพาะตำแหน่ง S ขึ้นไป">
+                                          🔒 PV ตำแหน่ง S+
+                                        </span>
+                                      )}
                                     </div>
                                     <button 
                                       onClick={(e) => {
@@ -8097,7 +8497,7 @@ export default function App() {
                         );
                       })()}
 
-                      {/* PRODUCT DETAIL MODAL (เข้าดูสินค้านั้นๆ + สินค้าของร้านอื่นๆ ในประเภทเดียวกัน) */}
+                      {/* PRODUCT DETAIL MODAL (PAGE 2) */}
                       {selectedMarketProduct && (
                         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 overflow-y-auto p-4 sm:p-6 flex items-center justify-center animate-fadeIn">
                           <div className="bg-white rounded-3xl max-w-4xl w-full p-6 sm:p-8 space-y-6 shadow-2xl border border-indigo-100 relative max-h-[90vh] overflow-y-auto">
@@ -8111,10 +8511,14 @@ export default function App() {
 
                             {/* Main Product Info */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                              {/* Product Image & Badges */}
+                              {/* Product Image Gallery & Desktop Hover Zoom */}
                               <div className="space-y-3">
-                                <div className="overflow-hidden rounded-2xl border border-slate-100 h-72 relative shadow-inner bg-slate-50">
-                                  <img src={selectedMarketProduct.image} className="w-full h-full object-cover" alt={selectedMarketProduct.name} />
+                                <div className="overflow-hidden rounded-2xl border border-slate-100 h-72 relative shadow-inner bg-slate-50 group cursor-zoom-in">
+                                  <img 
+                                    src={(window as any)._activeModalImg || selectedMarketProduct.image} 
+                                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-125" 
+                                    alt={selectedMarketProduct.name} 
+                                  />
                                   <div className="absolute top-3 left-3 bg-indigo-900/90 text-white px-3 py-1 rounded-xl text-xs font-bold border border-white/20 shadow">
                                     🏪 {selectedMarketProduct.sellerStoreName || 'นที พลัส มาร์เก็ต'}
                                   </div>
@@ -8125,8 +8529,35 @@ export default function App() {
                                       let hash = 0;
                                       for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
                                       return (4.5 + Math.abs(hash % 6) / 10).toFixed(1);
-                                    })()} / 5.0 (คะแนนร้านค้า)
+                                    })()} / 5.0
                                   </div>
+                                  <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-md pointer-events-none">
+                                    🔍 นำเมาส์ไปชี้เพื่อขยาย
+                                  </div>
+                                </div>
+
+                                {/* Thumbnail Gallery Slider Below */}
+                                <div className="flex gap-2 overflow-x-auto pb-1">
+                                  {[
+                                    selectedMarketProduct.image,
+                                    selectedMarketProduct.image2 || selectedMarketProduct.image,
+                                    selectedMarketProduct.image3 || selectedMarketProduct.image
+                                  ].map((imgUrl, imgIdx) => (
+                                    <button
+                                      key={imgIdx}
+                                      onClick={() => {
+                                        (window as any)._activeModalImg = imgUrl;
+                                        setMlmSearchId(prev => prev);
+                                      }}
+                                      className={`w-16 h-16 rounded-xl border-2 overflow-hidden flex-shrink-0 cursor-pointer transition ${
+                                        ((window as any)._activeModalImg || selectedMarketProduct.image) === imgUrl
+                                          ? 'border-indigo-600 shadow-md scale-105'
+                                          : 'border-slate-200 opacity-70 hover:opacity-100'
+                                      }`}
+                                    >
+                                      <img src={imgUrl} className="w-full h-full object-cover" alt="thumbnail" />
+                                    </button>
+                                  ))}
                                 </div>
                               </div>
 
@@ -8139,6 +8570,11 @@ export default function App() {
                                   <h3 className="text-xl font-black text-slate-900 leading-snug">
                                     {selectedMarketProduct.name}
                                   </h3>
+                                  {(selectedMarketProduct.brand || selectedMarketProduct.brandName) && (
+                                    <p className="text-xs text-indigo-600 font-bold">
+                                      🏷️ แบรนด์สินค้า (Brand): <span className="text-slate-800">{selectedMarketProduct.brand || selectedMarketProduct.brandName}</span>
+                                    </p>
+                                  )}
                                 </div>
 
                                 <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl space-y-2">
@@ -8146,11 +8582,27 @@ export default function App() {
                                     <div className="text-2xl font-black text-indigo-600">
                                       ฿ {selectedMarketProduct.price?.toLocaleString()}
                                     </div>
-                                    <div className="bg-emerald-100 text-emerald-800 text-xs font-black px-3 py-1 rounded-xl">
-                                      +{selectedMarketProduct.pv || Math.floor(parseFloat(selectedMarketProduct.price) * 0.5)} PV
+                                    {(['S','M','L','XL','XXL'].includes(profile?.rank || '') || profile?.role === 'Admin' || profile?.role === 'Manager') ? (
+                                      <div className="bg-emerald-100 text-emerald-800 text-xs font-black px-3 py-1 rounded-xl">
+                                        +{selectedMarketProduct.pv || Math.floor(parseFloat(selectedMarketProduct.price) * 0.5)} PV
+                                      </div>
+                                    ) : (
+                                      <div className="bg-slate-100 text-slate-500 text-[11px] font-semibold px-3 py-1 rounded-xl" title="เฉพาะสมาชิกตำแหน่ง S ขึ้นไป">
+                                        🔒 คะแนน PV เฉพาะตำแหน่ง S ขึ้นไป
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 text-[11px] text-slate-600 font-medium">
+                                    <div>
+                                      🚚 ค่าจัดส่ง: <strong className="text-emerald-700">{selectedMarketProduct.shippingFee ? `฿${selectedMarketProduct.shippingFee}` : 'จัดส่งฟรีทั่วประเทศ'}</strong>
+                                    </div>
+                                    <div>
+                                      🏷️ ส่วนลดสิทธิ์สมาชิก: <strong className="text-indigo-600">{selectedMarketProduct.discount || 'ใช้ E-Coupon ลดสูงสุด'}</strong>
                                     </div>
                                   </div>
-                                  <p className="text-[11px] text-slate-500">
+
+                                  <p className="text-[10px] text-slate-400 pt-1">
                                     ชำระด้วย E-Coupon สะสมส่วนลดเป็นอันดับแรก หากไม่พอระบบหักส่วนต่างจาก E-Cash อัตโนมัติ
                                   </p>
                                 </div>
@@ -10665,11 +11117,24 @@ export default function App() {
                       </form>
 
                       <div className="border-t border-slate-100 pt-4 text-center">
-                        {currentUser?.sellerStatus === 'Active' ? (
-                          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-2xl text-center text-xs space-y-1">
+                        {currentUser?.sellerStatus === 'Active' && !hasDismissedApprovedNotice ? (
+                          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-2xl text-center text-xs space-y-1 relative">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setHasDismissedApprovedNotice(true);
+                                if (currentUser?.userId) {
+                                  localStorage.setItem('dismissed_approved_banner_' + currentUser.userId, 'true');
+                                }
+                              }}
+                              className="absolute top-2 right-2 text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg text-xs cursor-pointer"
+                              title="ปิดการแสดงผลข้อความนี้"
+                            >
+                              ✕
+                            </button>
                             <p className="font-bold">✓ บัญชีของท่านได้รับการอนุมัติเป็นร้านค้าเรียบร้อยแล้วค่ะ</p>
                             <p className="text-slate-500 font-mono text-[10px]">รหัสร้านค้าของท่านคือ: <span className="font-bold text-emerald-700">{currentUser?.sellerCode || '-'}</span></p>
-                            <p className="text-slate-500 text-[10px]">ท่านไม่สามารถกดสมัครร้านค้าซ้ำได้ค่ะ สามารถกรอกรหัสผ่านเพื่อเข้าใช้งานพอร์ทัลร้านค้าได้ทันที</p>
+                            <p className="text-slate-500 text-[10px]">ท่านสามารถกรอกรหัสผ่านเพื่อเข้าใช้งานพอร์ทัลร้านค้าได้ทันที</p>
                           </div>
                         ) : currentUser?.sellerStatus === 'Pending' ? (
                           <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl text-center text-xs space-y-1 animate-pulse">
@@ -10806,8 +11271,8 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* Simulated OTP Helper Banner */}
-                          {sellerOtpSimulated && (
+                          {/* Simulated OTP Helper Banner (Only in Sandbox / Test mode) */}
+                          {isSandboxActive && sellerOtpSimulated && (
                             <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-xl font-medium animate-pulse flex items-center justify-between text-[11px]">
                               <span>🔐 รหัส OTP จำลองสำหรับทดสอบของคุณคือ: <strong>{sellerOtpSimulated}</strong></span>
                               <button
@@ -11366,6 +11831,138 @@ export default function App() {
                               5.00 <span className="text-amber-400 text-sm">★★★★★</span>
                             </div>
                             <div className="text-[10px] text-teal-600 font-bold">ความรวดเร็วในการจัดส่งเฉลี่ย: ยอดเยี่ยม</div>
+                          </div>
+                        </div>
+
+                        {/* WAREHOUSE MAP & WAREHOUSE ADDRESS SECTION (หน้าแรกของร้านค้าใต้คะแนนเรตติ้งคลังจัดส่ง) */}
+                        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
+                          <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
+                            <div>
+                              <h4 className="font-extrabold text-indigo-950 text-sm flex items-center gap-2">
+                                <MapPin size={18} className="text-indigo-600" /> 📍 แผนที่พิกัดคลังสินค้าและที่อยู่จัดส่งสินค้า (Warehouse Map & Address)
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-0.5">
+                                ระบุพิกัดจีพีเอสและที่อยู่คลังสินค้า/โรงงานสำหรับจัดส่ง (ให้กรอกเฉพาะ บ้านเลขที่ ถนน/ซอย หมู่ที่ และเลือกตำบล/อำเภอ)
+                              </p>
+                            </div>
+                            <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold border ${
+                              profile?.shippingPinStatus === 'Confirmed' 
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                                : profile?.shippingPinStatus === 'PendingApproval'
+                                ? 'bg-amber-50 text-amber-700 border-amber-200 animate-pulse'
+                                : 'bg-slate-100 text-slate-600 border-slate-200'
+                            }`}>
+                              {profile?.shippingPinStatus === 'Confirmed' ? '✓ ปักหมุดแล้ว' : profile?.shippingPinStatus === 'PendingApproval' ? '⏳ รอแอดมินอนุมัติ' : 'ยังไม่ปักหมุด'}
+                            </span>
+                          </div>
+
+                          {/* Warehouse Address Inputs */}
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-slate-700 text-xs font-bold mb-1">บ้านเลขที่ / อาคาร / ชั้น</label>
+                                <input 
+                                  type="text"
+                                  value={warehouseHouseNo}
+                                  onChange={(e) => setWarehouseHouseNo(e.target.value)}
+                                  placeholder="เช่น 123/45 อาคาร B"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-indigo-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-slate-700 text-xs font-bold mb-1">หมู่ที่ / ซอย</label>
+                                <input 
+                                  type="text"
+                                  value={warehouseMoo}
+                                  onChange={(e) => setWarehouseMoo(e.target.value)}
+                                  placeholder="เช่น หมู่ 3 ซอยสุขุมวิท 21"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-indigo-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-slate-700 text-xs font-bold mb-1">ถนน</label>
+                                <input 
+                                  type="text"
+                                  value={warehouseRoad}
+                                  onChange={(e) => setWarehouseRoad(e.target.value)}
+                                  placeholder="เช่น ถนนเพชรเกษม"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-indigo-500"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Tambon Auto-complete Search Box for Warehouse Address */}
+                            <div className="relative">
+                              <label className="block text-slate-700 text-xs font-bold mb-1">ค้นหาตำบล / อำเภอ / จังหวัด (คลังสินค้า/โรงงาน)</label>
+                              <div className="relative">
+                                <input 
+                                  type="text"
+                                  value={warehouseAddressQuery}
+                                  onChange={(e) => handleWarehouseTambonSearch(e.target.value)}
+                                  placeholder="พิมพ์ชื่อตำบล อำเภอ หรือรหัสไปรษณีย์ เพื่อเลือกคลังสินค้า..."
+                                  className="w-full border border-slate-200 rounded-xl pl-3 pr-8 py-2 text-xs focus:outline-none focus:border-indigo-500 bg-slate-50/50"
+                                />
+                                <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                              </div>
+
+                              {warehouseTambonResults.length > 0 && (
+                                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto divide-y divide-slate-100 text-xs">
+                                  {warehouseTambonResults.map((item: any, idx: number) => (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      onClick={() => selectWarehouseTambon(item)}
+                                      className="w-full text-left px-3 py-2 hover:bg-indigo-50 transition cursor-pointer flex justify-between items-center"
+                                    >
+                                      <span>ต. {item.tambon} &gt; อ. {item.amphoe} &gt; จ. {item.province}</span>
+                                      <span className="font-mono text-indigo-600 font-bold">{item.zipcode}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Selected Warehouse District Summary Box */}
+                            {(warehouseProvince || warehouseDistrict || warehouseSubdistrict) && (
+                              <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-3 text-xs flex flex-wrap gap-x-4 gap-y-1 font-medium text-indigo-950">
+                                <span>📍 ตำบล: <strong className="text-indigo-700">{warehouseSubdistrict}</strong></span>
+                                <span>อำเภอ: <strong className="text-indigo-700">{warehouseDistrict}</strong></span>
+                                <span>จังหวัด: <strong className="text-indigo-700">{warehouseProvince}</strong></span>
+                                <span>รหัสไปรษณีย์: <strong className="text-indigo-700 font-mono">{warehouseZipcode}</strong></span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Warehouse Map Pin Container */}
+                          <div className="space-y-3">
+                            <div className="text-xs font-bold text-slate-800 flex justify-between items-center">
+                              <span>📌 ปักหมุดแผนที่คลังสินค้า (Google Maps / OpenStreetMap Pin):</span>
+                              {warehouseLat && warehouseLng && (
+                                <span className="font-mono text-[11px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">
+                                  Lat: {warehouseLat.toFixed(6)}, Lng: {warehouseLng.toFixed(6)}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-inner h-[320px]">
+                              <NateeWarehouseMap
+                                latitude={warehouseLat || profile?.shippingLat || 13.7563}
+                                longitude={warehouseLng || profile?.shippingLng || 100.5018}
+                                onLocationSelect={(lat, lng) => {
+                                  setWarehouseLat(lat);
+                                  setWarehouseLng(lng);
+                                }}
+                                isEditable={true}
+                              />
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={handleSaveWarehousePinAndAddress}
+                              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl text-xs shadow-md hover:shadow transition cursor-pointer flex items-center justify-center gap-2"
+                            >
+                              <MapPin size={16} /> บันทึกพิกัดและที่อยู่คลังสินค้า
+                            </button>
                           </div>
                         </div>
 
@@ -17386,8 +17983,51 @@ export default function App() {
                     <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-rose-50 text-rose-600 mb-2 border border-rose-100">
                       <Settings size={24} className={bankSettings.maintenanceMode ? "animate-spin text-rose-500" : "text-rose-600"} />
                     </div>
-                    <h3 className="text-lg font-black text-slate-800">⏸️ ระบบตั้งค่าพักหน้าจอ (Maintenance Mode)</h3>
-                    <p className="text-xs text-slate-400">ควบคุมการแสดงผลหน้าจอปิดปรับปรุงระบบชั่วคราวสำหรับสมาชิกทั่วไปเพื่อทำการอัปเดตระบบ</p>
+                    <h3 className="text-lg font-black text-slate-800">⏸️ ระบบตั้งค่าพักหน้าจอ (Maintenance Mode) และแจ้งเตือน</h3>
+                    <p className="text-xs text-slate-400">ควบคุมการแสดงผลหน้าจอปิดปรับปรุงระบบชั่วคราว และส่งข้อความสั้นกระดิ่งแจ้งเตือน</p>
+                  </div>
+
+                  {/* ADMIN BROADCAST SHORT MESSAGE TO BELL NOTIFICATION */}
+                  <div className="bg-indigo-50/50 border border-indigo-100 p-5 rounded-2xl space-y-4">
+                    <div className="flex items-center gap-2 text-indigo-950 font-bold text-sm">
+                      <Bell size={18} className="text-indigo-600" />
+                      <span>📣 ส่งข้อความสั้นไปยังกระดิ่งแจ้งเตือนของสมาชิก (Broadcast Bell Notification)</span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      แอดมินสามารถพิมพ์ข้อความสั้นๆ เพื่อให้ขึ้นแจ้งเตือนที่กระดิ่งมุมขวาบนหน้าจอของสมาชิกทุกคนได้ทันที
+                    </p>
+
+                    <div className="space-y-3 text-xs">
+                      <div>
+                        <label className="block text-slate-700 font-bold mb-1">หัวข้อประกาศ</label>
+                        <input
+                          type="text"
+                          value={broadcastTitle}
+                          onChange={(e) => setBroadcastTitle(e.target.value)}
+                          placeholder="📢 ประกาศจากระบบ Natee Plus"
+                          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-indigo-500 bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-700 font-bold mb-1">ข้อความแจ้งเตือน *</label>
+                        <textarea
+                          rows={3}
+                          value={broadcastMessage}
+                          onChange={(e) => setBroadcastMessage(e.target.value)}
+                          placeholder="พิมพ์ข้อความสั้นๆ ที่ต้องการส่งไปยังกระดิ่งแจ้งเตือนสมาชิก เช่น แจ้งเตือนรอบจัดส่งพัสดุ หรืออัปเดตระบบ..."
+                          className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:outline-none focus:border-indigo-500 bg-white"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleAdminBroadcastNotification}
+                        className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs shadow-sm hover:shadow transition cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        <Bell size={14} /> ส่งข้อความไปยังกระดิ่งแจ้งเตือนสมาชิก 🔔
+                      </button>
+                    </div>
                   </div>
 
                   {/* Current Status Banner */}

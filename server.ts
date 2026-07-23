@@ -198,7 +198,7 @@ function setupServerRealTimeSync() {
   activeServerSubscriptions = [];
   
   const collectionName = isSandboxActive ? 'app_sections_sandbox' : 'app_sections';
-  const keys = ['members', 'products', 'sellerProducts', 'orders', 'transactions', 'planB_Tree', 'csrFund', 'systemStats', 'otps', 'packageProductChoices', 'bankSettings'];
+  const keys = ['members', 'products', 'sellerProducts', 'orders', 'transactions', 'planB_Tree', 'csrFund', 'systemStats', 'otps', 'packageProductChoices', 'bankSettings', 'notifications'];
   const currentDbFile = isSandboxActive ? DB_FILE_SANDBOX : DB_FILE;
 
   console.log(`📡 [Server] Setting up real-time sync listeners for Firestore collection: ${collectionName}`);
@@ -255,7 +255,7 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
     return;
   }
   try {
-    const keys = ['members', 'products', 'sellerProducts', 'orders', 'transactions', 'planB_Tree', 'csrFund', 'systemStats', 'otps', 'packageProductChoices', 'bankSettings'];
+    const keys = ['members', 'products', 'sellerProducts', 'orders', 'transactions', 'planB_Tree', 'csrFund', 'systemStats', 'otps', 'packageProductChoices', 'bankSettings', 'notifications'];
     const loadedData: any = {};
     let hasData = false;
     
@@ -473,9 +473,51 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
         }
       }
 
+      // Merge products (union by id) and self-heal from sellerProducts
+      const mergedProducts = [...(loadedData.products || [])];
+      if (localDb && Array.isArray(localDb.products)) {
+        for (const localProd of localDb.products) {
+          if (!localProd || !localProd.id) continue;
+          const idx = mergedProducts.findIndex((p: any) => p.id === localProd.id);
+          if (idx === -1) {
+            console.log(`📦 Merging local product into main store: ${localProd.id} / ${localProd.name}`);
+            mergedProducts.push(localProd);
+            hasMergedChanges = true;
+          }
+        }
+      }
+
+      // Guarantee ALL approved sellerProducts exist in main products store
+      if (Array.isArray(mergedSellerProducts)) {
+        for (const sProd of mergedSellerProducts) {
+          if (sProd && sProd.status === 'Approved' && sProd.id) {
+            const existsInMain = mergedProducts.some((p: any) => p.id === sProd.id);
+            if (!existsInMain) {
+              console.log(`🛠️ [Self-Heal Product] Restoring approved seller product into main store: ${sProd.id} / ${sProd.name}`);
+              mergedProducts.push({
+                ...sProd,
+                id: sProd.id,
+                name: sProd.name,
+                price: parseFloat(sProd.price) || 0,
+                pv: parseFloat(sProd.pv) || 0,
+                cost: sProd.cost !== undefined ? parseFloat(sProd.cost) : Math.floor((parseFloat(sProd.price) || 0) * 0.30),
+                image: sProd.image || (sProd.images && sProd.images[0]) || "",
+                images: sProd.images && sProd.images.length > 0 ? sProd.images : [sProd.image].filter(Boolean),
+                category: sProd.category || "General",
+                sellerId: sProd.sellerId || "",
+                sellerCode: sProd.sellerCode || "",
+                sellerStoreName: sProd.sellerStoreName || "",
+                status: "Approved"
+              });
+              hasMergedChanges = true;
+            }
+          }
+        }
+      }
+
       cacheDb = {
         members: mergedMembers,
-        products: loadedData.products || (localDb && localDb.products) || [],
+        products: mergedProducts,
         sellerProducts: mergedSellerProducts,
         orders: mergedOrders,
         transactions: mergedTransactions,
@@ -484,7 +526,8 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
         systemStats: loadedData.systemStats || (localDb && localDb.systemStats) || { totalPlanBReserves: 0, totalTaxReserves: 0, totalCompanyProfits: 0 },
         otps: loadedData.otps || {},
         packageProductChoices: loadedData.packageProductChoices || (localDb && localDb.packageProductChoices) || undefined,
-        bankSettings: loadedData.bankSettings || (localDb && localDb.bankSettings) || undefined
+        bankSettings: loadedData.bankSettings || (localDb && localDb.bankSettings) || undefined,
+        notifications: loadedData.notifications || (localDb && localDb.notifications) || []
       };
 
       // Programmatic migration and self-healing check to ensure no duplicates and nateeplus is formatted correctly
@@ -681,7 +724,7 @@ async function processFirestoreSave() {
   pendingSaveData = null; // Clear pending so we can detect new ones
   
   try {
-    const keys = ['members', 'products', 'sellerProducts', 'orders', 'transactions', 'planB_Tree', 'csrFund', 'systemStats', 'otps', 'packageProductChoices', 'bankSettings'];
+    const keys = ['members', 'products', 'sellerProducts', 'orders', 'transactions', 'planB_Tree', 'csrFund', 'systemStats', 'otps', 'packageProductChoices', 'bankSettings', 'notifications'];
     const batch = writeBatch(dbFirestore);
     const collectionName = isSandboxActive ? 'app_sections_sandbox' : 'app_sections';
     for (const key of keys) {
@@ -3067,9 +3110,9 @@ app.post('/api/member/update-profile', (req, res) => {
   res.json({ success: true, message: "อัปเดตข้อมูลส่วนตัวเรียบร้อยแล้วค่ะ", profile: member });
 });
 
-// UPDATE SHIPPING MAP PIN POSITION BY MEMBER
+// UPDATE SHIPPING MAP PIN POSITION AND WAREHOUSE ADDRESS BY MEMBER
 app.post('/api/member/update-shipping-pin', (req, res) => {
-  const { userId, lat, lng } = req.body;
+  const { userId, lat, lng, warehouseAddress, warehouseHouseNo, warehouseMoo, warehouseRoad, warehouseProvince, warehouseDistrict, warehouseSubdistrict, warehouseZipcode } = req.body;
   const db = readDb();
   
   const member = db.members.find(m => m.userId === userId);
@@ -3080,9 +3123,15 @@ app.post('/api/member/update-shipping-pin', (req, res) => {
   const latitude = lat ? parseFloat(lat) : null;
   const longitude = lng ? parseFloat(lng) : null;
 
-  // If first time pinning or not previously confirmed, let's confirm immediately.
-  // Otherwise, if they had a previous confirmed pin, change status to PendingApproval as requested:
-  // "มีปุ่มกดแก้ไขได้ แต่เมื่อแก้ไข ต้องให้ Admin shop เป็นผู้อนุมัติ"
+  if (warehouseAddress !== undefined) member.warehouseAddress = warehouseAddress;
+  if (warehouseHouseNo !== undefined) member.warehouseHouseNo = warehouseHouseNo;
+  if (warehouseMoo !== undefined) member.warehouseMoo = warehouseMoo;
+  if (warehouseRoad !== undefined) member.warehouseRoad = warehouseRoad;
+  if (warehouseProvince !== undefined) member.warehouseProvince = warehouseProvince;
+  if (warehouseDistrict !== undefined) member.warehouseDistrict = warehouseDistrict;
+  if (warehouseSubdistrict !== undefined) member.warehouseSubdistrict = warehouseSubdistrict;
+  if (warehouseZipcode !== undefined) member.warehouseZipcode = warehouseZipcode;
+
   if (!member.shippingPinStatus || member.shippingPinStatus === 'NotPinned' || !member.shippingLat) {
     member.shippingLat = latitude;
     member.shippingLng = longitude;
@@ -3090,21 +3139,56 @@ app.post('/api/member/update-shipping-pin', (req, res) => {
     writeDb(db);
     return res.json({ 
       success: true, 
-      message: "ปักหมุดพิกัดจัดส่งสำเร็จเรียบร้อยแล้วค่ะ! พิกัดถูกบันทึกเป็นภาพนิ่งแล้ว", 
+      message: "ปักหมุดพิกัดและบันทึกข้อมูลคลังสินค้าสำเร็จเรียบร้อยแล้วค่ะ!", 
       profile: member 
     });
   } else {
-    // Already has a pin, so this is an EDIT (แก้ไข)
+    // Already has a pin, so this is an EDIT
     member.pendingShippingLat = latitude;
     member.pendingShippingLng = longitude;
     member.shippingPinStatus = 'PendingApproval';
     writeDb(db);
     return res.json({ 
       success: true, 
-      message: "ส่งคำขอแก้ไขหมุดพิกัดเรียบร้อยแล้วค่ะ! อยู่ระหว่างรอให้แอดมิน (Admin Market) อนุมัติการแก้ไข", 
+      message: "ส่งคำขอแก้ไขหมุดพิกัดคลังสินค้าเรียบร้อยแล้วค่ะ! อยู่ระหว่างรอแอดมินอนุมัติการแก้ไข", 
       profile: member 
     });
   }
+});
+
+// ADMIN BROADCAST NOTIFICATION TO BELL DROPDOWN
+app.post('/api/admin/broadcast-notification', (req, res) => {
+  const { title, message } = req.body;
+  if (!message || !message.trim()) {
+    return res.status(400).json({ success: false, message: "กรุณากรอกข้อความแจ้งเตือน" });
+  }
+
+  const db = readDb();
+  if (!Array.isArray(db.notifications)) {
+    db.notifications = [];
+  }
+
+  const newNotif = {
+    id: 'NOTIF_' + Date.now(),
+    title: title || "📢 ประกาศจากระบบ Natee Plus",
+    message: message.trim(),
+    createdAt: new Date().toISOString(),
+    sender: "Admin"
+  };
+
+  db.notifications.unshift(newNotif);
+  if (db.notifications.length > 50) {
+    db.notifications = db.notifications.slice(0, 50);
+  }
+
+  writeDb(db);
+  res.json({ success: true, message: "ส่งข้อความสั้นไปยังกระดิ่งแจ้งเตือนของสมาชิกเรียบร้อยแล้วค่ะ! 🔔", notification: newNotif });
+});
+
+// GET PUBLIC/SYSTEM BROADCAST NOTIFICATIONS
+app.get('/api/notifications', (req, res) => {
+  const db = readDb();
+  res.json({ success: true, notifications: db.notifications || [] });
 });
 
 // CHANGE PASSWORD BY MEMBER (Requires 6-digit PIN)
