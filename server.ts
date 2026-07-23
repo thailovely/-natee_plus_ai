@@ -491,12 +491,11 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
       if (cacheDb.members) {
         let hasChanges = false;
 
-        // 1. Initial migration check for old IDs or usernames
-        const legacyIdx = cacheDb.members.findIndex((m: any) => m.userId === 'A260700001' || m.username === 'natee_sponsor');
+        // 1. Initial migration check for old legacy mock username
+        const legacyIdx = cacheDb.members.findIndex((m: any) => m.username === 'natee_sponsor');
         if (legacyIdx !== -1) {
-          console.log("🔄 Migrating old first user to nateeplus in loaded Firestore database...");
+          console.log("🔄 Migrating old first user username to nateeplus in loaded Firestore database...");
           let str = JSON.stringify(cacheDb);
-          str = str.replace(/A260700001/g, 'A260600001');
           str = str.replace(/natee_sponsor/g, 'nateeplus');
           cacheDb = JSON.parse(str);
           hasChanges = true;
@@ -1167,8 +1166,62 @@ function readDb() {
     });
   }
 
+  if (db && db.members && Array.isArray(db.members)) {
+    db.members.forEach((m: any) => recalculateMemberEligibleRights(db, m));
+  }
+
   cacheDb = db;
   return db;
+}
+
+function recalculateMemberEligibleRights(db: any, member: any) {
+  if (!member) return;
+  if (member.role === 'Manager' || member.role === 'Admin' || member.userId === 'A260600001' || member.username === 'nateeplus') {
+    member.eligibleRights = 999999999;
+    return;
+  }
+
+  // 1. Determine base granted rights by rank (10x of package price)
+  const rankMultipliers: Record<string, number> = {
+    "S": 1000.00,
+    "M": 5000.00,
+    "L": 10000.00,
+    "XL": 30000.00,
+    "XXL": 50000.00
+  };
+
+  let grantedRights = rankMultipliers[member.rank] || 0.00;
+
+  // Check package purchase orders in db.orders if available
+  if (db && db.orders && Array.isArray(db.orders)) {
+    const pkgOrders = db.orders.filter((o: any) => o.userId === member.userId && (o.productId === 'pack_s' || o.productId === 'pack_m' || o.productId === 'pack_l' || o.productId === 'pack_xl' || o.productId === 'pack_xxl') && o.status !== 'Cancelled');
+    if (pkgOrders.length > 0) {
+      const orderRightsSum = pkgOrders.reduce((sum: number, o: any) => {
+        const mult = o.productId === 'pack_s' ? 1000 : o.productId === 'pack_m' ? 5000 : o.productId === 'pack_l' ? 10000 : o.productId === 'pack_xl' ? 30000 : o.productId === 'pack_xxl' ? 50000 : 0;
+        return sum + (mult * (o.quantity || 1));
+      }, 0);
+      grantedRights = Math.max(grantedRights, orderRightsSum);
+    }
+  }
+
+  if (grantedRights <= 0) {
+    member.eligibleRights = 0.00;
+    return;
+  }
+
+  // 2. Calculate total E-Money withdrawn or spent by this member
+  const txns = (db && db.transactions) ? db.transactions : [];
+  const withdrawnOrSpentEMoney = txns
+    .filter((t: any) => t.userId === member.userId && t.currency === "E-Money" && (t.type === "Withdraw" || t.type === "WithdrawalRequest" || t.type === "Withdrawal") && t.status !== "Rejected" && t.status !== "Cancelled")
+    .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+
+  // 3. Total E-Money earned = current balanceEMoney + withdrawnOrSpentEMoney
+  const currentEMoney = (typeof member.balanceEMoney === 'number' && !isNaN(member.balanceEMoney)) ? member.balanceEMoney : (parseFloat(member.balanceEMoney || '0') || 0);
+  const totalEMoneyEarned = currentEMoney + withdrawnOrSpentEMoney;
+
+  // 4. Remaining Eligible Rights = Granted Rights - Total E-Money Earned
+  const remainingRights = Math.max(0, grantedRights - totalEMoneyEarned);
+  member.eligibleRights = parseFloat(remainingRights.toFixed(4));
 }
 
 function writeDb(data) {
@@ -1180,6 +1233,8 @@ function writeDb(data) {
       seen.add(m.userId);
       return true;
     });
+
+    data.members.forEach((m: any) => recalculateMemberEligibleRights(data, m));
 
     // Auto-update lastUpdated timestamp for any modified member!
     if (cacheDb && cacheDb.members) {
@@ -1387,10 +1442,12 @@ function calculateBinaryCommissions(db, buyerId, pvAmount, orderId) {
         db.systemStats.totalCompanyProfits = parseFloat((db.systemStats.totalCompanyProfits + companyAllocation).toFixed(4));
         
         // Add CSR Allocation
-        db.csrFund.balance = parseFloat((db.csrFund.balance + csrAllocation).toFixed(4));
+        const currentCsrBal = (typeof db.csrFund?.balance === 'number' && !isNaN(db.csrFund.balance)) ? db.csrFund.balance : 0;
+        db.csrFund.balance = parseFloat((currentCsrBal + csrAllocation).toFixed(4));
         db.csrFund.history.push({
           id: "CSR_TXN_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-          username: parent.name + " " + parent.surname,
+          username: parent.username || parent.userId || "สมาชิก",
+          name: (parent.name && parent.surname) ? `${parent.name} ${parent.surname}` : (parent.name || parent.username || "ผู้ใหญ่ใจดี"),
           userId: parent.userId,
           amount: parseFloat(csrAllocation.toFixed(4)),
           type: "Donation",
@@ -1409,12 +1466,25 @@ function calculateBinaryCommissions(db, buyerId, pvAmount, orderId) {
           id: "COMM_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
           userId: parent.userId,
           type: "Bonus",
-          amount: parseFloat(actualPayout.toFixed(4)),
+          amount: parseFloat(netECash.toFixed(4)),
           currency: "E-Money",
           details: `คอมมิชชันผังไบนารี ชั้นที่ ${level} (จ่ายจริงลำดับที่ ${paidLayersCount + 1}) จากการสั่งซื้อของรหัส ${buyerId}`,
           status: "Approved",
           createdAt: new Date().toISOString()
         });
+
+        if (netCoupon > 0) {
+          db.transactions.push({
+            id: "COUP_COMM_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+            userId: parent.userId,
+            type: "Bonus",
+            amount: parseFloat(netCoupon.toFixed(4)),
+            currency: "E-Coupon",
+            details: `โบนัส E-Coupon (10% หักเข้าคูปอง) จากคอมมิชชันผังไบนารี ชั้นที่ ${level} รหัส ${buyerId}`,
+            status: "Approved",
+            createdAt: new Date().toISOString()
+          });
+        }
         
         paidLayersCount++;
       }
@@ -1508,10 +1578,12 @@ function distributeECashWithDeduction(db, recipient, grossAmount, detailsText, t
     db.systemStats.totalCompanyProfits = parseFloat((db.systemStats.totalCompanyProfits + companyAllocation).toFixed(4));
     
     // Add CSR Allocation
-    db.csrFund.balance = parseFloat((db.csrFund.balance + csrAllocation).toFixed(4));
+    const currentCsrBal = (typeof db.csrFund?.balance === 'number' && !isNaN(db.csrFund.balance)) ? db.csrFund.balance : 0;
+    db.csrFund.balance = parseFloat((currentCsrBal + csrAllocation).toFixed(4));
     db.csrFund.history.push({
       id: "CSR_TXN_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-      username: recipient.name + " " + recipient.surname,
+      username: recipient.username || recipient.userId || "สมาชิก",
+      name: (recipient.name && recipient.surname) ? `${recipient.name} ${recipient.surname}` : (recipient.name || recipient.username || "ผู้ใหญ่ใจดี"),
       userId: recipient.userId,
       amount: parseFloat(csrAllocation.toFixed(4)),
       type: "Donation",
@@ -1536,6 +1608,19 @@ function distributeECashWithDeduction(db, recipient, grossAmount, detailsText, t
       status: "Approved",
       createdAt: new Date().toISOString()
     });
+
+    if (netCoupon > 0) {
+      db.transactions.push({
+        id: "COUP_BON_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+        userId: recipient.userId,
+        type: "Bonus",
+        amount: parseFloat(netCoupon.toFixed(4)),
+        currency: "E-Coupon",
+        details: `โบนัส E-Coupon (หักเข้าคูปอง 10%) จาก${detailsText}`,
+        status: "Approved",
+        createdAt: new Date().toISOString()
+      });
+    }
   }
   return actualPayout;
 }
@@ -1768,10 +1853,12 @@ function processPlanBGenericUpwardPayments(db, tierNum, nodeId) {
         
         // CSR allocation (direct CSR + 1% from E-Cash deduction)
         const totalCsrAllocation = details.csr + eCashCSR;
-        db.csrFund.balance = parseFloat((db.csrFund.balance + totalCsrAllocation).toFixed(4));
+        const currentCsrBal = (typeof db.csrFund?.balance === 'number' && !isNaN(db.csrFund.balance)) ? db.csrFund.balance : 0;
+        db.csrFund.balance = parseFloat((currentCsrBal + totalCsrAllocation).toFixed(4));
         db.csrFund.history.push({
           id: "CSR_TXN_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-          username: parentMember.name + " " + parentMember.surname,
+          username: parentMember.username || parentMember.userId || "สมาชิก",
+          name: (parentMember.name && parentMember.surname) ? `${parentMember.name} ${parentMember.surname}` : (parentMember.name || parentMember.username || "ผู้ใหญ่ใจดี"),
           userId: parentMember.userId,
           amount: parseFloat(totalCsrAllocation.toFixed(4)),
           type: "Donation",
@@ -1802,6 +1889,19 @@ function processPlanBGenericUpwardPayments(db, tierNum, nodeId) {
           status: "Approved",
           createdAt: new Date().toISOString()
         });
+
+        if (netCoupon > 0) {
+          db.transactions.push({
+            id: `COUP_PLANB${tierNum}_` + Math.random().toString(36).substr(2, 9).toUpperCase(),
+            userId: parentMember.userId,
+            type: "Bonus",
+            amount: parseFloat(netCoupon.toFixed(4)),
+            currency: "E-Coupon",
+            details: `โบนัส E-Coupon จากระบบ Plan B${tierNum} สำเร็จลูป`,
+            status: "Approved",
+            createdAt: new Date().toISOString()
+          });
+        }
       }
     }
     
@@ -2807,11 +2907,11 @@ app.post('/api/member/withdraw', (req, res) => {
   }
   
   const amt = parseFloat(amount);
-  if (amt < 300) {
-    return res.status(400).json({ success: false, message: "การถอนเงินขั้นต่ำต้องเป็น 300 บาทขึ้นไปค่ะ" });
+  if (amt < 200) {
+    return res.status(400).json({ success: false, message: "การถอนเงินขั้นต่ำต้องเป็น 200 บาทขึ้นไปค่ะ" });
   }
-  if ((member.balanceEMoney || 0) < 300) {
-    return res.status(400).json({ success: false, message: "การถอนเงินเข้าธนาคาร ต้องมียอดเงินใน E-Money ขั้นต่ำ 300 บาทขึ้นไปค่ะ" });
+  if ((member.balanceEMoney || 0) < 200) {
+    return res.status(400).json({ success: false, message: "การถอนเงินเข้าธนาคาร ต้องมียอดเงินใน E-Money ขั้นต่ำ 200 บาทขึ้นไปค่ะ" });
   }
   if ((member.balanceEMoney || 0) < amt) {
     return res.status(400).json({ success: false, message: "ยอดเงิน E-Money ของคุณไม่เพียงพอสำหรับการถอนเงิน" });
@@ -3485,10 +3585,12 @@ app.post('/api/shop/purchase', (req, res) => {
     processEShareDistribution(db, 10.00 + couponToAllShare, member.userId, true);
 
     // 4. CSR Fund (เข้ากองทุนปันสุข 5 บาท จ่ายในนามสมาชิก)
-    db.csrFund.balance = parseFloat((db.csrFund.balance + 5.00).toFixed(4));
+    const currentCsrBal = (typeof db.csrFund?.balance === 'number' && !isNaN(db.csrFund.balance)) ? db.csrFund.balance : 0;
+    db.csrFund.balance = parseFloat((currentCsrBal + 5.00).toFixed(4));
     db.csrFund.history.push({
       id: "CSR_TXN_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-      username: `${member.name} ${member.surname}`,
+      username: member.username || member.userId || "สมาชิก",
+      name: (member.name && member.surname) ? `${member.name} ${member.surname}` : (member.name || member.username || "ผู้ใหญ่ใจดี"),
       userId: member.userId,
       amount: 5.00,
       type: "Donation",
@@ -4550,41 +4652,47 @@ app.post('/api/admin/product-approve', (req, res) => {
   const { productId } = req.body;
   const db = readDb();
   const prod = db.sellerProducts.find(p => p.id === productId);
-  if (!prod) return res.status(404).json({ success: false, message: "ไม่พบสินค้า" });
+  if (!prod) return res.status(404).json({ success: false, message: "ไม่พบสินค้าในรายการขออนุมัติ" });
   
   prod.status = "Approved";
   
   // Remove existing copy in db.products if any, to avoid duplicate
   db.products = db.products.filter(p => p.id !== productId);
   
-  // Push copy to main store products
-  db.products.push({
+  // Push clean copy to main store products
+  const mainProduct = {
+    ...prod,
     id: prod.id,
     name: prod.name,
-    price: prod.price,
-    pv: prod.pv,
-    cost: prod.cost !== undefined ? prod.cost : Math.floor(prod.price * 0.30),
-    image: prod.image,
-    description: prod.description,
+    price: parseFloat(prod.price) || 0,
+    pv: parseFloat(prod.pv) || 0,
+    cost: prod.cost !== undefined ? parseFloat(prod.cost) : Math.floor((parseFloat(prod.price) || 0) * 0.30),
+    image: prod.image || (prod.images && prod.images[0]) || "",
+    images: prod.images && prod.images.length > 0 ? prod.images : [prod.image].filter(Boolean),
+    description: prod.description || "",
     shortDescription: prod.shortDescription || "",
     category: prod.category || "General",
-    sellerCode: prod.sellerCode,
-    sellerStoreName: prod.sellerStoreName,
     subcategory: prod.subcategory || "",
-    weight: prod.weight || 0,
-    width: prod.width || 0,
-    length: prod.length || 0,
-    height: prod.height || 0,
-    volumetricWeight: prod.volumetricWeight || 0,
-    chargeableWeight: prod.chargeableWeight || 0,
-    baseShippingCost: prod.baseShippingCost || 35,
-    sellerCoPay: prod.sellerCoPay || 0,
-    customerShippingFee: prod.customerShippingFee || 35,
-    netPayout: prod.netPayout || 0
-  });
+    sellerId: prod.sellerId || "",
+    sellerCode: prod.sellerCode || "",
+    sellerStoreName: prod.sellerStoreName || "",
+    status: "Approved",
+    weight: parseFloat(prod.weight) || 0,
+    width: parseFloat(prod.width) || 0,
+    length: parseFloat(prod.length) || 0,
+    height: parseFloat(prod.height) || 0,
+    volumetricWeight: parseFloat(prod.volumetricWeight) || 0,
+    chargeableWeight: parseFloat(prod.chargeableWeight) || 0,
+    baseShippingCost: parseFloat(prod.baseShippingCost) || 35,
+    sellerCoPay: parseFloat(prod.sellerCoPay) || 0,
+    customerShippingFee: parseFloat(prod.customerShippingFee) || 35,
+    netPayout: parseFloat(prod.netPayout) || 0
+  };
+
+  db.products.push(mainProduct);
   
   writeDb(db);
-  res.json({ success: true, message: "อนุมัติเปิดจำหน่ายสินค้าร้านร่วมสำเร็จ!" });
+  res.json({ success: true, message: `อนุมัติเปิดจำหน่ายสินค้า "${prod.name}" ของร้าน ${prod.sellerStoreName || ''} สำเร็จเรียบร้อยแล้ว!` });
 });
 
 // REJECT SELLER PRODUCT

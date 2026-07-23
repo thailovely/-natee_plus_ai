@@ -162,6 +162,7 @@ export default function App() {
   const [sellerOtpSimulated, setSellerOtpSimulated] = useState('');
   const [sellerWelcomeShown, setSellerWelcomeShown] = useState(false);
   const [sellerRegulationsText, setSellerRegulationsText] = useState('');
+  const [selectedMarketProduct, setSelectedMarketProduct] = useState<any>(null);
 
   // Password Visibility States
   const [showSellerLoginPassword, setShowSellerLoginPassword] = useState(false);
@@ -265,6 +266,10 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    try {
+      localStorage.removeItem('natee_user');
+      localStorage.removeItem('natee_original_admin');
+    } catch (e) {}
     setCurrentUser(null);
     setOriginalAdmin(null);
     setUsername('');
@@ -614,11 +619,13 @@ export default function App() {
   const [treeScale, setTreeScale] = useState<number>(0.85);
   const [maxTreeDepth, setMaxTreeDepth] = useState<number>(3);
   const [planBSubTab, setPlanBSubTab] = useState<'b1' | 'b2'>('b1');
-  const [adminSubTab, setAdminSubTab] = useState<'queues' | 'members' | 'couponPv' | 'systemReset' | 'memberApprovals' | 'shippingApprove' | 'manageShops' | 'orderStatus' | 'bankSettings' | 'depositApprove' | 'packageChoices' | 'companyAccountingReport' | 'maintenance'>('queues');
+  const [adminSubTab, setAdminSubTab] = useState<'queues' | 'members' | 'couponPv' | 'systemReset' | 'memberApprovals' | 'shippingApprove' | 'manageShops' | 'productApprovals' | 'orderStatus' | 'bankSettings' | 'depositApprove' | 'packageChoices' | 'companyAccountingReport' | 'maintenance'>('queues');
   const [adminSection, setAdminSection] = useState<'members_system' | 'seller_system' | 'admin_console'>('members_system');
   const [allSellerProducts, setAllSellerProducts] = useState<any[]>([]);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [showEditProductModal, setShowEditProductModal] = useState(false);
+  const [selectedAdminQueueProd, setSelectedAdminQueueProd] = useState<any | null>(null);
+  const [editingQueueProd, setEditingQueueProd] = useState<{ id: string; name: string; price: number; pv: number; cost: number } | null>(null);
   const [shopSearchQuery, setShopSearchQuery] = useState('');
   const [prodSearchQuery, setProdSearchQuery] = useState('');
   const [mlmSubTab, setMlmSubTab] = useState<'referral' | 'binary' | 'planb'>('binary');
@@ -703,7 +710,7 @@ export default function App() {
       return hasChanges ? feedArray : prevFeed;
     });
     setCsrBalance((prevBalance) => {
-      const bal = typeof newBalance === 'number' ? newBalance : parseFloat(newBalance || '0');
+      const bal = (typeof newBalance === 'number' && !isNaN(newBalance)) ? newBalance : (parseFloat(newBalance || '0') || 0);
       return prevBalance === bal ? prevBalance : bal;
     });
   };
@@ -1292,7 +1299,7 @@ export default function App() {
                   }
                   return currentMember;
                 });
-                if (currentMember.firstLogin) {
+                if (currentMember.firstLogin && currentUser?.firstLogin !== false) {
                   setIsFirstLoginModal(true);
                 }
               }
@@ -3530,12 +3537,12 @@ export default function App() {
       showNotif('กรุณาระบุจำนวนเงินต้องการถอน', 'error');
       return;
     }
-    if (amt < 300) {
-      showNotif('การถอนเงินขั้นต่ำต้องเป็น 300 บาทขึ้นไปค่ะ', 'error');
+    if (amt < 200) {
+      showNotif('การถอนเงินขั้นต่ำต้องเป็น 200 บาทขึ้นไปค่ะ', 'error');
       return;
     }
-    if ((profile?.balanceEMoney || 0) < 300) {
-      showNotif('การถอนเงินเข้าธนาคาร ต้องมียอดเงินใน E-Money ขั้นต่ำ 300 บาทขึ้นไปค่ะ', 'error');
+    if ((profile?.balanceEMoney || 0) < 200) {
+      showNotif('การถอนเงินเข้าธนาคาร ต้องมียอดเงินใน E-Money ขั้นต่ำ 200 บาทขึ้นไปค่ะ', 'error');
       return;
     }
     if ((profile?.balanceEMoney || 0) < amt) {
@@ -4345,8 +4352,9 @@ export default function App() {
       if (data.success) {
         setSellerSessionUser(data.member);
         showNotif(`ยินดีต้อนรับเข้าสู่ระบบร้านค้า ${data.member.sellerStoreName || ''} ค่ะ`, "success");
-        // Check if seller status is Active and first login welcome popup hasn't been shown
-        if (data.member.sellerStatus === 'Active' && !data.member.sellerFirstLoginShown) {
+        // Check if seller status is Active and first login welcome popup hasn't been shown (both DB and localStorage)
+        const localSeen = localStorage.getItem('seller_welcome_shown_' + data.member.userId) === 'true';
+        if (data.member.sellerStatus === 'Active' && !data.member.sellerFirstLoginShown && !localSeen) {
           setSellerWelcomeShown(true);
         }
       } else {
@@ -4472,8 +4480,12 @@ export default function App() {
   };
 
   const handleSellerMarkFirstLoginShown = async () => {
-    if (!sellerSessionUser?.userId) return;
+    if (!sellerSessionUser?.userId) {
+      setSellerWelcomeShown(false);
+      return;
+    }
     try {
+      localStorage.setItem('seller_welcome_shown_' + sellerSessionUser.userId, 'true');
       await fetch('/api/seller/mark-first-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -4482,7 +4494,9 @@ export default function App() {
       setSellerWelcomeShown(false);
       // update seller session object
       setSellerSessionUser((prev: any) => ({ ...prev, sellerFirstLoginShown: true }));
-    } catch (err) {}
+    } catch (err) {
+      setSellerWelcomeShown(false);
+    }
   };
 
   const fetchSellerRegulationsText = async () => {
@@ -5003,6 +5017,238 @@ export default function App() {
           </button>
         </div>
         {node.children && node.children.map((child: any) => renderReferralNode(child))}
+      </div>
+    );
+  };
+
+  // RENDER ADMIN PRODUCT APPROVAL QUEUE SECTION
+  const renderAdminProductApprovalQueueSection = () => {
+    const pendingProds = prodQueue || [];
+
+    // Summary totals calculation across all pending products
+    const summary = pendingProds.reduce((acc, p) => {
+      const price = parseFloat(p.price) || 0;
+      const calc = calculateShippingAndPricing(
+        p.price,
+        p.weight,
+        p.width,
+        p.length,
+        p.height,
+        p.discountPercent,
+        p.shippingFeeBase,
+        p.sellerCoPay,
+        1
+      );
+      const netPayout = p.netPayout !== undefined ? parseFloat(p.netPayout) : calc.netPayout;
+      const pv = p.pv !== undefined ? parseFloat(p.pv) : calc.pv;
+      const companyProfit = calc.gpAmount - pv;
+
+      return {
+        count: acc.count + 1,
+        totalRetailPrice: acc.totalRetailPrice + price,
+        totalNetPayout: acc.totalNetPayout + netPayout,
+        totalPv: acc.totalPv + pv,
+        totalCompanyProfit: acc.totalCompanyProfit + companyProfit
+      };
+    }, { count: 0, totalRetailPrice: 0, totalNetPayout: 0, totalPv: 0, totalCompanyProfit: 0 });
+
+    const itemsPerPage = 20;
+    const startIndex = (adminProductQueuePage - 1) * itemsPerPage;
+    const paginatedQueue = pendingProds.slice(startIndex, startIndex + itemsPerPage);
+
+    return (
+      <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-6 animate-fadeIn">
+        {/* Title & Badge */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div>
+            <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+              📦 ตารางคำขออนุมัติเปิดจำหน่ายผลิตภัณฑ์จากร้านค้าร่วม (Product Approval Queue)
+              {pendingProds.length > 0 && (
+                <span className="bg-red-500 text-white font-black px-2.5 py-0.5 rounded-full text-xs shadow-sm animate-pulse">
+                  {pendingProds.length} รายการ
+                </span>
+              )}
+            </h4>
+            <p className="text-xs text-slate-400 mt-1">
+              ตรวจสอบราคาสินค้า คะแนน PV ภาษีมูลค่าเพิ่ม ค่าธรรมเนียม GP และอนุมัติ/ปฏิเสธ หรือแก้ไขราคาสินค้าของผู้ขายได้ทันที
+            </p>
+          </div>
+        </div>
+
+        {/* Summary Stats Header Card */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 bg-indigo-50/60 border border-indigo-100 p-4 rounded-2xl text-xs">
+          <div className="bg-white p-3 rounded-xl border border-indigo-100/80 shadow-sm text-center">
+            <span className="text-[10px] text-slate-400 block font-semibold mb-1">จำนวนสินค้ารออนุมัติ</span>
+            <strong className="text-sm sm:text-base text-slate-900 font-extrabold">{summary.count} รายการ</strong>
+          </div>
+          <div className="bg-white p-3 rounded-xl border border-indigo-100/80 shadow-sm text-center">
+            <span className="text-[10px] text-slate-400 block font-semibold mb-1">ยอดขายตั้งราคาหน้าร้านรวม</span>
+            <strong className="text-sm sm:text-base text-indigo-600 font-extrabold">฿ {summary.totalRetailPrice.toLocaleString()}</strong>
+          </div>
+          <div className="bg-white p-3 rounded-xl border border-indigo-100/80 shadow-sm text-center">
+            <span className="text-[10px] text-slate-400 block font-semibold mb-1">ยอดเงินโอนเข้าร้านค้าสุทธิรวม</span>
+            <strong className="text-sm sm:text-base text-emerald-600 font-extrabold">฿ {summary.totalNetPayout.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+          </div>
+          <div className="bg-white p-3 rounded-xl border border-indigo-100/80 shadow-sm text-center">
+            <span className="text-[10px] text-slate-400 block font-semibold mb-1">คะแนน PV รวมทั้งหมด</span>
+            <strong className="text-sm sm:text-base text-amber-600 font-extrabold">{summary.totalPv.toLocaleString()} PV</strong>
+          </div>
+          <div className="col-span-2 sm:col-span-1 bg-white p-3 rounded-xl border border-indigo-100/80 shadow-sm text-center">
+            <span className="text-[10px] text-slate-400 block font-semibold mb-1">ส่วนต่าง & กำไรสุทธิบริษัท</span>
+            <strong className="text-sm sm:text-base text-rose-600 font-extrabold">฿ {summary.totalCompanyProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+          </div>
+        </div>
+
+        {/* Table Section */}
+        <div className="overflow-x-auto text-xs text-slate-700">
+          {pendingProds.length > 0 ? (
+            <>
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 text-[10px] text-slate-500 font-bold uppercase bg-slate-50">
+                    <th className="py-3 px-2">รูปสินค้า</th>
+                    <th className="py-3 px-2">ชื่อสินค้า / ร้านค้าผู้ยื่น</th>
+                    <th className="py-3 px-2 text-center">ราคาตั้งขาย</th>
+                    <th className="py-3 px-2 text-center">คะแนน PV</th>
+                    <th className="py-3 px-2 text-center">เงินเข้าร้านค้าสุทธิ</th>
+                    <th className="py-3 px-2 text-center">ภาษี VAT (7%) & GP (20%)</th>
+                    <th className="py-3 px-2 text-center text-rose-600">กำไรบริษัทสุทธิ</th>
+                    <th className="py-3 px-2 text-right">ดำเนินการ (Actions)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {paginatedQueue.map((item) => {
+                    const price = parseFloat(item.price) || 0;
+                    const calc = calculateShippingAndPricing(
+                      item.price,
+                      item.weight,
+                      item.width,
+                      item.length,
+                      item.height,
+                      item.discountPercent,
+                      item.shippingFeeBase,
+                      item.sellerCoPay,
+                      1
+                    );
+                    const pv = item.pv !== undefined ? parseFloat(item.pv) : calc.pv;
+                    const netPayout = item.netPayout !== undefined ? parseFloat(item.netPayout) : calc.netPayout;
+                    const vat = calc.vat;
+                    const gpAmount = calc.gpAmount;
+                    const companyProfit = parseFloat((gpAmount - pv).toFixed(2));
+
+                    return (
+                      <tr key={item.id} className="hover:bg-slate-50/80 transition">
+                        {/* Image */}
+                        <td className="py-3 px-2">
+                          <img 
+                            src={item.image || (item.images && item.images[0])} 
+                            alt={item.name} 
+                            className="w-12 h-12 object-cover rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:scale-105 transition" 
+                            referrerPolicy="no-referrer" 
+                            onClick={() => setSelectedAdminQueueProd(item)}
+                          />
+                        </td>
+
+                        {/* Name & Shop */}
+                        <td className="py-3 px-2 max-w-[220px]">
+                          <h5 className="font-extrabold text-slate-900 line-clamp-1">{item.name}</h5>
+                          <p className="text-[10px] text-indigo-700 font-bold mt-0.5">
+                            🏪 {item.sellerStoreName || 'ร้านค้าพาร์ทเนอร์'} <span className="text-slate-400 font-mono">({item.sellerCode || item.sellerId})</span>
+                          </p>
+                          <div className="flex items-center gap-1 mt-1 flex-wrap">
+                            {item.category && (
+                              <span className="bg-slate-100 text-slate-600 text-[8px] font-bold px-1.5 py-0.5 rounded-md">
+                                🗂️ {item.category} {item.subcategory ? `> ${item.subcategory}` : ''}
+                              </span>
+                            )}
+                            <button
+                              onClick={() => setSelectedAdminQueueProd(item)}
+                              className="text-[9px] text-indigo-600 hover:underline font-bold"
+                            >
+                              🔍 ดูรายละเอียด
+                            </button>
+                          </div>
+                        </td>
+
+                        {/* Price */}
+                        <td className="py-3 px-2 text-center font-black text-slate-900 text-sm">
+                          ฿{price.toLocaleString()}
+                        </td>
+
+                        {/* PV */}
+                        <td className="py-3 px-2 text-center font-bold text-amber-600 text-xs">
+                          {pv} PV
+                        </td>
+
+                        {/* Net Payout to Seller */}
+                        <td className="py-3 px-2 text-center">
+                          <span className="font-black text-emerald-600 text-xs block">฿{netPayout.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span className="text-[8px] text-slate-400">โอนเข้าร้านค้า</span>
+                        </td>
+
+                        {/* VAT & GP Breakdown */}
+                        <td className="py-3 px-2 text-center text-[10px]">
+                          <span className="block text-slate-600 font-semibold">VAT 7%: ฿{vat.toFixed(2)}</span>
+                          <span className="block text-indigo-600 font-bold">GP 20%: ฿{gpAmount.toFixed(2)}</span>
+                        </td>
+
+                        {/* Company Net Profit */}
+                        <td className="py-3 px-2 text-center font-extrabold text-rose-600 text-xs">
+                          ฿{companyProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+
+                        {/* Action Buttons */}
+                        <td className="py-3 px-2 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handleProductApprove(item.id)}
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-[10px] font-extrabold cursor-pointer transition shadow-sm hover:shadow flex items-center gap-1"
+                              title="อนุมัติสินค้าและนำเสนอขึ้นหน้าร้านค้าทันที"
+                            >
+                              ✓ อนุมัติ
+                            </button>
+                            <button
+                              onClick={() => handleProductReject(item.id)}
+                              className="bg-rose-50 hover:bg-rose-100 text-rose-700 px-2.5 py-1.5 rounded-xl text-[10px] font-bold cursor-pointer transition border border-rose-200"
+                              title="ปฏิเสธคำขอเปิดจำหน่ายสินค้า"
+                            >
+                              ❌ ปฏิเสธ
+                            </button>
+                            <button
+                              onClick={() => setEditingQueueProd({
+                                id: item.id,
+                                name: item.name,
+                                price: parseFloat(item.price) || 0,
+                                pv: parseFloat(item.pv) || 0,
+                                cost: item.cost !== undefined ? parseFloat(item.cost) : Math.floor((parseFloat(item.price) || 0) * 0.3)
+                              })}
+                              className="bg-amber-500 hover:bg-amber-400 text-white px-2.5 py-1.5 rounded-xl text-[10px] font-bold cursor-pointer transition shadow-sm"
+                              title="ปรับปรุงแก้ไขราคาหรือ PV ก่อนอนุมัติ"
+                            >
+                              ✏️ แก้ไข
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              {pendingProds.length > itemsPerPage && (
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <TablePagination currentPage={adminProductQueuePage} totalItems={pendingProds.length} itemsPerPage={itemsPerPage} onPageChange={setAdminProductQueuePage} />
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-center py-12 bg-slate-50 rounded-2xl border border-slate-100 text-slate-400 space-y-2">
+              <span className="text-3xl block">📦</span>
+              <p className="font-bold text-xs text-slate-600">ไม่มีรายการผลิตภัณฑ์ใหม่รอแอดมินอนุมัติในขณะนี้ค่ะ</p>
+              <p className="text-[10px] text-slate-400">เมื่อพาร์ทเนอร์ร้านค้ายื่นขอเปิดจำหน่ายสินค้าใหม่ รายการจะมาปรากฏที่ตารางนี้อัตโนมัติ</p>
+            </div>
+          )}
+        </div>
       </div>
     );
   };
@@ -5948,7 +6194,7 @@ export default function App() {
           </button>
 
           <button 
-            onClick={() => { setActiveTab('shop'); setShopPortalView('portal'); setSidebarOpen(false); }}
+            onClick={() => { setActiveTab('shop'); setShopPortalView('store'); setShopSubTab('shop'); setSidebarOpen(false); }}
             className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition ${
               activeTab === 'shop' 
                 ? 'bg-orange-500/20 text-orange-400 border-l-4 border-orange-400' 
@@ -6090,87 +6336,129 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 min-h-screen flex flex-col overflow-x-hidden">
         {/* Top Header Navigation */}
-        <header className="bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between shadow-sm overflow-x-auto no-scrollbar">
-          <button onClick={() => setSidebarOpen(true)} className="md:hidden text-slate-600 hover:text-indigo-600 shrink-0 mr-3">
-            <LayoutDashboard size={24} />
-          </button>
+        <header className="bg-white border-b border-slate-100 px-6 py-3.5 shadow-sm overflow-x-auto no-scrollbar">
+          <div className="flex flex-col gap-3">
+            {/* Row 1: Left Member Info & Right Balances */}
+            <div className="flex items-center justify-between gap-4 w-full flex-wrap md:flex-nowrap">
+              <button onClick={() => setSidebarOpen(true)} className="md:hidden text-slate-600 hover:text-indigo-600 shrink-0 mr-1">
+                <LayoutDashboard size={24} />
+              </button>
 
-          <div className="flex-1 flex flex-wrap md:flex-nowrap items-center justify-between gap-4">
-            {/* Left Front Group: ชื่อสมาชิก & KYC, รหัสสมาชิก, Username, ตำแหน่ง */}
-            <div className="flex flex-wrap items-center gap-2">
-              {/* ชื่อสมาชิก (สวยงามด้วย Gradient ไล่โทนสี) */}
-              <div className="flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-indigo-600 px-3 py-1.5 rounded-xl text-white font-extrabold text-[11px] shadow-sm shrink-0">
-                <span>👤</span>
-                <span>{profile?.name} {profile?.surname}</span>
+              {/* Left Front Group: ชื่อสมาชิก & KYC, รหัสสมาชิก, Username, ตำแหน่ง */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* ชื่อสมาชิก (สวยงามด้วย Gradient ไล่โทนสี) */}
+                <div className="flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-indigo-600 px-3 py-1.5 rounded-xl text-white font-extrabold text-[11px] shadow-sm shrink-0">
+                  <span>👤</span>
+                  <span>{profile?.name} {profile?.surname}</span>
+                </div>
+
+                {/* KYC Status Badge */}
+                <span className={`text-[9px] px-2 py-1.5 rounded-xl font-bold uppercase shrink-0 shadow-sm border ${
+                  profile?.statusKyc === 'Active' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
+                }`}>
+                  {profile?.statusKyc === 'Active' ? '✓ KYC APPROVED' : '⌛ WAITING KYC'}
+                </span>
+
+                {/* รหัสสมาชิก */}
+                <div className="bg-slate-50 text-slate-700 font-bold px-3 py-1.5 rounded-xl text-[11px] border border-slate-200/60 shrink-0">
+                  รหัสสมาชิก: <span className="font-mono text-indigo-600 font-extrabold">{profile?.userId}</span>
+                </div>
+
+                {/* Username */}
+                <div className="bg-slate-50 text-slate-700 font-bold px-3 py-1.5 rounded-xl text-[11px] border border-slate-200/60 shrink-0">
+                  Username: <span className="text-slate-900 font-extrabold">{profile?.username}</span>
+                </div>
+
+                {/* ตำแหน่ง */}
+                <div className="bg-indigo-50 text-indigo-700 font-extrabold px-3 py-1.5 rounded-xl text-[11px] border border-indigo-200/60 shrink-0">
+                  ตำแหน่ง: {profile?.rank || 'S'}
+                </div>
               </div>
 
-              {/* KYC Status Badge */}
-              <span className={`text-[9px] px-2 py-1.5 rounded-xl font-bold uppercase shrink-0 shadow-sm border ${
-                profile?.statusKyc === 'Active' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
-              }`}>
-                {profile?.statusKyc === 'Active' ? '✓ KYC APPROVED' : '⌛ WAITING KYC'}
-              </span>
+              {/* Right Group: ยอด E-Cash, ยอด E-Money, ยอด E-Coupon, ยอดสิทธิ์คงเหลือ, ยอดสะสม Plan */}
+              <div className="flex items-center gap-2 shrink-0 md:ml-auto">
+                {/* ยอด E-Cash */}
+                <div className="bg-emerald-50 text-emerald-700 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-emerald-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
+                  <span className="text-[9px] text-emerald-500 uppercase tracking-wider block font-medium leading-none mb-0.5">ยอด E-Cash</span>
+                  <span className="font-mono text-[11px]">
+                    ฿{profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                  </span>
+                </div>
 
-              {/* รหัสสมาชิก */}
-              <div className="bg-slate-50 text-slate-700 font-bold px-3 py-1.5 rounded-xl text-[11px] border border-slate-200/60 shrink-0">
-                รหัสสมาชิก: <span className="font-mono text-indigo-600 font-extrabold">{profile?.userId}</span>
-              </div>
+                {/* ยอด E-Money */}
+                <div className="bg-amber-50 text-amber-800 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-amber-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
+                  <span className="text-[9px] text-amber-600 uppercase tracking-wider block font-medium leading-none mb-0.5">ยอด E-Money</span>
+                  <span className="font-mono text-[11px]">
+                    ฿{profile?.balanceEMoney?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                  </span>
+                </div>
 
-              {/* Username */}
-              <div className="bg-slate-50 text-slate-700 font-bold px-3 py-1.5 rounded-xl text-[11px] border border-slate-200/60 shrink-0">
-                Username: <span className="text-slate-900 font-extrabold">{profile?.username}</span>
-              </div>
+                {/* ยอด E-Coupon */}
+                <div className="bg-rose-50 text-rose-700 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-rose-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
+                  <span className="text-[9px] text-rose-500 uppercase tracking-wider block font-medium leading-none mb-0.5">ยอด E-Coupon</span>
+                  <span className="font-mono text-[11px]">
+                    ฿{profile?.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                  </span>
+                </div>
 
-              {/* ตำแหน่ง */}
-              <div className="bg-indigo-50 text-indigo-700 font-extrabold px-3 py-1.5 rounded-xl text-[11px] border border-indigo-200/60 shrink-0">
-                ตำแหน่ง: {profile?.rank || 'S'}
+                {/* ยอดสิทธิ์คงเหลือ */}
+                <div className="bg-sky-50 text-sky-700 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-sky-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
+                  <span className="text-[9px] text-sky-500 uppercase tracking-wider block font-medium leading-none mb-0.5">ยอดสิทธิ์คงเหลือ</span>
+                  <span className="font-mono text-[11px]">
+                    {profile?.role === 'Manager' || profile?.role === 'Admin' 
+                      ? 'ไร้ขีดจำกัด' 
+                      : `฿ ${getRemainingRights()?.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                  </span>
+                </div>
+
+                {/* ยอดสะสม Plan */}
+                <div className="bg-purple-50 text-purple-700 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-purple-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
+                  <span className="text-[9px] text-purple-500 uppercase tracking-wider block font-medium leading-none mb-0.5">ยอดสะสม Plan</span>
+                  <span className="font-mono text-[11px]">
+                    {(profile?.planBPoints ?? planBData?.points ?? 0).toFixed(4)} pt
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* Right Group: ยอด E-Cash, ยอด E-Money, ยอด E-Coupon, ยอดสิทธิ์คงเหลือ, ยอดสะสม Plan */}
-            <div className="flex items-center gap-2 shrink-0 md:ml-auto">
-              {/* ยอด E-Cash */}
-              <div className="bg-emerald-50 text-emerald-700 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-emerald-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
-                <span className="text-[9px] text-emerald-500 uppercase tracking-wider block font-medium leading-none mb-0.5">ยอด E-Cash</span>
-                <span className="font-mono text-[11px]">
-                  ฿{profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+            {/* Row 2: Quick Action Navigation Bar (Visible in all main tabs EXCEPT Partner system) */}
+            {activeTab !== 'seller' && (
+              <div className="flex items-center gap-2.5 pt-2 border-t border-slate-100/80 w-full overflow-x-auto no-scrollbar">
+                <span className="text-[11px] font-extrabold text-slate-400 shrink-0 uppercase tracking-wider flex items-center gap-1">
+                  <span>⚡</span> เมนูด่วน:
                 </span>
-              </div>
 
-              {/* ยอด E-Money */}
-              <div className="bg-amber-50 text-amber-800 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-amber-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
-                <span className="text-[9px] text-amber-600 uppercase tracking-wider block font-medium leading-none mb-0.5">ยอด E-Money</span>
-                <span className="font-mono text-[11px]">
-                  ฿{profile?.balanceEMoney?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
-                </span>
-              </div>
+                <button 
+                  onClick={() => {
+                    setActiveTab('shop');
+                    setShopPortalView('store');
+                    setShopSubTab('shop');
+                  }}
+                  className={`px-4 py-1.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer shadow-sm ${
+                    activeTab === 'shop'
+                      ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-orange-500/20 scale-[1.02]'
+                      : 'bg-orange-50/80 text-orange-700 hover:bg-orange-100 border border-orange-200/80'
+                  }`}
+                  title="นที พลัส มาร์เก็ต"
+                >
+                  <ShoppingBag size={15} className="shrink-0" />
+                  <span>นที พลัส มาร์เก็ต</span>
+                </button>
 
-              {/* ยอด E-Coupon */}
-              <div className="bg-rose-50 text-rose-700 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-rose-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
-                <span className="text-[9px] text-rose-500 uppercase tracking-wider block font-medium leading-none mb-0.5">ยอด E-Coupon</span>
-                <span className="font-mono text-[11px]">
-                  ฿{profile?.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
-                </span>
+                <button 
+                  onClick={() => setActiveTab('txn')}
+                  className={`px-4 py-1.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer shadow-sm ${
+                    activeTab === 'txn'
+                      ? 'bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow-indigo-500/20 scale-[1.02]'
+                      : 'bg-indigo-50/80 text-indigo-700 hover:bg-indigo-100 border border-indigo-200/80'
+                  }`}
+                  title="เติมเงิน E-Cash"
+                >
+                  <CreditCard size={15} className="shrink-0" />
+                  <span>เติมเงิน E-Cash</span>
+                </button>
               </div>
-
-              {/* ยอดสิทธิ์คงเหลือ */}
-              <div className="bg-sky-50 text-sky-700 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-sky-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
-                <span className="text-[9px] text-sky-500 uppercase tracking-wider block font-medium leading-none mb-0.5">ยอดสิทธิ์คงเหลือ</span>
-                <span className="font-mono text-[11px]">
-                  {profile?.role === 'Manager' || profile?.role === 'Admin' 
-                    ? 'ไร้ขีดจำกัด' 
-                    : `฿ ${getRemainingRights()?.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
-                </span>
-              </div>
-
-              {/* ยอดสะสม Plan */}
-              <div className="bg-purple-50 text-purple-700 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-purple-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
-                <span className="text-[9px] text-purple-500 uppercase tracking-wider block font-medium leading-none mb-0.5">ยอดสะสม Plan</span>
-                <span className="font-mono text-[11px]">
-                  {(profile?.planBPoints ?? planBData?.points ?? 0).toFixed(4)} pt
-                </span>
-              </div>
-            </div>
+            )}
           </div>
         </header>
 
@@ -6216,7 +6504,8 @@ export default function App() {
                   <button 
                     onClick={() => {
                       setActiveTab('shop');
-                      setShopPortalView('portal');
+                      setShopPortalView('store');
+                      setShopSubTab('shop');
                     }}
                     className="bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-bold px-6 py-3 rounded-2xl text-sm shadow-md shadow-orange-500/20 active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
                   >
@@ -6377,7 +6666,7 @@ export default function App() {
                     <p className="text-xs text-slate-400">เงินสะสมเพื่อกิจกรรมสาธารณประโยชน์ส่วนรวม</p>
                     <div className="mt-4 bg-rose-50 border border-rose-100 p-4 rounded-2xl text-center">
                       <span className="text-[10px] text-rose-500 font-bold block">ยอดเงินกองทุนรวมล่าสุด</span>
-                      <span className="text-3xl font-extrabold text-rose-700">฿ {csrBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                      <span className="text-3xl font-extrabold text-rose-700">฿ {(csrBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                     </div>
                   </div>
                   <div className="mt-6 border-t border-slate-100 pt-4 flex-1 flex flex-col min-h-[290px]">
@@ -6401,9 +6690,9 @@ export default function App() {
                             <div key={idx} className="h-[38px] flex justify-between items-center text-[11px] text-slate-600 bg-white px-3.5 rounded-xl border border-slate-100 shadow-sm transition hover:scale-[1.01] hover:border-rose-100">
                               <span className="font-semibold flex items-center gap-1.5 min-w-0">
                                 <span className="text-rose-500 shrink-0">💖</span>
-                                <span className="truncate">คุณ {item.name || item.username || 'ผู้ใหญ่ใจดี'}</span>
+                                <span className="truncate">คุณ {(item.name && item.name !== 'undefined undefined') ? item.name : (item.username && item.username !== 'undefined undefined' ? item.username : 'ผู้ใหญ่ใจดี')}</span>
                               </span>
-                              <span className="text-rose-500 font-extrabold shrink-0 bg-rose-50/50 px-2 py-0.5 rounded-lg border border-rose-100/30">฿{parseFloat(item.amount || '0').toFixed(2)}</span>
+                              <span className="text-rose-500 font-extrabold shrink-0 bg-rose-50/50 px-2 py-0.5 rounded-lg border border-rose-100/30">฿{(typeof item.amount === 'number' && !isNaN(item.amount) ? item.amount : (parseFloat(item.amount || '0') || 0)).toFixed(2)}</span>
                             </div>
                           ))}
                         </div>
@@ -7640,94 +7929,337 @@ export default function App() {
                       </div>
 
                       {/* Dynamic Shopee Product List */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {products
-                          .filter(p => p.category !== 'Package')
-                          .filter(p => {
-                            const currentCat = (window as any)._shopCategory || 'All';
-                            return currentCat === 'All' || p.category === currentCat;
-                          })
-                           .map(p => {
-                             // Automatically calculate dynamic PV (50% of Price) if PV is empty/0
-                             const displayPv = p.pv || Math.floor(parseFloat(p.price) * 0.5);
-                             
-                             const catMap: Record<string, string> = {
-                               Fashion: '👗 แฟชั่น',
-                               Electronics: '🔌 อุปกรณ์อิเล็กทรอนิกส์',
-                               Beauty: '💄 ความงามและของใช้ส่วนตัว',
-                               Health: '💊 สุขภาพ',
-                               Baby: '🍼 แม่และเด็ก',
-                               Home: '🏠 บ้านและที่อยู่อาศัย',
-                               Food: '🍎 อาหารและเครื่องดื่ม',
-                               Pets: '🐶 สัตว์เลี้ยง',
-                               Lifestyle: '🎨 ไลฟ์สไตล์และงานอดิเรก',
-                               General: '📦 ทั่วไป'
-                             };
-                             const catLabel = catMap[p.category] || p.category || '📦 ทั่วไป';
+                      {(() => {
+                        const getProductShopRating = (p: any): number => {
+                          if (p?.sellerRating) return parseFloat(p.sellerRating);
+                          const str = p?.sellerStoreName || p?.sellerId || p?.id || 'store';
+                          let hash = 0;
+                          for (let i = 0; i < str.length; i++) {
+                            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                          }
+                          const r = 4.5 + Math.abs(hash % 6) / 10;
+                          return parseFloat(r.toFixed(1));
+                        };
 
-                             return (
-                               <div key={p.id} className="bg-white border border-slate-100 rounded-3xl p-4 shadow-sm flex flex-col justify-between group hover:shadow-md transition relative">
-                                 {p.sellerStoreName && (
-                                   <span className="absolute top-3 left-3 bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded text-[9px] z-10 border border-indigo-100/60 shadow-sm">
-                                     🏪 {p.sellerStoreName}
-                                   </span>
-                                 )}
+                        const getProductSalesCount = (p: any): number => {
+                          if (p?.salesCount) return parseInt(p.salesCount);
+                          if (p?.isBestSeller) return 320;
+                          const str = p?.id || 'prod';
+                          let hash = 0;
+                          for (let i = 0; i < str.length; i++) {
+                            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                          }
+                          return 40 + Math.abs(hash % 260);
+                        };
 
-                                 <div>
-                                   <div className="overflow-hidden rounded-2xl mb-3 h-40 relative">
-                                     <img src={p.image} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
-                                   </div>
-                                   <h4 className="text-xs font-bold text-slate-900 leading-snug group-hover:text-indigo-600 transition">{p.name}</h4>
-                                   
-                                   <div className="flex flex-wrap gap-1 mt-1">
-                                     <span className="inline-block bg-slate-100 text-slate-600 text-[8px] font-bold px-1.5 py-0.5 rounded-md">
-                                       {catLabel}
-                                     </span>
-                                     {p.subcategory && (
-                                       <span className="inline-block bg-indigo-50 text-indigo-600 text-[8px] font-bold px-1.5 py-0.5 rounded-md">
-                                         🏷️ {p.subcategory}
-                                       </span>
-                                     )}
-                                   </div>
-                                  
-                                  {/* Short Description Field shown prominently */}
-                                  <div className="bg-slate-50 border border-slate-100 p-2 rounded-xl text-[10px] text-slate-600 my-2 leading-relaxed">
-                                    💡 <b>จุดเด่นย่อ:</b> {p.shortDescription || "ไม่มีข้อมูลคำอธิบายย่อ"}
-                                  </div>
+                        const nonPackages = products.filter(p => p.category !== 'Package');
+                        const currentCat = (window as any)._shopCategory || 'All';
 
-                                  <details className="text-[10px] text-slate-400 cursor-pointer focus:outline-none mb-2">
-                                    <summary className="font-semibold text-slate-500 hover:text-slate-800">อ่านรายละเอียดเพิ่ม...</summary>
-                                    <p className="mt-1 bg-slate-50/50 p-2 rounded text-[10px] leading-normal">{p.description}</p>
-                                  </details>
-                                </div>
+                        let displayList: any[] = [];
+                        if (currentCat !== 'All') {
+                          displayList = nonPackages.filter(p => p.category === currentCat);
+                        } else {
+                          // For 'All', prioritize Best Sellers & Top Rated Shops (Rating >= 4.8 or High Sales), then interleave categories!
+                          const bestSellersAndTopShops: any[] = [];
+                          const regularProducts: any[] = [];
 
-                                <div className="mt-2 pt-3 border-t border-slate-100">
-                                  <div className="flex justify-between items-center text-xs mb-3">
-                                    <span className="text-indigo-600 font-black text-sm">฿ {p.price?.toLocaleString()}</span>
-                                    <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[9px] font-bold">
-                                      +{displayPv} PV
+                          nonPackages.forEach((p: any) => {
+                            const rating = getProductShopRating(p);
+                            const sales = getProductSalesCount(p);
+                            if (p.isBestSeller || sales >= 150 || rating >= 4.8) {
+                              bestSellersAndTopShops.push(p);
+                            } else {
+                              regularProducts.push(p);
+                            }
+                          });
+
+                          // Interleave regular products round-robin across categories so they don't group sequentially
+                          const catGroups: Record<string, any[]> = {};
+                          regularProducts.forEach((p: any) => {
+                            const cat = p.category || 'General';
+                            if (!catGroups[cat]) catGroups[cat] = [];
+                            catGroups[cat].push(p);
+                          });
+
+                          const interleaved: any[] = [];
+                          const keys = Object.keys(catGroups);
+                          let hasMore = true;
+                          let round = 0;
+                          while (hasMore) {
+                            hasMore = false;
+                            for (const k of keys) {
+                              if (round < catGroups[k].length) {
+                                interleaved.push(catGroups[k][round]);
+                                hasMore = true;
+                              }
+                            }
+                            round++;
+                          }
+
+                          displayList = [...bestSellersAndTopShops, ...interleaved];
+                        }
+
+                        if (displayList.length === 0) {
+                          return (
+                            <div className="py-16 text-center text-slate-400 text-xs bg-white rounded-3xl border border-slate-100">
+                              ยังไม่มีสินค้าจำหน่ายร่วมในหมวดหมู่นี้ค่ะ
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                            {displayList.map(p => {
+                              const displayPv = p.pv || Math.floor(parseFloat(p.price) * 0.5);
+                              const rating = getProductShopRating(p);
+                              const sales = getProductSalesCount(p);
+                              
+                              const catMap: Record<string, string> = {
+                                Fashion: '👗 แฟชั่น',
+                                Electronics: '🔌 อุปกรณ์อิเล็กทรอนิกส์',
+                                Beauty: '💄 ความงามและของใช้ส่วนตัว',
+                                Health: '💊 สุขภาพ',
+                                Baby: '🍼 แม่และเด็ก',
+                                Home: '🏠 บ้านและที่อยู่อาศัย',
+                                Food: '🍎 อาหารและเครื่องดื่ม',
+                                Pets: '🐶 สัตว์เลี้ยง',
+                                Lifestyle: '🎨 ไลฟ์สไตล์และงานอดิเรก',
+                                General: '📦 ทั่วไป'
+                              };
+                              const catLabel = catMap[p.category] || p.category || '📦 ทั่วไป';
+
+                              return (
+                                <div 
+                                  key={p.id} 
+                                  onClick={() => setSelectedMarketProduct(p)}
+                                  className="bg-white border border-slate-100 hover:border-indigo-200 rounded-3xl p-4 shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col justify-between group relative cursor-pointer"
+                                >
+                                  {/* Badges on Product Card */}
+                                  <div className="absolute top-3 left-3 right-3 flex justify-between items-center z-10 pointer-events-none">
+                                    <span className="bg-indigo-900/80 backdrop-blur-md text-white font-extrabold px-2 py-0.5 rounded-lg text-[9px] shadow-sm border border-white/20">
+                                      🏪 {p.sellerStoreName || 'นที พลัส มาร์เก็ต'}
+                                    </span>
+                                    <span className="bg-amber-500 text-white font-black px-2 py-0.5 rounded-lg text-[9px] shadow-sm flex items-center gap-0.5">
+                                      ⭐ {rating}
                                     </span>
                                   </div>
-                                  <button 
-                                    onClick={() => handlePurchaseProduct(p.id)}
-                                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-xl text-xs font-bold transition cursor-pointer"
-                                  >
-                                    สั่งซื้อสินค้าชิ้นนี้
-                                  </button>
+
+                                  <div>
+                                    <div className="overflow-hidden rounded-2xl mb-3 h-40 relative mt-4">
+                                      <img src={p.image} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                                      {(p.isBestSeller || sales >= 150) && (
+                                        <span className="absolute bottom-2 left-2 bg-rose-500 text-white text-[9px] font-black px-2 py-0.5 rounded-md shadow-sm animate-pulse">
+                                          🔥 ขายดี ({sales} ชิ้น)
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <h4 className="text-xs font-bold text-slate-900 leading-snug group-hover:text-indigo-600 transition line-clamp-2">{p.name}</h4>
+                                    
+                                    <div className="flex flex-wrap gap-1 mt-1.5">
+                                      <span className="inline-block bg-slate-100 text-slate-600 text-[8px] font-bold px-1.5 py-0.5 rounded-md">
+                                        {catLabel}
+                                      </span>
+                                      {p.subcategory && (
+                                        <span className="inline-block bg-indigo-50 text-indigo-600 text-[8px] font-bold px-1.5 py-0.5 rounded-md">
+                                          🏷️ {p.subcategory}
+                                        </span>
+                                      )}
+                                    </div>
+                                   
+                                    {/* Short Description */}
+                                    <div className="bg-slate-50 border border-slate-100 p-2 rounded-xl text-[10px] text-slate-600 my-2 leading-relaxed">
+                                      💡 <b>จุดเด่น:</b> {p.shortDescription || "สินค้าคุณภาพจากนที พลัส มาร์เก็ต"}
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-2 pt-3 border-t border-slate-100">
+                                    <div className="flex justify-between items-center text-xs mb-2.5">
+                                      <span className="text-indigo-600 font-black text-sm">฿ {p.price?.toLocaleString()}</span>
+                                      <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[9px] font-bold">
+                                        +{displayPv} PV
+                                      </span>
+                                    </div>
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedMarketProduct(p);
+                                      }}
+                                      className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-xl text-xs font-bold transition shadow-sm hover:shadow cursor-pointer flex items-center justify-center gap-1"
+                                    >
+                                      🔍 ดูรายละเอียด / สั่งซื้อ
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+
+                      {/* PRODUCT DETAIL MODAL (เข้าดูสินค้านั้นๆ + สินค้าของร้านอื่นๆ ในประเภทเดียวกัน) */}
+                      {selectedMarketProduct && (
+                        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 overflow-y-auto p-4 sm:p-6 flex items-center justify-center animate-fadeIn">
+                          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 sm:p-8 space-y-6 shadow-2xl border border-indigo-100 relative max-h-[90vh] overflow-y-auto">
+                            {/* Close Button */}
+                            <button
+                              onClick={() => setSelectedMarketProduct(null)}
+                              className="absolute top-5 right-5 w-9 h-9 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full flex items-center justify-center text-lg font-bold transition cursor-pointer z-20"
+                            >
+                              ✕
+                            </button>
+
+                            {/* Main Product Info */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                              {/* Product Image & Badges */}
+                              <div className="space-y-3">
+                                <div className="overflow-hidden rounded-2xl border border-slate-100 h-72 relative shadow-inner bg-slate-50">
+                                  <img src={selectedMarketProduct.image} className="w-full h-full object-cover" alt={selectedMarketProduct.name} />
+                                  <div className="absolute top-3 left-3 bg-indigo-900/90 text-white px-3 py-1 rounded-xl text-xs font-bold border border-white/20 shadow">
+                                    🏪 {selectedMarketProduct.sellerStoreName || 'นที พลัส มาร์เก็ต'}
+                                  </div>
+                                  <div className="absolute top-3 right-3 bg-amber-500 text-white px-3 py-1 rounded-xl text-xs font-black shadow flex items-center gap-1">
+                                    ⭐ {(() => {
+                                      if (selectedMarketProduct.sellerRating) return selectedMarketProduct.sellerRating;
+                                      const str = selectedMarketProduct.sellerStoreName || selectedMarketProduct.sellerId || selectedMarketProduct.id;
+                                      let hash = 0;
+                                      for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                                      return (4.5 + Math.abs(hash % 6) / 10).toFixed(1);
+                                    })()} / 5.0 (คะแนนร้านค้า)
+                                  </div>
                                 </div>
                               </div>
-                            );
-                          })}
-                        
-                        {products.filter(p => p.category !== 'Package').filter(p => {
-                          const currentCat = (window as any)._shopCategory || 'All';
-                          return currentCat === 'All' || p.category === currentCat;
-                        }).length === 0 && (
-                          <div className="col-span-full py-16 text-center text-slate-400 text-xs">
-                            ยังไม่มีสินค้าจำหน่ายร่วมในหมวดหมู่นี้ค่ะ
+
+                              {/* Product Details & Purchase Action */}
+                              <div className="space-y-4">
+                                <div className="space-y-1">
+                                  <span className="inline-block bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-extrabold">
+                                    {selectedMarketProduct.category || 'สินค้าทั่วไป'} {selectedMarketProduct.subcategory ? `• ${selectedMarketProduct.subcategory}` : ''}
+                                  </span>
+                                  <h3 className="text-xl font-black text-slate-900 leading-snug">
+                                    {selectedMarketProduct.name}
+                                  </h3>
+                                </div>
+
+                                <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl space-y-2">
+                                  <div className="flex justify-between items-baseline">
+                                    <div className="text-2xl font-black text-indigo-600">
+                                      ฿ {selectedMarketProduct.price?.toLocaleString()}
+                                    </div>
+                                    <div className="bg-emerald-100 text-emerald-800 text-xs font-black px-3 py-1 rounded-xl">
+                                      +{selectedMarketProduct.pv || Math.floor(parseFloat(selectedMarketProduct.price) * 0.5)} PV
+                                    </div>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500">
+                                    ชำระด้วย E-Coupon สะสมส่วนลดเป็นอันดับแรก หากไม่พอระบบหักส่วนต่างจาก E-Cash อัตโนมัติ
+                                  </p>
+                                </div>
+
+                                <div className="space-y-2 text-xs">
+                                  <h4 className="font-bold text-slate-800 flex items-center gap-1.5">
+                                    💡 จุดเด่นและคุณสมบัติสินค้า:
+                                  </h4>
+                                  <p className="text-slate-600 bg-amber-50/60 border border-amber-100 p-3 rounded-xl leading-relaxed">
+                                    {selectedMarketProduct.shortDescription || selectedMarketProduct.description || "สินค้าคุณภาพที่ผ่านการรับรองและตรวจสอบมาตรฐานเรียบร้อยแล้ว"}
+                                  </p>
+                                </div>
+
+                                {selectedMarketProduct.description && selectedMarketProduct.description !== selectedMarketProduct.shortDescription && (
+                                  <div className="space-y-1 text-xs">
+                                    <h4 className="font-bold text-slate-800">📄 รายละเอียดสินค้าเพิ่มเติม:</h4>
+                                    <p className="text-slate-500 text-[11px] leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                      {selectedMarketProduct.description}
+                                    </p>
+                                  </div>
+                                )}
+
+                                <button
+                                  onClick={() => {
+                                    const prodId = selectedMarketProduct.id;
+                                    setSelectedMarketProduct(null);
+                                    handlePurchaseProduct(prodId);
+                                  }}
+                                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold py-3.5 rounded-2xl shadow-lg hover:shadow transition cursor-pointer text-sm flex items-center justify-center gap-2"
+                                >
+                                  🛒 สั่งซื้อสินค้าชิ้นนี้ทันที (฿{selectedMarketProduct.price?.toLocaleString()})
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* SECTION: สินค้าของร้านอื่นๆ ในประเภทหมวดหมู่เดียวกัน (เรียงตามลำดับคะแนนดาว ของร้าน) */}
+                            <div className="pt-6 border-t border-slate-100 space-y-4">
+                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1">
+                                <div>
+                                  <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                                    🛍️ สินค้าจากร้านอื่นๆ ในหมวดหมู่เดียวกัน
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400">
+                                    หมวดหมู่ "{selectedMarketProduct.category || 'ทั่วไป'}" • เรียงลำดับตามคะแนนดาวของร้านค้าจากสูงไปต่ำ ⭐
+                                  </p>
+                                </div>
+                              </div>
+
+                              {(() => {
+                                const getShopRatingVal = (p: any): number => {
+                                  if (p?.sellerRating) return parseFloat(p.sellerRating);
+                                  const str = p?.sellerStoreName || p?.sellerId || p?.id || 'store';
+                                  let hash = 0;
+                                  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                                  return parseFloat((4.5 + Math.abs(hash % 6) / 10).toFixed(1));
+                                };
+
+                                // Filter products in same category excluding current product
+                                const sameCatProducts = products
+                                  .filter(p => p.category !== 'Package' && p.id !== selectedMarketProduct.id && p.category === selectedMarketProduct.category)
+                                  .sort((a, b) => getShopRatingVal(b) - getShopRatingVal(a)); // Sorted by store star rating descending!
+
+                                if (sameCatProducts.length === 0) {
+                                  return (
+                                    <div className="py-8 text-center text-slate-400 text-xs bg-slate-50 rounded-2xl border border-slate-100">
+                                      ยังไม่มีสินค้าชิ้นอื่นจากร้านพาร์ทเนอร์ในหมวดหมู่นี้ค่ะ
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {sameCatProducts.map(otherP => {
+                                      const ratingVal = getShopRatingVal(otherP);
+                                      const otherPv = otherP.pv || Math.floor(parseFloat(otherP.price) * 0.5);
+                                      return (
+                                        <div
+                                          key={otherP.id}
+                                          onClick={() => setSelectedMarketProduct(otherP)}
+                                          className="bg-slate-50 hover:bg-indigo-50/40 border border-slate-200/80 hover:border-indigo-300 rounded-2xl p-3 transition cursor-pointer flex items-center gap-3 group shadow-sm hover:shadow"
+                                        >
+                                          <img src={otherP.image} className="w-16 h-16 object-cover rounded-xl group-hover:scale-105 transition flex-shrink-0" alt={otherP.name} />
+                                          <div className="flex-1 min-w-0 space-y-1">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.2 rounded">
+                                                ⭐ {ratingVal}
+                                              </span>
+                                              <span className="text-[10px] font-bold text-slate-700 truncate">
+                                                🏪 {otherP.sellerStoreName || 'ร้านค้าพาร์ทเนอร์'}
+                                              </span>
+                                            </div>
+                                            <h5 className="text-xs font-bold text-slate-900 truncate group-hover:text-indigo-600 transition">
+                                              {otherP.name}
+                                            </h5>
+                                            <div className="flex justify-between items-center text-[11px] pt-0.5">
+                                              <span className="font-black text-indigo-600">฿ {otherP.price?.toLocaleString()}</span>
+                                              <span className="text-emerald-700 font-bold text-[9px]">+{otherPv} PV</span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()}
+                            </div>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -8772,10 +9304,10 @@ export default function App() {
                         <input 
                           type="number" 
                           required
-                          min={300}
+                          min={200}
                           value={withdrawAmount}
                           onChange={(e) => setWithdrawAmount(e.target.value)}
-                          placeholder="ยอดถอน E-Money (ขั้นต่ำ ฿300)"
+                          placeholder="ยอดถอน E-Money (ขั้นต่ำ ฿200)"
                           className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
                         />
                       </div>
@@ -8793,7 +9325,7 @@ export default function App() {
                       </div>
                       <div className="col-span-2">
                         <p className="text-[10px] text-amber-600 bg-amber-50 p-2.5 rounded-xl border border-amber-200/50 mb-1 font-medium">
-                          ⚠️ การถอนเงินเข้าธนาคาร ต้องมียอดเงินใน E-Money ขั้นต่ำ 300 บาทขึ้นไป และยอดถอนขั้นต่ำคือ 300 บาทขึ้นไปค่ะ
+                          ⚠️ การถอนเงินเข้าธนาคาร ต้องมียอดเงินใน E-Money ขั้นต่ำ 200 บาทขึ้นไป และยอดถอนขั้นต่ำคือ 200 บาทขึ้นไปค่ะ
                         </p>
                       </div>
                       <div className="col-span-2 bg-slate-50 border border-slate-200 p-3.5 rounded-2xl text-[10px] space-y-1 text-slate-500">
@@ -12143,13 +12675,27 @@ export default function App() {
                     >
                       🏪 จัดการร้านค้า
                       {(() => {
-                        const totalPending = (prodQueue?.length || 0) + adminMembersList.filter((m: any) => m.sellerStatus === 'Pending').length;
+                        const totalPending = adminMembersList.filter((m: any) => m.sellerStatus === 'Pending').length;
                         return totalPending > 0 ? (
                           <span className="bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse">
                             {totalPending}
                           </span>
                         ) : null;
                       })()}
+                    </button>
+
+                    <button 
+                      onClick={() => setAdminSubTab('productApprovals')} 
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 relative cursor-pointer ${
+                        adminSubTab === 'productApprovals' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      📦 อนุมัติรายการสินค้า
+                      {(prodQueue?.length || 0) > 0 && (
+                        <span className="bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse">
+                          {prodQueue.length}
+                        </span>
+                      )}
                     </button>
 
                     <button 
@@ -13344,6 +13890,12 @@ export default function App() {
                 </div>
               )}
 
+              {adminSubTab === 'productApprovals' && (
+                <div className="space-y-6 animate-fadeIn">
+                  {renderAdminProductApprovalQueueSection()}
+                </div>
+              )}
+
               {adminSubTab === 'shippingApprove' && (
                 <div className="space-y-6 animate-fadeIn">
                   {/* รายการจัดส่งสินค้าและอนุมัติการจัดส่ง */}
@@ -13584,94 +14136,7 @@ export default function App() {
                   </div>
 
                   {/* Shop & Product Approvals queue */}
-                  <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
-                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      📦 ตารางอนุมัติเปิดจำหน่ายผลิตภัณฑ์จากร้านค้าร่วม (Product Approval Queue)
-                    </h4>
-                    <div className="overflow-x-auto text-xs text-slate-700">
-                      {(() => {
-                        const itemsPerPage = 20;
-                        const startIndex = (adminProductQueuePage - 1) * itemsPerPage;
-                        const paginatedProdQueue = (prodQueue || []).slice(startIndex, startIndex + itemsPerPage);
-
-                        return (
-                          <>
-                            {prodQueue && prodQueue.length > 0 ? (
-                              <>
-                                <table className="w-full text-left border-collapse">
-                                  <thead>
-                                    <tr className="border-b border-slate-100 text-[10px] text-slate-400 font-bold uppercase">
-                                      <th className="py-2.5">รูปสินค้า</th>
-                                      <th className="py-2.5">ชื่อสินค้า / ร้านค้า</th>
-                                      <th className="py-2.5 text-center">ราคาขาย</th>
-                                      <th className="py-2.5 text-center">คะแนน PV</th>
-                                      <th className="py-2.5 text-center">ต้นทุนสินค้า</th>
-                                      <th className="py-2.5 text-center text-rose-500">ส่วนต่างบริษัท (กำไร)</th>
-                                      <th className="py-2.5 text-right">ดำเนินการ</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-50">
-                                    {paginatedProdQueue.map((item) => {
-                                      const cost = item.cost !== undefined ? item.cost : Math.floor(item.price * 0.30);
-                                      const companyProfit = parseFloat((item.price - (item.pv || 0) - (item.price * 7 / 107) - cost).toFixed(2));
-                                      return (
-                                        <tr key={item.id} className="hover:bg-slate-50/50">
-                                          <td className="py-3">
-                                            <img src={item.image} alt={item.name} className="w-10 h-10 object-cover rounded-lg border border-slate-100" referrerPolicy="no-referrer" />
-                                          </td>
-                                          <td className="py-3">
-                                            <h5 className="font-bold text-slate-800">{item.name}</h5>
-                                            <p className="text-[10px] text-slate-400">ร้านค้า: {item.sellerStoreName || 'ไม่ระบุ'} ({item.sellerCode || item.sellerId})</p>
-                                            {item.category && (
-                                              <span className="inline-block bg-slate-100 text-slate-600 text-[8px] font-bold px-1.5 py-0.5 rounded-md mr-1 mt-0.5">
-                                                🗂️ {item.category} {item.subcategory ? `> ${item.subcategory}` : ''}
-                                              </span>
-                                            )}
-                                            {item.weight !== undefined && item.weight > 0 && (
-                                              <div className="mt-1 text-[9px] text-slate-500 bg-slate-50 p-1 rounded-xl border border-slate-100/50 flex gap-1.5 flex-wrap font-mono max-w-[280px]">
-                                                <span>⚖️ {item.weight}g</span>
-                                                <span>📦 {item.width}x{item.length}x{item.height}cm</span>
-                                                <span>🚚 ค่าส่ง ฿{item.baseShippingCost}</span>
-                                                <span className="text-rose-500 font-semibold">ร้านช่วย ฿{item.sellerCoPay}</span>
-                                                <span className="text-emerald-600 font-semibold">ลูกค้าจ่าย ฿{item.customerShippingFee}</span>
-                                                <span className="text-indigo-600 font-bold">รับสุทธิ ฿{item.netPayout}</span>
-                                              </div>
-                                            )}
-                                          </td>
-                                          <td className="py-3 text-center font-bold">฿{item.price?.toLocaleString()}</td>
-                                          <td className="py-3 text-center font-semibold text-indigo-600">{item.pv} PV</td>
-                                          <td className="py-3 text-center font-semibold text-amber-600">฿{cost?.toLocaleString()}</td>
-                                          <td className="py-3 text-center font-extrabold text-emerald-600">
-                                            ฿{companyProfit?.toLocaleString()}
-                                            <span className="block text-[8px] text-slate-400 font-normal">หักแวต 7% (~฿{parseFloat((item.price * 7 / 107).toFixed(2))}) แล้ว</span>
-                                          </td>
-                                          <td className="py-3 text-right">
-                                            <button
-                                              onClick={() => handleProductApprove(item.id)}
-                                              className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg text-[10px] font-bold cursor-pointer transition shadow-sm hover:shadow"
-                                            >
-                                              อนุมัติจำหน่าย
-                                            </button>
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </table>
-                                {prodQueue.length > itemsPerPage && (
-                                  <div className="mt-4 pt-4 border-t border-slate-100">
-                                    <TablePagination currentPage={adminProductQueuePage} totalItems={prodQueue.length} itemsPerPage={itemsPerPage} onPageChange={setAdminProductQueuePage} />
-                                  </div>
-                                )}
-                              </>
-                            ) : (
-                              <p className="text-slate-400 text-center py-8">ไม่มีรายการผลิตภัณฑ์ใหม่รอแอดมินอนุมัติในขณะนี้</p>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
+                  {renderAdminProductApprovalQueueSection()}
 
                   {/* Active Seller Products with edit capabilities */}
                   <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
@@ -16360,7 +16825,7 @@ export default function App() {
                             <div className="bg-slate-900 text-slate-200 p-4 rounded-2xl space-y-3 text-xs font-mono border border-slate-800">
                               <p className="font-bold text-white font-sans text-xs">📊 สูตรการคำนวณโอนเงินถอนพาสสุทธิ:</p>
                               <div className="space-y-1.5 text-slate-400 text-[11px]">
-                                <div>• ยอดถอนขั้นต่ำ: <strong>300 บาท</strong> (ยอดคงเหลือหลังถอนต้องไม่น้อยกว่า 300)</div>
+                                <div>• ยอดถอนขั้นต่ำ: <strong>200 บาท</strong> (ยอดคงเหลือหลังถอนต้องไม่น้อยกว่า 200)</div>
                                 <div>• <strong>หักสำรองกองทุนระบบหมุนเวียน (Auto-Reserve): 20.00%</strong> (นำกลับเข้าพูลแผนงานเพื่อหมุนเวียนยอด) ทำให้คิดฐานคำนวณภาษีสุทธิที่ 80%</div>
                                 <div>• <strong>หักภาษี ณ ที่จ่ายตามกฎหมาย (Withholding Tax): 3.00%</strong> ของยอดฐานคำนวณ (2.4% ของยอดถอน)</div>
                                 <div>• <strong>หักค่าดูแลโครงข่ายแพลตฟอร์ม (Platform Fee): 2.00%</strong> ของยอดฐานคำนวณ (1.6% ของยอดถอน)</div>
@@ -19447,6 +19912,206 @@ export default function App() {
         )}
 
         </div>
+
+        {/* Admin Product Queue Edit Modal */}
+        {editingQueueProd && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-5 animate-scaleUp">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5">
+                  ✏️ ปรับปรุงแก้ไขราคาสินค้า & PV (ก่อนอนุมัติ)
+                </h3>
+                <button 
+                  onClick={() => setEditingQueueProd(null)} 
+                  className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-full hover:bg-slate-100 text-xs"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-slate-500 font-bold mb-1">ชื่อสินค้า</label>
+                  <input 
+                    type="text"
+                    disabled
+                    value={editingQueueProd.name || ''}
+                    className="w-full bg-slate-100 text-slate-600 px-3 py-2 rounded-xl font-bold cursor-not-allowed text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-extrabold mb-1">ราคาขายตั้งหน้าร้าน (บาท)</label>
+                  <input 
+                    type="number"
+                    value={editingQueueProd.price || 0}
+                    onChange={(e) => setEditingQueueProd({ ...editingQueueProd, price: parseFloat(e.target.value) || 0 })}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-extrabold mb-1">คะแนน PV</label>
+                  <input 
+                    type="number"
+                    value={editingQueueProd.pv || 0}
+                    onChange={(e) => setEditingQueueProd({ ...editingQueueProd, pv: parseFloat(e.target.value) || 0 })}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 font-bold text-amber-600 focus:ring-2 focus:ring-amber-500 text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-extrabold mb-1">ต้นทุนสินค้า / รับซื้อ (บาท)</label>
+                  <input 
+                    type="number"
+                    value={editingQueueProd.cost !== undefined ? editingQueueProd.cost : Math.floor((editingQueueProd.price || 0) * 0.30)}
+                    onChange={(e) => setEditingQueueProd({ ...editingQueueProd, cost: parseFloat(e.target.value) || 0 })}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 text-xs"
+                  />
+                </div>
+
+                <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-100 text-[11px] space-y-1">
+                  {(() => {
+                    const price = editingQueueProd.price || 0;
+                    const pv = editingQueueProd.pv || 0;
+                    const cost = editingQueueProd.cost !== undefined ? editingQueueProd.cost : Math.floor(price * 0.30);
+                    const vat = parseFloat((price * 7 / 107).toFixed(2));
+                    const netPayout = editingQueueProd.netPayout || (price - cost);
+                    const companyProfit = parseFloat((price - pv - vat - cost).toFixed(2));
+                    return (
+                      <>
+                        <p className="text-slate-600 font-semibold">เงินโอนเข้าร้านค้าสุทธิ: <strong className="text-emerald-600">฿ {netPayout.toFixed(2)}</strong></p>
+                        <p className="text-slate-600 font-semibold">ภาษี VAT 7%: <strong className="text-slate-800">฿ {vat.toFixed(2)}</strong></p>
+                        <p className="text-slate-600 font-semibold">ส่วนต่างกำไรบริษัท GP: <strong className="text-rose-600">฿ {companyProfit.toFixed(2)}</strong></p>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => setEditingQueueProd(null)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  onClick={async () => {
+                    const cost = editingQueueProd.cost !== undefined ? editingQueueProd.cost : Math.floor(editingQueueProd.price * 0.30);
+                    await handleProductUpdatePrice(editingQueueProd.id, editingQueueProd.price, editingQueueProd.pv, cost);
+                    setEditingQueueProd(null);
+                  }}
+                  className="flex-1 bg-amber-500 hover:bg-amber-400 text-white py-2.5 rounded-xl font-extrabold text-xs transition shadow-md cursor-pointer"
+                >
+                  💾 บันทึกแก้ไข
+                </button>
+                <button
+                  onClick={async () => {
+                    const cost = editingQueueProd.cost !== undefined ? editingQueueProd.cost : Math.floor(editingQueueProd.price * 0.30);
+                    await handleProductUpdatePrice(editingQueueProd.id, editingQueueProd.price, editingQueueProd.pv, cost);
+                    await handleProductApprove(editingQueueProd.id);
+                    setEditingQueueProd(null);
+                  }}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-extrabold text-xs transition shadow-md cursor-pointer"
+                >
+                  ✓ บันทึก & อนุมัติ
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Admin Product Queue View Details Modal */}
+        {selectedAdminQueueProd && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100 space-y-5 animate-scaleUp">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-sm">
+                    🔍 ข้อมูลรายละเอียดผลิตภัณฑ์ ({selectedAdminQueueProd.id})
+                  </h3>
+                  <p className="text-[10px] text-slate-400">ร้านค้า: {selectedAdminQueueProd.sellerStoreName || 'ไม่ระบุ'} ({selectedAdminQueueProd.sellerCode || selectedAdminQueueProd.sellerId})</p>
+                </div>
+                <button 
+                  onClick={() => setSelectedAdminQueueProd(null)} 
+                  className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-full hover:bg-slate-100 text-xs"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Product Images */}
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                {(selectedAdminQueueProd.images && selectedAdminQueueProd.images.length > 0 ? selectedAdminQueueProd.images : [selectedAdminQueueProd.image]).filter(Boolean).map((imgUrl: string, idx: number) => (
+                  <img key={idx} src={imgUrl} alt="" className="w-24 h-24 object-cover rounded-2xl border border-slate-200 shadow-sm shrink-0" referrerPolicy="no-referrer" />
+                ))}
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <span className="text-slate-400 block text-[10px] font-bold uppercase">ชื่อผลิตภัณฑ์</span>
+                  <h4 className="font-extrabold text-slate-900 text-base">{selectedAdminQueueProd.name}</h4>
+                </div>
+
+                {selectedAdminQueueProd.description && (
+                  <div>
+                    <span className="text-slate-400 block text-[10px] font-bold uppercase">รายละเอียด / คำอธิบาย</span>
+                    <p className="text-slate-700 bg-slate-50 p-3 rounded-2xl border border-slate-100 whitespace-pre-line text-xs">
+                      {selectedAdminQueueProd.description}
+                    </p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                  <div>
+                    <span className="text-slate-400 block text-[9px] font-bold">ราคาขาย</span>
+                    <strong className="text-slate-900 text-sm font-extrabold">฿ {parseFloat(selectedAdminQueueProd.price || 0).toLocaleString()}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[9px] font-bold">คะแนน PV</span>
+                    <strong className="text-amber-600 text-sm font-extrabold">{selectedAdminQueueProd.pv} PV</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[9px] font-bold">หมวดหมู่</span>
+                    <span className="text-slate-700 font-bold">{selectedAdminQueueProd.category || 'General'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[9px] font-bold">น้ำหนักสินค้า</span>
+                    <span className="text-slate-700 font-mono font-bold">{selectedAdminQueueProd.weight || 0} กรัม</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[9px] font-bold">ขนาดพัสดุ (ก x ย x ส)</span>
+                    <span className="text-slate-700 font-mono font-bold">{selectedAdminQueueProd.width || 0} x {selectedAdminQueueProd.length || 0} x {selectedAdminQueueProd.height || 0} cm</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[9px] font-bold">ค่าจัดส่งฐาน</span>
+                    <span className="text-indigo-600 font-mono font-bold">฿ {selectedAdminQueueProd.baseShippingCost || 35}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
+                <button
+                  onClick={() => setSelectedAdminQueueProd(null)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer"
+                >
+                  ปิด
+                </button>
+                <button
+                  onClick={() => {
+                    const id = selectedAdminQueueProd.id;
+                    setSelectedAdminQueueProd(null);
+                    handleProductApprove(id);
+                  }}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-extrabold text-xs transition shadow-md cursor-pointer"
+                >
+                  ✓ อนุมัติจำหน่าย
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Global Footer */}
         <footer className="bg-white border-t border-slate-100 px-6 py-4 text-center text-[10px] text-slate-400">
