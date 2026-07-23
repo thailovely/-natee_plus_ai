@@ -3158,7 +3158,7 @@ app.post('/api/member/update-shipping-pin', (req, res) => {
 
 // ADMIN BROADCAST NOTIFICATION TO BELL DROPDOWN
 app.post('/api/admin/broadcast-notification', (req, res) => {
-  const { title, message } = req.body;
+  const { title, message, target } = req.body;
   if (!message || !message.trim()) {
     return res.status(400).json({ success: false, message: "กรุณากรอกข้อความแจ้งเตือน" });
   }
@@ -3168,10 +3168,13 @@ app.post('/api/admin/broadcast-notification', (req, res) => {
     db.notifications = [];
   }
 
+  const targetGroup = target === 'sellers' ? 'sellers' : 'all';
+
   const newNotif = {
     id: 'NOTIF_' + Date.now(),
-    title: title || "📢 ประกาศจากระบบ Natee Plus",
+    title: title || (targetGroup === 'sellers' ? "🏪 ประกาศถึงร้านค้าพันธมิตร" : "📢 ประกาศจากระบบ Natee Plus"),
     message: message.trim(),
+    target: targetGroup,
     createdAt: new Date().toISOString(),
     sender: "Admin"
   };
@@ -3182,13 +3185,17 @@ app.post('/api/admin/broadcast-notification', (req, res) => {
   }
 
   writeDb(db);
-  res.json({ success: true, message: "ส่งข้อความสั้นไปยังกระดิ่งแจ้งเตือนของสมาชิกเรียบร้อยแล้วค่ะ! 🔔", notification: newNotif });
+  const targetLabel = targetGroup === 'sellers' ? "กระดิ่งร้านค้าพันธมิตร" : "กระดิ่งสมาชิกทุกคน (ทั้งระบบ)";
+  res.json({ success: true, message: `ส่งข้อความสั้นไปยัง${targetLabel}เรียบร้อยแล้วค่ะ! 🔔`, notification: newNotif });
 });
 
 // GET PUBLIC/SYSTEM BROADCAST NOTIFICATIONS
 app.get('/api/notifications', (req, res) => {
   const db = readDb();
-  res.json({ success: true, notifications: db.notifications || [] });
+  const sortedNotifs = (db.notifications || []).slice().sort((a: any, b: any) => 
+    new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+  );
+  res.json({ success: true, notifications: sortedNotifs });
 });
 
 // CHANGE PASSWORD BY MEMBER (Requires 6-digit PIN)
@@ -6067,8 +6074,24 @@ async function startServer() {
     }
     
     console.log(`📁 Resolved dist path for static serving: ${distPath}`);
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, {
+      etag: true,
+      lastModified: true,
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+          res.setHeader('Pragma', 'no-cache');
+          res.setHeader('Expires', '0');
+        } else if (filePath.includes('/assets/') || filePath.endsWith('.js') || filePath.endsWith('.css')) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      }
+    }));
+
     app.get('*', (req, res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
