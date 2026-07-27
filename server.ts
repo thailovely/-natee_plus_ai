@@ -3458,12 +3458,9 @@ app.post('/api/shop/purchase', (req, res) => {
   const product = db.products.find(p => p.id === productId);
   if (!product) return res.status(404).json({ success: false, message: "ไม่พบสินค้า" });
   
-  // If user is "Member" (or has no rank), they can only buy packages
+  // If product is a package, validate selection
   const isPackage = product.category === "Package";
   const currentRank = member.rank || "Member";
-  if (currentRank === "Member" && !isPackage) {
-    return res.status(400).json({ success: false, message: "ท่านต้องทำการเลือกซื้อแพ็กเกจตำแหน่ง (S, M, L, XL, XXL) เพื่อเปิดสิทธิ์การทำรายการก่อนสั่งซื้อสินค้าทั่วไปค่ะ" });
-  }
   
   const qty = parseInt(quantity) || 1;
   const totalPrice = product.price * qty;
@@ -3474,14 +3471,6 @@ app.post('/api/shop/purchase', (req, res) => {
     if (!selectedChoiceId) {
       return res.status(400).json({ success: false, message: "กรุณาเลือกชุดเซ็ตสินค้าของแพ็กเกจเพื่อทำรายการสั่งซื้อค่ะ" });
     }
-  }
-  
-  // 2. บังคับสมัครครั้งแรก ตำแหน่ง S เป็นค่าสมัครระบบร้านค้า (เช็คตำแหน่งล่าสุด ถ้าเป็น Member บังคับซื้อ S ก่อน)
-  if (currentRank === "Member" && productId !== "pack_s") {
-    return res.status(400).json({ 
-      success: false, 
-      message: "สำหรับการสั่งซื้อครั้งแรกเพื่อเปิดสิทธิ์ร้านค้า ท่านต้องสั่งซื้อสิทธิ์แพ็กเกจ S (100 บาท) ก่อนสั่งซื้อตำแหน่งอื่นหรือสินค้าทั่วไปค่ะ" 
-    });
   }
 
   // 3. Perform pre-deduction check on balances to keep database transactions atomic and clean
@@ -3731,7 +3720,36 @@ app.post('/api/shop/purchase', (req, res) => {
       );
     }
     
-    // 2. Binary Tree PV Commissions (20 layers, 2.5% per layer)
+    // 2. PV Allocation and Unilevel/Binary Tree Commissions
+    // PV Beneficiary Rule:
+    // - If buyer is rank S or higher (S, M, L, XL, XXL): PV stays with the buyer (สะสม PV เข้าตัวผู้ซื้อเอง)
+    // - If buyer is rank Member (ทั่วไป): PV transfers to sponsor (ผู้แนะนำ)
+    const buyerRank = member.rank || "Member";
+    const isSOrAbove = buyerRank !== "Member" && buyerRank !== "";
+    
+    let pvBeneficiaryId = member.userId;
+    if (isSOrAbove) {
+      member.personalPV = parseFloat(((member.personalPV || 0) + totalPv).toFixed(4));
+      pvBeneficiaryId = member.userId;
+    } else {
+      if (sponsor) {
+        sponsor.personalPV = parseFloat(((sponsor.personalPV || 0) + totalPv).toFixed(4));
+        pvBeneficiaryId = sponsor.userId;
+        db.transactions.push({
+          id: "PV_XFER_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+          userId: sponsor.userId,
+          type: "Bonus",
+          amount: totalPv,
+          currency: "PV",
+          details: `รับ PV จำนวน ${totalPv} PV จากการสั่งซื้อสินค้าของสมาชิกสายงานรหัส ${member.userId} (ผู้ซื้อมีตำแหน่ง Member)`,
+          status: "Approved",
+          createdAt: new Date().toISOString()
+        });
+      } else {
+        pvBeneficiaryId = "A260600001";
+      }
+    }
+
     // If coupons were used, split the PV into coupon PV (held) and cash PV (processed immediately)
     if (!isPackage && couponUsed > 0) {
       const couponProportion = couponUsed / totalPrice;
@@ -3742,7 +3760,7 @@ app.post('/api/shop/purchase', (req, res) => {
         if (!db.pendingCouponPV) db.pendingCouponPV = [];
         db.pendingCouponPV.push({
           id: "PEND_PV_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-          buyerId: member.userId,
+          buyerId: pvBeneficiaryId,
           pvAmount: parseFloat(couponPv.toFixed(4)),
           orderId: orderId,
           createdAt: new Date().toISOString(),
@@ -3752,22 +3770,22 @@ app.post('/api/shop/purchase', (req, res) => {
         // Log transaction for pending coupon PV
         db.transactions.push({
           id: "COUP_PV_HOLD_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-          userId: member.userId,
+          userId: pvBeneficiaryId,
           type: "Bonus",
           amount: parseFloat(couponPv.toFixed(4)),
           currency: "PV",
-          details: `ยอด PV จากคูปองจำนวน ${couponPv.toFixed(2)} PV พักไว้คำนวณรอบตัดจ่าย (ทุกวันที่ 10 หรือเมื่อแอดมินตัดยอด)`,
+          details: `ยอด PV จากคูปองจำนวน ${couponPv.toFixed(2)} PV พักไว้คำนวณรอบตัดจ่าย`,
           status: "Approved",
           createdAt: new Date().toISOString()
         });
       }
       
       if (cashPv > 0) {
-        calculateBinaryCommissions(db, member.userId, cashPv, orderId);
+        calculateBinaryCommissions(db, pvBeneficiaryId, cashPv, orderId);
       }
     } else {
       // Direct cash/package payment: process full PV immediately
-      calculateBinaryCommissions(db, member.userId, totalPv, orderId);
+      calculateBinaryCommissions(db, pvBeneficiaryId, totalPv, orderId);
     }
 
     // 3. Company margin and tax calculations:

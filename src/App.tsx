@@ -105,8 +105,9 @@ export default function App() {
   const packageChoicesFetchedAt = React.useRef<number>(0);
 
   const [isUsingPollingFallback, setIsUsingPollingFallback] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<string>('dash');
+  const [activeTab, setActiveTab] = useState<string>('shop');
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(true);
   const [showStaffLogin, setShowStaffLogin] = useState<boolean>(false);
   const [notif, setNotif] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [isFirstLoginModal, setIsFirstLoginModal] = useState<boolean>(() => {
@@ -262,6 +263,25 @@ export default function App() {
   const [newPassConfirm, setNewPassConfirm] = useState('');
   const [newPin, setNewPin] = useState('');
   const [newPinConfirm, setNewPinConfirm] = useState('');
+
+  // Admin Promo Pop-up Modal State (Shopee/Lazada style)
+  const [showPromoPopup, setShowPromoPopup] = useState(() => {
+    try {
+      const dismissed = sessionStorage.getItem('natee_promo_dismissed');
+      return !dismissed;
+    } catch (e) {
+      return true;
+    }
+  });
+
+  const [promoConfig, setPromoConfig] = useState({
+    active: true,
+    title: '🔥 โปรโมชั่นนาทีทอง มาร์เก็ตนทีพลัส',
+    subtitle: 'ช้อปคุ้ม รับส่วนลดพิเศษและคะแนน PV สะสมเข้าบัญชีทันที!',
+    imageUrl: 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80',
+    buttonText: 'ช้อปสินค้าราคาพิเศษทันที 🛍️',
+    linkTab: 'shop'
+  });
   const [firstLoginOtpSent, setFirstLoginOtpSent] = useState(false);
   const [firstLoginOtp, setFirstLoginOtp] = useState('');
   const [firstLoginSentOtp, setFirstLoginSentOtp] = useState('');
@@ -773,8 +793,9 @@ export default function App() {
     length: '10',
     height: '10'
   });
-  const [shopSubTab, setShopSubTab] = useState<'packages' | 'shop' | 'myOrders'>('packages');
-  const [shopPortalView, setShopPortalView] = useState<'portal' | 'store' | 'packages'>('portal');
+  const [shopSubTab, setShopSubTab] = useState<'packages' | 'shop' | 'myOrders'>('shop');
+  const [shopPortalView, setShopPortalView] = useState<'portal' | 'store' | 'packages'>('store');
+  const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
   const [sellerProducts, setSellerProducts] = useState<any[]>([]);
   const [sellerOrders, setSellerOrders] = useState<any[]>([]);
   const [sellerPortalTab, setSellerPortalTab] = useState<'products' | 'orders'>('products');
@@ -1192,28 +1213,43 @@ export default function App() {
       .catch(() => {});
 
     const params = new URLSearchParams(window.location.search);
-    const sponsor = params.get('sponsor');
+    const refParam = params.get('ref') || params.get('sponsor');
+    const prodParam = params.get('productId');
     
-    if (window.location.pathname.includes('/join') || window.location.pathname.includes('/register') || sponsor) {
-      setAuthMode('register');
-    }
-    
-    if (sponsor) {
-      setSponsorId(sponsor);
+    if (refParam) {
+      localStorage.setItem('natee_ref', refParam);
+      setSponsorId(refParam);
       // Look up sponsor name
-      fetch(`/api/auth/sponsor/${sponsor}`)
+      fetch(`/api/auth/sponsor/${refParam}`)
         .then(res => res.json())
         .then(d => {
           if (d.success) {
             setSponsorName(d.name);
             setSponsorError('');
-          } else {
-            setSponsorName('');
-            setSponsorError('ไม่พบรหัสผู้แนะนำนี้ในระบบ');
+            setCheckedSponsor(true);
           }
         })
         .catch(() => {});
     }
+
+    if (window.location.pathname.includes('/join') || window.location.pathname.includes('/register')) {
+      setAuthMode('register');
+      setShowLoginModal(true);
+    }
+
+    // Always fetch public shop products for guests & members
+    fetch('/api/shop/products')
+      .then(res => res.json())
+      .then(d => {
+        if (d.success && Array.isArray(d.products)) {
+          setProducts(d.products);
+          if (prodParam) {
+            const found = d.products.find((p: any) => p.id === prodParam || p.id === Number(prodParam));
+            if (found) setSelectedMarketProduct(found);
+          }
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Fetch system notifications on startup and when user changes
@@ -1504,6 +1540,7 @@ export default function App() {
       }
 
       const runPoll = () => {
+        if (!currentUser) return;
         fetch('/api/sync-state')
           .then(res => res.json())
           .then(resData => {
@@ -1516,7 +1553,7 @@ export default function App() {
               // 1. Sync Members
               const members = data.members || [];
               setAdminMembersList(members);
-              const currentMember = members.find((m: any) => m.userId === currentUser.userId);
+              const currentMember = currentUser ? members.find((m: any) => m.userId === currentUser.userId) : null;
               if (currentMember) {
                 setProfile((prevProfile: any) => {
                   if (prevProfile) {
@@ -1565,7 +1602,7 @@ export default function App() {
                   setIsFirstLoginModal(true);
                 }
               }
-              if (currentUser.role === 'Admin' || currentUser.role === 'Manager') {
+              if (currentUser?.role === 'Admin' || currentUser?.role === 'Manager') {
                 setKycQueue(members.filter((m: any) => m.statusKyc === 'Pending'));
               }
 
@@ -1574,23 +1611,23 @@ export default function App() {
               if (currentUser?.role === 'Admin' || currentUser?.role === 'Manager') {
                 setTransactions(transactions);
               } else {
-                setTransactions(transactions.filter((t: any) => t.userId === currentUser.userId));
+                setTransactions(transactions.filter((t: any) => currentUser && t.userId === currentUser.userId));
               }
               setWithQueue(transactions.filter((t: any) => t.type === 'WithdrawalRequest' && t.status === 'Pending'));
               setDepositQueue(transactions.filter((t: any) => t.type === 'Deposit' && t.status === 'Pending'));
 
               // 3. Sync Orders
               const orders = data.orders || [];
-              setMemberOrders(orders.filter((o: any) => o.userId === currentUser.userId));
+              setMemberOrders(orders.filter((o: any) => currentUser && o.userId === currentUser.userId));
               setAdminOrders(orders);
-              setSellerOrders(orders.filter((o: any) => o.sellerId === currentUser.userId));
+              setSellerOrders(orders.filter((o: any) => currentUser && o.sellerId === currentUser.userId));
 
               // 4. Sync Products
               setProducts(data.products || []);
 
               // 5. Sync Seller Products
               const sellerProducts = data.sellerProducts || [];
-              setSellerProducts(sellerProducts.filter((p: any) => p.sellerId === currentUser.userId));
+              setSellerProducts(sellerProducts.filter((p: any) => currentUser && p.sellerId === currentUser.userId));
               setAllSellerProducts(sellerProducts);
               setProdQueue(sellerProducts.filter((p: any) => p.status === 'Pending'));
 
@@ -1736,7 +1773,7 @@ export default function App() {
               return data;
             });
             
-            const currentMember = data.find((m: any) => m.userId === currentUser.userId);
+            const currentMember = currentUser ? data.find((m: any) => m.userId === currentUser.userId) : null;
             if (currentMember) {
               setProfile((prevProfile: any) => {
                 if (prevProfile) {
@@ -1758,7 +1795,7 @@ export default function App() {
                   // Check E-Cash (No audio sound per request, just notification)
                   const prevBalance = prevProfile.balanceECash;
                   const newBalance = currentMember.balanceECash;
-                  if (newBalance > prevBalance && prevBalance > 0) {
+                  if (newBalance > prevBalance && prevBalance > 0 && currentUser) {
                     const diff = parseFloat((newBalance - prevBalance).toFixed(4));
                     
                     // Look up transactions for recent approved deposit vs bonus
@@ -1833,7 +1870,7 @@ export default function App() {
             }
 
             // Update kycQueue for admins
-            if (currentUser.role === 'Admin' || currentUser.role === 'Manager') {
+            if (currentUser?.role === 'Admin' || currentUser?.role === 'Manager') {
               setKycQueue(data.filter((m: any) => m.statusKyc === 'Pending'));
             }
           }
@@ -1846,7 +1883,7 @@ export default function App() {
             if (currentUser?.role === 'Admin' || currentUser?.role === 'Manager') {
               setTransactions(data);
             } else {
-              setTransactions(data.filter((t: any) => t.userId === currentUser.userId));
+              setTransactions(data.filter((t: any) => currentUser && t.userId === currentUser.userId));
             }
             setWithQueue(data.filter((t: any) => t.type === 'WithdrawalRequest' && t.status === 'Pending'));
             setDepositQueue(data.filter((t: any) => t.type === 'Deposit' && t.status === 'Pending'));
@@ -1857,9 +1894,9 @@ export default function App() {
         safeSubscribe('orders', (snapshot) => {
           if (snapshot.exists()) {
             const data = snapshot.data().data || [];
-            setMemberOrders(data.filter((o: any) => o.userId === currentUser.userId));
+            setMemberOrders(data.filter((o: any) => currentUser && o.userId === currentUser.userId));
             setAdminOrders(data);
-            setSellerOrders(data.filter((o: any) => o.sellerId === currentUser.userId));
+            setSellerOrders(data.filter((o: any) => currentUser && o.sellerId === currentUser.userId));
           }
         });
 
@@ -1875,7 +1912,7 @@ export default function App() {
         safeSubscribe('sellerProducts', (snapshot) => {
           if (snapshot.exists()) {
             const data = snapshot.data().data || [];
-            setSellerProducts(data.filter((p: any) => p.sellerId === currentUser.userId));
+            setSellerProducts(data.filter((p: any) => currentUser && p.sellerId === currentUser.userId));
             setAllSellerProducts(data);
             setProdQueue(data.filter((p: any) => p.status === 'Pending'));
           }
@@ -2990,11 +3027,14 @@ export default function App() {
           setIsFirstLoginModal(true);
         }
         showNotif(`ยินดีต้อนรับกลับเข้าสู่ระบบ นทีพลัส! คุณ ${d.name}`, 'success');
+        return true;
       } else {
         showNotif(d.message || 'รหัสผ่านหรือชื่อผู้ใช้ไม่ถูกต้อง', 'error');
+        return false;
       }
     } catch (err) {
       showNotif('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
+      return false;
     }
   };
 
@@ -4127,13 +4167,6 @@ export default function App() {
   const handlePurchaseProduct = async (prodId: string, bypassChoice = false, customChoiceId?: string) => {
     const product = products.find(p => p.id === prodId);
     if (!product) return;
-
-    // Check if the current user rank is "Member" or not set, then they must purchase pack_s first
-    const currentRank = profile?.rank || 'Member';
-    if (currentRank === 'Member' && prodId !== 'pack_s') {
-      showNotif('สำหรับการสั่งซื้อครั้งแรกเพื่อเปิดสิทธิ์ร้านค้า ท่านต้องสั่งซื้อสิทธิ์แพ็กเกจ S (100 บาท) ก่อนสั่งซื้อตำแหน่งอื่นหรือสินค้าทั่วไปค่ะ', 'error');
-      return;
-    }
 
     const isPkg = product.category === 'Package';
     let couponToUse = 0;
@@ -5690,50 +5723,39 @@ export default function App() {
     );
   }
 
-  // NOT LOGGED IN
-  if (!currentUser) {
+  // RENDER LOGIN / REGISTER MODAL OVERLAY
+  const renderLoginModal = () => {
+    if (!showLoginModal) return null;
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 flex flex-col justify-center items-center px-4 py-8">
-        {notif && (
-          <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[99999] p-5 rounded-2xl shadow-2xl border-2 text-base max-w-md w-[90%] flex items-center gap-3 backdrop-blur-md transition-all duration-300 animate-slideDown ${
-            notif.type === 'success' 
-              ? 'bg-emerald-600/95 text-white border-emerald-400 shadow-emerald-500/20' 
-              : notif.type === 'error'
-              ? 'bg-rose-600/95 text-white border-rose-400 shadow-rose-500/30 font-bold'
-              : 'bg-slate-800/95 text-white border-slate-600 shadow-slate-950/40'
-          }`}>
-            <AlertCircle size={22} className="shrink-0" />
-            <span className="flex-1 leading-snug">{notif.message}</span>
-          </div>
-        )}
+      <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[99999] flex items-center justify-center p-4 animate-fadeIn overflow-y-auto">
+        <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative my-auto">
+          {/* Close button */}
+          <button
+            type="button"
+            onClick={() => setShowLoginModal(false)}
+            className="absolute top-4 right-4 w-9 h-9 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-full flex items-center justify-center text-sm font-bold transition cursor-pointer z-20 shadow"
+          >
+            ✕
+          </button>
 
-        <div className="w-full max-w-md bg-slate-900/40 backdrop-blur-md border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
-          {/* Back to Maintenance banner if toggled */}
-          {isMaintenanceActive && showStaffLogin && (
-            <button
-              type="button"
-              onClick={() => setShowStaffLogin(false)}
-              className="w-full mb-6 bg-rose-950/40 hover:bg-rose-900/40 border border-rose-500/30 text-rose-200 font-bold py-2.5 rounded-xl text-[11px] flex items-center justify-center gap-2 cursor-pointer transition shadow-sm"
-            >
-              ⬅️ กลับสู่หน้าจอพักระบบอัปเดต (Back to Maintenance)
-            </button>
-          )}
           {/* Logo Brand heading */}
-          <div className="text-center mb-8 relative flex flex-col items-center">
-            {/* White bold 'N' with orange plus sign vector logo */}
-            <div className="relative w-20 h-20 select-none mb-4">
+          <div className="text-center mb-6 relative flex flex-col items-center">
+            <div className="relative w-16 h-16 select-none mb-3">
               <img src="/favicon.svg" alt="Natee Plus Logo" className="w-full h-full object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)]" referrerPolicy="no-referrer" />
             </div>
-            <h1 className="text-3xl font-extrabold tracking-wider text-white">
+            <h1 className="text-2xl font-extrabold tracking-wider text-white">
               <span className="text-sky-400">นที</span> <span className="text-orange-500">พลัส</span> <span className="text-sky-400">มาร์เก็ต</span>
             </h1>
-            <p className="text-slate-400 text-xs mt-2 font-medium">
-              ระบบร้านค้าอัจฉริยะ สัญชาติไทย
+            <p className="text-slate-400 text-xs mt-1 font-medium">
+              เข้าสู่ระบบสมาชิก / ลงทะเบียนใช้งาน
             </p>
           </div>
 
           {authMode === 'login' ? (
-            <form onSubmit={handleLogin} className="space-y-5">
+            <form onSubmit={async (e) => {
+              await handleLogin(e);
+              setShowLoginModal(false);
+            }} className="space-y-4">
               <div>
                 <label className="block text-slate-300 text-xs font-bold mb-2">Username / รหัสสมาชิก</label>
                 <input 
@@ -5771,7 +5793,7 @@ export default function App() {
                 type="submit"
                 className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 text-white font-bold py-3.5 rounded-xl hover:from-sky-400 hover:to-indigo-500 shadow-lg shadow-sky-500/20 active:scale-[0.98] transition cursor-pointer text-sm"
               >
-                เข้าสู่ระบบหลังบ้าน
+                เข้าสู่ระบบสมาชิก
               </button>
 
               <div className="flex justify-between items-center text-xs text-sky-400 mt-4">
@@ -6051,8 +6073,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Registration Package Selection removed */}
-
               <button 
                 onClick={() => {
                   if (!checkedSponsor) {
@@ -6174,7 +6194,6 @@ export default function App() {
                           setAuthMode('login');
                           setUsername(forgotUsername);
                           setPassword('Natee!234');
-                          // Reset state
                           setForgotStep('request');
                           setForgotUsername('');
                           setForgotEmail('');
@@ -6214,14 +6233,14 @@ export default function App() {
 
         {/* Double-check dialog modal on sign up */}
         {showRegModal && (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 text-white space-y-4">
+          <div className="fixed inset-0 bg-black/80 z-[100000] flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 text-white space-y-4 shadow-2xl">
               <h4 className="text-base font-bold text-sky-400 flex items-center gap-2">
                 <ShieldCheck size={20} />
                 ตรวจสอบรายละเอียดให้เรียบร้อย
               </h4>
               <p className="text-xs text-slate-300 leading-relaxed">
-                ชื่อผู้ใช้: <b className="text-white">{username}</b><br />
+                ชื่อผู้ใช้: <b className="text-white">{regUsername}</b><br />
                 ชื่อ-นามสกุล: <b className="text-white">{regName} {regSurname}</b><br />
                 เลขบัตรประจำตัว: <b className="text-white">{regIdCard}</b><br />
                 ผู้แนะนำ: <b className="text-white">{sponsorName || 'SYSTEM'}</b>
@@ -6232,13 +6251,17 @@ export default function App() {
               <div className="flex gap-2 justify-end">
                 <button 
                   onClick={() => setShowRegModal(false)}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-4 py-2 rounded-xl text-xs"
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-4 py-2 rounded-xl text-xs cursor-pointer"
                 >
                   ย้อนกลับเพื่อแก้ไข
                 </button>
                 <button 
-                  onClick={handleRegister}
-                  className="bg-sky-500 hover:bg-sky-400 text-white font-bold px-4 py-2 rounded-xl text-xs"
+                  onClick={async () => {
+                    await handleRegister();
+                    setShowRegModal(false);
+                    setShowLoginModal(false);
+                  }}
+                  className="bg-sky-500 hover:bg-sky-400 text-white font-bold px-4 py-2 rounded-xl text-xs cursor-pointer"
                 >
                   ยืนยันการสมัคร
                 </button>
@@ -6248,7 +6271,7 @@ export default function App() {
         )}
       </div>
     );
-  }
+  };
 
   // FORCE PIN & PASSWORD SETUP ON FIRST LOGIN / RESET PASSWORD
   if (currentUser && isFirstLoginModal) {
@@ -6439,206 +6462,404 @@ export default function App() {
       )}
 
       {/* Sidebar Navigation */}
-      <aside className={`fixed md:relative inset-y-0 left-0 bg-slate-900 text-white w-64 p-5 z-40 transition-transform ${
-        sidebarOpen ? 'translate-x-0' : '-translate-x-0 md:translate-x-0 hidden md:flex flex-col'
-      }`}>
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-2">
-            <div className="relative w-9 h-9 shrink-0 flex items-center justify-center select-none">
-              <img src="/favicon.svg" alt="Natee Plus Logo" className="w-full h-full object-contain filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)]" referrerPolicy="no-referrer" />
+      {currentUser && (
+        <aside className={`fixed md:relative inset-y-0 left-0 bg-slate-900 text-white z-40 transition-all duration-300 ${
+          isSidebarCollapsed ? 'w-64 md:w-20 p-3' : 'w-64 p-5'
+        } ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-0 md:translate-x-0 hidden md:flex flex-col'
+        }`}>
+          {/* Sidebar Header & Expand/Collapse Toggle */}
+          <div className={`flex items-center justify-between mb-6 ${isSidebarCollapsed ? 'md:flex-col md:gap-3 md:items-center' : ''}`}>
+            <div className="flex items-center gap-2">
+              <div className="relative w-9 h-9 shrink-0 flex items-center justify-center select-none">
+                <img src="/favicon.svg" alt="Natee Plus Logo" className="w-full h-full object-contain filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)]" referrerPolicy="no-referrer" />
+              </div>
+              {(!isSidebarCollapsed || sidebarOpen) && (
+                <h2 className="text-lg font-extrabold tracking-wider text-white whitespace-nowrap">
+                  <span className="text-sky-400">นที</span> <span className="text-orange-500">พลัส</span> <span className="text-sky-400">มาร์เก็ต</span>
+                </h2>
+              )}
             </div>
-            <h2 className="text-xl font-extrabold tracking-wider text-white">
-              <span className="text-sky-400">นที</span> <span className="text-orange-500">พลัส</span> <span className="text-sky-400">มาร์เก็ต</span>
-            </h2>
+
+            <div className="flex items-center gap-1">
+              <button 
+                type="button"
+                onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
+                className="hidden md:flex text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 p-1.5 rounded-lg transition text-xs cursor-pointer"
+                title={isSidebarCollapsed ? "ขยายเมนู" : "ย่อเมนูเป็นไอคอน"}
+              >
+                {isSidebarCollapsed ? '▶' : '◀'}
+              </button>
+              <button onClick={() => setSidebarOpen(false)} className="md:hidden text-slate-400 hover:text-white p-1">✕</button>
+            </div>
           </div>
-          <button onClick={() => setSidebarOpen(false)} className="md:hidden text-slate-400 hover:text-white">✕</button>
-        </div>
 
-        {originalAdmin && (
-          <div className="mb-4 p-3 bg-rose-950/40 border border-rose-500/30 rounded-2xl animate-pulse">
-            <p className="text-[10px] text-rose-300 font-bold mb-1 text-center">⚙️ โหมดสวมสิทธิ์สมาชิก</p>
+          {originalAdmin && (!isSidebarCollapsed || sidebarOpen) && (
+            <div className="mb-4 p-3 bg-rose-950/40 border border-rose-500/30 rounded-2xl animate-pulse">
+              <p className="text-[10px] text-rose-300 font-bold mb-1 text-center">⚙️ โหมดสวมสิทธิ์สมาชิก</p>
+              <button 
+                onClick={() => {
+                  setCurrentUser(originalAdmin);
+                  setOriginalAdmin(null);
+                  setActiveTab('admin');
+                  setAdminSection('members_system');
+                  setAdminSubTab('members');
+                  setSidebarOpen(false);
+                }}
+                className="w-full py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-lg shadow-rose-600/20"
+              >
+                ⬅️ กลับหน้า Admin
+              </button>
+            </div>
+          )}
+
+          {/* Icon-centric compact menu nav */}
+          <nav className="space-y-2 flex-1">
             <button 
-              onClick={() => {
-                setCurrentUser(originalAdmin);
-                setOriginalAdmin(null);
-                setActiveTab('admin');
-                setAdminSection('members_system');
-                setAdminSubTab('members');
-                setSidebarOpen(false);
-              }}
-              className="w-full py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-lg shadow-rose-600/20"
-            >
-              ⬅️ กลับหน้า Admin
-            </button>
-          </div>
-        )}
-
-        <nav className="space-y-1.5 flex-1">
-          <button 
-            onClick={() => { setActiveTab('dash'); setSidebarOpen(false); }}
-            className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition ${
-              activeTab === 'dash' ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-            }`}
-          >
-            <LayoutDashboard size={16} /> หน้าหลัก (Dashboard)
-          </button>
-
-          <button 
-            onClick={() => { setActiveTab('profile'); setSidebarOpen(false); }}
-            className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition ${
-              activeTab === 'profile' ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-            }`}
-          >
-            <UserCheck size={16} /> ข้อมูลส่วนตัว / ยืนยัน KYC
-          </button>
-
-          <button 
-            onClick={() => { setActiveTab('shop'); setShopPortalView('store'); setShopSubTab('shop'); setSidebarOpen(false); }}
-            className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition ${
-              activeTab === 'shop' 
-                ? 'bg-orange-500/20 text-orange-400 border-l-4 border-orange-400' 
-                : 'text-orange-400 bg-orange-500/5 hover:bg-orange-500/15'
-            }`}
-          >
-            <ShoppingBag size={16} className={activeTab === 'shop' ? 'text-orange-400' : 'text-orange-400'} /> นที พลัส มาร์เก็ต
-          </button>
-
-          <button 
-            onClick={() => { setActiveTab('mlm'); setSidebarOpen(false); }}
-            className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition ${
-              activeTab === 'mlm' ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-            }`}
-          >
-            <Layers size={16} /> ผังโครงสร้าง / สายงาน
-          </button>
-
-          <button 
-            onClick={() => { setActiveTab('txn'); setSidebarOpen(false); }}
-            className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition ${
-              activeTab === 'txn' ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-            }`}
-          >
-            <CreditCard size={16} /> ธุรกรรมฝาก-ถอน-โอน
-          </button>
-
-          <button 
-            onClick={() => { 
-              setActiveTab('report'); 
-              if (profile?.role === 'Admin' || profile?.role === 'Manager') {
-                setReportSubTab('ecash');
-              } else {
-                setReportSubTab('emoney');
-              }
-              setSidebarOpen(false); 
-            }}
-            className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition ${
-              activeTab === 'report' ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-            }`}
-          >
-            <ClipboardList size={16} /> รายงาน (Report)
-          </button>
-
-          {profile && (
-            <button 
-              onClick={() => { setActiveTab('seller'); setSidebarOpen(false); }}
-              className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition ${
-                activeTab === 'seller' ? 'bg-indigo-500/20 text-indigo-400 border-l-4 border-indigo-400' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
+              onClick={() => { setActiveTab('dash'); setSidebarOpen(false); }}
+              title="หน้าหลัก (Dashboard)"
+              className={`w-full flex items-center rounded-xl transition cursor-pointer ${
+                isSidebarCollapsed 
+                  ? 'justify-center p-3 text-center' 
+                  : 'gap-3 px-4 py-3 text-left text-xs font-medium'
+              } ${
+                activeTab === 'dash' 
+                  ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' 
+                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
               }`}
             >
-              <Star size={16} /> ระบบ Partner
+              <LayoutDashboard size={20} className="shrink-0" />
+              {(!isSidebarCollapsed || sidebarOpen) && <span>หน้าหลัก (Dashboard)</span>}
             </button>
-          )}
 
-          {(currentUser.role === 'Admin' || currentUser.role === 'Manager') && (
-            <>
+            <button 
+              onClick={() => { setActiveTab('profile'); setSidebarOpen(false); }}
+              title="ข้อมูลส่วนตัว / ยืนยัน KYC"
+              className={`w-full flex items-center rounded-xl transition cursor-pointer ${
+                isSidebarCollapsed 
+                  ? 'justify-center p-3 text-center' 
+                  : 'gap-3 px-4 py-3 text-left text-xs font-medium'
+              } ${
+                activeTab === 'profile' 
+                  ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' 
+                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
+              }`}
+            >
+              <UserCheck size={20} className="shrink-0" />
+              {(!isSidebarCollapsed || sidebarOpen) && <span>ข้อมูลส่วนตัว / ยืนยัน KYC</span>}
+            </button>
+
+            <button 
+              onClick={() => { setActiveTab('shop'); setShopPortalView('store'); setShopSubTab('shop'); setSidebarOpen(false); }}
+              title="นที พลัส มาร์เก็ต"
+              className={`w-full flex items-center rounded-xl transition cursor-pointer ${
+                isSidebarCollapsed 
+                  ? 'justify-center p-3 text-center' 
+                  : 'gap-3 px-4 py-3 text-left text-xs font-bold'
+              } ${
+                activeTab === 'shop' 
+                  ? 'bg-orange-500/20 text-orange-400 border-l-4 border-orange-400' 
+                  : 'text-orange-400 bg-orange-500/5 hover:bg-orange-500/15'
+              }`}
+            >
+              <ShoppingBag size={20} className="shrink-0 text-orange-400" />
+              {(!isSidebarCollapsed || sidebarOpen) && <span>นที พลัส มาร์เก็ต</span>}
+            </button>
+
+            <button 
+              onClick={() => { setActiveTab('mlm'); setSidebarOpen(false); }}
+              title="ผังโครงสร้าง / สายงาน"
+              className={`w-full flex items-center rounded-xl transition cursor-pointer ${
+                isSidebarCollapsed 
+                  ? 'justify-center p-3 text-center' 
+                  : 'gap-3 px-4 py-3 text-left text-xs font-medium'
+              } ${
+                activeTab === 'mlm' 
+                  ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' 
+                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
+              }`}
+            >
+              <Layers size={20} className="shrink-0" />
+              {(!isSidebarCollapsed || sidebarOpen) && <span>ผังโครงสร้าง / สายงาน</span>}
+            </button>
+
+            <button 
+              onClick={() => { setActiveTab('txn'); setSidebarOpen(false); }}
+              title="ธุรกรรมฝาก-ถอน-โอน"
+              className={`w-full flex items-center rounded-xl transition cursor-pointer ${
+                isSidebarCollapsed 
+                  ? 'justify-center p-3 text-center' 
+                  : 'gap-3 px-4 py-3 text-left text-xs font-medium'
+              } ${
+                activeTab === 'txn' 
+                  ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' 
+                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
+              }`}
+            >
+              <CreditCard size={20} className="shrink-0" />
+              {(!isSidebarCollapsed || sidebarOpen) && <span>ธุรกรรมฝาก-ถอน-โอน</span>}
+            </button>
+
+            <button 
+              onClick={() => { 
+                setActiveTab('report'); 
+                setReportSubTab('ecash');
+                setSidebarOpen(false); 
+              }}
+              title="รายงาน E-Cash (Report)"
+              className={`w-full flex items-center rounded-xl transition cursor-pointer ${
+                isSidebarCollapsed 
+                  ? 'justify-center p-3 text-center' 
+                  : 'gap-3 px-4 py-3 text-left text-xs font-medium'
+              } ${
+                activeTab === 'report' 
+                  ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' 
+                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
+              }`}
+            >
+              <ClipboardList size={20} className="shrink-0" />
+              {(!isSidebarCollapsed || sidebarOpen) && <span>รายงาน E-Cash (Report)</span>}
+            </button>
+
+            {profile && (
               <button 
-                onClick={() => { 
-                  setActiveTab('admin'); 
-                  setAdminSection('members_system');
-                  setAdminSubTab('members'); 
-                  setSidebarOpen(false); 
-                }}
-                className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition ${
-                  activeTab === 'admin' && adminSubTab === 'members' && adminSection === 'members_system' ? 'bg-rose-500/20 text-rose-400 border-l-4 border-rose-400' : 'text-rose-400 hover:bg-slate-800/50 hover:text-rose-300'
+                onClick={() => { setActiveTab('seller'); setSidebarOpen(false); }}
+                title="ระบบ Partner"
+                className={`w-full flex items-center rounded-xl transition cursor-pointer ${
+                  isSidebarCollapsed 
+                    ? 'justify-center p-3 text-center' 
+                    : 'gap-3 px-4 py-3 text-left text-xs font-medium'
+                } ${
+                  activeTab === 'seller' 
+                    ? 'bg-indigo-500/20 text-indigo-400 border-l-4 border-indigo-400' 
+                    : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
                 }`}
               >
-                <UserCheck size={16} /> 👥 ข้อมูลสมาชิก Admin
+                <Star size={20} className="shrink-0" />
+                {(!isSidebarCollapsed || sidebarOpen) && <span>ระบบ Partner</span>}
               </button>
+            )}
 
-              <button 
-                onClick={() => { 
-                  setActiveTab('admin'); 
-                  setAdminSection('members_system');
-                  setAdminSubTab('depositApprove'); 
-                  setSidebarOpen(false); 
-                }}
-                className={`w-full text-left flex items-center justify-between px-4 py-3 rounded-xl text-xs font-medium transition ${
-                  activeTab === 'admin' && adminSubTab === 'depositApprove' && adminSection === 'members_system' ? 'bg-emerald-500/20 text-emerald-400 border-l-4 border-emerald-400' : 'text-emerald-400 hover:bg-slate-800/50 hover:text-emerald-300'
-                }`}
-              >
-                <span className="flex items-center gap-3">
-                  <span className="text-base">💰</span> อนุมัติ E-Cash
-                </span>
-                {depositQueue.length > 0 && (
-                  <span className="bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse">
-                    {depositQueue.length}
+            {(currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
+              <>
+                <button 
+                  onClick={() => { 
+                    setActiveTab('admin'); 
+                    setAdminSection('members_system');
+                    setAdminSubTab('members'); 
+                    setSidebarOpen(false); 
+                  }}
+                  title="ข้อมูลสมาชิก Admin"
+                  className={`w-full flex items-center rounded-xl transition cursor-pointer ${
+                    isSidebarCollapsed 
+                      ? 'justify-center p-3 text-center' 
+                      : 'gap-3 px-4 py-3 text-left text-xs font-medium'
+                  } ${
+                    activeTab === 'admin' && adminSubTab === 'members' && adminSection === 'members_system' ? 'bg-rose-500/20 text-rose-400 border-l-4 border-rose-400' : 'text-rose-400 hover:bg-slate-800/50 hover:text-rose-300'
+                  }`}
+                >
+                  <UserCheck size={20} className="shrink-0" />
+                  {(!isSidebarCollapsed || sidebarOpen) && <span>👥 สมาชิก Admin</span>}
+                </button>
+
+                <button 
+                  onClick={() => { 
+                    setActiveTab('admin'); 
+                    setAdminSection('members_system');
+                    setAdminSubTab('depositApprove'); 
+                    setSidebarOpen(false); 
+                  }}
+                  title="อนุมัติ E-Cash"
+                  className={`w-full flex items-center transition cursor-pointer relative ${
+                    isSidebarCollapsed 
+                      ? 'justify-center p-3 text-center' 
+                      : 'justify-between px-4 py-3 text-left text-xs font-medium'
+                  } ${
+                    activeTab === 'admin' && adminSubTab === 'depositApprove' && adminSection === 'members_system' ? 'bg-emerald-500/20 text-emerald-400 border-l-4 border-emerald-400' : 'text-emerald-400 hover:bg-slate-800/50 hover:text-emerald-300'
+                  }`}
+                >
+                  <span className="flex items-center gap-3">
+                    <span className="text-lg leading-none">💰</span>
+                    {(!isSidebarCollapsed || sidebarOpen) && <span>อนุมัติ E-Cash</span>}
                   </span>
-                )}
-              </button>
-
-              <button 
-                onClick={() => { 
-                  setActiveTab('admin'); 
-                  setAdminSection('seller_system');
-                  setAdminSubTab('manageShops'); 
-                  setSidebarOpen(false); 
-                }}
-                className={`w-full text-left flex items-center justify-between px-4 py-3 rounded-xl text-xs font-medium transition ${
-                  activeTab === 'admin' && adminSubTab === 'manageShops' && adminSection === 'seller_system' ? 'bg-indigo-500/20 text-indigo-400 border-l-4 border-indigo-400' : 'text-indigo-400 hover:bg-slate-800/50 hover:text-indigo-300'
-                }`}
-              >
-                <span className="flex items-center gap-3">
-                  <ShieldCheck size={16} /> 🏪 จัดการร้านค้า
-                </span>
-                {(() => {
-                  const totalPending = (prodQueue?.length || 0) + adminMembersList.filter((m: any) => m.sellerStatus === 'Pending').length;
-                  return totalPending > 0 ? (
-                    <span className="bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse">
-                      {totalPending}
+                  {depositQueue.length > 0 && (
+                    <span className={`${isSidebarCollapsed ? 'absolute top-1 right-1' : ''} bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse`}>
+                      {depositQueue.length}
                     </span>
-                  ) : null;
-                })()}
-              </button>
-            </>
-          )}
-        </nav>
+                  )}
+                </button>
 
-        <div className="border-t border-slate-800 pt-5 space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-sky-400 font-bold border border-sky-400/30">
-              {currentUser.username.substring(0, 2).toUpperCase()}
+                <button 
+                  onClick={() => { 
+                    setActiveTab('admin'); 
+                    setAdminSection('seller_system');
+                    setAdminSubTab('manageShops'); 
+                    setSidebarOpen(false); 
+                  }}
+                  title="จัดการร้านค้า"
+                  className={`w-full flex items-center transition cursor-pointer relative ${
+                    isSidebarCollapsed 
+                      ? 'justify-center p-3 text-center' 
+                      : 'justify-between px-4 py-3 text-left text-xs font-medium'
+                  } ${
+                    activeTab === 'admin' && adminSubTab === 'manageShops' && adminSection === 'seller_system' ? 'bg-indigo-500/20 text-indigo-400 border-l-4 border-indigo-400' : 'text-indigo-400 hover:bg-slate-800/50 hover:text-indigo-300'
+                  }`}
+                >
+                  <span className="flex items-center gap-3">
+                    <ShieldCheck size={20} className="shrink-0" />
+                    {(!isSidebarCollapsed || sidebarOpen) && <span>จัดการร้านค้า</span>}
+                  </span>
+                  {(() => {
+                    const totalPending = (prodQueue?.length || 0) + adminMembersList.filter((m: any) => m.sellerStatus === 'Pending').length;
+                    return totalPending > 0 ? (
+                      <span className={`${isSidebarCollapsed ? 'absolute top-1 right-1' : ''} bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse`}>
+                        {totalPending}
+                      </span>
+                    ) : null;
+                  })()}
+                </button>
+              </>
+            )}
+          </nav>
+
+          <div className="border-t border-slate-800 pt-4 space-y-3">
+            <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`} title={`${profile?.name || currentUser?.name || 'สมาชิก'} (${profile?.userId || currentUser?.userId})`}>
+              <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center text-sky-400 font-bold border border-sky-400/30 shrink-0 text-xs">
+                {currentUser?.username ? currentUser.username.substring(0, 2).toUpperCase() : 'NP'}
+              </div>
+              {(!isSidebarCollapsed || sidebarOpen) && (
+                <div className="overflow-hidden">
+                  <p className="text-xs font-bold text-white truncate">{profile?.name || currentUser?.name || 'สมาชิก'} {profile?.surname || currentUser?.surname || ''}</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">รหัส: {profile?.userId || currentUser?.userId}</p>
+                </div>
+              )}
             </div>
-            <div>
-              <p className="text-xs font-bold text-white leading-none">{profile?.name} {profile?.surname}</p>
-              <p className="text-[10px] text-slate-400 mt-1">รหัสสมาชิก: {profile?.userId}</p>
-            </div>
+            <button 
+              onClick={handleLogout}
+              title="ออกจากระบบ"
+              className={`w-full bg-rose-600/10 text-rose-400 hover:bg-rose-600/20 border border-rose-500/20 rounded-xl text-xs font-bold flex items-center justify-center transition cursor-pointer ${
+                isSidebarCollapsed ? 'p-2.5' : 'py-2.5 px-3 gap-2'
+              }`}
+            >
+              <LogOut size={16} className="shrink-0" />
+              {(!isSidebarCollapsed || sidebarOpen) && <span>ออกจากระบบ</span>}
+            </button>
           </div>
-          <button 
-            onClick={handleLogout}
-            className="w-full bg-rose-600/10 text-rose-400 hover:bg-rose-600/20 border border-rose-500/20 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2"
-          >
-            <LogOut size={14} /> ออกจากระบบ
-          </button>
-        </div>
-      </aside>
+        </aside>
+      )}
 
       {/* Main Content Area */}
       <main className="flex-1 min-h-screen flex flex-col overflow-x-hidden">
         {/* Top Header Navigation */}
         <header className="bg-white border-b border-slate-100 px-6 py-3.5 shadow-sm overflow-x-auto no-scrollbar">
-          <div className="flex flex-col gap-3">
-            {/* Row 1: Left Member Info & Right Balances */}
-            <div className="flex items-center justify-between gap-4 w-full flex-wrap md:flex-nowrap">
+          {!currentUser ? (
+            <div className="flex items-center justify-between gap-3.5 w-full flex-wrap sm:flex-nowrap">
+              <div className="flex items-center gap-3 shrink-0">
+                <img src="/favicon.svg" alt="Natee Plus Logo" className="w-10 h-10 object-contain filter drop-shadow-[0_2px_6px_rgba(0,0,0,0.15)]" referrerPolicy="no-referrer" />
+                <div className="hidden sm:block">
+                  <h1 className="text-xl font-extrabold tracking-wider leading-none">
+                    <span className="text-sky-500">นที</span> <span className="text-orange-500">พลัส</span> <span className="text-sky-500">มาร์เก็ต</span>
+                  </h1>
+                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Natee Plus Marketplace • ตลาดสินค้าออนไลน์เพื่อชุมชน</p>
+                </div>
+              </div>
+
+              {/* Integrated Search Input Box in Top Header */}
+              <div className="relative flex-1 max-w-lg min-w-[200px]">
+                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={shopSearchQuery}
+                  onChange={(e) => setShopSearchQuery(e.target.value)}
+                  placeholder="🔍 ค้นหาสินค้าตาม หมวดหมู่, ชื่อร้านค้า, ยี่ห้อแบรนด์, ชื่อสินค้า..."
+                  className="w-full border border-slate-200 rounded-2xl pl-10 pr-9 py-2 text-xs focus:outline-none focus:border-amber-500 bg-slate-50/80 transition font-medium"
+                />
+                {shopSearchQuery && (
+                  <button
+                    onClick={() => setShopSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-bold text-xs"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Unified Navigation Toolbar (Aligned Right) */}
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/60 shrink-0 ml-auto">
+                {/* 1. Shopping */}
+                <button 
+                  onClick={() => {
+                    setActiveTab('shop');
+                    setShopSubTab('shop');
+                  }}
+                  className={`px-3 py-2 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer ${
+                    activeTab === 'shop' && shopSubTab === 'shop' ? 'bg-white text-orange-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="สินค้าทั้งหมด (Shopping)"
+                >
+                  🛍️
+                </button>
+
+                {/* 2. รายงาน */}
+                <button 
+                  onClick={() => {
+                    if (!currentUser) {
+                      showNotif('กรุณาเข้าสู่ระบบก่อนดูรายงานการสั่งซื้อค่ะ', 'info');
+                      setAuthMode('login');
+                      setShowLoginModal(true);
+                      return;
+                    }
+                    setActiveTab('shop');
+                    setShopSubTab('myOrders');
+                  }}
+                  className={`px-3 py-2 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer ${
+                    activeTab === 'shop' && shopSubTab === 'myOrders' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="รายงาน / ประวัติสั่งซื้อ"
+                >
+                  🧾
+                </button>
+
+                {/* 3. ตะกร้า (ดูสินค้าที่สั่ง ติดต่อร้านค้า ติดตามการจัดส่ง) */}
+                <button 
+                  onClick={() => {
+                    if (!currentUser) {
+                      showNotif('กรุณาเข้าสู่ระบบเพื่อดูสินค้าที่สั่ง ติดต่อร้านค้า และติดตามการจัดส่งค่ะ', 'info');
+                      setAuthMode('login');
+                      setShowLoginModal(true);
+                      return;
+                    }
+                    setActiveTab('shop');
+                    setShopSubTab('myOrders');
+                  }}
+                  className={`px-3 py-2 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer relative ${
+                    activeTab === 'shop' && shopSubTab === 'myOrders' ? 'bg-white text-orange-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="ดูสินค้าที่สั่ง / ติดต่อร้านค้า / ติดตามการจัดส่ง"
+                >
+                  🛒
+                  {checkoutMarketProduct && (
+                    <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full animate-ping" />
+                  )}
+                </button>
+
+                {/* 4. ระบบสมาชิก */}
+                <button
+                  onClick={() => {
+                    setAuthMode('login');
+                    setShowLoginModal(true);
+                  }}
+                  className="px-3 py-2 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
+                  title="ระบบสมาชิก (เข้าสู่ระบบ / สมัครสมาชิก)"
+                >
+                  👤
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {/* Row 1: Left Member Info & Right Balances + 4-Icon Nav Toolbar + Bell */}
+              <div className="flex items-center justify-between gap-4 w-full flex-wrap md:flex-nowrap">
               <button onClick={() => setSidebarOpen(true)} className="md:hidden text-slate-600 hover:text-indigo-600 shrink-0 mr-1">
                 <LayoutDashboard size={24} />
               </button>
@@ -6674,14 +6895,81 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Right Group: ยอด E-Cash, ยอด E-Money, ยอด E-Coupon, ยอดสิทธิ์คงเหลือ, ยอดสะสม Plan */}
-              <div className="flex items-center gap-2 shrink-0 md:ml-auto">
-                {/* ยอด E-Cash */}
-                <div className="bg-emerald-50 text-emerald-700 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-emerald-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
-                  <span className="text-[9px] text-emerald-500 uppercase tracking-wider block font-medium leading-none mb-0.5">ยอด E-Cash</span>
-                  <span className="font-mono text-[11px]">
-                    ฿{profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
-                  </span>
+              {/* Right Group: Navigation Toolbar + Balances */}
+              <div className="flex items-center gap-2 shrink-0 md:ml-auto flex-wrap">
+                {/* 4-Icon Navigation Toolbar (Aligned Right) */}
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200/60 shrink-0">
+                  {/* Icon 1: Shopping */}
+                  <button 
+                    onClick={() => {
+                      setActiveTab('shop');
+                      setShopSubTab('shop');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer ${
+                      activeTab === 'shop' && shopSubTab === 'shop' ? 'bg-white text-orange-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                    title="สินค้าทั้งหมด (Shopping)"
+                  >
+                    🛍️
+                  </button>
+
+                  {/* Icon 2: รายงาน */}
+                  <button 
+                    onClick={() => {
+                      setActiveTab('shop');
+                      setShopSubTab('myOrders');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer ${
+                      activeTab === 'shop' && shopSubTab === 'myOrders' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                    title="รายงาน / ประวัติสั่งซื้อ"
+                  >
+                    🧾
+                  </button>
+
+                  {/* Icon 3: ตะกร้า (ดูสินค้าที่สั่ง ติดต่อร้านค้า ติดตามการจัดส่ง) */}
+                  <button 
+                    onClick={() => {
+                      setActiveTab('shop');
+                      setShopSubTab('myOrders');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer relative ${
+                      activeTab === 'shop' && shopSubTab === 'myOrders' ? 'bg-white text-orange-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                    title="ดูสินค้าที่สั่ง / ติดต่อร้านค้า / ติดตามการจัดส่ง"
+                  >
+                    🛒
+                    {checkoutMarketProduct && (
+                      <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-rose-500 rounded-full animate-ping" />
+                    )}
+                  </button>
+
+                  {/* Icon 4: ระบบสมาชิก */}
+                  <button 
+                    onClick={() => setActiveTab('dashboard')}
+                    className={`px-3 py-1.5 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer ${
+                      activeTab === 'dashboard' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200/40' : 'text-indigo-600 hover:text-indigo-900'
+                    }`}
+                    title="ระบบสมาชิก MLM"
+                  >
+                    👤
+                  </button>
+                </div>
+                {/* ยอด เครดิตคงเหลือ E-Cash & เติมเงิน */}
+                <div className="bg-emerald-50 text-emerald-800 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-emerald-200/80 shadow-sm flex items-center gap-2.5 shrink-0">
+                  <div className="flex flex-col items-start">
+                    <span className="text-[9px] text-emerald-600 uppercase tracking-wider block font-bold leading-none mb-0.5">เครดิตคงเหลือ</span>
+                    <span className="font-mono text-[11px] font-extrabold text-emerald-800">
+                      ฿{profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'} บาท
+                    </span>
+                  </div>
+                  <button 
+                    onClick={() => setActiveTab('txn')}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] px-2.5 py-1 rounded-lg transition-all shadow-sm active:scale-95 cursor-pointer flex items-center gap-1 shrink-0"
+                    title="เติมเงิน E-Cash"
+                  >
+                    <span>➕</span> เติมเงิน
+                  </button>
                 </div>
 
                 {/* ยอด E-Money */}
@@ -6692,13 +6980,15 @@ export default function App() {
                   </span>
                 </div>
 
-                {/* ยอด E-Coupon */}
-                <div className="bg-rose-50 text-rose-700 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-rose-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
-                  <span className="text-[9px] text-rose-500 uppercase tracking-wider block font-medium leading-none mb-0.5">ยอด E-Coupon</span>
-                  <span className="font-mono text-[11px]">
-                    ฿{profile?.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
-                  </span>
-                </div>
+                {/* ยอด E-Coupon (แสดงเฉพาะสมาชิกตำแหน่ง S ขึ้นไป) */}
+                {profile?.rank && profile?.rank !== 'Member' && (
+                  <div className="bg-rose-50 text-rose-700 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-rose-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
+                    <span className="text-[9px] text-rose-500 uppercase tracking-wider block font-medium leading-none mb-0.5">คูปองคงเหลือ</span>
+                    <span className="font-mono text-[11px]">
+                      ฿{profile?.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                    </span>
+                  </div>
+                )}
 
                 {/* ยอดสิทธิ์คงเหลือ */}
                 <div className="bg-sky-50 text-sky-700 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-sky-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
@@ -6818,45 +7108,68 @@ export default function App() {
               </div>
             </div>
 
-            {/* Row 2: Quick Action Navigation Bar (Visible in all main tabs EXCEPT Partner system) */}
+            {/* Row 2: Quick Action Navigation Bar & Integrated Search Input Box */}
             {activeTab !== 'seller' && (
-              <div className="flex items-center gap-2.5 pt-2 border-t border-slate-100/80 w-full overflow-x-auto no-scrollbar">
-                <span className="text-[11px] font-extrabold text-slate-400 shrink-0 uppercase tracking-wider flex items-center gap-1">
-                  <span>⚡</span> เมนูด่วน:
-                </span>
+              <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-100/80 w-full flex-wrap sm:flex-nowrap">
+                <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar shrink-0">
+                  <span className="text-[11px] font-extrabold text-slate-400 shrink-0 uppercase tracking-wider flex items-center gap-1">
+                    <span>⚡</span> เมนูด่วน:
+                  </span>
 
-                <button 
-                  onClick={() => {
-                    setActiveTab('shop');
-                    setShopPortalView('store');
-                    setShopSubTab('shop');
-                  }}
-                  className={`px-4 py-1.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer shadow-sm ${
-                    activeTab === 'shop'
-                      ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-orange-500/20 scale-[1.02]'
-                      : 'bg-orange-50/80 text-orange-700 hover:bg-orange-100 border border-orange-200/80'
-                  }`}
-                  title="นที พลัส มาร์เก็ต"
-                >
-                  <ShoppingBag size={15} className="shrink-0" />
-                  <span>นที พลัส มาร์เก็ต</span>
-                </button>
+                  <button 
+                    onClick={() => {
+                      setActiveTab('shop');
+                      setShopPortalView('store');
+                      setShopSubTab('shop');
+                    }}
+                    className={`px-4 py-1.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer shadow-sm ${
+                      activeTab === 'shop'
+                        ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-orange-500/20 scale-[1.02]'
+                        : 'bg-orange-50/80 text-orange-700 hover:bg-orange-100 border border-orange-200/80'
+                    }`}
+                    title="นที พลัส มาร์เก็ต"
+                  >
+                    <ShoppingBag size={15} className="shrink-0" />
+                    <span>นที พลัส มาร์เก็ต</span>
+                  </button>
 
-                <button 
-                  onClick={() => setActiveTab('txn')}
-                  className={`px-4 py-1.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer shadow-sm ${
-                    activeTab === 'txn'
-                      ? 'bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow-indigo-500/20 scale-[1.02]'
-                      : 'bg-indigo-50/80 text-indigo-700 hover:bg-indigo-100 border border-indigo-200/80'
-                  }`}
-                  title="เติมเงิน E-Cash"
-                >
-                  <CreditCard size={15} className="shrink-0" />
-                  <span>เติมเงิน E-Cash</span>
-                </button>
+                  <button 
+                    onClick={() => setActiveTab('txn')}
+                    className={`px-4 py-1.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer shadow-sm ${
+                      activeTab === 'txn'
+                        ? 'bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow-indigo-500/20 scale-[1.02]'
+                        : 'bg-indigo-50/80 text-indigo-700 hover:bg-indigo-100 border border-indigo-200/80'
+                    }`}
+                    title="เติมเงิน E-Cash"
+                  >
+                    <CreditCard size={15} className="shrink-0" />
+                    <span>เติมเงิน E-Cash</span>
+                  </button>
+                </div>
+
+                {/* Integrated Search Input Box in Top Header */}
+                <div className="relative flex-1 max-w-md min-w-[200px]">
+                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={shopSearchQuery}
+                    onChange={(e) => setShopSearchQuery(e.target.value)}
+                    placeholder="🔍 ค้นหาสินค้าตาม หมวดหมู่, ชื่อร้านค้า, ยี่ห้อแบรนด์, ชื่อสินค้า..."
+                    className="w-full border border-slate-200 rounded-2xl pl-9 pr-9 py-1.5 text-xs focus:outline-none focus:border-amber-500 bg-slate-50 transition font-medium"
+                  />
+                  {shopSearchQuery && (
+                    <button
+                      onClick={() => setShopSearchQuery('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-bold text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
+          )}
         </header>
 
         {/* Dynamic Content Views */}
@@ -8224,169 +8537,22 @@ export default function App() {
             </div>
           )}
 
-          {/* SHOP TAB */}
+          {/* MARKETPLACE TAB (นที พลัส มาร์เก็ต) */}
           {activeTab === 'shop' && (
-            <div className="space-y-6 animate-fadeIn">
-              {shopPortalView === 'portal' ? (
-                <div className="max-w-4xl mx-auto py-10 px-4 space-y-12 text-center animate-fadeIn">
-                  <div className="space-y-3">
-                    <div className="inline-flex items-center justify-center gap-3 bg-indigo-50 px-6 py-2 rounded-full border border-indigo-100">
-                      <img src="/favicon.svg" alt="Natee Plus Logo" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
-                      <span className="text-xs font-extrabold text-indigo-900 tracking-wider">NATEE PLUS MARKET PORTAL</span>
-                    </div>
-                    <h2 className="text-3xl font-black text-indigo-950 tracking-tight">
-                      เลือกบริการของ <span className="text-sky-500 font-bold">นที</span> <span className="text-orange-500 font-bold">พลัส</span> <span className="text-sky-400 font-bold">มาร์เก็ต</span>
-                    </h2>
-                    <p className="text-xs text-slate-500 max-w-md mx-auto">
-                      ยินดีต้อนรับเข้าสู่ช่องทางการซื้อขายสินค้าและขยายเครือข่ายธุรกิจที่ปลอดภัยและทันสมัยที่สุดในระบบ นที พลัส มาร์เก็ต
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
-                    {/* BUTTON 1: NATEE PLUS MARKET */}
-                    <button 
-                      onClick={() => {
-                        setShopPortalView('store');
-                        setShopSubTab('shop');
-                      }}
-                      className="group bg-white hover:bg-indigo-50/20 border border-slate-100 hover:border-indigo-200 rounded-3xl p-8 shadow-sm hover:shadow-md transition-all duration-300 text-center flex flex-col items-center justify-between min-h-[300px] cursor-pointer"
-                    >
-                      <div className="flex-1 flex flex-col items-center justify-center space-y-4 w-full">
-                        <div className="w-20 h-20 bg-indigo-50 rounded-2xl flex items-center justify-center p-3 group-hover:scale-105 transition-transform duration-300">
-                          <img src="/favicon.svg" alt="Natee Plus Market Logo" className="w-full h-full object-contain filter drop-shadow-sm" referrerPolicy="no-referrer" />
-                        </div>
-                        <div className="space-y-1">
-                          <h3 className="text-sm font-extrabold text-slate-900 group-hover:text-indigo-600 transition-colors">
-                            นทีพลัส มาร์เก็ต
-                          </h3>
-                          <p className="text-[10px] text-slate-400 leading-normal">
-                            เข้าสู่หน้าร้านค้าออนไลน์เพื่อเลือกซื้อสินค้าทั่วไปของ นที พลัส คัดสรรสิ่งดีๆ เพื่อชีวิตคุณ
-                          </p>
-                        </div>
-                      </div>
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 mt-6 bg-indigo-50 px-4 py-2 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-all w-full justify-center shadow-sm">
-                        เข้าสู่ร้านค้า →
-                      </span>
-                    </button>
-
-                    {/* BUTTON 2: BUSINESS PACKAGES */}
-                    <button 
-                      onClick={() => {
-                        setShopPortalView('packages');
-                        setShopSubTab('packages');
-                      }}
-                      className="group bg-white hover:bg-orange-50/20 border border-slate-100 hover:border-orange-200 rounded-3xl p-8 shadow-sm hover:shadow-md transition-all duration-300 text-center flex flex-col items-center justify-between min-h-[300px] cursor-pointer"
-                    >
-                      <div className="flex-1 flex flex-col items-center justify-center space-y-4 w-full">
-                        <div className="w-20 h-20 bg-orange-50 rounded-2xl flex items-center justify-center p-3 group-hover:scale-105 transition-transform duration-300 text-orange-500">
-                          <span className="text-4xl">📦</span>
-                        </div>
-                        <div className="space-y-1">
-                          <h3 className="text-sm font-extrabold text-slate-900 group-hover:text-orange-600 transition-colors">
-                            แพ็กเกจสำหรับขยายธุรกิจ
-                          </h3>
-                          <p className="text-[10px] text-slate-400 leading-normal">
-                            อัปเกรดสถานะทางธุรกิจ S, M, L, XL, XXL ด้วยช่องทางการอัปเกรดและเปิดสิทธิ์รับรายได้สายงาน
-                          </p>
-                        </div>
-                      </div>
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-orange-600 mt-6 bg-orange-50 px-4 py-2 rounded-xl group-hover:bg-orange-600 group-hover:text-white transition-all w-full justify-center shadow-sm">
-                        ดูแพ็กเกจทั้งหมด →
-                      </span>
-                    </button>
-
-                    {/* BUTTON 3: NATEE PLUS PARTNER */}
-                    <button 
-                      onClick={() => {
-                        setActiveTab('seller');
-                      }}
-                      className="group bg-white hover:bg-emerald-50/20 border border-slate-100 hover:border-emerald-200 rounded-3xl p-8 shadow-sm hover:shadow-md transition-all duration-300 text-center flex flex-col items-center justify-between min-h-[300px] cursor-pointer"
-                    >
-                      <div className="flex-1 flex flex-col items-center justify-center space-y-4 w-full">
-                        <div className="w-20 h-20 bg-emerald-50 rounded-2xl flex items-center justify-center p-3 group-hover:scale-105 transition-transform duration-300 text-emerald-600">
-                          <span className="text-4xl">🏪</span>
-                        </div>
-                        <div className="space-y-1">
-                          <h3 className="text-sm font-extrabold text-slate-900 group-hover:text-emerald-600 transition-colors">
-                            Natee Plus Partner
-                          </h3>
-                          <p className="text-[10px] text-slate-400 leading-normal">
-                            พอร์ทัลร้านค้าร่วมพันธมิตร สำหรับจัดส่งและบริหารร้านค้าคู่ค้ารายย่อยและพาร์ทเนอร์
-                          </p>
-                        </div>
-                      </div>
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 mt-6 bg-emerald-50 px-4 py-2 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition-all w-full justify-center shadow-sm">
-                        เข้าสู่พอร์ทัลพาร์ทเนอร์ →
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {/* Premium Navigation Header with Back Button */}
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white border border-slate-100 rounded-3xl p-5 shadow-sm">
-                    <div className="flex items-center gap-3">
-                      <button 
-                        onClick={() => setShopPortalView('portal')}
-                        className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer border border-slate-200/40"
-                      >
-                        ← ย้อนกลับหน้า Portal
-                      </button>
-                      <div>
-                        <h2 className="text-sm font-bold text-indigo-950">
-                          {shopSubTab === 'packages' ? "📦 แพ็กเกจอัปเกรดตำแหน่ง" : shopSubTab === 'shop' ? "🏪 เว็บร้านค้า Natee Plus Market" : "🧾 ประวัติสั่งซื้อ & ใบเสร็จ"}
-                        </h2>
-                        <p className="text-[10px] text-slate-400">ระบบ นที พลัส มาร์เก็ต</p>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200/50 flex-wrap">
-                      <button 
-                        onClick={() => {
-                          setShopSubTab('packages');
-                          setShopPortalView('packages');
-                        }}
-                        className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                          shopSubTab === 'packages' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        📦 แพ็กเกจอัปเกรด
-                      </button>
-                      <button 
-                        onClick={() => {
-                          setShopSubTab('shop');
-                          setShopPortalView('store');
-                        }}
-                        className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                          shopSubTab === 'shop' ? 'bg-white text-amber-700 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        🏪 ร้านค้าออนไลน์
-                      </button>
-                      <button 
-                        onClick={() => {
-                          setShopSubTab('myOrders');
-                          setShopPortalView('store');
-                        }}
-                        className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                          shopSubTab === 'myOrders' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        🧾 ประวัติสั่งซื้อ & ใบเสร็จ
-                      </button>
-                    </div>
-                  </div>
-
+            <div className="space-y-5 animate-fadeIn">
                   {shopSubTab === 'myOrders' ? (
-                    <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-6 animate-fadeIn">
-                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-100 pb-4">
+                    <div className="bg-white border border-slate-100 p-5 sm:p-6 rounded-3xl shadow-sm space-y-6 animate-fadeIn">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-4">
                         <div>
-                          <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                            🧾 ประวัติการสั่งซื้อสินค้า และใบเสร็จรับเงินของท่าน
+                          <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                            🛒 รายการสั่งซื้อ • ติดต่อร้านค้า • ติดตามการจัดส่งพัสดุ
                           </h3>
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            แสดงรายการสั่งซื้อทั้งหมด สามารถกด "ดู / สั่งปริ๊นใบเสร็จ" เพื่อเปิดใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อและสั่งพิมพ์เอกสารได้ทันที
+                          <p className="text-xs text-slate-500 mt-1">
+                            ตรวจสอบรายการสินค้าที่ท่านสั่งซื้อ ติดตามเลขพัสดุสถานะจัดส่ง และกดแชทติดต่อร้านค้าผู้ขายได้ทันที
                           </p>
+                        </div>
+                        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-2xl border border-slate-100 text-xs font-bold text-slate-700 shrink-0">
+                          <span>📦 รวม {memberOrders.length} ออร์เดอร์</span>
                         </div>
                       </div>
 
@@ -8395,56 +8561,104 @@ export default function App() {
                           <thead>
                             <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px]">
                               <th className="p-3">เลขที่สั่งซื้อ / วันที่</th>
-                              <th className="p-3">รายการสินค้า / ชุดแพ็กเกจ</th>
+                              <th className="p-3">รายการสินค้า / ร้านค้า</th>
                               <th className="p-3 text-right">จำนวนเงิน / PV</th>
-                              <th className="p-3 text-center">สถานะ</th>
+                              <th className="p-3 text-center">ติดตามการจัดส่ง (Tracking)</th>
+                              <th className="p-3 text-center">ติดต่อร้านค้า</th>
                               <th className="p-3 text-center">ใบเสร็จรับเงิน</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 bg-white text-[11px]">
                             {memberOrders.length === 0 ? (
                               <tr>
-                                <td colSpan={5} className="text-center py-10 text-slate-400">
-                                  ยังไม่มีประวัติการสั่งซื้อสินค้าในบัญชีนี้
+                                <td colSpan={6} className="text-center py-12 text-slate-400">
+                                  <div className="text-3xl mb-2">🛒</div>
+                                  ยังไม่มีประวัติรายการสั่งซื้อสินค้าในขณะนี้ เลือกซื้อสินค้าในหน้า Shopping ได้เลยค่ะ
                                 </td>
                               </tr>
                             ) : (
-                              memberOrders.map((order: any) => (
-                                <tr key={order.id} className="hover:bg-slate-50/50 transition">
-                                  <td className="p-3">
-                                    <span className="font-mono font-bold text-indigo-600 block">{order.id}</span>
-                                    <span className="text-[10px] text-slate-400 block">{new Date(order.createdAt).toLocaleString('th-TH')}</span>
-                                  </td>
-                                  <td className="p-3">
-                                    <span className="font-bold text-slate-900 block">{order.productName}</span>
-                                    {order.selectedChoiceName && (
-                                      <span className="inline-block mt-0.5 bg-amber-50 text-amber-800 border border-amber-100 text-[9px] px-2 py-0.5 rounded font-bold">
-                                        🎁 เซ็ต: {order.selectedChoiceName}
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="p-3 text-right font-bold">
-                                    <span className="text-emerald-600 block">฿ {(order.totalPrice || 0).toLocaleString()}</span>
-                                    <span className="text-[10px] text-slate-400 font-mono block">+{(order.totalPv || 0).toLocaleString()} PV</span>
-                                  </td>
-                                  <td className="p-3 text-center">
-                                    <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${
-                                      order.status === 'Completed' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'
-                                    }`}>
-                                      {order.status === 'Completed' ? 'จัดส่งเรียบร้อย' : 'รอดำเนินการ'}
-                                    </span>
-                                  </td>
-                                  <td className="p-3 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedReceiptOrder(order)}
-                                      className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-xl text-[10px] transition cursor-pointer shadow-sm flex items-center justify-center gap-1 mx-auto"
-                                    >
-                                      <Printer size={12} /> ดู / สั่งปริ๊นใบเสร็จ
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))
+                              memberOrders.map((order: any) => {
+                                const courier = order.courierName || 'Flash Express';
+                                const trackingNo = order.trackingNo || `TH${(order.id || '2026').replace(/\D/g, '')}EX`;
+                                const isDelivered = order.status === 'Completed' || order.status === 'Delivered';
+
+                                return (
+                                  <tr key={order.id} className="hover:bg-slate-50/50 transition">
+                                    <td className="p-3">
+                                      <span className="font-mono font-bold text-indigo-600 block">{order.id}</span>
+                                      <span className="text-[10px] text-slate-400 block">{new Date(order.createdAt).toLocaleString('th-TH')}</span>
+                                    </td>
+                                    <td className="p-3">
+                                      <span className="font-bold text-slate-900 block">{order.productName}</span>
+                                      {order.sellerStoreName && (
+                                        <span className="text-[10px] text-slate-500 block font-medium">🏪 {order.sellerStoreName}</span>
+                                      )}
+                                      {order.selectedChoiceName && (
+                                        <span className="inline-block mt-0.5 bg-amber-50 text-amber-800 border border-amber-100 text-[9px] px-2 py-0.5 rounded font-bold">
+                                          🎁 เซ็ต: {order.selectedChoiceName}
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="p-3 text-right font-bold">
+                                      <span className="text-emerald-600 block">฿ {(order.totalPrice || 0).toLocaleString()}</span>
+                                      <span className="text-[10px] text-slate-400 font-mono block">+{(order.totalPv || 0).toLocaleString()} PV</span>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <div className="space-y-1">
+                                        <span className={`inline-block text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${
+                                          isDelivered ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'
+                                        }`}>
+                                          {isDelivered ? '✅ จัดส่งสำเร็จ' : '🚚 กำลังจัดส่งพัสดุ'}
+                                        </span>
+                                        <div className="text-[10px] font-mono text-slate-600">
+                                          <span className="font-bold text-slate-800">{courier}:</span> {trackingNo}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(trackingNo);
+                                            showNotif(`คัดลอกเลขพัสดุ ${trackingNo} เรียบร้อยแล้วค่ะ`, 'success');
+                                          }}
+                                          className="text-[9px] text-sky-600 hover:text-sky-700 font-bold underline cursor-pointer"
+                                        >
+                                          📋 คัดลอกเลขพัสดุ
+                                        </button>
+                                      </div>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          setActiveOrderChat(order);
+                                          try {
+                                            const res = await fetch(`/api/order/chat/get?orderId=${order.id}`);
+                                            const data = await res.json();
+                                            if (data.success) {
+                                              setOrderChatMessages(data.chatMessages || []);
+                                              setOrderChatEnded(data.chatEnded || false);
+                                            }
+                                          } catch (e) {
+                                            console.error(e);
+                                          }
+                                        }}
+                                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-xl text-[10px] transition cursor-pointer shadow-sm flex items-center justify-center gap-1 mx-auto"
+                                        title="แชทติดต่อสอบถามผู้ขาย/ร้านค้า"
+                                      >
+                                        💬 ติดต่อร้านค้า
+                                      </button>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedReceiptOrder(order)}
+                                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-xl text-[10px] transition cursor-pointer shadow-sm flex items-center justify-center gap-1 mx-auto"
+                                      >
+                                        <Printer size={12} /> ดู / ปริ๊นใบเสร็จ
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })
                             )}
                           </tbody>
                         </table>
@@ -8489,79 +8703,24 @@ export default function App() {
                 </div>
               ) : (
                 /* NATEE PLUS SHOPPING */
-                <div>
-                  {/* Gatekeeper Check: "คนที่ยังไม่สมัคร จะกดเข้าช้อปไม่ได้" */}
-                  {!profile?.rank || profile?.rank === '' ? (
-                    <div className="flex flex-col items-center justify-center py-16 bg-slate-50 border border-dashed border-slate-200 rounded-3xl p-8 text-center space-y-4 max-w-lg mx-auto">
-                      <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center shadow-sm">
-                        <ShieldCheck size={32} />
-                      </div>
-                      <h3 className="text-sm font-bold text-slate-800">🔒 สำหรับสมาชิก นที พลัส เท่านั้น</h3>
-                      <p className="text-xs text-slate-500 leading-relaxed">
-                        ระบบมาร์เก็ตจำกัดสิทธิ์การเข้าใช้งานเฉพาะสมาชิกที่สมัครเปิดสิทธิ์อัปเกรดรหัสเรียบร้อยแล้วเท่านั้นค่ะ โปรดทำการซื้อแพ็กเกจ S, M, L, XL หรือ XXL ของท่านก่อนเปิดเลือกซื้อสินค้ามาร์เก็ตสินค้าร่วมค่ะ
-                      </p>
-                      <button 
-                        onClick={() => setShopSubTab('packages')}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-md transition cursor-pointer"
-                      >
-                        ไปซื้อแพ็กเกจเปิดตำแหน่งสมาชิก
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-6">
-                      {/* Informational Banner about Seller center and Coupon payment rules */}
-                      <div className="bg-gradient-to-r from-amber-50 to-orange-50/50 border border-amber-200/60 p-5 rounded-3xl space-y-2 text-xs shadow-sm">
-                        <div className="flex items-center gap-2">
-                          <span className="p-1.5 bg-amber-500 text-white rounded-xl text-sm font-bold shadow-sm">🏪</span>
-                          <h3 className="text-sm font-extrabold text-amber-950">เว็บร้านค้า "Natee Plus Market"</h3>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3 pt-2 text-[11px] text-amber-900/95 font-bold border-t border-amber-200/40 mt-1">
-                          <span className="flex items-center gap-1">
-                            💳 ชำระด้วย: <span className="underline decoration-amber-500 font-extrabold">E-Coupon เป็นอันดับแรก</span>
-                          </span>
-                          <span>•</span>
-                          <span className="flex items-center gap-1">
-                            หากไม่พอ: <span className="underline decoration-indigo-500 font-extrabold">หักส่วนต่างอัตโนมัติจาก E-Cash</span>
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Unified Search Bar & Category Filter Bar */}
-                      <div className="bg-white border border-slate-100 rounded-3xl p-4 shadow-sm space-y-3">
-                        <div className="relative">
-                          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                          <input
-                            type="text"
-                            value={shopSearchQuery}
-                            onChange={(e) => setShopSearchQuery(e.target.value)}
-                            placeholder="🔍 ค้นหาสินค้าตาม หมวดหมู่, ชื่อร้านค้า, ยี่ห้อแบรนด์, ชื่อสินค้า หรือตัวอักษร (เช่น ก.)..."
-                            className="w-full border border-slate-200 rounded-2xl pl-10 pr-10 py-3 text-xs focus:outline-none focus:border-indigo-500 bg-slate-50/60 transition"
-                          />
-                          {shopSearchQuery && (
-                            <button
-                              onClick={() => setShopSearchQuery('')}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-bold text-xs"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Category Buttons Selector */}
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          {[
-                            { id: 'All', label: 'ทั้งหมด (All)' },
-                            { id: 'Fashion', label: '👗 แฟชั่น' },
-                            { id: 'Electronics', label: '🔌 อุปกรณ์อิเล็กทรอนิกส์' },
-                            { id: 'Beauty', label: '💄 ความงามและของใช้ส่วนตัว' },
-                            { id: 'Health', label: '💊 สุขภาพ' },
-                            { id: 'Baby', label: '🍼 แม่และเด็ก' },
-                            { id: 'Home', label: '🏠 บ้านและที่อยู่อาศัย' },
-                            { id: 'Food', label: '🍎 อาหารและเครื่องดื่ม' },
-                            { id: 'Pets', label: '🐶 สัตว์เลี้ยง' },
-                            { id: 'Lifestyle', label: '🎨 ไลฟ์สไตล์และงานอดิเรก' },
-                            { id: 'General', label: '📦 ทั่วไป (General)' }
-                          ].map(cat => (
+                <div className="space-y-4">
+                      {/* Horizontal Small Icon Category Menu Bar (แถบเมนูเลือกหมวดหมู่สินค้า) */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                        {[
+                          { id: 'All', icon: '🛍️', label: 'ทั้งหมด' },
+                          { id: 'Fashion', icon: '👗', label: 'แฟชั่น' },
+                          { id: 'Electronics', icon: '⚡', label: 'อิเล็กทรอนิกส์' },
+                          { id: 'Beauty', icon: '💄', label: 'ความงาม/ของใช้' },
+                          { id: 'Health', icon: '💊', label: 'สุขภาพ' },
+                          { id: 'Baby', icon: '🍼', label: 'แม่และเด็ก' },
+                          { id: 'Home', icon: '🏠', label: 'บ้าน&สวน' },
+                          { id: 'Food', icon: '🍎', label: 'อาหาร&เครื่องดื่ม' },
+                          { id: 'Pets', icon: '🐶', label: 'สัตว์เลี้ยง' },
+                          { id: 'Lifestyle', icon: '🎨', label: 'ไลฟ์สไตล์' },
+                          { id: 'General', icon: '📦', label: 'ทั่วไป' }
+                        ].map(cat => {
+                          const isSelected = ((window as any)._shopCategory || 'All') === cat.id;
+                          return (
                             <button
                               key={cat.id}
                               onClick={() => {
@@ -8569,19 +8728,20 @@ export default function App() {
                                 fetchProducts();
                                 setMlmSearchId(prev => prev);
                               }}
-                              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition border cursor-pointer ${
-                                ((window as any)._shopCategory || 'All') === cat.id 
-                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
-                                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer whitespace-nowrap shrink-0 border ${
+                                isSelected 
+                                  ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white border-orange-500 shadow-sm scale-[1.02]' 
+                                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/80 shadow-xs'
                               }`}
                             >
-                              {cat.label}
+                              <span className="text-sm">{cat.icon}</span>
+                              <span>{cat.label}</span>
                             </button>
-                          ))}
-                        </div>
+                          );
+                        })}
                       </div>
 
-                      {/* Dynamic Shopee Product List with Fair Rotation & Search Filtering */}
+                      {/* Dynamic Product Grid - Photo-Focused Display */}
                       {(() => {
                         const getProductShopRating = (p: any): number => {
                           if (p?.sellerRating) return parseFloat(p.sellerRating);
@@ -8609,7 +8769,7 @@ export default function App() {
                         const currentCat = (window as any)._shopCategory || 'All';
                         const q = shopSearchQuery.toLowerCase().trim();
 
-                        // Search Filter: Category, Store Name, Brand Name, Product Name, Thai letters
+                        // Search Filter
                         let filtered = nonPackages.filter(p => {
                           const matchesCat = currentCat === 'All' || p.category === currentCat;
                           if (!matchesCat) return false;
@@ -8625,15 +8785,11 @@ export default function App() {
                           return pName.includes(q) || pBrand.includes(q) || pStore.includes(q) || pCategory.includes(q) || pSubcat.includes(q);
                         });
 
-                        // Fair Rotation & Shuffle based on user ID seed + shop rating weight
-                        // Customer A and Customer B searching same query get randomized rotation order!
                         const userSeed = (profile?.userId || 'guest_user').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
                         
                         const displayList = [...filtered].sort((a, b) => {
                           const ratingA = getProductShopRating(a);
                           const ratingB = getProductShopRating(b);
-                          
-                          // High ratings generally stay top, but pseudo-random shuffle per user creates varied exposure
                           const pseudoA = (a.id.charCodeAt(0) + userSeed) % 17;
                           const pseudoB = (b.id.charCodeAt(0) + userSeed) % 17;
                           
@@ -8655,7 +8811,7 @@ export default function App() {
                         }
 
                         return (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4">
                             {displayList.map(p => {
                               const displayPv = p.pv || Math.floor(parseFloat(p.price) * 0.5);
                               const rating = getProductShopRating(p);
@@ -8663,14 +8819,14 @@ export default function App() {
                               
                               const catMap: Record<string, string> = {
                                 Fashion: '👗 แฟชั่น',
-                                Electronics: '🔌 อุปกรณ์อิเล็กทรอนิกส์',
-                                Beauty: '💄 ความงามและของใช้ส่วนตัว',
+                                Electronics: '⚡ อิเล็กทรอนิกส์',
+                                Beauty: '💄 ความงาม',
                                 Health: '💊 สุขภาพ',
                                 Baby: '🍼 แม่และเด็ก',
-                                Home: '🏠 บ้านและที่อยู่อาศัย',
-                                Food: '🍎 อาหารและเครื่องดื่ม',
+                                Home: '🏠 บ้าน&สวน',
+                                Food: '🍎 อาหาร',
                                 Pets: '🐶 สัตว์เลี้ยง',
-                                Lifestyle: '🎨 ไลฟ์สไตล์และงานอดิเรก',
+                                Lifestyle: '🎨 ไลฟ์สไตล์',
                                 General: '📦 ทั่วไป'
                               };
                               const catLabel = catMap[p.category] || p.category || '📦 ทั่วไป';
@@ -8679,76 +8835,105 @@ export default function App() {
                                 <div 
                                   key={p.id} 
                                   onClick={() => setSelectedMarketProduct(p)}
-                                  className="bg-white border border-slate-100 hover:border-indigo-200 rounded-3xl p-4 shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col justify-between group relative cursor-pointer"
+                                  className="bg-white border border-slate-200/80 hover:border-orange-400 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between group cursor-pointer relative"
                                 >
-                                  {/* Badges on Product Card */}
-                                  <div className="absolute top-3 left-3 right-3 flex justify-between items-center z-10 pointer-events-none">
-                                    <span className="bg-indigo-900/80 backdrop-blur-md text-white font-extrabold px-2 py-0.5 rounded-lg text-[9px] shadow-sm border border-white/20">
-                                      🏪 {p.sellerStoreName || 'นที พลัส มาร์เก็ต'}
-                                    </span>
-                                    <span className="bg-amber-500 text-white font-black px-2 py-0.5 rounded-lg text-[9px] shadow-sm flex items-center gap-0.5">
-                                      ⭐ {rating}
-                                    </span>
-                                  </div>
+                                  {/* Top Image Container - Photo Focused */}
+                                  <div className="relative aspect-square w-full overflow-hidden bg-slate-100">
+                                    <img 
+                                      src={p.image} 
+                                      className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-500 ease-out" 
+                                      alt={p.name} 
+                                    />
 
-                                  <div>
-                                    <div className="overflow-hidden rounded-2xl mb-3 h-40 relative mt-4">
-                                      <img src={p.image} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt={p.name} />
-                                      {(p.isBestSeller || sales >= 150) && (
-                                        <span className="absolute bottom-2 left-2 bg-rose-500 text-white text-[9px] font-black px-2 py-0.5 rounded-md shadow-sm animate-pulse">
-                                          🔥 ขายดี ({sales} ชิ้น)
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    <h4 className="text-xs font-bold text-slate-900 leading-snug group-hover:text-indigo-600 transition line-clamp-2">{p.name}</h4>
-                                    
-                                    {/* Brand Name if present */}
-                                    {(p.brand || p.brandName) && (
-                                      <p className="text-[10px] text-indigo-600 font-bold mt-1">
-                                        🏷️ แบรนด์: {p.brand || p.brandName}
-                                      </p>
-                                    )}
-
-                                    <div className="flex flex-wrap gap-1 mt-1.5">
-                                      <span className="inline-block bg-slate-100 text-slate-600 text-[8px] font-bold px-1.5 py-0.5 rounded-md">
-                                        {catLabel}
+                                    {/* Store Name Badge */}
+                                    <div className="absolute top-2 left-2 z-10 pointer-events-none">
+                                      <span className="bg-slate-900/85 backdrop-blur-md text-white font-extrabold px-2 py-0.5 rounded-lg text-[9px] shadow-sm border border-white/20 truncate max-w-[120px] block">
+                                        🏪 {p.sellerStoreName || 'นที พลัส'}
                                       </span>
-                                      {p.subcategory && (
-                                        <span className="inline-block bg-indigo-50 text-indigo-600 text-[8px] font-bold px-1.5 py-0.5 rounded-md">
-                                          🏷️ {p.subcategory}
+                                    </div>
+
+                                    {/* Rating Badge */}
+                                    <div className="absolute top-2 right-2 z-10 pointer-events-none">
+                                      <span className="bg-amber-500/95 backdrop-blur-md text-white font-black px-1.5 py-0.5 rounded-lg text-[9px] shadow-sm flex items-center gap-0.5">
+                                        ⭐ {rating}
+                                      </span>
+                                    </div>
+
+                                    {/* Hot Seller Ribbon */}
+                                    {(p.isBestSeller || sales >= 150) && (
+                                      <div className="absolute bottom-2 left-2 z-10 pointer-events-none">
+                                        <span className="bg-rose-500 text-white text-[8px] font-black px-2 py-0.5 rounded-md shadow-md animate-pulse">
+                                          🔥 ขายแล้ว {sales} ชิ้น
                                         </span>
-                                      )}
-                                    </div>
-                                   
-                                    {/* Short Description */}
-                                    <div className="bg-slate-50 border border-slate-100 p-2 rounded-xl text-[10px] text-slate-600 my-2 leading-relaxed">
-                                      💡 <b>จุดเด่น:</b> {p.shortDescription || "สินค้าคุณภาพจากนที พลัส มาร์เก็ต"}
-                                    </div>
+                                      </div>
+                                    )}
                                   </div>
 
-                                  <div className="mt-2 pt-3 border-t border-slate-100">
-                                    <div className="flex justify-between items-center text-xs mb-2.5">
-                                      <span className="text-indigo-600 font-black text-sm">฿ {p.price?.toLocaleString()}</span>
-                                      {canSeePv ? (
-                                        <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[9px] font-bold">
-                                          +{displayPv} PV
+                                  {/* Card Body Info */}
+                                  <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
+                                    <div>
+                                      <h4 className="text-xs font-bold text-slate-900 leading-snug group-hover:text-orange-600 transition line-clamp-2 h-8">
+                                        {p.name}
+                                      </h4>
+                                      
+                                      {/* Category & Brand tags */}
+                                      <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                                        <span className="bg-slate-100 text-slate-600 text-[8px] font-bold px-1.5 py-0.5 rounded">
+                                          {catLabel}
                                         </span>
-                                      ) : (
-                                        <span className="bg-slate-100 text-slate-400 px-2 py-0.5 rounded text-[9px] font-medium" title="คะแนน PV เฉพาะตำแหน่ง S ขึ้นไป">
-                                          🔒 PV ตำแหน่ง S+
-                                        </span>
-                                      )}
+                                        {(p.brand || p.brandName) && (
+                                          <span className="bg-orange-50 text-orange-700 text-[8px] font-bold px-1.5 py-0.5 rounded truncate max-w-[90px]">
+                                            {p.brand || p.brandName}
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
-                                    <button 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedMarketProduct(p);
-                                      }}
-                                      className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-xl text-xs font-bold transition shadow-sm hover:shadow cursor-pointer flex items-center justify-center gap-1"
-                                    >
-                                      🔍 ดูรายละเอียด / สั่งซื้อ
-                                    </button>
+
+                                    {/* Price & Action Row */}
+                                    <div className="pt-2 border-t border-slate-100 space-y-2">
+                                      <div className="flex items-baseline justify-between">
+                                        <div className="flex items-baseline gap-1">
+                                          <span className="text-xs text-orange-600 font-extrabold">฿</span>
+                                          <span className="text-sm sm:text-base font-black text-orange-600 font-mono">
+                                            {p.price?.toLocaleString()}
+                                          </span>
+                                        </div>
+                                        {canSeePv ? (
+                                          <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded text-[8px] font-extrabold">
+                                            +{displayPv} PV
+                                          </span>
+                                        ) : (
+                                          <span className="bg-slate-100 text-slate-400 px-1 py-0.5 rounded text-[8px]" title="ตำแหน่ง S ขึ้นไปรับ PV">
+                                            🔒 PV
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="flex gap-1 pt-0.5">
+                                        <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedMarketProduct(p);
+                                          }}
+                                          className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white py-1.5 rounded-xl text-[10px] font-extrabold transition shadow-sm cursor-pointer text-center"
+                                        >
+                                          🛒 สั่งซื้อ
+                                        </button>
+                                        <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            const refCode = profile?.userId || 'CENTRAL';
+                                            const link = `${window.location.origin}/?ref=${refCode}&productId=${p.id}`;
+                                            navigator.clipboard.writeText(link);
+                                            showNotif('คัดลอกลิงก์ปักตะกร้าแชร์สินค้านี้สำเร็จ!', 'success');
+                                          }}
+                                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2 py-1.5 rounded-xl text-[10px] transition cursor-pointer shrink-0"
+                                          title="แชร์สินค้า"
+                                        >
+                                          📌
+                                        </button>
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
                               );
@@ -8909,16 +9094,36 @@ export default function App() {
                                   </div>
                                 </div>
 
-                                <button
-                                  onClick={() => {
-                                    setCheckoutMarketProduct(selectedMarketProduct);
-                                    setShowMarketCheckoutModal(true);
-                                    setSelectedMarketProduct(null);
-                                  }}
-                                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold py-3.5 rounded-2xl shadow-lg hover:shadow transition cursor-pointer text-sm flex items-center justify-center gap-2"
-                                >
-                                  🛒 กดลงตะกร้า / ไปหน้าสรุปรายการสั่งซื้อ (฿{(selectedMarketProduct.price * marketProductQty).toLocaleString()})
-                                </button>
+                                <div className="flex flex-col sm:flex-row gap-2.5">
+                                  <button
+                                    onClick={() => {
+                                      if (!currentUser) {
+                                        showNotif('กรุณาเข้าสู่ระบบหรือสมัครสมาชิกก่อนสั่งซื้อสินค้าค่ะ', 'info');
+                                        setAuthMode('login');
+                                        setShowLoginModal(true);
+                                        return;
+                                      }
+                                      setCheckoutMarketProduct(selectedMarketProduct);
+                                      setShowMarketCheckoutModal(true);
+                                      setSelectedMarketProduct(null);
+                                    }}
+                                    className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold py-3.5 rounded-2xl shadow-lg hover:shadow transition cursor-pointer text-sm flex items-center justify-center gap-2"
+                                  >
+                                    🛒 สั่งซื้อสินค้า (฿{(selectedMarketProduct.price * marketProductQty).toLocaleString()})
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const refCode = profile?.userId || 'CENTRAL';
+                                      const link = `${window.location.origin}/?ref=${refCode}&productId=${selectedMarketProduct.id}`;
+                                      navigator.clipboard.writeText(link);
+                                      showNotif('คัดลอกลิงก์ปักตะกร้าแชร์สินค้านี้สำเร็จ! (PV จะวิ่งเข้าเจ้าของลิงก์ทันที)', 'success');
+                                    }}
+                                    className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-5 py-3.5 rounded-2xl text-xs transition shadow-md cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                                    title="แชร์สินค้านี้เพื่อรับ PV / ค่าคอม Affiliate"
+                                  >
+                                    📌 แชร์สินค้านี้เพื่อรับ PV
+                                  </button>
+                                </div>
                               </div>
                             </div>
 
@@ -9000,10 +9205,6 @@ export default function App() {
                   )}
                 </div>
               )}
-              </div>
-            )}
-            </div>
-          )}
 
           {/* NETWORK TREES */}
           {activeTab === 'mlm' && (
@@ -10381,14 +10582,25 @@ export default function App() {
               {reportSubTab === 'ecash' && (
                 <div className="space-y-6">
                   {/* Ledger Balance Card */}
-                  <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-3xl p-6 text-white shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div className="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-3xl p-6 text-white shadow-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="space-y-1">
-                      <span className="text-xs text-emerald-100 font-medium">ยอดคงเหลือ E-Cash ปัจจุบัน</span>
-                      <h3 className="text-3xl font-extrabold tracking-tight">฿ {profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+                      <span className="text-xs text-emerald-100 font-medium">เครดิตคงเหลือ E-Cash ปัจจุบัน</span>
+                      <h3 className="text-3xl font-extrabold tracking-tight flex items-baseline gap-2">
+                        <span>฿ {profile?.balanceECash?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className="text-sm font-bold text-emerald-200">บาท</span>
+                      </h3>
                     </div>
-                    <div className="text-[11px] bg-white/10 px-3 py-2 rounded-xl backdrop-blur-sm space-y-1">
-                      <div>• ยอดรวมเงินหมุนเวียน E-Cash ทั้งระบบประมวลผลเรียลไทม์</div>
-                      <div>• ปลอดภัยด้วยรหัส PIN และระบบยืนยันตนสองชั้น</div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        onClick={() => setActiveTab('txn')}
+                        className="bg-white text-emerald-800 hover:bg-emerald-50 font-extrabold px-4 py-2.5 rounded-2xl text-xs shadow-md transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+                      >
+                        ➕ เติมเงิน E-Cash
+                      </button>
+                      <div className="text-[11px] bg-white/10 px-3.5 py-2 rounded-2xl backdrop-blur-sm space-y-1">
+                        <div>• ยอดรวมเงินหมุนเวียน E-Cash ทั้งระบบประมวลผลเรียลไทม์</div>
+                        <div>• ปลอดภัยด้วยรหัส PIN และระบบยืนยันตนสองชั้น</div>
+                      </div>
                     </div>
                   </div>
 
@@ -21620,6 +21832,64 @@ export default function App() {
         <footer className="bg-white border-t border-slate-100 px-6 py-4 text-center text-[10px] text-slate-400">
           © {new Date().getFullYear()} บริษัท นที พลัส มาร์เก็ต จำกัด (Natee Plus Market Co., Ltd.) • โครงสร้างเครือข่ายธุรกิจร้านค้านวัตกรรมอย่างโปร่งใส มั่งคั่ง มั่นคง ยั่งยืน • <button onClick={() => setShowPdpaModal(true)} className="text-indigo-600 hover:underline cursor-pointer">นโยบายความเป็นส่วนตัว (PDPA)</button>
         </footer>
+
+        {/* Lazada/Shopee Style Admin Promo Pop-up Modal */}
+        {showPromoPopup && promoConfig.active && (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[999] flex items-center justify-center p-4 animate-fadeIn">
+            <div className="bg-white rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl border border-amber-200/80 relative transform animate-scaleUp">
+              {/* Close Button X */}
+              <button
+                onClick={() => {
+                  setShowPromoPopup(false);
+                  try { sessionStorage.setItem('natee_promo_dismissed', 'true'); } catch(e){}
+                }}
+                className="absolute top-3 right-3 w-8 h-8 bg-black/50 hover:bg-black/80 text-white rounded-full flex items-center justify-center font-bold text-sm transition z-10 cursor-pointer shadow"
+                title="ปิดหน้าต่างโปรโมชั่น"
+              >
+                ✕
+              </button>
+
+              {/* Promo Banner Image */}
+              <div className="relative h-48 bg-gradient-to-tr from-amber-500 to-orange-600 overflow-hidden">
+                <img
+                  src={promoConfig.imageUrl}
+                  alt={promoConfig.title}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent flex items-end p-4">
+                  <span className="bg-amber-400 text-slate-950 font-black text-[10px] px-2.5 py-1 rounded-full uppercase tracking-wider shadow">
+                    SPECIAL OFFER
+                  </span>
+                </div>
+              </div>
+
+              {/* Promo Body Content */}
+              <div className="p-5 text-center space-y-3">
+                <h3 className="text-base font-black text-slate-900 leading-snug">
+                  {promoConfig.title}
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  {promoConfig.subtitle}
+                </p>
+
+                <div className="pt-2">
+                  <button
+                    onClick={() => {
+                      setShowPromoPopup(false);
+                      try { sessionStorage.setItem('natee_promo_dismissed', 'true'); } catch(e){}
+                      setActiveTab(promoConfig.linkTab || 'shop');
+                    }}
+                    className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black py-3 rounded-2xl text-xs shadow-lg shadow-amber-500/20 transition transform active:scale-95 cursor-pointer"
+                  >
+                    {promoConfig.buttonText}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {renderLoginModal()}
       </main>
     </div>
   );
