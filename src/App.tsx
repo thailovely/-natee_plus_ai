@@ -2579,7 +2579,70 @@ export default function App() {
       }
 
       fetchAdminMembers();
+      fetchEscrowOrders();
     } catch (err) {}
+  };
+
+  // 15-DAY ESCROW & DISPUTE MANAGER STATES AND HANDLERS
+  const [escrowOrdersList, setEscrowOrdersList] = useState<any[]>([]);
+  const [escrowSummaryStats, setEscrowSummaryStats] = useState<any>({});
+  const [escrowFilterTab, setEscrowFilterTab] = useState<string>('ALL');
+  const [processingAutoEscrow, setProcessingAutoEscrow] = useState<boolean>(false);
+
+  const fetchEscrowOrders = async () => {
+    try {
+      const res = await fetch('/api/admin/escrow-orders');
+      const data = await res.json();
+      if (data.success) {
+        setEscrowOrdersList(data.orders || []);
+        setEscrowSummaryStats(data.summary || {});
+      }
+    } catch (err) {
+      console.error("Error fetching escrow orders", err);
+    }
+  };
+
+  const handleTriggerAutoEscrowPayout = async () => {
+    setProcessingAutoEscrow(true);
+    try {
+      const res = await fetch('/api/order/process-escrow-payouts', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(data.message, 'success');
+        fetchEscrowOrders();
+        fetchAdminQueues();
+      } else {
+        showNotif(data.message, 'error');
+      }
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาดในการประมวลผลระบบโอนเงินพักประกัน 15 วัน", "error");
+    } finally {
+      setProcessingAutoEscrow(false);
+    }
+  };
+
+  const handleResolveDispute = async (orderId: string, action: 'RELEASE_TO_SELLER' | 'REFUND_TO_BUYER') => {
+    const actionLabel = action === 'RELEASE_TO_SELLER' ? 'อนุมัติปล่อยเงินให้ร้านค้า' : 'อนุมัติคืนเงินเข้า E-Cash ผู้ซื้อ';
+    const notesPrompt = prompt(`กรุณาระบุหมายเหตุข้อยุติข้อพาทสำหรับบิล #${orderId} (${actionLabel}):`, action === 'RELEASE_TO_SELLER' ? 'ผู้ดูแลระบบตรวจสอบสินค้าถูกต้อง อนุมัติปล่อยเงิน' : 'ผู้ดูแลระบบตรวจสอบพบปัญหาสินค้า อนุมัติคืนเงินผู้ซื้อ');
+    if (notesPrompt === null) return;
+
+    try {
+      const res = await fetch('/api/admin/resolve-dispute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, action, notes: notesPrompt })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(data.message, 'success');
+        fetchEscrowOrders();
+        fetchAdminQueues();
+      } else {
+        showNotif(data.message, 'error');
+      }
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาดในการปรับเปลี่ยนสถานะข้อพาท", "error");
+    }
   };
 
   const handleProcessCouponPv = async () => {
@@ -6463,40 +6526,45 @@ export default function App() {
 
       {/* Sidebar Navigation */}
       {currentUser && (
-        <aside className={`fixed md:relative inset-y-0 left-0 bg-slate-900 text-white z-40 transition-all duration-300 ${
-          isSidebarCollapsed ? 'w-64 md:w-20 p-3' : 'w-64 p-5'
+        <aside className={`fixed md:relative inset-y-0 left-0 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border-r border-slate-800/80 text-white z-40 transition-all duration-300 flex flex-col shadow-2xl select-none ${
+          isSidebarCollapsed ? 'w-64 md:w-20 p-3' : 'w-64 p-4'
         } ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-0 md:translate-x-0 hidden md:flex flex-col'
+          sidebarOpen ? 'translate-x-0' : '-translate-x-0 md:translate-x-0 hidden md:flex'
         }`}>
           {/* Sidebar Header & Expand/Collapse Toggle */}
-          <div className={`flex items-center justify-between mb-6 ${isSidebarCollapsed ? 'md:flex-col md:gap-3 md:items-center' : ''}`}>
-            <div className="flex items-center gap-2">
-              <div className="relative w-9 h-9 shrink-0 flex items-center justify-center select-none">
-                <img src="/favicon.svg" alt="Natee Plus Logo" className="w-full h-full object-contain filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)]" referrerPolicy="no-referrer" />
+          <div className={`flex items-center justify-between pb-4 mb-3 border-b border-slate-800/60 ${isSidebarCollapsed ? 'md:flex-col md:gap-3 md:items-center' : ''}`}>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="relative w-9 h-9 shrink-0 flex items-center justify-center select-none bg-slate-800/60 rounded-xl p-1 border border-slate-700/50 shadow-inner">
+                <img src="/favicon.svg" alt="Natee Plus Logo" className="w-full h-full object-contain filter drop-shadow-[0_2px_6px_rgba(0,0,0,0.5)]" referrerPolicy="no-referrer" />
               </div>
               {(!isSidebarCollapsed || sidebarOpen) && (
-                <h2 className="text-lg font-extrabold tracking-wider text-white whitespace-nowrap">
-                  <span className="text-sky-400">นที</span> <span className="text-orange-500">พลัส</span> <span className="text-sky-400">มาร์เก็ต</span>
-                </h2>
+                <div className="overflow-hidden">
+                  <h2 className="text-base font-black tracking-wide text-white whitespace-nowrap leading-tight">
+                    <span className="text-sky-400">นที</span> <span className="text-orange-500">พลัส</span> <span className="text-sky-400">มาร์เก็ต</span>
+                  </h2>
+                  <span className="text-[9px] text-slate-400 font-medium tracking-wider uppercase block">Control Center</span>
+                </div>
               )}
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 shrink-0">
               <button 
                 type="button"
                 onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
-                className="hidden md:flex text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 p-1.5 rounded-lg transition text-xs cursor-pointer"
+                className="hidden md:flex text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/50 p-1.5 rounded-xl transition text-xs cursor-pointer shadow-sm"
                 title={isSidebarCollapsed ? "ขยายเมนู" : "ย่อเมนูเป็นไอคอน"}
               >
                 {isSidebarCollapsed ? '▶' : '◀'}
               </button>
-              <button onClick={() => setSidebarOpen(false)} className="md:hidden text-slate-400 hover:text-white p-1">✕</button>
+              <button onClick={() => setSidebarOpen(false)} className="md:hidden text-slate-400 hover:text-white p-1 rounded-lg bg-slate-800">✕</button>
             </div>
           </div>
 
           {originalAdmin && (!isSidebarCollapsed || sidebarOpen) && (
-            <div className="mb-4 p-3 bg-rose-950/40 border border-rose-500/30 rounded-2xl animate-pulse">
-              <p className="text-[10px] text-rose-300 font-bold mb-1 text-center">⚙️ โหมดสวมสิทธิ์สมาชิก</p>
+            <div className="mb-3 p-2.5 bg-rose-950/50 border border-rose-500/40 rounded-2xl animate-pulse shadow-md">
+              <p className="text-[10px] text-rose-300 font-extrabold mb-1.5 text-center flex items-center justify-center gap-1">
+                <Settings size={12} className="animate-spin" /> โหมดสวมสิทธิ์สมาชิก
+              </p>
               <button 
                 onClick={() => {
                   setCurrentUser(originalAdmin);
@@ -6506,142 +6574,176 @@ export default function App() {
                   setAdminSubTab('members');
                   setSidebarOpen(false);
                 }}
-                className="w-full py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-lg shadow-rose-600/20"
+                className="w-full py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-[10px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-md shadow-rose-600/30"
               >
                 ⬅️ กลับหน้า Admin
               </button>
             </div>
           )}
 
-          {/* Icon-centric compact menu nav */}
-          <nav className="space-y-2 flex-1">
-            <button 
-              onClick={() => { setActiveTab('dash'); setSidebarOpen(false); }}
-              title="หน้าหลัก (Dashboard)"
-              className={`w-full flex items-center rounded-xl transition cursor-pointer ${
-                isSidebarCollapsed 
-                  ? 'justify-center p-3 text-center' 
-                  : 'gap-3 px-4 py-3 text-left text-xs font-medium'
-              } ${
-                activeTab === 'dash' 
-                  ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' 
-                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-              }`}
-            >
-              <LayoutDashboard size={20} className="shrink-0" />
-              {(!isSidebarCollapsed || sidebarOpen) && <span>หน้าหลัก (Dashboard)</span>}
-            </button>
+          {/* Sidebar Menu Nav with Categories */}
+          <nav className="space-y-4 flex-1 overflow-y-auto no-scrollbar py-1">
+            {/* GROUP 1: MAIN & MARKET */}
+            <div className="space-y-1">
+              {(!isSidebarCollapsed || sidebarOpen) && (
+                <div className="px-3 text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                  เมนูหลักระบบ
+                </div>
+              )}
 
-            <button 
-              onClick={() => { setActiveTab('profile'); setSidebarOpen(false); }}
-              title="ข้อมูลส่วนตัว / ยืนยัน KYC"
-              className={`w-full flex items-center rounded-xl transition cursor-pointer ${
-                isSidebarCollapsed 
-                  ? 'justify-center p-3 text-center' 
-                  : 'gap-3 px-4 py-3 text-left text-xs font-medium'
-              } ${
-                activeTab === 'profile' 
-                  ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' 
-                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-              }`}
-            >
-              <UserCheck size={20} className="shrink-0" />
-              {(!isSidebarCollapsed || sidebarOpen) && <span>ข้อมูลส่วนตัว / ยืนยัน KYC</span>}
-            </button>
-
-            <button 
-              onClick={() => { setActiveTab('shop'); setShopPortalView('store'); setShopSubTab('shop'); setSidebarOpen(false); }}
-              title="นที พลัส มาร์เก็ต"
-              className={`w-full flex items-center rounded-xl transition cursor-pointer ${
-                isSidebarCollapsed 
-                  ? 'justify-center p-3 text-center' 
-                  : 'gap-3 px-4 py-3 text-left text-xs font-bold'
-              } ${
-                activeTab === 'shop' 
-                  ? 'bg-orange-500/20 text-orange-400 border-l-4 border-orange-400' 
-                  : 'text-orange-400 bg-orange-500/5 hover:bg-orange-500/15'
-              }`}
-            >
-              <ShoppingBag size={20} className="shrink-0 text-orange-400" />
-              {(!isSidebarCollapsed || sidebarOpen) && <span>นที พลัส มาร์เก็ต</span>}
-            </button>
-
-            <button 
-              onClick={() => { setActiveTab('mlm'); setSidebarOpen(false); }}
-              title="ผังโครงสร้าง / สายงาน"
-              className={`w-full flex items-center rounded-xl transition cursor-pointer ${
-                isSidebarCollapsed 
-                  ? 'justify-center p-3 text-center' 
-                  : 'gap-3 px-4 py-3 text-left text-xs font-medium'
-              } ${
-                activeTab === 'mlm' 
-                  ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' 
-                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-              }`}
-            >
-              <Layers size={20} className="shrink-0" />
-              {(!isSidebarCollapsed || sidebarOpen) && <span>ผังโครงสร้าง / สายงาน</span>}
-            </button>
-
-            <button 
-              onClick={() => { setActiveTab('txn'); setSidebarOpen(false); }}
-              title="ธุรกรรมฝาก-ถอน-โอน"
-              className={`w-full flex items-center rounded-xl transition cursor-pointer ${
-                isSidebarCollapsed 
-                  ? 'justify-center p-3 text-center' 
-                  : 'gap-3 px-4 py-3 text-left text-xs font-medium'
-              } ${
-                activeTab === 'txn' 
-                  ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' 
-                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-              }`}
-            >
-              <CreditCard size={20} className="shrink-0" />
-              {(!isSidebarCollapsed || sidebarOpen) && <span>ธุรกรรมฝาก-ถอน-โอน</span>}
-            </button>
-
-            <button 
-              onClick={() => { 
-                setActiveTab('report'); 
-                setReportSubTab('ecash');
-                setSidebarOpen(false); 
-              }}
-              title="รายงาน E-Cash (Report)"
-              className={`w-full flex items-center rounded-xl transition cursor-pointer ${
-                isSidebarCollapsed 
-                  ? 'justify-center p-3 text-center' 
-                  : 'gap-3 px-4 py-3 text-left text-xs font-medium'
-              } ${
-                activeTab === 'report' 
-                  ? 'bg-sky-500/20 text-sky-400 border-l-4 border-sky-400' 
-                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-              }`}
-            >
-              <ClipboardList size={20} className="shrink-0" />
-              {(!isSidebarCollapsed || sidebarOpen) && <span>รายงาน E-Cash (Report)</span>}
-            </button>
-
-            {profile && (
+              {/* Dashboard */}
               <button 
-                onClick={() => { setActiveTab('seller'); setSidebarOpen(false); }}
-                title="ระบบ Partner"
-                className={`w-full flex items-center rounded-xl transition cursor-pointer ${
+                onClick={() => { setActiveTab('dash'); setSidebarOpen(false); }}
+                title="หน้าหลัก (Dashboard)"
+                className={`w-full flex items-center rounded-xl transition-all duration-200 cursor-pointer ${
                   isSidebarCollapsed 
-                    ? 'justify-center p-3 text-center' 
-                    : 'gap-3 px-4 py-3 text-left text-xs font-medium'
+                    ? 'justify-center p-2.5 text-center' 
+                    : 'gap-3 px-3.5 py-2.5 text-left text-xs font-semibold'
                 } ${
-                  activeTab === 'seller' 
-                    ? 'bg-indigo-500/20 text-indigo-400 border-l-4 border-indigo-400' 
-                    : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
+                  activeTab === 'dash' 
+                    ? 'bg-gradient-to-r from-sky-500/20 to-indigo-500/10 text-sky-400 font-bold border-l-4 border-sky-400 shadow-sm shadow-sky-500/10' 
+                    : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-100'
                 }`}
               >
-                <Star size={20} className="shrink-0" />
-                {(!isSidebarCollapsed || sidebarOpen) && <span>ระบบ Partner</span>}
+                <LayoutDashboard size={18} className="shrink-0" />
+                {(!isSidebarCollapsed || sidebarOpen) && <span>หน้าหลัก (Dashboard)</span>}
               </button>
-            )}
 
+              {/* Profile & KYC */}
+              <button 
+                onClick={() => { setActiveTab('profile'); setSidebarOpen(false); }}
+                title="ข้อมูลส่วนตัว / ยืนยัน KYC"
+                className={`w-full flex items-center rounded-xl transition-all duration-200 cursor-pointer ${
+                  isSidebarCollapsed 
+                    ? 'justify-center p-2.5 text-center' 
+                    : 'gap-3 px-3.5 py-2.5 text-left text-xs font-semibold'
+                } ${
+                  activeTab === 'profile' 
+                    ? 'bg-gradient-to-r from-sky-500/20 to-indigo-500/10 text-sky-400 font-bold border-l-4 border-sky-400 shadow-sm shadow-sky-500/10' 
+                    : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-100'
+                }`}
+              >
+                <UserCheck size={18} className="shrink-0" />
+                {(!isSidebarCollapsed || sidebarOpen) && <span>ข้อมูลส่วนตัว / ยืนยัน KYC</span>}
+              </button>
+
+              {/* Marketplace */}
+              <button 
+                onClick={() => { setActiveTab('shop'); setShopPortalView('store'); setShopSubTab('shop'); setSidebarOpen(false); }}
+                title="นที พลัส มาร์เก็ต"
+                className={`w-full flex items-center rounded-xl transition-all duration-200 cursor-pointer ${
+                  isSidebarCollapsed 
+                    ? 'justify-center p-2.5 text-center' 
+                    : 'gap-3 px-3.5 py-2.5 text-left text-xs font-bold'
+                } ${
+                  activeTab === 'shop' 
+                    ? 'bg-gradient-to-r from-orange-500/25 to-amber-500/15 text-orange-400 border-l-4 border-orange-400 shadow-md shadow-orange-500/10' 
+                    : 'text-orange-400/90 bg-orange-500/5 hover:bg-orange-500/15 hover:text-orange-300'
+                }`}
+              >
+                <ShoppingBag size={18} className="shrink-0 text-orange-400" />
+                {(!isSidebarCollapsed || sidebarOpen) && <span>นที พลัส มาร์เก็ต</span>}
+              </button>
+            </div>
+
+            {/* GROUP 2: NETWORK & WALLET */}
+            <div className="space-y-1 pt-2 border-t border-slate-800/50">
+              {(!isSidebarCollapsed || sidebarOpen) && (
+                <div className="px-3 text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                  เครือข่าย & การเงิน
+                </div>
+              )}
+
+              {/* Tree/Structure */}
+              <button 
+                onClick={() => { setActiveTab('mlm'); setSidebarOpen(false); }}
+                title="ผังโครงสร้าง / สายงาน"
+                className={`w-full flex items-center rounded-xl transition-all duration-200 cursor-pointer ${
+                  isSidebarCollapsed 
+                    ? 'justify-center p-2.5 text-center' 
+                    : 'gap-3 px-3.5 py-2.5 text-left text-xs font-semibold'
+                } ${
+                  activeTab === 'mlm' 
+                    ? 'bg-gradient-to-r from-sky-500/20 to-indigo-500/10 text-sky-400 font-bold border-l-4 border-sky-400 shadow-sm shadow-sky-500/10' 
+                    : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-100'
+                }`}
+              >
+                <Layers size={18} className="shrink-0" />
+                {(!isSidebarCollapsed || sidebarOpen) && <span>ผังโครงสร้าง / สายงาน</span>}
+              </button>
+
+              {/* Wallet/Txn */}
+              <button 
+                onClick={() => { setActiveTab('txn'); setSidebarOpen(false); }}
+                title="ธุรกรรมฝาก-ถอน-โอน"
+                className={`w-full flex items-center rounded-xl transition-all duration-200 cursor-pointer ${
+                  isSidebarCollapsed 
+                    ? 'justify-center p-2.5 text-center' 
+                    : 'gap-3 px-3.5 py-2.5 text-left text-xs font-semibold'
+                } ${
+                  activeTab === 'txn' 
+                    ? 'bg-gradient-to-r from-sky-500/20 to-indigo-500/10 text-sky-400 font-bold border-l-4 border-sky-400 shadow-sm shadow-sky-500/10' 
+                    : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-100'
+                }`}
+              >
+                <CreditCard size={18} className="shrink-0" />
+                {(!isSidebarCollapsed || sidebarOpen) && <span>ธุรกรรมฝาก-ถอน-โอน</span>}
+              </button>
+
+              {/* Report */}
+              <button 
+                onClick={() => { 
+                  setActiveTab('report'); 
+                  setReportSubTab('ecash');
+                  setSidebarOpen(false); 
+                }}
+                title="รายงาน E-Cash (Report)"
+                className={`w-full flex items-center rounded-xl transition-all duration-200 cursor-pointer ${
+                  isSidebarCollapsed 
+                    ? 'justify-center p-2.5 text-center' 
+                    : 'gap-3 px-3.5 py-2.5 text-left text-xs font-semibold'
+                } ${
+                  activeTab === 'report' 
+                    ? 'bg-gradient-to-r from-sky-500/20 to-indigo-500/10 text-sky-400 font-bold border-l-4 border-sky-400 shadow-sm shadow-sky-500/10' 
+                    : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-100'
+                }`}
+              >
+                <ClipboardList size={18} className="shrink-0" />
+                {(!isSidebarCollapsed || sidebarOpen) && <span>รายงาน E-Cash</span>}
+              </button>
+
+              {/* Partner System */}
+              {profile && (
+                <button 
+                  onClick={() => { setActiveTab('seller'); setSidebarOpen(false); }}
+                  title="ระบบ Partner (ร้านค้าผู้ขาย)"
+                  className={`w-full flex items-center rounded-xl transition-all duration-200 cursor-pointer ${
+                    isSidebarCollapsed 
+                      ? 'justify-center p-2.5 text-center' 
+                      : 'gap-3 px-3.5 py-2.5 text-left text-xs font-semibold'
+                  } ${
+                    activeTab === 'seller' 
+                      ? 'bg-gradient-to-r from-indigo-500/25 to-purple-500/15 text-indigo-300 font-bold border-l-4 border-indigo-400 shadow-sm shadow-indigo-500/10' 
+                      : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-100'
+                  }`}
+                >
+                  <Star size={18} className="shrink-0 text-amber-400" />
+                  {(!isSidebarCollapsed || sidebarOpen) && <span>ระบบ Natee Partner</span>}
+                </button>
+              )}
+            </div>
+
+            {/* GROUP 3: ADMIN CONSOLE (If Admin or Manager) */}
             {(currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
-              <>
+              <div className="space-y-1 pt-2 border-t border-slate-800/50">
+                {(!isSidebarCollapsed || sidebarOpen) && (
+                  <div className="px-3 text-[9px] font-black text-rose-400/90 uppercase tracking-widest mb-1.5 flex items-center justify-between">
+                    <span>ผู้ดูแลระบบ Admin</span>
+                    <span className="bg-rose-500/20 text-rose-300 text-[8px] font-bold px-1.5 py-0.5 rounded">Console</span>
+                  </div>
+                )}
+
+                {/* Member Admin */}
                 <button 
                   onClick={() => { 
                     setActiveTab('admin'); 
@@ -6650,18 +6752,21 @@ export default function App() {
                     setSidebarOpen(false); 
                   }}
                   title="ข้อมูลสมาชิก Admin"
-                  className={`w-full flex items-center rounded-xl transition cursor-pointer ${
+                  className={`w-full flex items-center rounded-xl transition-all duration-200 cursor-pointer ${
                     isSidebarCollapsed 
-                      ? 'justify-center p-3 text-center' 
-                      : 'gap-3 px-4 py-3 text-left text-xs font-medium'
+                      ? 'justify-center p-2.5 text-center' 
+                      : 'gap-3 px-3.5 py-2.5 text-left text-xs font-semibold'
                   } ${
-                    activeTab === 'admin' && adminSubTab === 'members' && adminSection === 'members_system' ? 'bg-rose-500/20 text-rose-400 border-l-4 border-rose-400' : 'text-rose-400 hover:bg-slate-800/50 hover:text-rose-300'
+                    activeTab === 'admin' && adminSubTab === 'members' && adminSection === 'members_system' 
+                      ? 'bg-gradient-to-r from-rose-500/25 to-pink-500/15 text-rose-300 font-bold border-l-4 border-rose-400 shadow-sm' 
+                      : 'text-rose-300/80 hover:bg-slate-800/60 hover:text-rose-200'
                   }`}
                 >
-                  <UserCheck size={20} className="shrink-0" />
-                  {(!isSidebarCollapsed || sidebarOpen) && <span>👥 สมาชิก Admin</span>}
+                  <Users size={18} className="shrink-0 text-rose-400" />
+                  {(!isSidebarCollapsed || sidebarOpen) && <span>สมาชิก Admin</span>}
                 </button>
 
+                {/* Approve E-Cash */}
                 <button 
                   onClick={() => { 
                     setActiveTab('admin'); 
@@ -6670,25 +6775,28 @@ export default function App() {
                     setSidebarOpen(false); 
                   }}
                   title="อนุมัติ E-Cash"
-                  className={`w-full flex items-center transition cursor-pointer relative ${
+                  className={`w-full flex items-center transition-all duration-200 cursor-pointer relative rounded-xl ${
                     isSidebarCollapsed 
-                      ? 'justify-center p-3 text-center' 
-                      : 'justify-between px-4 py-3 text-left text-xs font-medium'
+                      ? 'justify-center p-2.5 text-center' 
+                      : 'justify-between px-3.5 py-2.5 text-left text-xs font-semibold'
                   } ${
-                    activeTab === 'admin' && adminSubTab === 'depositApprove' && adminSection === 'members_system' ? 'bg-emerald-500/20 text-emerald-400 border-l-4 border-emerald-400' : 'text-emerald-400 hover:bg-slate-800/50 hover:text-emerald-300'
+                    activeTab === 'admin' && adminSubTab === 'depositApprove' && adminSection === 'members_system' 
+                      ? 'bg-gradient-to-r from-emerald-500/25 to-teal-500/15 text-emerald-300 font-bold border-l-4 border-emerald-400 shadow-sm' 
+                      : 'text-emerald-300/80 hover:bg-slate-800/60 hover:text-emerald-200'
                   }`}
                 >
                   <span className="flex items-center gap-3">
-                    <span className="text-lg leading-none">💰</span>
+                    <Wallet size={18} className="shrink-0 text-emerald-400" />
                     {(!isSidebarCollapsed || sidebarOpen) && <span>อนุมัติ E-Cash</span>}
                   </span>
                   {depositQueue.length > 0 && (
-                    <span className={`${isSidebarCollapsed ? 'absolute top-1 right-1' : ''} bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse`}>
+                    <span className={`${isSidebarCollapsed ? 'absolute -top-0.5 -right-0.5' : ''} bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse shadow-sm`}>
                       {depositQueue.length}
                     </span>
                   )}
                 </button>
 
+                {/* Shop Management */}
                 <button 
                   onClick={() => { 
                     setActiveTab('admin'); 
@@ -6696,49 +6804,63 @@ export default function App() {
                     setAdminSubTab('manageShops'); 
                     setSidebarOpen(false); 
                   }}
-                  title="จัดการร้านค้า"
-                  className={`w-full flex items-center transition cursor-pointer relative ${
+                  title="จัดการร้านค้า Natee Partner"
+                  className={`w-full flex items-center transition-all duration-200 cursor-pointer relative rounded-xl ${
                     isSidebarCollapsed 
-                      ? 'justify-center p-3 text-center' 
-                      : 'justify-between px-4 py-3 text-left text-xs font-medium'
+                      ? 'justify-center p-2.5 text-center' 
+                      : 'justify-between px-3.5 py-2.5 text-left text-xs font-semibold'
                   } ${
-                    activeTab === 'admin' && adminSubTab === 'manageShops' && adminSection === 'seller_system' ? 'bg-indigo-500/20 text-indigo-400 border-l-4 border-indigo-400' : 'text-indigo-400 hover:bg-slate-800/50 hover:text-indigo-300'
+                    activeTab === 'admin' && adminSubTab === 'manageShops' && adminSection === 'seller_system' 
+                      ? 'bg-gradient-to-r from-indigo-500/25 to-sky-500/15 text-indigo-300 font-bold border-l-4 border-indigo-400 shadow-sm' 
+                      : 'text-indigo-300/80 hover:bg-slate-800/60 hover:text-indigo-200'
                   }`}
                 >
                   <span className="flex items-center gap-3">
-                    <ShieldCheck size={20} className="shrink-0" />
+                    <ShieldCheck size={18} className="shrink-0 text-indigo-400" />
                     {(!isSidebarCollapsed || sidebarOpen) && <span>จัดการร้านค้า</span>}
                   </span>
                   {(() => {
                     const totalPending = (prodQueue?.length || 0) + adminMembersList.filter((m: any) => m.sellerStatus === 'Pending').length;
                     return totalPending > 0 ? (
-                      <span className={`${isSidebarCollapsed ? 'absolute top-1 right-1' : ''} bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse`}>
+                      <span className={`${isSidebarCollapsed ? 'absolute -top-0.5 -right-0.5' : ''} bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px] animate-pulse shadow-sm`}>
                         {totalPending}
                       </span>
                     ) : null;
                   })()}
                 </button>
-              </>
+              </div>
             )}
           </nav>
 
-          <div className="border-t border-slate-800 pt-4 space-y-3">
-            <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`} title={`${profile?.name || currentUser?.name || 'สมาชิก'} (${profile?.userId || currentUser?.userId})`}>
-              <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center text-sky-400 font-bold border border-sky-400/30 shrink-0 text-xs">
+          {/* Bottom User Card */}
+          <div className="border-t border-slate-800/80 pt-3 mt-2 space-y-2.5">
+            <div 
+              className={`flex items-center p-2 rounded-2xl bg-slate-850/60 border border-slate-800 ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`} 
+              title={`${profile?.name || currentUser?.name || 'สมาชิก'} (${profile?.userId || currentUser?.userId})`}
+            >
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white font-black shrink-0 text-xs shadow-md border border-sky-400/30">
                 {currentUser?.username ? currentUser.username.substring(0, 2).toUpperCase() : 'NP'}
               </div>
               {(!isSidebarCollapsed || sidebarOpen) && (
-                <div className="overflow-hidden">
-                  <p className="text-xs font-bold text-white truncate">{profile?.name || currentUser?.name || 'สมาชิก'} {profile?.surname || currentUser?.surname || ''}</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">รหัส: {profile?.userId || currentUser?.userId}</p>
+                <div className="overflow-hidden min-w-0 flex-1">
+                  <p className="text-xs font-bold text-white truncate leading-tight">{profile?.name || currentUser?.name || 'สมาชิก'} {profile?.surname || currentUser?.surname || ''}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-[9px] font-mono text-sky-400 font-semibold bg-sky-950/80 px-1.5 py-0.2 rounded border border-sky-800/50">
+                      {profile?.userId || currentUser?.userId}
+                    </span>
+                    <span className="text-[9px] font-bold text-amber-400 bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-800/40">
+                      {profile?.rank || 'S'}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
+
             <button 
               onClick={handleLogout}
               title="ออกจากระบบ"
-              className={`w-full bg-rose-600/10 text-rose-400 hover:bg-rose-600/20 border border-rose-500/20 rounded-xl text-xs font-bold flex items-center justify-center transition cursor-pointer ${
-                isSidebarCollapsed ? 'p-2.5' : 'py-2.5 px-3 gap-2'
+              className={`w-full bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 hover:border-rose-500/40 rounded-xl text-xs font-bold flex items-center justify-center transition-all duration-200 cursor-pointer shadow-sm active:scale-98 ${
+                isSidebarCollapsed ? 'p-2.5' : 'py-2 px-3 gap-2'
               }`}
             >
               <LogOut size={16} className="shrink-0" />
@@ -8606,23 +8728,109 @@ export default function App() {
                                     <td className="p-3 text-center">
                                       <div className="space-y-1">
                                         <span className={`inline-block text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${
-                                          isDelivered ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'
+                                          order.payoutStatus === 'DisputedHold' || order.escrowStatus === 'DISPUTED_PAUSED'
+                                            ? 'bg-rose-100 text-rose-800 border-rose-200'
+                                            : isDelivered 
+                                              ? 'bg-emerald-100 text-emerald-800 border-emerald-200' 
+                                              : 'bg-amber-100 text-amber-800 border-amber-200'
                                         }`}>
-                                          {isDelivered ? '✅ จัดส่งสำเร็จ' : '🚚 กำลังจัดส่งพัสดุ'}
+                                          {order.payoutStatus === 'DisputedHold' || order.escrowStatus === 'DISPUTED_PAUSED'
+                                            ? '🛑 ยุติการโอนเงินชั่วคราว (ยื่นขอคืนสินค้า)'
+                                            : isDelivered 
+                                              ? '✅ จัดส่งสำเร็จ' 
+                                              : '🚚 กำลังจัดส่งพัสดุ'}
                                         </span>
                                         <div className="text-[10px] font-mono text-slate-600">
                                           <span className="font-bold text-slate-800">{courier}:</span> {trackingNo}
                                         </div>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            navigator.clipboard.writeText(trackingNo);
-                                            showNotif(`คัดลอกเลขพัสดุ ${trackingNo} เรียบร้อยแล้วค่ะ`, 'success');
-                                          }}
-                                          className="text-[9px] text-sky-600 hover:text-sky-700 font-bold underline cursor-pointer"
-                                        >
-                                          📋 คัดลอกเลขพัสดุ
-                                        </button>
+                                        <div className="flex items-center justify-center gap-2 flex-wrap pt-0.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              navigator.clipboard.writeText(trackingNo);
+                                              showNotif(`คัดลอกเลขพัสดุ ${trackingNo} เรียบร้อยแล้วค่ะ`, 'success');
+                                            }}
+                                            className="text-[9px] text-sky-600 hover:text-sky-700 font-bold underline cursor-pointer"
+                                          >
+                                            📋 คัดลอกเลขพัสดุ
+                                          </button>
+                                          
+                                          {!isDelivered && (
+                                            <button
+                                              type="button"
+                                              onClick={async () => {
+                                                try {
+                                                  const res = await fetch('/api/order/confirm-received', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({ orderId: order.id, userId: currentUser?.userId })
+                                                  });
+                                                  const data = await res.json();
+                                                  if (data.success) {
+                                                    showNotif(data.message, 'success');
+                                                    fetchUserData();
+                                                  } else {
+                                                    showNotif(data.message || 'เกิดข้อผิดพลาด', 'error');
+                                                  }
+                                                } catch (e) {
+                                                  showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเครือข่าย', 'error');
+                                                }
+                                              }}
+                                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-2 py-0.5 rounded-lg text-[9px] transition cursor-pointer shadow-sm"
+                                            >
+                                              ✔ ฉันได้รับสินค้าแล้ว
+                                            </button>
+                                          )}
+                                        </div>
+
+                                        {/* Escrow 15-Day Countdown Badge */}
+                                        {order.payoutCutoffDate && order.escrowStatus !== 'DISPUTED_PAUSED' && order.payoutStatus !== 'DisputedHold' && (
+                                          <div className="mt-1 bg-amber-50 border border-amber-200/80 p-1.5 rounded-xl text-[9px] text-amber-900 font-bold text-left space-y-0.5 shadow-2xs">
+                                            <div className="flex items-center justify-between">
+                                              <span>⏳ ประกันสินค้า 15 วัน:</span>
+                                              <span className="text-emerald-700 font-extrabold">นับถอยหลัง</span>
+                                            </div>
+                                            <div className="text-[8.5px] text-slate-500 font-mono">
+                                              กำหนดจ่ายเงินให้ร้านค้า: {new Date(order.payoutCutoffDate).toLocaleDateString('th-TH')}
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                triggerPrompt(
+                                                  'ยื่นเรื่องคืนสินค้า / ระงับการจ่ายเงินให้ร้านค้า',
+                                                  'กรุณาระบุสาเหตุหรือปัญหาของสินค้าที่ได้รับ (เช่น สินค้าชำรุด, ได้รับไม่ครบถ้วน):',
+                                                  'ระบุเหตุผลในการยื่นขอคืนสินค้า...',
+                                                  '',
+                                                  async (reasonVal) => {
+                                                    if (!reasonVal || !reasonVal.trim()) {
+                                                      showNotif('กรุณาระบุสาเหตุที่ต้องการยื่นเรื่องค่ะ', 'info');
+                                                      return;
+                                                    }
+                                                    try {
+                                                      const res = await fetch('/api/order/dispute', {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({ orderId: order.id, userId: currentUser?.userId, reason: reasonVal })
+                                                      });
+                                                      const data = await res.json();
+                                                      if (data.success) {
+                                                        showNotif(data.message, 'success');
+                                                        fetchUserData();
+                                                      } else {
+                                                        showNotif(data.message || 'เกิดข้อผิดพลาด', 'error');
+                                                      }
+                                                    } catch (e) {
+                                                      showNotif('เกิดข้อผิดพลาดในการส่งข้อมูล', 'error');
+                                                    }
+                                                  }
+                                                );
+                                              }}
+                                              className="w-full text-center bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold py-0.5 rounded border border-rose-200 text-[8.5px] mt-1 transition cursor-pointer"
+                                            >
+                                              ⚠️ ยื่นเรื่องคืนสินค้า / ระงับจ่ายเงิน
+                                            </button>
+                                          </div>
+                                        )}
                                       </div>
                                     </td>
                                     <td className="p-3 text-center">
@@ -17068,6 +17276,7 @@ export default function App() {
                       { id: 'accounting', label: '🏦 บัญชีแยกประเภท & ภาษี', icon: <Receipt size={14} /> },
                       { id: 'simulators', label: '🧮 เครื่องคิดเลขจำลอง', icon: <Calculator size={14} /> },
                       { id: 'pdpa', label: '🛡️ นโยบาย PDPA (นที พลัส)', icon: <ShieldCheck size={14} /> },
+                      { id: 'escrow15Days', label: '🛡️ ระบบประกัน 15 วัน & พักเงินร้านค้า', icon: <ShieldCheck size={14} /> },
                     ].map(tab => (
                       <button
                         key={tab.id}
@@ -18509,6 +18718,291 @@ export default function App() {
                             <p className="text-[11px] text-indigo-600 font-bold leading-relaxed">
                               * สมาชิกผู้ใช้บริการของ นที พลัส พาร์ทเนอร์ มีสิทธิ์ยื่นเรื่องขอดูข้อมูล แก้ไขข้อมูล หรือระงับการจัดเก็บข้อมูลได้ตามขอบเขต พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล (PDPA) ทุกประการ ผ่านทางผู้จัดดูแลระบบแอดมินกลาง
                             </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 10. 15-DAY ESCROW & DISPUTE REVIEW MANAGER PAGE */}
+                    {systemCondTab === 'escrow15Days' && (
+                      <div className="space-y-6 animate-fadeIn">
+                        {/* Header */}
+                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg shadow-inner">
+                            🛡️
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-slate-900">
+                              ศูนย์บริหาร ทบทวนเงื่อนไข และตรวจสอบระบบประกันสินค้า พักเงินร้านค้า 15 วัน (15-Day Escrow System Manager)
+                            </h4>
+                            <p className="text-xs text-slate-400">
+                              ตรวจสอบความถูกต้องของระบบพักเงินร้านค้า 15 วันหลังลูกค้ารับสินค้า การแจ้งข้อพาท/คืนสินค้า การระงับจ่ายเงิน และระบบปลดล็อกโอนเงินอัตโนมัติ
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Section 1: Executive Audit Review Document */}
+                        <div className="bg-slate-900 text-white p-6 rounded-3xl space-y-4 border border-slate-800 shadow-lg">
+                          <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                            <div>
+                              <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/80 uppercase">
+                                AUDIT & REQUIREMENT COMPLIANCE REPORT
+                              </span>
+                              <h5 className="text-base font-black text-white mt-1">
+                                📋 รายงานผลการตรวจสอบและเปรียบเทียบเงื่อนไขระบบประกันสินค้า 15 วัน (Escrow Alignment)
+                              </h5>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={fetchEscrowOrders}
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition shadow flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <RefreshCw size={13} /> ดึงข้อมูลสดจากฐานข้อมูล
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-sans">
+                            {/* Status 1: DONE */}
+                            <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-2xl space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-emerald-400 text-base">🟢</span>
+                                <strong className="text-emerald-300 font-bold text-xs">1. ส่วนที่ทำแล้ว (Completed)</strong>
+                              </div>
+                              <ul className="list-disc list-inside space-y-1.5 text-slate-300 text-[11px] leading-relaxed">
+                                <li>ปุ่ม <strong>"ยืนยันได้รับสินค้าแล้ว"</strong> ทางฝั่งผู้ซื้อ พร้อมเริ่มนับถอยหลัง 15 วัน</li>
+                                <li>ปุ่ม <strong>"ยื่นเรื่องแจ้งปัญหาสินค้า / คืนสินค้า"</strong> หยุดนับถอยหลังและพักการโอนเงินทันที</li>
+                                <li>ระบบแสดง <strong>สถานะ Badges</strong> สถานะเงินพัก 15 วันบนหน้ารายการสั่งซื้อฝั่งลูกค้าและร้านค้า</li>
+                                <li>คำนวณวันครบกำหนดปล่อยเงิน (`payoutCutoffDate`) อัตโนมัติในฐานข้อมูล</li>
+                              </ul>
+                            </div>
+
+                            {/* Status 2: NEWLY COMPLETED & AUTOMATED */}
+                            <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-2xl space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-indigo-400 text-base">⚙️</span>
+                                <strong className="text-indigo-300 font-bold text-xs">2. ระบบประมวลผลเพิ่มใหม่ (Newly Complete)</strong>
+                              </div>
+                              <ul className="list-disc list-inside space-y-1.5 text-slate-300 text-[11px] leading-relaxed">
+                                <li><strong>Auto-Cron Server Runner (`/api/order/process-escrow-payouts`):</strong> ตรวจสอบตัดรอบอัตโนมัติเมื่อครบ 15 วัน</li>
+                                <li><strong>Dispute Resolution Engine (`/api/admin/resolve-dispute`):</strong> แอดมิน/เมเนเจอร์ข้อยุติข้อพาท (ปล่อยเงินให้ร้านค้า หรือ คืนเงินผู้ซื้อ)</li>
+                                <li><strong>Ledger Audit Tracking:</strong> บันทึกประวัติการปลดล็อกโอนเงินเข้า Ledger ทางบัญชี 100%</li>
+                                <li><strong>ศูนย์ควบคุม Escrow Live Dashboard:</strong> สำหรับ Manager ตรวจสอบสถานะเงินพักรายบิลสดๆ</li>
+                              </ul>
+                            </div>
+
+                            {/* Status 3: TRADEMARK & COMPLIANCE */}
+                            <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-2xl space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-amber-400 text-base">🛡️</span>
+                                <strong className="text-amber-300 font-bold text-xs">3. การคุ้มครองสิทธิ์ & โลจิสติกส์</strong>
+                              </div>
+                              <ul className="list-disc list-inside space-y-1.5 text-slate-300 text-[11px] leading-relaxed">
+                                <li><strong>การป้องกันสิทธิ์เครื่องหมายการค้า:</strong> ระบบไม่แตะต้องหรือละเมิดสิทธิ์แพลตฟอร์มอื่น ใช้ชื่อระบบเฉพาะ <strong>NaTee Plus</strong>, E-Cash, E-Coupon, E-Share เท่านั้น</li>
+                                <li><strong>การเชื่อมต่อ API ขนส่ง:</strong> โครงสร้างระบบเตรียม Webhook Hook Point พร้อมรับ Callback สถานะจัดส่งพัสดุสำเร็จจาก Kerry, Flash, J&T เพื่อเริ่มสวิตช์นับ 15 วันอัตโนมัติ</li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Section 2: Live Escrow Control Center for Manager */}
+                        <div className="bg-white border border-slate-200/80 p-6 rounded-3xl shadow-sm space-y-5">
+                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
+                            <div>
+                              <h5 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                                🛒 ตารางแสดงรายการคำสั่งซื้อในระบบพักเงิน 15 วัน (Live Escrow Orders Manager)
+                              </h5>
+                              <p className="text-xs text-slate-500">
+                                แสดงรายการบิลสั่งซื้อทั้งหมดที่อยู่ระหว่างการพักเงิน 15 วัน บิลที่มีข้อพาทระงับเงิน และบิลที่ปลดล็อกเงินโอนเรียบร้อยแล้ว
+                              </p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={handleTriggerAutoEscrowPayout}
+                              disabled={processingAutoEscrow}
+                              className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-300 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition shadow flex items-center gap-2 cursor-pointer shrink-0"
+                            >
+                              {processingAutoEscrow ? (
+                                <>
+                                  <RefreshCw size={14} className="animate-spin" /> กำลังประมวลผลตัดรอบ...
+                                </>
+                              ) : (
+                                <>
+                                  ⚡ สั่งประมวลผลปลดล็อกเงินพักโอนครบ 15 วันทันที
+                                </>
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Escrow Status Filter Tabs */}
+                          <div className="flex flex-wrap gap-2 text-xs">
+                            {[
+                              { id: 'ALL', label: `ทั้งหมด (${escrowOrdersList.length})` },
+                              { id: 'HOLDING', label: `กำลังพักเงิน 15 วัน (${escrowSummaryStats.holding15Days || 0})` },
+                              { id: 'DISPUTED', label: `⚠️ แจ้งข้อพาท/ระงับเงิน (${escrowSummaryStats.disputed || 0})` },
+                              { id: 'RELEASED', label: `🟢 ปลดล็อกโอนเงินแล้ว (${escrowSummaryStats.released || 0})` },
+                              { id: 'REFUNDED', label: `↩️ คืนเงินผู้ซื้อแล้ว (${escrowSummaryStats.refunded || 0})` },
+                            ].map(filter => (
+                              <button
+                                key={filter.id}
+                                onClick={() => setEscrowFilterTab(filter.id)}
+                                className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer border ${
+                                  escrowFilterTab === filter.id
+                                    ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                                    : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                                }`}
+                              >
+                                {filter.label}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Escrow Orders Table */}
+                          <div className="overflow-x-auto border border-slate-150 rounded-2xl">
+                            <table className="w-full text-left text-xs text-slate-700">
+                              <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] border-b border-slate-150">
+                                <tr>
+                                  <th className="px-4 py-3">รหัสบิล / วันสั่งซื้อ</th>
+                                  <th className="px-4 py-3">ผู้ซื้อ (Buyer)</th>
+                                  <th className="px-4 py-3">ร้านค้าผู้ขาย (Seller Store)</th>
+                                  <th className="px-4 py-3 text-right">ยอดเงินสินค้า (฿)</th>
+                                  <th className="px-4 py-3 text-center">สถานะประกัน Escrow 15 วัน</th>
+                                  <th className="px-4 py-3">วันครบกำหนด 15 วัน</th>
+                                  <th className="px-4 py-3 text-center">การจัดการโดย Manager</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 bg-white">
+                                {(() => {
+                                  const filtered = escrowOrdersList.filter(o => {
+                                    if (escrowFilterTab === 'HOLDING') return o.escrowStatus === 'ESCROW_15_DAYS_HOLD';
+                                    if (escrowFilterTab === 'DISPUTED') return o.escrowStatus === 'DISPUTED_PAUSED';
+                                    if (escrowFilterTab === 'RELEASED') return o.escrowStatus === 'RELEASED_PAID';
+                                    if (escrowFilterTab === 'REFUNDED') return o.escrowStatus === 'REFUNDED_BUYER';
+                                    return true;
+                                  });
+
+                                  if (filtered.length === 0) {
+                                    return (
+                                      <tr>
+                                        <td colSpan={7} className="text-center py-10 text-slate-400 italic">
+                                          ไม่พบรายการคำสั่งซื้อในหมวดหมู่นี้
+                                        </td>
+                                      </tr>
+                                    );
+                                  }
+
+                                  return filtered.map(order => {
+                                    const isDisputed = order.escrowStatus === 'DISPUTED_PAUSED';
+                                    const isReleased = order.escrowStatus === 'RELEASED_PAID';
+                                    const isRefunded = order.escrowStatus === 'REFUNDED_BUYER';
+                                    const isHolding = order.escrowStatus === 'ESCROW_15_DAYS_HOLD' || order.payoutStatus === 'PendingCutoff';
+
+                                    return (
+                                      <tr key={order.id} className="hover:bg-slate-50/80 transition">
+                                        <td className="px-4 py-3 font-mono">
+                                          <strong className="text-slate-900 block font-bold">#{order.id}</strong>
+                                          <span className="text-[10px] text-slate-400">
+                                            {order.createdAt ? new Date(order.createdAt).toLocaleDateString('th-TH') : '-'}
+                                          </span>
+                                        </td>
+
+                                        <td className="px-4 py-3">
+                                          <span className="font-semibold text-slate-800 block">{order.userName || order.buyerName || order.userId}</span>
+                                          <span className="text-[10px] text-slate-400 font-mono">ID: {order.userId || order.buyerId}</span>
+                                        </td>
+
+                                        <td className="px-4 py-3">
+                                          <span className="font-bold text-indigo-700 block">{order.sellerName || order.sellerStoreName || 'ร้านค้าพาร์ทเนอร์'}</span>
+                                          <span className="text-[10px] text-slate-400 font-mono">ID: {order.sellerId || '-'}</span>
+                                        </td>
+
+                                        <td className="px-4 py-3 text-right font-mono font-black text-slate-800 text-sm">
+                                          ฿ {(order.totalAmount || order.totalPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </td>
+
+                                        <td className="px-4 py-3 text-center">
+                                          {isDisputed ? (
+                                            <span className="inline-flex flex-col items-center bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-xl text-[10px] font-black">
+                                              <span>⛔ แจ้งข้อพาท / ยุติโอน</span>
+                                              {order.disputeReason && (
+                                                <span className="text-[9px] font-normal text-rose-600 truncate max-w-[150px]" title={order.disputeReason}>
+                                                  สาเหตุ: {order.disputeReason}
+                                                </span>
+                                              )}
+                                            </span>
+                                          ) : isReleased ? (
+                                            <span className="inline-flex bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-xl text-[10px] font-black">
+                                              🟢 ปลดล็อกโอนเงินให้ร้านแล้ว
+                                            </span>
+                                          ) : isRefunded ? (
+                                            <span className="inline-flex bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-1 rounded-xl text-[10px] font-black">
+                                              ↩️ คืนเงินเข้าผู้ซื้อแล้ว
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex flex-col items-center bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-xl text-[10px] font-black">
+                                              <span>⏳ พักเงินประกัน 15 วัน</span>
+                                            </span>
+                                          )}
+                                        </td>
+
+                                        <td className="px-4 py-3 font-mono text-[11px] text-slate-600">
+                                          {order.payoutCutoffDate ? (
+                                            <div>
+                                              <span className="font-bold block text-slate-800">
+                                                {new Date(order.payoutCutoffDate).toLocaleDateString('th-TH')}
+                                              </span>
+                                              <span className="text-[9px] text-slate-400">
+                                                {new Date(order.payoutCutoffDate).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                                              </span>
+                                            </div>
+                                          ) : (
+                                            <span className="text-slate-400 italic text-[10px]">ยังไม่เริ่มนับ</span>
+                                          )}
+                                        </td>
+
+                                        <td className="px-4 py-3 text-center">
+                                          <div className="flex justify-center items-center gap-1.5">
+                                            {isDisputed ? (
+                                              <div className="flex gap-1">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleResolveDispute(order.id, 'RELEASE_TO_SELLER')}
+                                                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] px-2 py-1 rounded-lg transition shadow cursor-pointer"
+                                                  title="ยกเลิกข้อพาท แล้วอนุมัติโอนเงินให้ร้านค้า"
+                                                >
+                                                  ✓ ปล่อยเงินให้ร้าน
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleResolveDispute(order.id, 'REFUND_TO_BUYER')}
+                                                  className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] px-2 py-1 rounded-lg transition shadow cursor-pointer"
+                                                  title="อนุมัติคืนเงินเข้า E-Cash ผู้ซื้อ"
+                                                >
+                                                  ↩️ คืนเงินผู้ซื้อ
+                                                </button>
+                                              </div>
+                                            ) : isHolding ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => handleResolveDispute(order.id, 'RELEASE_TO_SELLER')}
+                                                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] px-2.5 py-1 rounded-lg transition shadow cursor-pointer"
+                                                title="ปลดล็อกโอนเงินให้ร้านค้าทันทีก่อนครบ 15 วัน"
+                                              >
+                                                ⚡ ปลดล็อกโอนทันที
+                                              </button>
+                                            ) : (
+                                              <span className="text-[10px] text-slate-400 font-bold">
+                                                {order.adminResolveNotes ? `ข้อยุติ: ${order.adminResolveNotes}` : 'เสร็จสมบูรณ์'}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  });
+                                })()}
+                              </tbody>
+                            </table>
                           </div>
                         </div>
                       </div>

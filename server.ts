@@ -4562,6 +4562,226 @@ app.post('/api/seller/order-ship', (req, res) => {
   res.json({ success: true, message: `บันทึกข้อมูลจัดส่งเรียบร้อยแล้ว! กำหนดวันตัดรอบโอนเงินคือ ${cutoffDate.toLocaleDateString('th-TH')}` });
 });
 
+// CUSTOMER CONFIRM RECEIVED (START 15-DAY ESCROW PAYOUT COUNTDOWN)
+app.post('/api/order/confirm-received', (req, res) => {
+  const { orderId, userId } = req.body;
+  const db = readDb();
+  const order = db.orders.find((o: any) => o.id === orderId);
+  if (!order) return res.status(404).json({ success: false, message: "ไม่พบบิลคำสั่งซื้อ" });
+
+  if (order.userId !== userId && order.buyerId !== userId) {
+    return res.status(403).json({ success: false, message: "คุณไม่มีสิทธิ์ทำรายการในบิลสั่งซื้อนี้" });
+  }
+
+  const now = new Date();
+  const cutoffDate = new Date(now);
+  cutoffDate.setDate(cutoffDate.getDate() + 15);
+
+  order.status = "Completed";
+  order.receivedAt = now.toISOString();
+  order.escrowStatus = "ESCROW_15_DAYS_HOLD";
+  order.payoutCutoffDate = cutoffDate.toISOString();
+  order.payoutStatus = "PendingCutoff";
+
+  writeDb(db);
+  res.json({
+    success: true,
+    message: `ยืนยันได้รับสินค้าเรียบร้อยแล้ว! ระบบเข้าสู่ระยะเวลารับประกัน 15 วัน (กำหนดปล่อยเงินให้ร้านค้า: ${cutoffDate.toLocaleDateString('th-TH')})`,
+    order
+  });
+});
+
+// CUSTOMER DISPUTE / RETURN PRODUCT (PAUSE ESCROW PAYOUT)
+app.post('/api/order/dispute', (req, res) => {
+  const { orderId, userId, reason } = req.body;
+  const db = readDb();
+  const order = db.orders.find((o: any) => o.id === orderId);
+  if (!order) return res.status(404).json({ success: false, message: "ไม่พบบิลคำสั่งซื้อ" });
+
+  if (order.userId !== userId && order.buyerId !== userId) {
+    return res.status(403).json({ success: false, message: "คุณไม่มีสิทธิ์ทำรายการในบิลสั่งซื้อนี้" });
+  }
+
+  order.escrowStatus = "DISPUTED_PAUSED";
+  order.payoutStatus = "DisputedHold";
+  order.disputedAt = new Date().toISOString();
+  order.disputeReason = reason || "ยื่นเรื่องขอคืนสินค้า / ระงับการโอนเงินให้ร้านค้า";
+
+  writeDb(db);
+  res.json({
+    success: true,
+    message: "ยื่นเรื่องแจ้งปัญหาสินค้าสำเร็จ! ระบบยุติการโอนเงินให้ร้านค้าชั่วคราว เจ้าหน้าที่จะติดต่อกลับเพื่อตรวจสอบค่ะ",
+    order
+  });
+});
+
+// HELPER TO PROCESS ESCROW PAYOUTS WHEN 15-DAY HOLD EXPIRES
+function processEscrowPayouts(db: any) {
+  const now = new Date();
+  let processedCount = 0;
+  if (!db.orders) return { processedCount: 0 };
+  if (!db.ledger) db.ledger = [];
+
+  for (const order of db.orders) {
+    if (
+      (order.payoutStatus === "PendingCutoff" || order.escrowStatus === "ESCROW_15_DAYS_HOLD") &&
+      order.escrowStatus !== "DISPUTED_PAUSED" &&
+      order.escrowStatus !== "REFUNDED_BUYER" &&
+      order.payoutStatus !== "Completed" &&
+      order.payoutStatus !== "Refunded"
+    ) {
+      if (order.payoutCutoffDate) {
+        const cutoff = new Date(order.payoutCutoffDate);
+        if (now >= cutoff) {
+          order.escrowStatus = "RELEASED_PAID";
+          order.payoutStatus = "Completed";
+          order.releasedAt = now.toISOString();
+
+          const payoutAmount = order.sellerPayoutAmount || order.totalAmount || order.totalPrice || 0;
+          const sellerUserId = order.sellerId || order.shopOwnerId;
+
+          if (sellerUserId && db.members) {
+            const sellerMember = db.members.find((m: any) => m.userId === sellerUserId || m.sellerStoreName === order.sellerName);
+            if (sellerMember) {
+              sellerMember.balanceECash = (sellerMember.balanceECash || 0) + payoutAmount;
+              sellerMember.totalRevenue = (sellerMember.totalRevenue || 0) + payoutAmount;
+            }
+          }
+
+          db.ledger.push({
+            id: `LEDGER_ESCROW_${Date.now()}_${order.id}`,
+            timestamp: now.toISOString(),
+            type: "ESCROW_RELEASE",
+            orderId: order.id,
+            sellerId: sellerUserId || "STORE",
+            amount: payoutAmount,
+            description: `ปลดล็อกโอนเงินโอนครบกำหนดประกัน 15 วัน ให้ร้านค้า บิล #${order.id}`,
+            status: "Success"
+          });
+
+          processedCount++;
+        }
+      }
+    }
+  }
+  return { processedCount };
+}
+
+// API: TRIGGER AUTO-PROCESS ESCROW PAYOUTS
+app.post('/api/order/process-escrow-payouts', (req, res) => {
+  const db = readDb();
+  const result = processEscrowPayouts(db);
+  if (result.processedCount > 0) {
+    writeDb(db);
+  }
+  res.json({
+    success: true,
+    message: `ประมวลผลระบบโอนเงินพักประกัน 15 วันเรียบร้อยแล้ว (ปลดล็อกโอนสำเร็จ ${result.processedCount} รายการ)`,
+    processedCount: result.processedCount
+  });
+});
+
+// GET ALL ESCROW & DISPUTED ORDERS FOR ADMIN / MANAGER
+app.get('/api/admin/escrow-orders', (req, res) => {
+  const db = readDb();
+  const orders = db.orders || [];
+  const escrowOrders = orders.filter((o: any) => o.escrowStatus || o.payoutCutoffDate || o.payoutStatus === 'PendingCutoff' || o.payoutStatus === 'DisputedHold');
+  
+  res.json({
+    success: true,
+    orders: escrowOrders,
+    summary: {
+      totalEscrow: escrowOrders.length,
+      holding15Days: escrowOrders.filter((o: any) => o.escrowStatus === 'ESCROW_15_DAYS_HOLD').length,
+      disputed: escrowOrders.filter((o: any) => o.escrowStatus === 'DISPUTED_PAUSED').length,
+      released: escrowOrders.filter((o: any) => o.escrowStatus === 'RELEASED_PAID').length,
+      refunded: escrowOrders.filter((o: any) => o.escrowStatus === 'REFUNDED_BUYER').length,
+    }
+  });
+});
+
+// ADMIN RESOLVE DISPUTE (RELEASE TO SELLER OR REFUND BUYER)
+app.post('/api/admin/resolve-dispute', (req, res) => {
+  const { orderId, action, notes } = req.body;
+  const db = readDb();
+  const order = (db.orders || []).find((o: any) => o.id === orderId);
+  if (!order) return res.status(404).json({ success: false, message: "ไม่พบบิลคำสั่งซื้อ" });
+
+  if (!db.ledger) db.ledger = [];
+  const now = new Date().toISOString();
+
+  if (action === 'RELEASE_TO_SELLER') {
+    order.escrowStatus = "RELEASED_PAID";
+    order.payoutStatus = "Completed";
+    order.disputeResolvedAt = now;
+    order.adminResolveNotes = notes || "ผู้ดูแลระบบอนุมัติปล่อยเงินให้ร้านค้าตามปกติ";
+
+    const payoutAmount = order.sellerPayoutAmount || order.totalAmount || order.totalPrice || 0;
+    const sellerUserId = order.sellerId || order.shopOwnerId;
+
+    if (sellerUserId && db.members) {
+      const sellerMember = db.members.find((m: any) => m.userId === sellerUserId || m.sellerStoreName === order.sellerName);
+      if (sellerMember) {
+        sellerMember.balanceECash = (sellerMember.balanceECash || 0) + payoutAmount;
+        sellerMember.totalRevenue = (sellerMember.totalRevenue || 0) + payoutAmount;
+      }
+    }
+
+    db.ledger.push({
+      id: `LEDGER_RESOLVE_${Date.now()}_${order.id}`,
+      timestamp: now,
+      type: "DISPUTE_RELEASE_SELLER",
+      orderId: order.id,
+      sellerId: sellerUserId || "STORE",
+      amount: payoutAmount,
+      description: `ผู้ดูแลระบบข้อยุติข้อพาท: โอนเงินให้ร้านค้า บิล #${order.id} (${notes || 'อนุมัติ'})`,
+      status: "Success"
+    });
+
+    writeDb(db);
+    return res.json({
+      success: true,
+      message: `อนุมัติปล่อยเงินโอน ฿${payoutAmount.toLocaleString()} บาท ให้แก่ร้านค้าเรียบร้อยแล้ว`,
+      order
+    });
+  } else if (action === 'REFUND_TO_BUYER') {
+    order.escrowStatus = "REFUNDED_BUYER";
+    order.payoutStatus = "Refunded";
+    order.disputeResolvedAt = now;
+    order.adminResolveNotes = notes || "ผู้ดูแลระบบอนุมัติคืนเงินให้ผู้ซื้อเต็มจำนวน";
+
+    const refundAmount = order.totalAmount || order.totalPrice || 0;
+    const buyerUserId = order.userId || order.buyerId;
+
+    if (buyerUserId && db.members) {
+      const buyerMember = db.members.find((m: any) => m.userId === buyerUserId);
+      if (buyerMember) {
+        buyerMember.balanceECash = (buyerMember.balanceECash || 0) + refundAmount;
+      }
+    }
+
+    db.ledger.push({
+      id: `LEDGER_RESOLVE_REFUND_${Date.now()}_${order.id}`,
+      timestamp: now,
+      type: "DISPUTE_REFUND_BUYER",
+      orderId: order.id,
+      buyerId: buyerUserId,
+      amount: refundAmount,
+      description: `ผู้ดูแลระบบข้อยุติข้อพาท: คืนเงิน E-Cash ให้ผู้ซื้อ บิล #${order.id} (${notes || 'อนุมัติคืนเงิน'})`,
+      status: "Success"
+    });
+
+    writeDb(db);
+    return res.json({
+      success: true,
+      message: `อนุมัติคืนเงิน ฿${refundAmount.toLocaleString()} บาท เข้า E-Cash ของผู้ซื้อเรียบร้อยแล้ว`,
+      order
+    });
+  } else {
+    return res.status(400).json({ success: false, message: "Action ไม่ถูกต้อง" });
+  }
+});
+
 // GET ORDER CHAT MESSAGES
 app.get('/api/order/chat/:orderId', (req, res) => {
   const { orderId } = req.params;
