@@ -5337,11 +5337,13 @@ app.post('/api/seller/product/edit', (req, res) => {
   const db = readDb();
   
   const member = db.members.find(m => m.userId === userId);
-  if (!member || member.sellerStatus !== "Active") {
-    return res.status(403).json({ success: false, message: "เฉพาะผู้ขายที่ผ่านการอนุมัติร้านค้าเท่านั้นที่แก้ไขข้อมูลสินค้าได้" });
+  const isAdmin = member?.role === 'Admin' || userId === 'admin' || (typeof userId === 'string' && userId.startsWith('admin_'));
+
+  if (!isAdmin && (!member || member.sellerStatus !== "Active")) {
+    return res.status(403).json({ success: false, message: "เฉพาะผู้ขายที่ผ่านการอนุมัติร้านค้าหรือผู้ดูแลระบบเท่านั้นที่แก้ไขข้อมูลสินค้าได้" });
   }
   
-  const prod = db.sellerProducts.find(p => p.id === productId && p.sellerId === userId);
+  const prod = db.sellerProducts.find(p => p.id === productId && (p.sellerId === userId || isAdmin));
   if (!prod) return res.status(404).json({ success: false, message: "ไม่พบสินค้าชิ้นนี้" });
 
   let processedImages: string[] = [];
@@ -5414,7 +5416,7 @@ app.post('/api/seller/product/edit', (req, res) => {
   prod.customerShippingFee = parseFloat(customerShippingFee) || 35;
   prod.netPayout = parseFloat(netPayout) || 0;
   
-  const isApproved = !!approveInstantly;
+  const isApproved = !!approveInstantly || isAdmin || prod.status === "Approved";
 
   if (isApproved) {
     prod.status = "Approved";

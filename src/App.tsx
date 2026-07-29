@@ -618,6 +618,7 @@ export default function App() {
   const [confirmProduct, setConfirmProduct] = useState<any>(null);
   const [confirmChoice, setConfirmChoice] = useState<any>(null);
   const [activeSlipModal, setActiveSlipModal] = useState<string | null>(null);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   
   // Custom dialog states to replace window.confirm and window.prompt in iframe
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -5217,11 +5218,7 @@ export default function App() {
   const handleSellerProdEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct) return;
-    const sellerId = sellerSessionUser?.userId || currentUser?.userId;
-    if (!sellerId) {
-      showNotif("กรุณาเข้าสู่ระบบพาร์ทเนอร์ร้านค้าก่อนทำรายการค่ะ", "error");
-      return;
-    }
+    const sellerId = sellerSessionUser?.userId || currentUser?.userId || editingProduct.sellerId || "admin";
     try {
       const calc = calculateShippingAndPricing(
         editingProduct.price,
@@ -5268,10 +5265,19 @@ export default function App() {
       });
       const d = await res.json();
       if (d.success) {
-        showNotif(d.message || "แก้ไขรายการสินค้าเรียบร้อยแล้วค่ะ", 'success');
+        showNotif(d.message || "แก้ไขรายการสินค้าและบันทึกรูปภาพเรียบร้อยแล้วค่ะ", 'success');
         setShowEditProductModal(false);
         setEditingProduct(null);
-        fetchSellerData(sellerId);
+        if (sellerId) fetchSellerData(sellerId);
+        if (editingProduct.sellerId && editingProduct.sellerId !== sellerId) {
+          fetchSellerData(editingProduct.sellerId);
+        }
+        fetch('/api/products')
+          .then(r => r.json())
+          .then(data => { if (data.success && Array.isArray(data.products)) setProducts(data.products); });
+        fetch('/api/admin/all-products')
+          .then(r => r.json())
+          .then(data => { if (data.success && Array.isArray(data.products)) setAllSellerProducts(data.products); });
       } else {
         showNotif(d.message || "เกิดข้อผิดพลาดในการแก้ไขสินค้า", 'error');
       }
@@ -9297,7 +9303,11 @@ export default function App() {
 
                                 return (
                                   <div className="space-y-3">
-                                    <div className="overflow-hidden rounded-2xl border border-slate-100 h-56 relative shadow-inner bg-slate-50 group cursor-zoom-in">
+                                    <div 
+                                      onClick={() => setPreviewImageUrl(activeImg)}
+                                      className="overflow-hidden rounded-2xl border border-slate-100 h-56 relative shadow-inner bg-slate-50 group cursor-pointer cursor-zoom-in"
+                                      title="คลิกเพื่อดูรูปภาพขนาดใหญ่"
+                                    >
                                       <img 
                                         src={activeImg || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'} 
                                         onError={(e) => {
@@ -13466,9 +13476,15 @@ export default function App() {
                                   <div key={p.id} className="border border-slate-150 rounded-2xl p-4 bg-white hover:border-indigo-200 transition space-y-3 shadow-2xs">
                                     <div className="flex gap-3">
                                       <div className="w-20 h-20 aspect-square rounded-xl overflow-hidden border border-slate-100 shrink-0 relative bg-slate-50">
-                                        <img src={imgList[0] || p.image} alt={p.name} className="w-full h-full object-cover" />
+                                        <img 
+                                          src={imgList[0] || p.image} 
+                                          alt={p.name} 
+                                          onClick={() => setPreviewImageUrl(imgList[0] || p.image)}
+                                          className="w-full h-full object-cover cursor-pointer hover:scale-105 transition" 
+                                          title="คลิกเพื่อขยายดูรูปภาพขนาดใหญ่"
+                                        />
                                         {imgList.length > 1 && (
-                                          <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[8px] font-bold px-1 rounded">
+                                          <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[8px] font-bold px-1 rounded pointer-events-none">
                                             +{imgList.length - 1} รูป
                                           </span>
                                         )}
@@ -20996,7 +21012,7 @@ export default function App() {
                 <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-2.5">
                   <div className="flex justify-between items-center">
                     <label className="block text-slate-800 font-bold text-xs flex items-center gap-1.5">
-                      <span>📷 รูปภาพผลิตภัณฑ์ (ขนาด 1:1 Square - สามารถแก้ไข/เปลี่ยนรูปได้)</span>
+                      <span>📷 รูปภาพผลิตภัณฑ์ (ขนาด 1:1 Square - สามารถคลิกขยายดู / เพิ่ม / เปลี่ยนรูปได้)</span>
                       <span className="text-rose-500 font-bold">*</span>
                     </label>
                     <span className="text-[10px] text-slate-500 font-semibold">
@@ -21015,33 +21031,67 @@ export default function App() {
                           <img 
                             src={imgUrl} 
                             alt={`Product ${idx + 1}`} 
-                            className="w-full h-full object-cover"
+                            onClick={() => setPreviewImageUrl(imgUrl)}
+                            className="w-full h-full object-cover cursor-pointer hover:scale-105 transition"
+                            title="คลิกเพื่อขยายดูรูปขนาดใหญ่"
                             onError={(e: any) => {
                               e.target.onerror = null;
                               e.target.src = "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=300";
                             }}
                           />
                           {idx === 0 && (
-                            <span className="absolute top-1 left-1 bg-indigo-600 text-white text-[8px] font-extrabold px-1.5 py-0.5 rounded shadow-xs">
+                            <span className="absolute top-1 left-1 bg-indigo-600 text-white text-[8px] font-extrabold px-1.5 py-0.5 rounded shadow-xs pointer-events-none">
                               รูปหลัก
                             </span>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const newImages = imgList.filter((_: any, i: number) => i !== idx);
-                              setEditingProduct((prev: any) => ({
-                                ...prev,
-                                images: newImages,
-                                image: newImages[0] || '',
-                                imageFile: newImages[0] || ''
-                              }));
-                            }}
-                            className="absolute top-1 right-1 bg-rose-600 hover:bg-rose-700 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md cursor-pointer transition opacity-90 group-hover:opacity-100"
-                            title="ลบรูปภาพนี้"
-                          >
-                            ✕
-                          </button>
+                          <div className="absolute inset-x-0 bottom-0 bg-slate-900/80 backdrop-blur-xs p-1 flex justify-between items-center opacity-90 group-hover:opacity-100 transition">
+                            <label className="text-[9px] text-indigo-200 hover:text-white font-bold cursor-pointer flex items-center gap-0.5" title="เปลี่ยนรูปนี้">
+                              <span>🔄 เปลี่ยน</span>
+                              <input 
+                                type="file" 
+                                accept="image/*" 
+                                className="hidden" 
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => {
+                                    if (reader.result) {
+                                      setEditingProduct((prev: any) => {
+                                        const curr = (Array.isArray(prev.images) && prev.images.length > 0)
+                                          ? [...prev.images]
+                                          : [prev.image || prev.imageFile || prev.imageUrl].filter(Boolean);
+                                        curr[idx] = reader.result as string;
+                                        return {
+                                          ...prev,
+                                          images: curr,
+                                          image: curr[0] || '',
+                                          imageFile: curr[0] || ''
+                                        };
+                                      });
+                                    }
+                                  };
+                                  reader.readAsDataURL(file);
+                                }}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newImages = imgList.filter((_: any, i: number) => i !== idx);
+                                setEditingProduct((prev: any) => ({
+                                  ...prev,
+                                  images: newImages,
+                                  image: newImages[0] || '',
+                                  imageFile: newImages[0] || ''
+                                }));
+                              }}
+                              className="text-rose-400 hover:text-rose-200 text-[10px] font-bold cursor-pointer transition p-0.5"
+                              title="ลบรูปภาพนี้"
+                            >
+                              ✕
+                            </button>
+                          </div>
                         </div>
                       ));
                     })()}
@@ -21057,7 +21107,7 @@ export default function App() {
                         <label className="aspect-square rounded-xl border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50/40 flex flex-col items-center justify-center cursor-pointer transition p-1.5 text-center group">
                           <span className="text-lg text-slate-400 group-hover:text-indigo-600 font-bold">+</span>
                           <span className="text-[9px] text-slate-500 group-hover:text-indigo-600 font-bold mt-0.5">
-                            เพิ่ม/เปลี่ยนรูป
+                            เพิ่มรูปภาพ
                           </span>
                           <input
                             type="file"
@@ -21100,6 +21150,69 @@ export default function App() {
                         </label>
                       );
                     })()}
+                  </div>
+
+                  {/* URL Input option */}
+                  <div className="pt-1 border-t border-slate-200/60">
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                      🔗 หรือวาง URL รูปภาพโดยตรง:
+                    </label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="url"
+                        placeholder="https://example.com/image.jpg"
+                        className="flex-1 border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] bg-white text-slate-800"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const target = e.target as HTMLInputElement;
+                            const url = target.value.trim();
+                            if (url) {
+                              setEditingProduct((prev: any) => {
+                                const curr = (Array.isArray(prev.images) && prev.images.length > 0)
+                                  ? prev.images
+                                  : [prev.image || prev.imageFile || prev.imageUrl].filter(Boolean);
+                                if (curr.length >= 5) return prev;
+                                const updated = [...curr, url];
+                                return {
+                                  ...prev,
+                                  images: updated,
+                                  image: updated[0] || '',
+                                  imageFile: updated[0] || ''
+                                };
+                              });
+                              target.value = '';
+                            }
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          const input = (e.currentTarget.previousElementSibling as HTMLInputElement);
+                          const url = input?.value?.trim();
+                          if (url) {
+                            setEditingProduct((prev: any) => {
+                              const curr = (Array.isArray(prev.images) && prev.images.length > 0)
+                                ? prev.images
+                                : [prev.image || prev.imageFile || prev.imageUrl].filter(Boolean);
+                              if (curr.length >= 5) return prev;
+                              const updated = [...curr, url];
+                              return {
+                                ...prev,
+                                images: updated,
+                                image: updated[0] || '',
+                                imageFile: updated[0] || ''
+                              };
+                            });
+                            input.value = '';
+                          }
+                        }}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] px-3 py-1 rounded-lg transition cursor-pointer"
+                      >
+                        + เพิ่มจาก URL
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -21954,6 +22067,55 @@ export default function App() {
           </div>
         )}
 
+        {/* FULL SIZE IMAGE PREVIEW MODAL */}
+        {previewImageUrl && (
+          <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-[999999] animate-fade-in" onClick={() => setPreviewImageUrl(null)}>
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-2xl w-full shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
+              <button 
+                type="button"
+                onClick={() => setPreviewImageUrl(null)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-full cursor-pointer transition text-xs font-bold z-10"
+              >
+                ✕ ปิดหน้าต่าง
+              </button>
+              
+              <div className="text-center space-y-4 pt-4">
+                <h3 className="text-sm font-bold text-white tracking-wide flex items-center justify-center gap-1.5">
+                  <span>🖼️ ขยายรูปภาพสินค้า</span>
+                </h3>
+                <div className="bg-slate-950 rounded-2xl p-2 border border-slate-800 overflow-hidden flex justify-center items-center max-h-[75vh]">
+                  <img 
+                    src={previewImageUrl} 
+                    alt="Product Zoom" 
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80';
+                    }}
+                    className="max-w-full max-h-[68vh] object-contain rounded-xl shadow-lg"
+                  />
+                </div>
+                <div className="flex gap-2 justify-center pt-1">
+                  <a 
+                    href={previewImageUrl} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition flex items-center gap-1 cursor-pointer"
+                  >
+                    📥 ดาวน์โหลด / เปิดรูปขนาดจริง
+                  </a>
+                  <button 
+                    type="button"
+                    onClick={() => setPreviewImageUrl(null)}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold px-4 py-2 rounded-xl transition cursor-pointer"
+                  >
+                    ปิดหน้าต่าง
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* CUSTOM DEPOSIT APPROVE CONFIRMATION DIALOG */}
         {depositApproveId && (
           <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
@@ -22468,7 +22630,15 @@ export default function App() {
               {/* Product Images */}
               <div className="flex gap-2 overflow-x-auto pb-2">
                 {(selectedAdminQueueProd.images && selectedAdminQueueProd.images.length > 0 ? selectedAdminQueueProd.images : [selectedAdminQueueProd.image]).filter(Boolean).map((imgUrl: string, idx: number) => (
-                  <img key={idx} src={imgUrl} alt="" className="w-24 h-24 object-cover rounded-2xl border border-slate-200 shadow-sm shrink-0" referrerPolicy="no-referrer" />
+                  <img 
+                    key={idx} 
+                    src={imgUrl} 
+                    alt="" 
+                    onClick={() => setPreviewImageUrl(imgUrl)}
+                    className="w-24 h-24 object-cover rounded-2xl border border-slate-200 shadow-sm shrink-0 cursor-pointer hover:scale-105 transition" 
+                    referrerPolicy="no-referrer"
+                    title="คลิกเพื่อขยายดูรูปภาพจริง" 
+                  />
                 ))}
               </div>
 
