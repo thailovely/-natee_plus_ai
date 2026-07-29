@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeApp } from 'firebase/app';
 import { initializeFirestore, memoryLocalCache, doc, getDoc, writeBatch, onSnapshot } from 'firebase/firestore';
+import { getStorage, ref as storageRef, uploadString, getDownloadURL } from 'firebase/storage';
 import { GoogleGenAI } from '@google/genai';
 import nodemailer from 'nodemailer';
 
@@ -132,6 +133,66 @@ try {
 // Initialize Firebase Client SDK for server-side persistence with in-memory cache
 let dbFirestore: any = null;
 let firebaseConfig: any = null;
+let firebaseAppObj: any = null;
+let firebaseStorageObj: any = null;
+
+function getFirebaseStorage() {
+  if (!firebaseStorageObj && firebaseAppObj) {
+    try {
+      firebaseStorageObj = getStorage(firebaseAppObj);
+    } catch (e) {
+      console.warn("⚠️ Firebase Storage init error:", e);
+    }
+  }
+  return firebaseStorageObj;
+}
+
+async function uploadImageToFirebaseOrKeepBase64(dataUrlOrPath: string, folderName: string = 'uploads', fileNamePrefix: string = 'img'): Promise<string> {
+  if (!dataUrlOrPath) return "";
+  if (!dataUrlOrPath.startsWith("data:")) {
+    return dataUrlOrPath; // Already an HTTPS / external URL
+  }
+
+  // 1. Try uploading to Cloud Storage via Firebase Storage SDK
+  const storage = getFirebaseStorage();
+  if (storage) {
+    try {
+      const timestamp = Date.now();
+      const randomStr = Math.random().toString(36).substring(2, 8);
+      const extMatch = dataUrlOrPath.match(/^data:image\/(\w+);base64,/);
+      const ext = extMatch ? extMatch[1] : 'png';
+      const storagePath = `${folderName}/${fileNamePrefix}_${timestamp}_${randomStr}.${ext}`;
+      const imgRef = storageRef(storage, storagePath);
+
+      await uploadString(imgRef, dataUrlOrPath, 'data_url');
+      const downloadUrl = await getDownloadURL(imgRef);
+      console.log(`✅ Uploaded image to Firebase Storage (${folderName}):`, downloadUrl);
+      return downloadUrl;
+    } catch (err) {
+      console.error("⚠️ Failed uploading image to Firebase Storage, fallback to base64/local:", err);
+    }
+  }
+
+  // 2. Fallback: Save locally to UPLOADS_DIR for local disk backup
+  let localPath = "";
+  try {
+    const extMatch = dataUrlOrPath.match(/^data:image\/(\w+);base64,/);
+    const ext = extMatch ? extMatch[1] : 'png';
+    const base64Content = dataUrlOrPath.replace(/^data:image\/\w+;base64,/, "");
+    const fileName = `${fileNamePrefix}_${Date.now()}.${ext}`;
+    fs.writeFileSync(path.join(UPLOADS_DIR, fileName), base64Content, 'base64');
+    localPath = `/uploads/${fileName}`;
+  } catch (err) {
+    console.error("Error writing fallback upload file:", err);
+  }
+
+  // Return base64 directly if image is small (< 800KB) so Firestore persists it permanently inside DB JSON, preventing 404 on Cloud Run container restarts!
+  if (dataUrlOrPath.length < 800000) {
+    return dataUrlOrPath;
+  }
+
+  return localPath || dataUrlOrPath;
+}
 
 try {
   const firebaseConfigPath = path.join(appDir, 'firebase-applet-config.json');
@@ -151,7 +212,7 @@ const finalConfig = {
   apiKey: process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey || "",
   authDomain: process.env.FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain || "",
   projectId: process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId || "",
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket || "",
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket || "indigo-brand-j6rpq.firebasestorage.app",
   messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfig.messagingSenderId || "",
   appId: process.env.FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID || firebaseConfig.appId || "",
   measurementId: process.env.FIREBASE_MEASUREMENT_ID || process.env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfig.measurementId || "",
@@ -161,17 +222,17 @@ const finalConfig = {
 
 try {
   if (finalConfig.projectId && finalConfig.apiKey) {
-    const firebaseApp = initializeApp(finalConfig);
+    firebaseAppObj = initializeApp(finalConfig);
     if (finalConfig.firestoreDatabaseId) {
-      dbFirestore = initializeFirestore(firebaseApp, {
+      dbFirestore = initializeFirestore(firebaseAppObj, {
         localCache: memoryLocalCache()
       }, finalConfig.firestoreDatabaseId);
     } else {
-      dbFirestore = initializeFirestore(firebaseApp, {
+      dbFirestore = initializeFirestore(firebaseAppObj, {
         localCache: memoryLocalCache()
       });
     }
-    console.log("🔥 Firebase Client SDK initialized with memoryLocalCache for project ID:", finalConfig.projectId);
+    console.log("🔥 Firebase Client SDK & Storage initialized for project ID:", finalConfig.projectId, "Bucket:", finalConfig.storageBucket);
   } else {
     console.log("⚠️ No Firebase configuration found (neither JSON file nor Environment Variables). Running without Firebase persistence.");
   }
@@ -2453,7 +2514,7 @@ app.get('/api/member/profile/:userId', (req, res) => {
 });
 
 // SUBMIT KYC
-app.post('/api/member/kyc', (req, res) => {
+app.post('/api/member/kyc', async (req, res) => {
   const { userId, idCardFile, bankBookFile, address, beneficiary, relation, bankName, bankAccount, bankAccountName } = req.body;
   const db = readDb();
   
@@ -2462,25 +2523,21 @@ app.post('/api/member/kyc', (req, res) => {
     return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
   }
   
-  // Save file locally or base64
+  // Save file to Firebase Storage or base64/local fallback
   let idCardUrl = "";
   let bankBookUrl = "";
   
   try {
     if (idCardFile && idCardFile.startsWith("data:")) {
-      const ext = idCardFile.split(';')[0].split('/')[1] || 'png';
-      const base64Data = idCardFile.replace(/^data:image\/\w+;base64,/, "");
-      const fileName = `kyc_id_${userId}_${Date.now()}.${ext}`;
-      fs.writeFileSync(path.join(UPLOADS_DIR, fileName), base64Data, 'base64');
-      idCardUrl = `/uploads/${fileName}`;
+      idCardUrl = await uploadImageToFirebaseOrKeepBase64(idCardFile, 'kyc', `kyc_id_${userId}`);
+    } else if (idCardFile) {
+      idCardUrl = idCardFile;
     }
     
     if (bankBookFile && bankBookFile.startsWith("data:")) {
-      const ext = bankBookFile.split(';')[0].split('/')[1] || 'png';
-      const base64Data = bankBookFile.replace(/^data:image\/\w+;base64,/, "");
-      const fileName = `kyc_bank_${userId}_${Date.now()}.${ext}`;
-      fs.writeFileSync(path.join(UPLOADS_DIR, fileName), base64Data, 'base64');
-      bankBookUrl = `/uploads/${fileName}`;
+      bankBookUrl = await uploadImageToFirebaseOrKeepBase64(bankBookFile, 'kyc', `kyc_bank_${userId}`);
+    } else if (bankBookFile) {
+      bankBookUrl = bankBookFile;
     }
   } catch (err) {
     console.error("Error saving files", err);
@@ -2561,11 +2618,9 @@ app.post('/api/member/topup', async (req, res) => {
   let slipImgUrl = "";
   try {
     if (slipFile && slipFile.startsWith("data:")) {
-      const ext = slipFile.split(';')[0].split('/')[1] || 'png';
-      const base64Data = slipFile.replace(/^data:image\/\w+;base64,/, "");
-      const fileName = `slip_topup_${userId}_${Date.now()}.${ext}`;
-      fs.writeFileSync(path.join(UPLOADS_DIR, fileName), base64Data, 'base64');
-      slipImgUrl = `/uploads/${fileName}`;
+      slipImgUrl = await uploadImageToFirebaseOrKeepBase64(slipFile, 'slips', `slip_topup_${userId}`);
+    } else if (slipFile) {
+      slipImgUrl = slipFile;
     }
   } catch (err) {
     console.error("Error saving slip", err);
@@ -4482,7 +4537,7 @@ app.post('/api/seller/reset-status', (req, res) => {
 });
 
 // ADD PRODUCT
-app.post('/api/seller/product', (req, res) => {
+app.post('/api/seller/product', async (req, res) => {
   const { 
     userId, productName, price, pv, imageFile, images, description, shortDescription, category, cost,
     subcategory, weight, width, length, height, volumetricWeight, chargeableWeight,
@@ -4503,11 +4558,8 @@ app.post('/api/seller/product', (req, res) => {
       if (typeof img === 'string' && img.trim()) {
         if (img.startsWith("data:")) {
           try {
-            const ext = img.split(';')[0].split('/')[1] || 'png';
-            const base64Data = img.replace(/^data:image\/\w+;base64,/, "");
-            const fileName = `prod_${userId}_${Date.now()}_${i}.${ext}`;
-            fs.writeFileSync(path.join(UPLOADS_DIR, fileName), base64Data, 'base64');
-            processedImages.push(`/uploads/${fileName}`);
+            const uploadedUrl = await uploadImageToFirebaseOrKeepBase64(img, 'products', `prod_${userId}_${i}`);
+            processedImages.push(uploadedUrl);
           } catch (e) {
             console.error(e);
           }
@@ -4520,11 +4572,8 @@ app.post('/api/seller/product', (req, res) => {
 
   if (processedImages.length === 0 && imageFile && typeof imageFile === 'string' && imageFile.startsWith("data:")) {
     try {
-      const ext = imageFile.split(';')[0].split('/')[1] || 'png';
-      const base64Data = imageFile.replace(/^data:image\/\w+;base64,/, "");
-      const fileName = `prod_${userId}_${Date.now()}_0.${ext}`;
-      fs.writeFileSync(path.join(UPLOADS_DIR, fileName), base64Data, 'base64');
-      processedImages.push(`/uploads/${fileName}`);
+      const uploadedUrl = await uploadImageToFirebaseOrKeepBase64(imageFile, 'products', `prod_${userId}_0`);
+      processedImages.push(uploadedUrl);
     } catch (e) {
       console.error(e);
     }
@@ -5371,7 +5420,7 @@ app.get('/api/admin/all-products', (req, res) => {
 });
 
 // EDIT SELLER PRODUCT (Every edit forces re-approval unless admin override)
-app.post('/api/seller/product/edit', (req, res) => {
+app.post('/api/seller/product/edit', async (req, res) => {
   const { 
     userId, productId, productName, price, discountPercent, shippingFeeBase, shippingDiscount, pv, imageFile, images, description, shortDescription, category, cost,
     subcategory, weight, width, length, height, volumetricWeight, chargeableWeight,
@@ -5396,11 +5445,8 @@ app.post('/api/seller/product/edit', (req, res) => {
       if (typeof img === 'string' && img.trim()) {
         if (img.startsWith("data:")) {
           try {
-            const ext = img.split(';')[0].split('/')[1] || 'png';
-            const base64Data = img.replace(/^data:image\/\w+;base64,/, "");
-            const fileName = `prod_${userId}_${Date.now()}_${i}.${ext}`;
-            fs.writeFileSync(path.join(UPLOADS_DIR, fileName), base64Data, 'base64');
-            processedImages.push(`/uploads/${fileName}`);
+            const uploadedUrl = await uploadImageToFirebaseOrKeepBase64(img, 'products', `prod_${userId}_${i}`);
+            processedImages.push(uploadedUrl);
           } catch (e) {
             console.error(e);
           }
@@ -5413,11 +5459,8 @@ app.post('/api/seller/product/edit', (req, res) => {
 
   if (processedImages.length === 0 && imageFile && typeof imageFile === 'string' && imageFile.startsWith("data:")) {
     try {
-      const ext = imageFile.split(';')[0].split('/')[1] || 'png';
-      const base64Data = imageFile.replace(/^data:image\/\w+;base64,/, "");
-      const fileName = `prod_${userId}_${Date.now()}_0.${ext}`;
-      fs.writeFileSync(path.join(UPLOADS_DIR, fileName), base64Data, 'base64');
-      processedImages.push(`/uploads/${fileName}`);
+      const uploadedUrl = await uploadImageToFirebaseOrKeepBase64(imageFile, 'products', `prod_${userId}_0`);
+      processedImages.push(uploadedUrl);
     } catch (e) {
       console.error(e);
     }
@@ -5696,7 +5739,7 @@ app.get('/api/bank-settings', (req, res) => {
 });
 
 // UPDATE SYSTEM BANK SETTINGS FOR DEPOSIT
-app.post('/api/bank-settings', (req, res) => {
+app.post('/api/bank-settings', async (req, res) => {
   const { bankName, bankAccount, bankAccountName, qrCodeFile, editorUserId, remainingRightsMode, maintenanceMode } = req.body;
   const db = readDb();
   
@@ -5711,11 +5754,7 @@ app.post('/api/bank-settings', (req, res) => {
   if (qrCodeFile !== undefined) {
     try {
       if (qrCodeFile && qrCodeFile.startsWith("data:")) {
-        const ext = qrCodeFile.split(';')[0].split('/')[1] || 'png';
-        const base64Data = qrCodeFile.replace(/^data:image\/\w+;base64,/, "");
-        const fileName = `bank_qr_${Date.now()}.${ext}`;
-        fs.writeFileSync(path.join(UPLOADS_DIR, fileName), base64Data, 'base64');
-        qrCodeUrl = `/uploads/${fileName}`;
+        qrCodeUrl = await uploadImageToFirebaseOrKeepBase64(qrCodeFile, 'bank', `bank_qr`);
       } else if (qrCodeFile === null || qrCodeFile === "") {
         qrCodeUrl = "";
       }
@@ -5741,7 +5780,7 @@ app.post('/api/bank-settings', (req, res) => {
 });
 
 // UPDATE PROMO POPUP CONFIG
-app.post('/api/admin/promo-config', (req, res) => {
+app.post('/api/admin/promo-config', async (req, res) => {
   const { active, title, subtitle, imageUrl, buttonText, linkTab, imageFile, editorUserId } = req.body;
   const db = readDb();
 
@@ -5755,11 +5794,7 @@ app.post('/api/admin/promo-config', (req, res) => {
   let finalImgUrl = imageUrl || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80';
   if (imageFile && imageFile.startsWith("data:")) {
     try {
-      const ext = imageFile.split(';')[0].split('/')[1] || 'png';
-      const base64Data = imageFile.replace(/^data:image\/\w+;base64,/, "");
-      const fileName = `promo_banner_${Date.now()}.${ext}`;
-      fs.writeFileSync(path.join(UPLOADS_DIR, fileName), base64Data, 'base64');
-      finalImgUrl = `/uploads/${fileName}`;
+      finalImgUrl = await uploadImageToFirebaseOrKeepBase64(imageFile, 'promo', `promo_banner`);
     } catch (e) {
       console.error("Error saving promo image:", e);
     }
