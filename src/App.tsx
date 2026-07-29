@@ -9242,6 +9242,29 @@ export default function App() {
                                         >
                                           🛒 สั่งซื้อ
                                         </button>
+                                        {(currentUser?.role === 'Admin' || (p.sellerId && (p.sellerId === currentUser?.userId || p.sellerId === sellerSessionUser?.userId))) && (
+                                          <button 
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setEditingProduct({
+                                                ...p,
+                                                discountPercent: p.discountPercent || '0',
+                                                shippingFeeBase: p.shippingFeeBase || '35',
+                                                shippingDiscount: p.shippingDiscount || p.sellerCoPay || '0',
+                                                weight: p.weight || '350',
+                                                width: p.width || '10',
+                                                length: p.length || '10',
+                                                height: p.height || '10'
+                                              });
+                                              setShowEditProductModal(true);
+                                            }}
+                                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2 py-1.5 rounded-xl text-[10px] transition cursor-pointer shrink-0"
+                                            title="แก้ไขสินค้าและเปลี่ยนรูปภาพ"
+                                          >
+                                            ✏️ แก้ไข
+                                          </button>
+                                        )}
                                         <button 
                                           onClick={(e) => {
                                             e.stopPropagation();
@@ -9476,6 +9499,30 @@ export default function App() {
                                   >
                                     📌 แชร์สินค้านี้เพื่อรับ PV
                                   </button>
+                                  {(currentUser?.role === 'Admin' || (selectedMarketProduct.sellerId && (selectedMarketProduct.sellerId === currentUser?.userId || selectedMarketProduct.sellerId === sellerSessionUser?.userId))) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const pToEdit = selectedMarketProduct;
+                                        setSelectedMarketProduct(null);
+                                        setEditingProduct({
+                                          ...pToEdit,
+                                          discountPercent: pToEdit.discountPercent || '0',
+                                          shippingFeeBase: pToEdit.shippingFeeBase || '35',
+                                          shippingDiscount: pToEdit.shippingDiscount || pToEdit.sellerCoPay || '0',
+                                          weight: pToEdit.weight || '350',
+                                          width: pToEdit.width || '10',
+                                          length: pToEdit.length || '10',
+                                          height: pToEdit.height || '10'
+                                        });
+                                        setShowEditProductModal(true);
+                                      }}
+                                      className="bg-indigo-700 hover:bg-indigo-600 text-white font-extrabold px-5 py-3.5 rounded-2xl text-xs transition shadow-md cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                                      title="แก้ไขรายละเอียดสินค้าและรูปภาพ"
+                                    >
+                                      ✏️ แก้ไขสินค้า / เปลี่ยนรูปภาพ
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             </div>
