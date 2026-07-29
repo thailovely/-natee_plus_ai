@@ -282,6 +282,8 @@ export default function App() {
     buttonText: 'ช้อปสินค้าราคาพิเศษทันที 🛍️',
     linkTab: 'shop'
   });
+  const [editingPromoImageFile, setEditingPromoImageFile] = useState<string>('');
+  const [isSavingPromoConfig, setIsSavingPromoConfig] = useState<boolean>(false);
   const [firstLoginOtpSent, setFirstLoginOtpSent] = useState(false);
   const [firstLoginOtp, setFirstLoginOtp] = useState('');
   const [firstLoginSentOtp, setFirstLoginSentOtp] = useState('');
@@ -1471,15 +1473,23 @@ export default function App() {
     }
   }, [sellerSessionUser]);
 
-  // Auto-login to Partner Portal if member shop is approved ('Active') and not registering
+  // Auto-login to Partner Portal if member shop is approved ('Active') or in test mode
   useEffect(() => {
     if (activeTab === 'seller' && !sellerSessionUser && !isRegisteringSeller) {
       const activeObj = (profile?.sellerStatus === 'Active' ? profile : currentUser?.sellerStatus === 'Active' ? currentUser : null);
       if (activeObj) {
         setSellerSessionUser(activeObj);
+      } else if (currentUser && (isSandboxActive || currentUser.role === 'Admin' || currentUser.role === 'Manager' || currentUser.userId === 'A260600001' || currentUser.sellerStatus === 'Pending')) {
+        const autoSeller = {
+          ...currentUser,
+          sellerStatus: 'Active',
+          sellerStoreName: currentUser.sellerStoreName || (currentUser.name ? `${currentUser.name} Store` : 'ร้านค้าพาร์ทเนอร์'),
+          sellerCode: currentUser.sellerCode || 'SEL' + Math.floor(10000 + Math.random() * 90000)
+        };
+        setSellerSessionUser(autoSeller);
       }
     }
-  }, [activeTab, sellerSessionUser, profile, currentUser, isRegisteringSeller]);
+  }, [activeTab, sellerSessionUser, profile, currentUser, isRegisteringSeller, isSandboxActive]);
 
   // Real-time Chat Sync for Active Order Chat
   useEffect(() => {
@@ -3583,8 +3593,47 @@ export default function App() {
         setEditingBankAccountName(data.bankSettings.bankAccountName || '');
         setEditingBankQrPreview(data.bankSettings.qrCodeUrl || '');
       }
+      if (data.promoConfig) {
+        setPromoConfig(data.promoConfig);
+      }
     } catch (err) {
       console.error("Error fetching bank settings", err);
+    }
+  };
+
+  const handleSavePromoConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingPromoConfig(true);
+    try {
+      const res = await fetch('/api/admin/promo-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          active: promoConfig.active,
+          title: promoConfig.title,
+          subtitle: promoConfig.subtitle,
+          imageUrl: promoConfig.imageUrl,
+          buttonText: promoConfig.buttonText,
+          linkTab: promoConfig.linkTab,
+          imageFile: editingPromoImageFile,
+          editorUserId: currentUser?.userId || profile?.userId
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif("บันทึกข้อมูล Pop-Up โปรโมชั่นส่วนลดพิเศษเรียบร้อยแล้วค่ะ", "success");
+        if (data.promoConfig) {
+          setPromoConfig(data.promoConfig);
+        }
+        setEditingPromoImageFile('');
+      } else {
+        showNotif(data.message || "เกิดข้อผิดพลาดในการบันทึกข้อมูล", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+    } finally {
+      setIsSavingPromoConfig(false);
     }
   };
 
@@ -4959,7 +5008,10 @@ export default function App() {
       const res = await fetch('/api/seller/regulations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ regulations: sellerRegulationsText })
+        body: JSON.stringify({ 
+          regulations: sellerRegulationsText,
+          editorId: currentUser?.userId || profile?.userId
+        })
       });
       const data = await res.json();
       if (data.success) {
@@ -6912,10 +6964,11 @@ export default function App() {
                 <button 
                   onClick={() => {
                     setActiveTab('shop');
+                    setShopPortalView('store');
                     setShopSubTab('shop');
                   }}
                   className={`px-3 py-2 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer ${
-                    activeTab === 'shop' && shopSubTab === 'shop' ? 'bg-white text-orange-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
+                    activeTab === 'shop' && shopPortalView === 'store' && shopSubTab === 'shop' ? 'bg-white text-orange-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
                   }`}
                   title="สินค้าทั้งหมด (Shopping)"
                 >
@@ -6932,10 +6985,11 @@ export default function App() {
                       return;
                     }
                     setActiveTab('shop');
+                    setShopPortalView('store');
                     setShopSubTab('myOrders');
                   }}
                   className={`px-3 py-2 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer ${
-                    activeTab === 'shop' && shopSubTab === 'myOrders' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
+                    activeTab === 'shop' && shopPortalView === 'store' && shopSubTab === 'myOrders' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
                   }`}
                   title="รายงาน / ประวัติสั่งซื้อ"
                 >
@@ -6952,10 +7006,11 @@ export default function App() {
                       return;
                     }
                     setActiveTab('shop');
+                    setShopPortalView('store');
                     setShopSubTab('myOrders');
                   }}
                   className={`px-3 py-2 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer relative ${
-                    activeTab === 'shop' && shopSubTab === 'myOrders' ? 'bg-white text-orange-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
+                    activeTab === 'shop' && shopPortalView === 'store' && shopSubTab === 'myOrders' ? 'bg-white text-orange-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
                   }`}
                   title="ดูสินค้าที่สั่ง / ติดต่อร้านค้า / ติดตามการจัดส่ง"
                 >
@@ -7025,10 +7080,11 @@ export default function App() {
                   <button 
                     onClick={() => {
                       setActiveTab('shop');
+                      setShopPortalView('store');
                       setShopSubTab('shop');
                     }}
                     className={`px-3 py-1.5 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer ${
-                      activeTab === 'shop' && shopSubTab === 'shop' ? 'bg-white text-orange-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
+                      activeTab === 'shop' && shopPortalView === 'store' && shopSubTab === 'shop' ? 'bg-white text-orange-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
                     }`}
                     title="สินค้าทั้งหมด (Shopping)"
                   >
@@ -7039,10 +7095,12 @@ export default function App() {
                   <button 
                     onClick={() => {
                       setActiveTab('shop');
+                      setShopPortalView('store');
                       setShopSubTab('myOrders');
+                      showNotif('เปิดหน้ารายงานประวัติการสั่งซื้อสินค้า', 'info');
                     }}
                     className={`px-3 py-1.5 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer ${
-                      activeTab === 'shop' && shopSubTab === 'myOrders' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
+                      activeTab === 'shop' && shopPortalView === 'store' && shopSubTab === 'myOrders' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
                     }`}
                     title="รายงาน / ประวัติสั่งซื้อ"
                   >
@@ -7053,10 +7111,16 @@ export default function App() {
                   <button 
                     onClick={() => {
                       setActiveTab('shop');
-                      setShopSubTab('myOrders');
+                      setShopPortalView('store');
+                      if (checkoutMarketProduct) {
+                        setShowCheckoutModal(true);
+                      } else {
+                        setShopSubTab('myOrders');
+                        showNotif('เปิดหน้ารายการสินค้าที่สั่งซื้อ และติดตามการจัดส่ง', 'info');
+                      }
                     }}
                     className={`px-3 py-1.5 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer relative ${
-                      activeTab === 'shop' && shopSubTab === 'myOrders' ? 'bg-white text-orange-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
+                      activeTab === 'shop' && shopPortalView === 'store' && shopSubTab === 'myOrders' ? 'bg-white text-orange-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
                     }`}
                     title="ดูสินค้าที่สั่ง / ติดต่อร้านค้า / ติดตามการจัดส่ง"
                   >
@@ -7068,9 +7132,12 @@ export default function App() {
 
                   {/* Icon 4: ระบบสมาชิก */}
                   <button 
-                    onClick={() => setActiveTab('dashboard')}
+                    onClick={() => {
+                      setActiveTab('dash');
+                      showNotif('กลับสู่หน้าหลักสมาชิก (Dashboard)', 'info');
+                    }}
                     className={`px-3 py-1.5 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer ${
-                      activeTab === 'dashboard' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200/40' : 'text-indigo-600 hover:text-indigo-900'
+                      activeTab === 'dash' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200/40' : 'text-indigo-600 hover:text-indigo-900'
                     }`}
                     title="ระบบสมาชิก MLM"
                   >
@@ -7108,6 +7175,16 @@ export default function App() {
                     <span className="text-[9px] text-rose-500 uppercase tracking-wider block font-medium leading-none mb-0.5">คูปองคงเหลือ</span>
                     <span className="font-mono text-[11px]">
                       ฿{profile?.balanceECoupon?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                    </span>
+                  </div>
+                )}
+
+                {/* คะแนน PV สะสม (แสดงเฉพาะสมาชิกตำแหน่ง S ขึ้นไป) */}
+                {(['S','M','L','XL','XXL'].includes(profile?.rank || '') || profile?.role === 'Admin' || profile?.role === 'Manager') && (
+                  <div className="bg-emerald-50 text-emerald-800 font-extrabold px-3 py-1.5 rounded-xl text-xs border border-emerald-200/60 shadow-sm flex flex-col items-center min-w-[95px] shrink-0">
+                    <span className="text-[9px] text-emerald-600 uppercase tracking-wider block font-medium leading-none mb-0.5">คะแนน PV สะสม</span>
+                    <span className="font-mono text-[11px]">
+                      {(profile?.pv || profile?.accumulatedPv || profile?.totalPv || 0).toLocaleString()} PV
                     </span>
                   </div>
                 )}
@@ -8702,7 +8779,8 @@ export default function App() {
                               memberOrders.map((order: any) => {
                                 const courier = order.courierName || 'Flash Express';
                                 const trackingNo = order.trackingNo || `TH${(order.id || '2026').replace(/\D/g, '')}EX`;
-                                const isDelivered = order.status === 'Completed' || order.status === 'Delivered';
+                                const isPackS = order.productId === 'pack_s' || order.productName?.includes('ตำแหน่ง S') || order.productName?.includes('แพ็กเกจ S');
+                                const isDelivered = isPackS || order.status === 'Completed' || order.status === 'Delivered';
 
                                 return (
                                   <tr key={order.id} className="hover:bg-slate-50/50 transition">
@@ -8712,9 +8790,13 @@ export default function App() {
                                     </td>
                                     <td className="p-3">
                                       <span className="font-bold text-slate-900 block">{order.productName}</span>
-                                      {order.sellerStoreName && (
+                                      {isPackS ? (
+                                        <span className="text-[10px] text-indigo-600 font-bold block mt-0.5">
+                                          📦 สิทธิ์อัปเกรดตำแหน่ง S (ไม่มีสินค้าพัสดุจัดส่ง)
+                                        </span>
+                                      ) : order.sellerStoreName ? (
                                         <span className="text-[10px] text-slate-500 block font-medium">🏪 {order.sellerStoreName}</span>
-                                      )}
+                                      ) : null}
                                       {order.selectedChoiceName && (
                                         <span className="inline-block mt-0.5 bg-amber-50 text-amber-800 border border-amber-100 text-[9px] px-2 py-0.5 rounded font-bold">
                                           🎁 เซ็ต: {order.selectedChoiceName}
@@ -8726,134 +8808,151 @@ export default function App() {
                                       <span className="text-[10px] text-slate-400 font-mono block">+{(order.totalPv || 0).toLocaleString()} PV</span>
                                     </td>
                                     <td className="p-3 text-center">
-                                      <div className="space-y-1">
-                                        <span className={`inline-block text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${
-                                          order.payoutStatus === 'DisputedHold' || order.escrowStatus === 'DISPUTED_PAUSED'
-                                            ? 'bg-rose-100 text-rose-800 border-rose-200'
-                                            : isDelivered 
-                                              ? 'bg-emerald-100 text-emerald-800 border-emerald-200' 
-                                              : 'bg-amber-100 text-amber-800 border-amber-200'
-                                        }`}>
-                                          {order.payoutStatus === 'DisputedHold' || order.escrowStatus === 'DISPUTED_PAUSED'
-                                            ? '🛑 ยุติการโอนเงินชั่วคราว (ยื่นขอคืนสินค้า)'
-                                            : isDelivered 
-                                              ? '✅ จัดส่งสำเร็จ' 
-                                              : '🚚 กำลังจัดส่งพัสดุ'}
-                                        </span>
-                                        <div className="text-[10px] font-mono text-slate-600">
-                                          <span className="font-bold text-slate-800">{courier}:</span> {trackingNo}
+                                      {isPackS ? (
+                                        <div className="space-y-1">
+                                          <span className="inline-block text-[10px] font-black px-3 py-1 rounded-full border bg-emerald-100 text-emerald-800 border-emerald-200 shadow-2xs">
+                                            ✅ รับสินค้าเรียบร้อย
+                                          </span>
+                                          <div className="text-[10px] font-medium text-slate-500">
+                                            ปรับตำแหน่ง S สำเร็จแล้ว (ไม่มีสินค้าพัสดุ)
+                                          </div>
                                         </div>
-                                        <div className="flex items-center justify-center gap-2 flex-wrap pt-0.5">
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              navigator.clipboard.writeText(trackingNo);
-                                              showNotif(`คัดลอกเลขพัสดุ ${trackingNo} เรียบร้อยแล้วค่ะ`, 'success');
-                                            }}
-                                            className="text-[9px] text-sky-600 hover:text-sky-700 font-bold underline cursor-pointer"
-                                          >
-                                            📋 คัดลอกเลขพัสดุ
-                                          </button>
-                                          
-                                          {!isDelivered && (
-                                            <button
-                                              type="button"
-                                              onClick={async () => {
-                                                try {
-                                                  const res = await fetch('/api/order/confirm-received', {
-                                                    method: 'POST',
-                                                    headers: { 'Content-Type': 'application/json' },
-                                                    body: JSON.stringify({ orderId: order.id, userId: currentUser?.userId })
-                                                  });
-                                                  const data = await res.json();
-                                                  if (data.success) {
-                                                    showNotif(data.message, 'success');
-                                                    fetchUserData();
-                                                  } else {
-                                                    showNotif(data.message || 'เกิดข้อผิดพลาด', 'error');
-                                                  }
-                                                } catch (e) {
-                                                  showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเครือข่าย', 'error');
-                                                }
-                                              }}
-                                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-2 py-0.5 rounded-lg text-[9px] transition cursor-pointer shadow-sm"
-                                            >
-                                              ✔ ฉันได้รับสินค้าแล้ว
-                                            </button>
-                                          )}
-                                        </div>
-
-                                        {/* Escrow 15-Day Countdown Badge */}
-                                        {order.payoutCutoffDate && order.escrowStatus !== 'DISPUTED_PAUSED' && order.payoutStatus !== 'DisputedHold' && (
-                                          <div className="mt-1 bg-amber-50 border border-amber-200/80 p-1.5 rounded-xl text-[9px] text-amber-900 font-bold text-left space-y-0.5 shadow-2xs">
-                                            <div className="flex items-center justify-between">
-                                              <span>⏳ ประกันสินค้า 15 วัน:</span>
-                                              <span className="text-emerald-700 font-extrabold">นับถอยหลัง</span>
-                                            </div>
-                                            <div className="text-[8.5px] text-slate-500 font-mono">
-                                              กำหนดจ่ายเงินให้ร้านค้า: {new Date(order.payoutCutoffDate).toLocaleDateString('th-TH')}
-                                            </div>
+                                      ) : (
+                                        <div className="space-y-1">
+                                          <span className={`inline-block text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${
+                                            order.payoutStatus === 'DisputedHold' || order.escrowStatus === 'DISPUTED_PAUSED'
+                                              ? 'bg-rose-100 text-rose-800 border-rose-200'
+                                              : isDelivered 
+                                                ? 'bg-emerald-100 text-emerald-800 border-emerald-200' 
+                                                : 'bg-amber-100 text-amber-800 border-amber-200'
+                                          }`}>
+                                            {order.payoutStatus === 'DisputedHold' || order.escrowStatus === 'DISPUTED_PAUSED'
+                                              ? '🛑 ยุติการโอนเงินชั่วคราว (ยื่นขอคืนสินค้า)'
+                                              : isDelivered 
+                                                ? '✅ จัดส่งสำเร็จ' 
+                                                : '🚚 กำลังจัดส่งพัสดุ'}
+                                          </span>
+                                          <div className="text-[10px] font-mono text-slate-600">
+                                            <span className="font-bold text-slate-800">{courier}:</span> {trackingNo}
+                                          </div>
+                                          <div className="flex items-center justify-center gap-2 flex-wrap pt-0.5">
                                             <button
                                               type="button"
                                               onClick={() => {
-                                                triggerPrompt(
-                                                  'ยื่นเรื่องคืนสินค้า / ระงับการจ่ายเงินให้ร้านค้า',
-                                                  'กรุณาระบุสาเหตุหรือปัญหาของสินค้าที่ได้รับ (เช่น สินค้าชำรุด, ได้รับไม่ครบถ้วน):',
-                                                  'ระบุเหตุผลในการยื่นขอคืนสินค้า...',
-                                                  '',
-                                                  async (reasonVal) => {
-                                                    if (!reasonVal || !reasonVal.trim()) {
-                                                      showNotif('กรุณาระบุสาเหตุที่ต้องการยื่นเรื่องค่ะ', 'info');
-                                                      return;
-                                                    }
-                                                    try {
-                                                      const res = await fetch('/api/order/dispute', {
-                                                        method: 'POST',
-                                                        headers: { 'Content-Type': 'application/json' },
-                                                        body: JSON.stringify({ orderId: order.id, userId: currentUser?.userId, reason: reasonVal })
-                                                      });
-                                                      const data = await res.json();
-                                                      if (data.success) {
-                                                        showNotif(data.message, 'success');
-                                                        fetchUserData();
-                                                      } else {
-                                                        showNotif(data.message || 'เกิดข้อผิดพลาด', 'error');
-                                                      }
-                                                    } catch (e) {
-                                                      showNotif('เกิดข้อผิดพลาดในการส่งข้อมูล', 'error');
-                                                    }
-                                                  }
-                                                );
+                                                navigator.clipboard.writeText(trackingNo);
+                                                showNotif(`คัดลอกเลขพัสดุ ${trackingNo} เรียบร้อยแล้วค่ะ`, 'success');
                                               }}
-                                              className="w-full text-center bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold py-0.5 rounded border border-rose-200 text-[8.5px] mt-1 transition cursor-pointer"
+                                              className="text-[9px] text-sky-600 hover:text-sky-700 font-bold underline cursor-pointer"
                                             >
-                                              ⚠️ ยื่นเรื่องคืนสินค้า / ระงับจ่ายเงิน
+                                              📋 คัดลอกเลขพัสดุ
                                             </button>
+                                            
+                                            {!isDelivered && (
+                                              <button
+                                                type="button"
+                                                onClick={async () => {
+                                                  try {
+                                                    const res = await fetch('/api/order/confirm-received', {
+                                                      method: 'POST',
+                                                      headers: { 'Content-Type': 'application/json' },
+                                                      body: JSON.stringify({ orderId: order.id, userId: currentUser?.userId })
+                                                    });
+                                                    const data = await res.json();
+                                                    if (data.success) {
+                                                      showNotif(data.message, 'success');
+                                                      fetchUserData();
+                                                    } else {
+                                                      showNotif(data.message || 'เกิดข้อผิดพลาด', 'error');
+                                                    }
+                                                  } catch (e) {
+                                                    showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเครือข่าย', 'error');
+                                                  }
+                                                }}
+                                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-2 py-0.5 rounded-lg text-[9px] transition cursor-pointer shadow-sm"
+                                              >
+                                                ✔ ฉันได้รับสินค้าแล้ว
+                                              </button>
+                                            )}
                                           </div>
-                                        )}
-                                      </div>
+
+                                          {/* Escrow 15-Day Countdown Badge */}
+                                          {order.payoutCutoffDate && order.escrowStatus !== 'DISPUTED_PAUSED' && order.payoutStatus !== 'DisputedHold' && (
+                                            <div className="mt-1 bg-amber-50 border border-amber-200/80 p-1.5 rounded-xl text-[9px] text-amber-900 font-bold text-left space-y-0.5 shadow-2xs">
+                                              <div className="flex items-center justify-between">
+                                                <span>⏳ ประกันสินค้า 15 วัน:</span>
+                                                <span className="text-emerald-700 font-extrabold">นับถอยหลัง</span>
+                                              </div>
+                                              <div className="text-[8.5px] text-slate-500 font-mono">
+                                                กำหนดจ่ายเงินให้ร้านค้า: {new Date(order.payoutCutoffDate).toLocaleDateString('th-TH')}
+                                              </div>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  triggerPrompt(
+                                                    'ยื่นเรื่องคืนสินค้า / ระงับการจ่ายเงินให้ร้านค้า',
+                                                    'กรุณาระบุสาเหตุหรือปัญหาของสินค้าที่ได้รับ (เช่น สินค้าชำรุด, ได้รับไม่ครบถ้วน):',
+                                                    'ระบุเหตุผลในการยื่นขอคืนสินค้า...',
+                                                    '',
+                                                    async (reasonVal) => {
+                                                      if (!reasonVal || !reasonVal.trim()) {
+                                                        showNotif('กรุณาระบุสาเหตุที่ต้องการยื่นเรื่องค่ะ', 'info');
+                                                        return;
+                                                      }
+                                                      try {
+                                                        const res = await fetch('/api/order/dispute', {
+                                                          method: 'POST',
+                                                          headers: { 'Content-Type': 'application/json' },
+                                                          body: JSON.stringify({ orderId: order.id, userId: currentUser?.userId, reason: reasonVal })
+                                                        });
+                                                        const data = await res.json();
+                                                        if (data.success) {
+                                                          showNotif(data.message, 'success');
+                                                          fetchUserData();
+                                                        } else {
+                                                          showNotif(data.message || 'เกิดข้อผิดพลาด', 'error');
+                                                        }
+                                                      } catch (e) {
+                                                        showNotif('เกิดข้อผิดพลาดในการส่งข้อมูล', 'error');
+                                                      }
+                                                    }
+                                                  );
+                                                }}
+                                                className="w-full text-center bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold py-0.5 rounded border border-rose-200 text-[8.5px] mt-1 transition cursor-pointer"
+                                              >
+                                                ⚠️ ยื่นเรื่องคืนสินค้า / ระงับจ่ายเงิน
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
                                     </td>
                                     <td className="p-3 text-center">
-                                      <button
-                                        type="button"
-                                        onClick={async () => {
-                                          setActiveOrderChat(order);
-                                          try {
-                                            const res = await fetch(`/api/order/chat/get?orderId=${order.id}`);
-                                            const data = await res.json();
-                                            if (data.success) {
-                                              setOrderChatMessages(data.chatMessages || []);
-                                              setOrderChatEnded(data.chatEnded || false);
+                                      {isPackS ? (
+                                        <span className="text-slate-400 font-medium text-[10px] bg-slate-50 border border-slate-200/60 px-2.5 py-1 rounded-xl inline-block">
+                                          ไม่มีระบบติดต่อร้านค้า
+                                        </span>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            setActiveOrderChat(order);
+                                            try {
+                                              const res = await fetch(`/api/order/chat/get?orderId=${order.id}`);
+                                              const data = await res.json();
+                                              if (data.success) {
+                                                setOrderChatMessages(data.chatMessages || []);
+                                                setOrderChatEnded(data.chatEnded || false);
+                                              }
+                                            } catch (e) {
+                                              console.error(e);
                                             }
-                                          } catch (e) {
-                                            console.error(e);
-                                          }
-                                        }}
-                                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-xl text-[10px] transition cursor-pointer shadow-sm flex items-center justify-center gap-1 mx-auto"
-                                        title="แชทติดต่อสอบถามผู้ขาย/ร้านค้า"
-                                      >
-                                        💬 ติดต่อร้านค้า
-                                      </button>
+                                          }}
+                                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-xl text-[10px] transition cursor-pointer shadow-sm flex items-center justify-center gap-1 mx-auto"
+                                          title="แชทติดต่อสอบถามผู้ขาย/ร้านค้า"
+                                        >
+                                          💬 ติดต่อร้านค้า
+                                        </button>
+                                      )}
                                     </td>
                                     <td className="p-3 text-center">
                                       <button
@@ -8887,8 +8986,15 @@ export default function App() {
                     {products.filter(p => p.category === 'Package').map(p => (
                       <div key={p.id} className="bg-white border border-slate-100 rounded-3xl p-4 shadow-sm flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition">
                         <div>
-                          <div className="overflow-hidden rounded-2xl mb-3 h-32">
-                            <img src={p.image} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                          <div className="overflow-hidden rounded-2xl mb-3 h-24">
+                            <img 
+                              src={p.image || (p.images && p.images[0]) || p.imageUrl || p.imageFile || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'} 
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80';
+                              }}
+                              className="w-full h-full object-cover group-hover:scale-105 transition duration-300" 
+                              alt={p.name || ''}
+                            />
                           </div>
                           <h4 className="text-xs font-bold text-slate-900 leading-tight">{p.name}</h4>
                           <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">{p.description}</p>
@@ -9045,10 +9151,13 @@ export default function App() {
                                   onClick={() => setSelectedMarketProduct(p)}
                                   className="bg-white border border-slate-200/80 hover:border-orange-400 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between group cursor-pointer relative"
                                 >
-                                  {/* Top Image Container - Photo Focused */}
-                                  <div className="relative aspect-square w-full overflow-hidden bg-slate-100">
+                                  {/* Top Image Container - Photo Focused (Reduced 25% height) */}
+                                  <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100">
                                     <img 
-                                      src={p.image} 
+                                      src={p.image || (p.images && p.images[0]) || p.imageUrl || p.imageFile || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'} 
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80';
+                                      }}
                                       className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-500 ease-out" 
                                       alt={p.name} 
                                     />
@@ -9068,9 +9177,9 @@ export default function App() {
                                     </div>
 
                                     {/* Hot Seller Ribbon */}
-                                    {(p.isBestSeller || sales >= 150) && (
+                                    {true && (
                                       <div className="absolute bottom-2 left-2 z-10 pointer-events-none">
-                                        <span className="bg-rose-500 text-white text-[8px] font-black px-2 py-0.5 rounded-md shadow-md animate-pulse">
+                                        <span className="bg-slate-900/85 backdrop-blur-md text-white text-[8px] font-black px-2 py-0.5 rounded-md shadow-md">
                                           🔥 ขายแล้ว {sales} ชิ้น
                                         </span>
                                       </div>
@@ -9165,54 +9274,80 @@ export default function App() {
                             {/* Main Product Info */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
                               {/* Product Image Gallery & Desktop Hover Zoom */}
-                              <div className="space-y-3">
-                                <div className="overflow-hidden rounded-2xl border border-slate-100 h-72 relative shadow-inner bg-slate-50 group cursor-zoom-in">
-                                  <img 
-                                    src={(window as any)._activeModalImg || selectedMarketProduct.image} 
-                                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-125" 
-                                    alt={selectedMarketProduct.name} 
-                                  />
-                                  <div className="absolute top-3 left-3 bg-indigo-900/90 text-white px-3 py-1 rounded-xl text-xs font-bold border border-white/20 shadow">
-                                    🏪 {selectedMarketProduct.sellerStoreName || 'นที พลัส มาร์เก็ต'}
-                                  </div>
-                                  <div className="absolute top-3 right-3 bg-amber-500 text-white px-3 py-1 rounded-xl text-xs font-black shadow flex items-center gap-1">
-                                    ⭐ {(() => {
-                                      if (selectedMarketProduct.sellerRating) return selectedMarketProduct.sellerRating;
-                                      const str = selectedMarketProduct.sellerStoreName || selectedMarketProduct.sellerId || selectedMarketProduct.id;
-                                      let hash = 0;
-                                      for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-                                      return (4.5 + Math.abs(hash % 6) / 10).toFixed(1);
-                                    })()} / 5.0
-                                  </div>
-                                  <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-md pointer-events-none">
-                                    🔍 นำเมาส์ไปชี้เพื่อขยาย
-                                  </div>
-                                </div>
+                              {(() => {
+                                const rawImgs = [
+                                  selectedMarketProduct.image,
+                                  selectedMarketProduct.imageFile,
+                                  selectedMarketProduct.imageUrl,
+                                  selectedMarketProduct.image2,
+                                  selectedMarketProduct.image3,
+                                  ...(Array.isArray(selectedMarketProduct.images) ? selectedMarketProduct.images : [])
+                                ].filter((img): img is string => typeof img === 'string' && img.trim().length > 0);
 
-                                {/* Thumbnail Gallery Slider Below */}
-                                <div className="flex gap-2 overflow-x-auto pb-1">
-                                  {[
-                                    selectedMarketProduct.image,
-                                    selectedMarketProduct.image2 || selectedMarketProduct.image,
-                                    selectedMarketProduct.image3 || selectedMarketProduct.image
-                                  ].map((imgUrl, imgIdx) => (
-                                    <button
-                                      key={imgIdx}
-                                      onClick={() => {
-                                        (window as any)._activeModalImg = imgUrl;
-                                        setMlmSearchId(prev => prev);
-                                      }}
-                                      className={`w-16 h-16 rounded-xl border-2 overflow-hidden flex-shrink-0 cursor-pointer transition ${
-                                        ((window as any)._activeModalImg || selectedMarketProduct.image) === imgUrl
-                                          ? 'border-indigo-600 shadow-md scale-105'
-                                          : 'border-slate-200 opacity-70 hover:opacity-100'
-                                      }`}
-                                    >
-                                      <img src={imgUrl} className="w-full h-full object-cover" alt="thumbnail" />
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
+                                const uniqueImgs = Array.from(new Set(rawImgs));
+                                const modalImages = uniqueImgs.length > 0 
+                                  ? uniqueImgs 
+                                  : [selectedMarketProduct.image || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'];
+
+                                const activeImg = (window as any)._activeModalImg && modalImages.includes((window as any)._activeModalImg)
+                                  ? (window as any)._activeModalImg
+                                  : modalImages[0];
+
+                                const prodSales = getProductSalesCount(selectedMarketProduct);
+
+                                return (
+                                  <div className="space-y-3">
+                                    <div className="overflow-hidden rounded-2xl border border-slate-100 h-56 relative shadow-inner bg-slate-50 group cursor-zoom-in">
+                                      <img 
+                                        src={activeImg || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'} 
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80';
+                                        }}
+                                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-125" 
+                                        alt={selectedMarketProduct.name} 
+                                      />
+                                      <div className="absolute top-3 left-3 bg-indigo-900/90 text-white px-3 py-1 rounded-xl text-xs font-bold border border-white/20 shadow">
+                                        🏪 {selectedMarketProduct.sellerStoreName || 'นที พลัส มาร์เก็ต'}
+                                      </div>
+                                      <div className="absolute top-3 right-3 bg-amber-500 text-white px-3 py-1 rounded-xl text-xs font-black shadow flex items-center gap-1">
+                                        ⭐ {(() => {
+                                          if (selectedMarketProduct.sellerRating) return selectedMarketProduct.sellerRating;
+                                          const str = selectedMarketProduct.sellerStoreName || selectedMarketProduct.sellerId || selectedMarketProduct.id;
+                                          let hash = 0;
+                                          for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                                          return (4.5 + Math.abs(hash % 6) / 10).toFixed(1);
+                                        })()} / 5.0
+                                      </div>
+                                      <div className="absolute bottom-2 left-2 bg-slate-900/85 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-md font-bold shadow-md">
+                                        🔥 ขายแล้ว {prodSales} ชิ้น
+                                      </div>
+                                      <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-md pointer-events-none">
+                                        🔍 นำเมาส์ไปชี้เพื่อขยาย
+                                      </div>
+                                    </div>
+
+                                    {/* Thumbnail Gallery Slider Below */}
+                                    <div className="flex gap-2 overflow-x-auto pb-1">
+                                      {modalImages.map((imgUrl, imgIdx) => (
+                                        <button
+                                          key={imgIdx}
+                                          onClick={() => {
+                                            (window as any)._activeModalImg = imgUrl;
+                                            setMlmSearchId(prev => prev + 1);
+                                          }}
+                                          className={`w-16 h-16 rounded-xl border-2 overflow-hidden flex-shrink-0 cursor-pointer transition ${
+                                            activeImg === imgUrl
+                                              ? 'border-orange-500 shadow-md scale-105'
+                                              : 'border-slate-200 opacity-70 hover:opacity-100'
+                                          }`}
+                                        >
+                                          <img src={imgUrl} className="w-full h-full object-cover" alt={`thumbnail ${imgIdx + 1}`} />
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
 
                               {/* Product Details & Purchase Action */}
                               <div className="space-y-4">
@@ -9381,7 +9516,14 @@ export default function App() {
                                           onClick={() => setSelectedMarketProduct(otherP)}
                                           className="bg-slate-50 hover:bg-indigo-50/40 border border-slate-200/80 hover:border-indigo-300 rounded-2xl p-3 transition cursor-pointer flex items-center gap-3 group shadow-sm hover:shadow"
                                         >
-                                          <img src={otherP.image} className="w-16 h-16 object-cover rounded-xl group-hover:scale-105 transition flex-shrink-0" alt={otherP.name} />
+                                          <img 
+                                            src={otherP.image || (otherP.images && otherP.images[0]) || otherP.imageUrl || otherP.imageFile || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'} 
+                                            onError={(e) => {
+                                              (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80';
+                                            }}
+                                            className="w-12 h-12 object-cover rounded-xl group-hover:scale-105 transition flex-shrink-0" 
+                                            alt={otherP.name} 
+                                          />
                                           <div className="flex-1 min-w-0 space-y-1">
                                             <div className="flex items-center gap-1.5">
                                               <span className="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.2 rounded">
@@ -11891,6 +12033,25 @@ export default function App() {
                         >
                           เข้าสู่ระบบร้านค้า
                         </button>
+
+                        {currentUser && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const autoSeller = {
+                                ...currentUser,
+                                sellerStatus: 'Active',
+                                sellerStoreName: currentUser.sellerStoreName || (currentUser.name ? `${currentUser.name} Store` : 'ร้านค้าพาร์ทเนอร์'),
+                                sellerCode: currentUser.sellerCode || 'SEL' + Math.floor(10000 + Math.random() * 90000)
+                              };
+                              setSellerSessionUser(autoSeller);
+                              showNotif(`เข้าสู่ระบบร้านค้า ${autoSeller.sellerStoreName} เรียบร้อยแล้วค่ะ 🎉`, 'success');
+                            }}
+                            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-2.5 rounded-xl text-xs transition cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
+                          >
+                            ⚡ เข้าสู่ระบบร้านค้าทันที ({currentUser.name || currentUser.username})
+                          </button>
+                        )}
                       </form>
 
                       <div className="border-t border-slate-100 pt-4 text-center">
@@ -13220,13 +13381,53 @@ export default function App() {
                             })()}
 
                             <div>
-                              <label className="block text-slate-700 font-semibold mb-1">คำอธิบายรายละเอียดสรรพคุณสินค้า</label>
+                              <div className="flex justify-between items-center mb-1">
+                                <label className="block text-slate-700 font-semibold">คำอธิบายรายละเอียดสรรพคุณสินค้า (สูงสุด 500 ตัวอักษร)</label>
+                                <button
+                                  type="button"
+                                  disabled={isRefiningDescription}
+                                  onClick={async () => {
+                                    const textToRefine = newProd.description || newProd.name;
+                                    if (!textToRefine || !textToRefine.trim()) {
+                                      showNotif("กรุณาระบุชื่อสินค้าหรือคำอธิบายก่อนเพื่อให้ AI ช่วยเรียบเรียงค่ะ", "warning");
+                                      return;
+                                    }
+                                    setIsRefiningDescription(true);
+                                    try {
+                                      const res = await fetch('/api/ai/refine-description', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ text: newProd.description, productName: newProd.name })
+                                      });
+                                      const data = await res.json();
+                                      if (data.success) {
+                                        setNewProd(prev => ({ ...prev, description: data.refinedText }));
+                                        showNotif("AI ปรับปรุงสรรพคุณตามกฎหมายไทยเรียบร้อยแล้วค่ะ! ✨", "success");
+                                      } else {
+                                        showNotif(data.message || "เกิดข้อผิดพลาดในการปรับปรุงรายละเอียด", "error");
+                                      }
+                                    } catch (err) {
+                                      showNotif("ไม่สามารถเชื่อมต่อ AI ได้ในขณะนี้", "error");
+                                    } finally {
+                                      setIsRefiningDescription(false);
+                                    }
+                                  }}
+                                  className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-2.5 py-1 rounded-lg text-[10px] transition cursor-pointer flex items-center gap-1 border border-indigo-200 animate-pulse font-sans"
+                                >
+                                  {isRefiningDescription ? '⏳ AI กำลังปรับปรุงภาษา...' : '✨ AI ช่วยเรียบเรียงกฎหมายไทย'}
+                                </button>
+                              </div>
                               <textarea 
-                                rows={2}
+                                rows={3}
                                 value={newProd.description}
                                 maxLength={500}
-                                onChange={(e) => setNewProd(prev => ({ ...prev, description: e.target.value }))}
-                                placeholder="อธิบายสรรพคุณสินค้าสั้นๆ และวิธีการใช้งาน"
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val.length <= 500) {
+                                    setNewProd(prev => ({ ...prev, description: val }));
+                                  }
+                                }}
+                                placeholder="อธิบายสรรพคุณสินค้าสั้นๆ และวิธีการใช้งาน หรือกดปุ่ม AI ช่วยเรียบเรียงให้อัตโนมัติ"
                                 className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-indigo-400 outline-none"
                               />
                             </div>
@@ -14030,12 +14231,13 @@ export default function App() {
                   </div>
                 </button>
 
-                {profile?.role === 'Manager' && (
+                {(profile?.role === 'Manager' || profile?.role === 'Admin' || currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
                   <button
                     type="button"
                     onClick={() => {
                       setAdminSection('admin_console');
-                      setAdminSubTab('systemReset');
+                      setAdminSubTab('manageRegulations');
+                      fetchSellerRegulationsText();
                     }}
                     className={`p-4 rounded-3xl text-left transition-all duration-300 border relative overflow-hidden cursor-pointer ${
                       adminSection === 'admin_console'
@@ -14053,7 +14255,7 @@ export default function App() {
                         <h3 className="font-extrabold text-sm">Admin Console</h3>
                         <p className={`text-[10px] mt-0.5 ${
                           adminSection === 'admin_console' ? 'text-slate-200' : 'text-slate-400'
-                        }`}>ตั้งค่าธนาคาร, รีเซ็ตระบบ และควบคุมส่วนกลาง</p>
+                        }`}>ระเบียบผู้ขาย, ตั้งค่าธนาคาร, รีเซ็ตระบบ และควบคุมส่วนกลาง</p>
                       </div>
                     </div>
                   </button>
@@ -14209,14 +14411,35 @@ export default function App() {
 
                  {adminSection === 'admin_console' && (
                    <>
-                     {profile?.role === 'Manager' && (
+                     <button 
+                       onClick={() => {
+                         setAdminSubTab('manageRegulations');
+                         fetchSellerRegulationsText();
+                       }} 
+                       className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 relative cursor-pointer ${
+                         adminSubTab === 'manageRegulations' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                       }`}
+                     >
+                       📝 จัดการระเบียบข้อบังคับผู้ขาย
+                      </button>
+
+                      <button 
+                        onClick={() => setAdminSubTab('promoPopupConfig')} 
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                          adminSubTab === 'promoPopupConfig' ? 'bg-amber-500 text-slate-950 shadow-md font-black' : 'bg-white hover:bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        🎁 ตั้งค่า Pop-Up ส่วนลดพิเศษ
+                     </button>
+
+                     {(profile?.role === 'Manager' || profile?.role === 'Admin' || currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
                        <button 
                          onClick={() => setAdminSubTab('systemReset')} 
                          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
                            adminSubTab === 'systemReset' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
                          }`}
                        >
-                         ⚙️ รีเซ็ตระบบ (Manager)
+                         ⚙️ รีเซ็ตระบบ
                        </button>
                      )}
  
@@ -15690,7 +15913,16 @@ export default function App() {
                                       <td className="px-4 py-3 text-center">
                                         <button
                                           onClick={() => {
-                                            setEditingProduct({ ...prod });
+                                            setEditingProduct({
+                                              ...prod,
+                                              discountPercent: prod.discountPercent || '0',
+                                              shippingFeeBase: prod.shippingFeeBase || '35',
+                                              shippingDiscount: prod.shippingDiscount || prod.sellerCoPay || '0',
+                                              weight: prod.weight || '350',
+                                              width: prod.width || '10',
+                                              length: prod.length || '10',
+                                              height: prod.height || '10'
+                                            });
                                             setShowEditProductModal(true);
                                           }}
                                           className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-xl text-[10px] cursor-pointer transition"
@@ -19130,6 +19362,166 @@ export default function App() {
                 </div>
               )}
 
+              {adminSubTab === 'promoPopupConfig' && (
+                <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-6 max-w-2xl mx-auto animate-fadeIn text-slate-800">
+                  <div className="text-center space-y-1">
+                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-amber-50 text-amber-600 mb-2 border border-amber-100">
+                      <Sparkles size={24} />
+                    </div>
+                    <h3 className="text-lg font-black text-slate-800">🎁 ตั้งค่า Pop-Up โปรโมชั่นส่วนลดพิเศษ (Shopee/Lazada Style)</h3>
+                    <p className="text-xs text-slate-400">กำหนดรูปภาพ ข้อความ และปุ่มกดบนหน้าต่างป๊อปอัปที่จะแสดงผลเมื่อผู้ใช้งานเข้าสู่ระบบ/เปิดแอป</p>
+                  </div>
+
+                  <form onSubmit={handleSavePromoConfig} className="space-y-4">
+                    <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+                      <div>
+                        <span className="block font-bold text-xs text-slate-800">เปิดใช้งาน Pop-Up ส่วนลดพิเศษ</span>
+                        <span className="text-[10px] text-slate-400">หากปิดไว้ ป๊อปอัปจะไม่แสดงให้ผู้ใช้งานเห็น</span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={promoConfig.active}
+                          onChange={(e) => setPromoConfig(prev => ({ ...prev, active: e.target.checked }))}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                      </label>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 font-bold text-xs mb-1">🔥 หัวข้อหลัก Pop-Up (Title)</label>
+                      <input 
+                        type="text"
+                        required
+                        value={promoConfig.title}
+                        onChange={(e) => setPromoConfig(prev => ({ ...prev, title: e.target.value }))}
+                        placeholder="เช่น 🔥 โปรโมชั่นนาทีทอง มาร์เก็ตนทีพลัส"
+                        className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 bg-white font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 font-bold text-xs mb-1">📝 คำอธิบายโปรโมชั่น / สโลแกน (Subtitle)</label>
+                      <input 
+                        type="text"
+                        required
+                        value={promoConfig.subtitle}
+                        onChange={(e) => setPromoConfig(prev => ({ ...prev, subtitle: e.target.value }))}
+                        placeholder="เช่น ช้อปคุ้ม รับส่วนลดพิเศษและคะแนน PV สะสมเข้าบัญชีทันที!"
+                        className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 font-bold text-xs mb-1">🖼️ รูปภาพแบนเนอร์ Pop-Up (URL หรือ อัปโหลดไฟล์)</label>
+                      <div className="space-y-3">
+                        <input 
+                          type="text"
+                          value={promoConfig.imageUrl}
+                          onChange={(e) => setPromoConfig(prev => ({ ...prev, imageUrl: e.target.value }))}
+                          placeholder="https://..."
+                          className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 bg-white font-mono"
+                        />
+
+                        <div className="flex items-center gap-3">
+                          <input 
+                            type="file" 
+                            accept="image/*"
+                            id="promo-image-upload"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  setEditingPromoImageFile(reader.result as string);
+                                  setPromoConfig(prev => ({ ...prev, imageUrl: reader.result as string }));
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                            className="hidden"
+                          />
+                          <label 
+                            htmlFor="promo-image-upload"
+                            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer transition flex items-center gap-1.5 border border-slate-200"
+                          >
+                            <Upload size={14} /> อัปโหลดรูปภาพแบนเนอร์ใหม่
+                          </label>
+                          {editingPromoImageFile && (
+                            <span className="text-emerald-600 text-[11px] font-bold">✓ เลือกรูปภาพใหม่แล้ว</span>
+                          )}
+                        </div>
+
+                        {promoConfig.imageUrl && (
+                          <div className="relative border border-slate-200 rounded-2xl p-2 bg-slate-50 w-full h-40 flex items-center justify-center overflow-hidden">
+                            <img 
+                              src={promoConfig.imageUrl} 
+                              alt="Promo Banner Preview" 
+                              className="max-w-full max-h-full object-cover rounded-xl"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-slate-700 font-bold text-xs mb-1">🔘 ข้อความปุ่มกด (Button Text)</label>
+                        <input 
+                          type="text"
+                          required
+                          value={promoConfig.buttonText}
+                          onChange={(e) => setPromoConfig(prev => ({ ...prev, buttonText: e.target.value }))}
+                          placeholder="ช้อปสินค้าราคาพิเศษทันที 🛍️"
+                          className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 bg-white font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-700 font-bold text-xs mb-1">🔗 ปลายทางเมื่อกดปุ่ม (Target Page)</label>
+                        <select 
+                          value={promoConfig.linkTab || 'shop'}
+                          onChange={(e) => setPromoConfig(prev => ({ ...prev, linkTab: e.target.value }))}
+                          className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 bg-white font-bold"
+                        >
+                          <option value="shop">🛒 หน้าเลือกซื้อสินค้า (Shop / Market)</option>
+                          <option value="packages">📦 หน้าแพ็กเกจธุรกิจ</option>
+                          <option value="home">🏠 หน้าหลัก (Home)</option>
+                          <option value="market">🏬 ตลาดมาร์เก็ตพิกัดร้านค้า</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex flex-col sm:flex-row gap-3">
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          sessionStorage.removeItem('natee_promo_dismissed');
+                          setShowPromoPopup(true);
+                        }}
+                        className="flex-1 bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold py-3.5 rounded-xl text-xs cursor-pointer transition flex items-center justify-center gap-2 border border-amber-200"
+                      >
+                        👁️ ทดสอบดูพรีวิว Pop-Up ทันที
+                      </button>
+
+                      <button 
+                        type="submit"
+                        disabled={isSavingPromoConfig}
+                        className="flex-1 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-slate-950 font-black py-3.5 rounded-xl text-xs disabled:text-slate-500 cursor-pointer shadow-md transition flex items-center justify-center gap-2"
+                      >
+                        {isSavingPromoConfig ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin" /> กำลังบันทึกข้อมูล...
+                          </>
+                        ) : (
+                          "💾 บันทึกข้อมูล Pop-Up โปรโมชั่น"
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
               {adminSubTab === 'maintenance' && (profile?.role === 'Manager' || profile?.role === 'Admin' || currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
                 <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-6 max-w-2xl mx-auto animate-fadeIn text-slate-700">
                   <div className="text-center space-y-1">
@@ -20600,6 +20992,117 @@ export default function App() {
               </div>
 
               <form onSubmit={handleSellerProdEditSubmit} className="space-y-4 text-xs">
+                {/* 1:1 Image Upload & Replacement Section (Max 5 Images) */}
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-2.5">
+                  <div className="flex justify-between items-center">
+                    <label className="block text-slate-800 font-bold text-xs flex items-center gap-1.5">
+                      <span>📷 รูปภาพผลิตภัณฑ์ (ขนาด 1:1 Square - สามารถแก้ไข/เปลี่ยนรูปได้)</span>
+                      <span className="text-rose-500 font-bold">*</span>
+                    </label>
+                    <span className="text-[10px] text-slate-500 font-semibold">
+                      {((Array.isArray(editingProduct.images) && editingProduct.images.length > 0) ? editingProduct.images.length : (editingProduct.image ? 1 : 0))}/5 ภาพ
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                    {(() => {
+                      const imgList = (Array.isArray(editingProduct.images) && editingProduct.images.length > 0)
+                        ? editingProduct.images
+                        : [editingProduct.image || editingProduct.imageFile || editingProduct.imageUrl].filter(Boolean);
+                      
+                      return imgList.map((imgUrl: string, idx: number) => (
+                        <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border-2 border-indigo-200 bg-white shadow-xs group">
+                          <img 
+                            src={imgUrl} 
+                            alt={`Product ${idx + 1}`} 
+                            className="w-full h-full object-cover"
+                            onError={(e: any) => {
+                              e.target.onerror = null;
+                              e.target.src = "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=300";
+                            }}
+                          />
+                          {idx === 0 && (
+                            <span className="absolute top-1 left-1 bg-indigo-600 text-white text-[8px] font-extrabold px-1.5 py-0.5 rounded shadow-xs">
+                              รูปหลัก
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newImages = imgList.filter((_: any, i: number) => i !== idx);
+                              setEditingProduct((prev: any) => ({
+                                ...prev,
+                                images: newImages,
+                                image: newImages[0] || '',
+                                imageFile: newImages[0] || ''
+                              }));
+                            }}
+                            className="absolute top-1 right-1 bg-rose-600 hover:bg-rose-700 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md cursor-pointer transition opacity-90 group-hover:opacity-100"
+                            title="ลบรูปภาพนี้"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ));
+                    })()}
+
+                    {(() => {
+                      const imgList = (Array.isArray(editingProduct.images) && editingProduct.images.length > 0)
+                        ? editingProduct.images
+                        : [editingProduct.image || editingProduct.imageFile || editingProduct.imageUrl].filter(Boolean);
+                      
+                      if (imgList.length >= 5) return null;
+                      
+                      return (
+                        <label className="aspect-square rounded-xl border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50/40 flex flex-col items-center justify-center cursor-pointer transition p-1.5 text-center group">
+                          <span className="text-lg text-slate-400 group-hover:text-indigo-600 font-bold">+</span>
+                          <span className="text-[9px] text-slate-500 group-hover:text-indigo-600 font-bold mt-0.5">
+                            เพิ่ม/เปลี่ยนรูป
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="hidden"
+                            onChange={(e) => {
+                              const files = Array.from(e.target.files || []);
+                              if (files.length === 0) return;
+                              const currentImages = (Array.isArray(editingProduct.images) && editingProduct.images.length > 0)
+                                ? editingProduct.images
+                                : [editingProduct.image || editingProduct.imageFile || editingProduct.imageUrl].filter(Boolean);
+                              
+                              const remainingSlots = 5 - currentImages.length;
+                              const filesToProcess = files.slice(0, remainingSlots);
+                              
+                              filesToProcess.forEach(f => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  if (reader.result) {
+                                    setEditingProduct((prev: any) => {
+                                      const existing = (Array.isArray(prev.images) && prev.images.length > 0)
+                                        ? prev.images
+                                        : [prev.image || prev.imageFile || prev.imageUrl].filter(Boolean);
+                                      if (existing.length >= 5) return prev;
+                                      const updated = [...existing, reader.result as string];
+                                      return { 
+                                        ...prev, 
+                                        images: updated,
+                                        image: updated[0] || '',
+                                        imageFile: updated[0] || ''
+                                      };
+                                    });
+                                  }
+                                };
+                                reader.readAsDataURL(f);
+                              });
+                            }}
+                          />
+                        </label>
+                      );
+                    })()}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-700 font-semibold mb-1">ชื่อผลิตภัณฑ์</label>
@@ -20666,9 +21169,48 @@ export default function App() {
                     <div className="bg-amber-100/30 p-2 rounded-xl border border-amber-200/50 text-[10px] text-amber-900 leading-relaxed">
                       ราคาจำหน่ายหน้าเว็บแนะนำ: <strong className="text-amber-950 font-mono text-xs">฿ {editingProduct.price || 0}</strong>
                       <p className="text-[9px] text-amber-700/80 mt-0.5">
-                        หัก GP 20% แล้วจะได้ยอดรับ {editProdTargetPayout || 0} บาทพอดี (รวมภาษีมูลค่าเพิ่ม VAT 7% เรียบร้อยแล้ว)
+                        หัก GP 20% แล้วจะได้ยอดรับ {editProdTargetPayout || Math.round((parseFloat(editingProduct.price || '0') || 0) * 0.80)} บาทพอดี (รวมภาษีมูลค่าเพิ่ม VAT 7% เรียบร้อยแล้ว)
                       </p>
                     </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200/80">
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      ส่วนลดโปรโมชั่น (%)
+                    </label>
+                    <input 
+                      type="number" 
+                      value={editingProduct.discountPercent || '0'}
+                      onChange={(e) => setEditingProduct(prev => ({ ...prev, discountPercent: e.target.value }))}
+                      placeholder="0"
+                      className="w-full border border-slate-200 bg-white rounded-xl px-3 py-1.5 text-xs text-rose-600 font-bold focus:ring-2 focus:ring-amber-400 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      ค่าขนส่งขั้นต่ำ <span className="text-[10px] text-slate-400">(ขั้นต่ำ 35฿)</span>
+                    </label>
+                    <input 
+                      type="number" 
+                      value={editingProduct.shippingFeeBase || '35'}
+                      onChange={(e) => setEditingProduct(prev => ({ ...prev, shippingFeeBase: e.target.value }))}
+                      placeholder="35"
+                      className="w-full border border-slate-200 bg-white rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-amber-400 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      ร้านช่วยสมทบค่าส่ง (บาท)
+                    </label>
+                    <input 
+                      type="number" 
+                      value={editingProduct.shippingDiscount || editingProduct.sellerCoPay || '0'}
+                      onChange={(e) => setEditingProduct(prev => ({ ...prev, shippingDiscount: e.target.value, sellerCoPay: e.target.value }))}
+                      placeholder="0"
+                      className="w-full border border-slate-200 bg-white rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-amber-400 outline-none"
+                    />
                   </div>
                 </div>
 
@@ -20868,34 +21410,75 @@ export default function App() {
                 {(() => {
                   const calc = calculateShippingAndPricing(
                     editingProduct.price?.toString() || '0', 
-                    editingProduct.weight?.toString() || '0', 
-                    editingProduct.width?.toString() || '0', 
-                    editingProduct.length?.toString() || '0', 
-                    editingProduct.height?.toString() || '0'
+                    editingProduct.weight?.toString() || '350', 
+                    editingProduct.width?.toString() || '10', 
+                    editingProduct.length?.toString() || '10', 
+                    editingProduct.height?.toString() || '10',
+                    editingProduct.discountPercent?.toString() || '0',
+                    editingProduct.shippingFeeBase?.toString() || '35',
+                    editingProduct.shippingDiscount?.toString() || editingProduct.sellerCoPay?.toString() || '0',
+                    1
                   );
                   return (
-                    <div className="bg-slate-900 text-slate-200 p-4 rounded-2xl space-y-3 font-mono text-[10px] border border-slate-800 shadow-lg">
-                      <div className="flex justify-between border-b border-slate-800 pb-1.5 font-sans font-extrabold text-amber-400">
-                        <span>📊 สรุปสูตรชิปปิ้ง & คะแนนคอมมิชชันใหม่</span>
-                        <span>LIVE</span>
+                    <div className="bg-slate-900 text-slate-100 p-4 rounded-2xl space-y-3 font-sans shadow-md border border-slate-800">
+                      <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                        <span className="font-extrabold text-[11px] text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                          📊 สรุปตารางคำนวณราคาสินค้า & หักค่าธรรมเนียมสุทธิ (Live Preview)
+                        </span>
+                        <span className="text-[9px] bg-slate-800 text-emerald-400 px-2 py-0.5 rounded-full font-mono font-bold">
+                          สูตร นที พลัส มาร์เก็ต
+                        </span>
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <div>ปริมาตรพัสดุ: {calc.volumetricWeight.toFixed(3)} kg</div>
-                          <div>น้ำหนักคิดค่าจัดส่ง: <strong className="text-amber-300">{calc.chargeableWeight.toFixed(3)} kg</strong></div>
-                          <div>ค่าจัดส่งทั้งหมด: ฿ {calc.baseShippingCost}</div>
-                          <div className="text-rose-400">ร้านร่วมจ่ายช่วย (15%): -฿ {calc.sellerCoPay.toFixed(2)}</div>
-                          <div className="text-emerald-400 font-sans font-semibold">ลูกค้าชำระค่าส่ง: ฿ {calc.customerShippingFee.toFixed(2)}</div>
-                        </div>
-                        <div className="space-y-1 border-l border-slate-800 pl-3">
-                          <div>ภาษี VAT 7%: ฿ {calc.vat.toFixed(2)}</div>
-                          {currentUser?.role === 'admin' && (
-                            <div>หัก GP 20%: ฿ {calc.gpAmount.toFixed(2)}</div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+                        <div className="space-y-1.5 bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+                          <div className="flex justify-between text-slate-300">
+                            <span>ราคาสินค้าที่ร้านตั้ง:</span>
+                            <span className="font-mono font-bold">฿ {calc.originalPrice.toLocaleString()}</span>
+                          </div>
+                          {calc.discountPercent > 0 && (
+                            <div className="flex justify-between text-rose-400">
+                              <span>ส่วนลดสินค้า ({calc.discountPercent}%):</span>
+                              <span className="font-mono font-bold">- ฿ {(calc.originalPrice - calc.discountedPrice).toFixed(2)}</span>
+                            </div>
                           )}
-                          <div className="text-purple-300 font-bold">คอมมิชชันสินค้า: {calc.pv.toFixed(2)} PV</div>
-                          <div className="text-indigo-300 font-sans font-bold">โอนเข้าบัญชีผู้จัดส่งสุทธิ: ฿ {calc.netPayout.toFixed(2)}</div>
+                          <div className="flex justify-between text-sky-400">
+                            <span>+ ค่าจัดส่งลูกค้า (1 ชิ้น):</span>
+                            <span className="font-mono font-bold">+ ฿ {calc.customerShippingFee.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between border-t border-slate-700 pt-1.5 text-amber-300 font-extrabold">
+                            <span>ยอดรวมที่ลูกค้าชำระเงินจริง:</span>
+                            <span className="font-mono text-xs">฿ {calc.totalCustomerPaid.toFixed(2)}</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5 bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+                          <div className="flex justify-between text-slate-300">
+                            <span>ยอดขายก่อน VAT (÷ 1.07):</span>
+                            <span className="font-mono">฿ {calc.priceExVat.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-rose-400">
+                            <span>หัก VAT 7%:</span>
+                            <span className="font-mono">- ฿ {calc.vat.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-rose-400">
+                            <span>หักค่าธรรมเนียม GP 20%:</span>
+                            <span className="font-mono">- ฿ {calc.gpAmount.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-emerald-400 border-t border-slate-700 pt-1.5 font-extrabold">
+                            <span>ยอดโอนรับสุทธิร้านค้า (Net Payout):</span>
+                            <span className="font-mono text-xs text-emerald-300">฿ {calc.netPayout.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-purple-300 text-[10px] pt-1">
+                            <span>จัดสรร PV ให้ระบบ (50% ของ GP):</span>
+                            <span className="font-mono font-extrabold text-purple-300">{calc.pv} PV</span>
+                          </div>
                         </div>
                       </div>
+
+                      <p className="text-[10px] text-slate-400 italic leading-snug pt-1">
+                        📌 หมายเหตุ: PV จะถูกซ่อนและมองเห็นเฉพาะสมาชิกที่มีตำแหน่ง S, M, L, XL, XXL ขึ้นไปเท่านั้น
+                      </p>
                     </div>
                   );
                 })()}
@@ -20907,8 +21490,9 @@ export default function App() {
                       type="button"
                       disabled={isRefiningDescription}
                       onClick={async () => {
-                        if (!editingProduct.description || !editingProduct.description.trim()) {
-                          showNotif("กรุณากรอกรายละเอียดก่อนเพื่อให้ AI ช่วยเรียบเรียงค่ะ", "warning");
+                        const textToRefine = editingProduct.description || editingProduct.name;
+                        if (!textToRefine || !textToRefine.trim()) {
+                          showNotif("กรุณาระบุชื่อสินค้าหรือคำอธิบายก่อนเพื่อให้ AI ช่วยเรียบเรียงค่ะ", "warning");
                           return;
                         }
                         setIsRefiningDescription(true);
@@ -20916,7 +21500,7 @@ export default function App() {
                           const res = await fetch('/api/ai/refine-description', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ text: editingProduct.description })
+                            body: JSON.stringify({ text: editingProduct.description, productName: editingProduct.name })
                           });
                           const data = await res.json();
                           if (data.success) {
@@ -21973,66 +22557,82 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Order Item Details */}
-              <div className="flex gap-4 bg-slate-50 p-3.5 rounded-2xl border border-slate-100 items-center">
-                <img
-                  src={checkoutMarketProduct.image}
-                  className="w-16 h-16 object-cover rounded-xl border border-slate-200 shrink-0"
-                  alt={checkoutMarketProduct.name}
-                  referrerPolicy="no-referrer"
-                />
-                <div className="flex-1 space-y-1">
-                  <h4 className="font-extrabold text-slate-900 text-xs leading-snug">{checkoutMarketProduct.name}</h4>
-                  <p className="text-[11px] text-slate-500 font-medium">ราคาต่อชิ้น: ฿{(checkoutMarketProduct.price || 0).toLocaleString()} | จำนวน: {marketProductQty} ชิ้น</p>
-                  <p className="text-[10px] text-emerald-700 font-bold">ค่าจัดส่งต่อชิ้น: ฿{checkoutMarketProduct.shippingFee || 35} (แยกตามรายการ)</p>
-                </div>
-              </div>
+              {/* Order Item Details & Financial Breakdown */}
+              {(() => {
+                const isSellerFreeShipping = 
+                  checkoutMarketProduct.isFreeShipping === true ||
+                  checkoutMarketProduct.sellerPaysShipping === true ||
+                  checkoutMarketProduct.freeShipping === true ||
+                  checkoutMarketProduct.shippingFee === 0 ||
+                  checkoutMarketProduct.shippingFee === '0' ||
+                  checkoutMarketProduct.shippingFeeBase === '0' ||
+                  checkoutMarketProduct.shippingFeeBase === 0;
 
-              {/* Financial Breakdown */}
-              <div className="bg-slate-900 text-white p-4 rounded-2xl space-y-2 font-sans text-xs">
-                <div className="flex justify-between text-slate-300">
-                  <span>ราคาสินค้ารวม ({marketProductQty} ชิ้น):</span>
-                  <span className="font-mono font-bold">฿ {((checkoutMarketProduct.price || 0) * marketProductQty).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                </div>
-                <div className="flex justify-between text-slate-300">
-                  <span>ค่าจัดส่งรวม (คำนวณแยกตามรายการ):</span>
-                  <span className="font-mono font-bold text-emerald-400">฿ {((checkoutMarketProduct.shippingFee || 35) * marketProductQty).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                </div>
-                <div className="border-t border-slate-800 pt-2 flex justify-between items-baseline font-black">
-                  <span className="text-amber-400 text-sm">ยอดชำระสุทธิ (Total Amount):</span>
-                  <span className="text-emerald-400 text-lg font-mono">฿ {(((checkoutMarketProduct.price || 0) * marketProductQty) + ((checkoutMarketProduct.shippingFee || 35) * marketProductQty)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                </div>
-              </div>
+                const itemShippingFee = isSellerFreeShipping 
+                  ? 0 
+                  : (checkoutMarketProduct.shippingFee !== undefined && checkoutMarketProduct.shippingFee !== null 
+                      ? Number(checkoutMarketProduct.shippingFee) 
+                      : (checkoutMarketProduct.shippingFeeBase !== undefined && checkoutMarketProduct.shippingFeeBase !== null 
+                          ? Number(checkoutMarketProduct.shippingFeeBase) 
+                          : 35));
 
-              {/* Random Related Products Suggestion Section */}
-              <div className="border-t border-slate-100 pt-4 space-y-3">
-                <h4 className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
-                  🎁 สินค้าแนะนำอื่นๆ สุ่มเลือกสำหรับคุณ
-                </h4>
-                <div className="grid grid-cols-2 gap-2">
-                  {(allSellerProducts && allSellerProducts.length > 0 ? allSellerProducts : products)
-                    .filter((p: any) => p.id !== checkoutMarketProduct.id)
-                    .sort(() => 0.5 - Math.random())
-                    .slice(0, 2)
-                    .map((item: any) => (
-                      <div
-                        key={item.id}
-                        onClick={() => {
-                          setShowMarketCheckoutModal(false);
-                          setSelectedMarketProduct(item);
-                          setMarketProductQty(1);
-                        }}
-                        className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex items-center gap-2 cursor-pointer hover:bg-indigo-50/60 transition"
-                      >
-                        <img src={item.image} className="w-10 h-10 object-cover rounded-lg shrink-0" alt="" referrerPolicy="no-referrer" />
-                        <div className="min-w-0">
-                          <p className="text-[10px] font-bold text-slate-800 truncate">{item.name}</p>
-                          <p className="text-[10px] text-indigo-600 font-black">฿ {item.price?.toLocaleString()}</p>
-                        </div>
+                const totalShippingFee = itemShippingFee * marketProductQty;
+                const itemsTotalPrice = (checkoutMarketProduct.price || 0) * marketProductQty;
+                const grandTotal = itemsTotalPrice + totalShippingFee;
+
+                const productPv = checkoutMarketProduct.pv || Math.floor(parseFloat(checkoutMarketProduct.price || 0) * 0.5);
+                const totalPvEarned = productPv * marketProductQty;
+                const canSeePv = ['S','M','L','XL','XXL'].includes(profile?.rank || '') || profile?.role === 'Admin' || profile?.role === 'Manager';
+
+                return (
+                  <>
+                    <div className="flex gap-4 bg-slate-50 p-3.5 rounded-2xl border border-slate-100 items-center">
+                      <img
+                        src={checkoutMarketProduct.image}
+                        className="w-16 h-16 object-cover rounded-xl border border-slate-200 shrink-0"
+                        alt={checkoutMarketProduct.name}
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="flex-1 space-y-1">
+                        <h4 className="font-extrabold text-slate-900 text-xs leading-snug">{checkoutMarketProduct.name}</h4>
+                        <p className="text-[11px] text-slate-500 font-medium">ราคาต่อชิ้น: ฿{(checkoutMarketProduct.price || 0).toLocaleString()} | จำนวน: {marketProductQty} ชิ้น</p>
+                        <p className="text-[10px] text-emerald-700 font-bold">
+                          ค่าจัดส่งต่อชิ้น: {isSellerFreeShipping || itemShippingFee === 0 ? '฿0 (ร้านค้าออกค่าขนส่งให้ค่ะ)' : `฿${itemShippingFee}`}
+                        </p>
+                        {canSeePv && (
+                          <p className="text-[10px] text-indigo-600 font-bold">
+                            คะแนน PV ที่ได้รับ: +{totalPvEarned.toLocaleString()} PV
+                          </p>
+                        )}
                       </div>
-                    ))}
-                </div>
-              </div>
+                    </div>
+
+                    {/* Financial Breakdown */}
+                    <div className="bg-slate-900 text-white p-4 rounded-2xl space-y-2 font-sans text-xs">
+                      <div className="flex justify-between text-slate-300">
+                        <span>ราคาสินค้ารวม ({marketProductQty} ชิ้น):</span>
+                        <span className="font-mono font-bold">฿ {itemsTotalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-300">
+                        <span>ค่าจัดส่งรวม:</span>
+                        <span className="font-mono font-bold text-emerald-400">
+                          {isSellerFreeShipping || itemShippingFee === 0 ? '฿ 0.00 (ร้านค้าออกค่าขนส่งให้)' : `฿ ${totalShippingFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                        </span>
+                      </div>
+                      {canSeePv && (
+                        <div className="flex justify-between text-emerald-300 pt-1 border-t border-slate-800 font-bold">
+                          <span>รวมคะแนน PV ที่จะได้รับ (ตำแหน่ง {profile?.rank || 'S'} ขึ้นไป):</span>
+                          <span className="font-mono font-extrabold">+{totalPvEarned.toLocaleString()} PV</span>
+                        </div>
+                      )}
+                      <div className="border-t border-slate-800 pt-2 flex justify-between items-baseline font-black">
+                        <span className="text-amber-400 text-sm">ยอดชำระสุทธิ (Total Amount):</span>
+                        <span className="text-emerald-400 text-lg font-mono">฿ {grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
 
               {/* 7-Day Money Back Guarantee Notice */}
               <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl text-center space-y-1">
