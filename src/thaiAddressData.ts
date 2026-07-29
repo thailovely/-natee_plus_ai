@@ -13,6 +13,34 @@ export interface ThaiProvince {
   districts: ThaiDistrict[];
 }
 
+export function searchThaiAddress(query: string, limit: number = 8) {
+  if (!query || query.trim().length < 2) return [];
+  const q = query.trim().toLowerCase();
+  const results: { subdistrict: string; district: string; province: string; zipcode: string }[] = [];
+
+  for (const prov of thaiAddressData) {
+    for (const dist of prov.districts) {
+      for (const sub of dist.subdistricts) {
+        if (
+          sub.name.toLowerCase().includes(q) ||
+          dist.name.toLowerCase().includes(q) ||
+          prov.name.toLowerCase().includes(q) ||
+          sub.zipcode.includes(q)
+        ) {
+          results.push({
+            subdistrict: sub.name,
+            district: dist.name,
+            province: prov.name,
+            zipcode: sub.zipcode
+          });
+          if (results.length >= limit) return results;
+        }
+      }
+    }
+  }
+  return results;
+}
+
 export const thaiAddressData: ThaiProvince[] = [
   {
     "name": "กรุงเทพมหานคร",

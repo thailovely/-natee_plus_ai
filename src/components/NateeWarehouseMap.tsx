@@ -1,10 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 interface NateeWarehouseMapProps {
-  lat: number | null;
-  lng: number | null;
+  lat?: number | null;
+  lng?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
   onChange?: (lat: number, lng: number) => void;
+  onLocationSelect?: (lat: number, lng: number) => void;
   readOnly?: boolean;
+  isEditable?: boolean;
   address?: string;
   onAddressChange?: (addr: string) => void;
 }
@@ -12,8 +16,12 @@ interface NateeWarehouseMapProps {
 export function NateeWarehouseMap({
   lat,
   lng,
+  latitude,
+  longitude,
   onChange,
-  readOnly = false,
+  onLocationSelect,
+  readOnly,
+  isEditable,
   address,
   onAddressChange,
 }: NateeWarehouseMapProps) {
@@ -23,6 +31,11 @@ export function NateeWarehouseMap({
   const [leafletLoaded, setLeafletLoaded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+
+  const effectiveLat = lat !== undefined && lat !== null ? lat : (latitude !== undefined && latitude !== null ? latitude : null);
+  const effectiveLng = lng !== undefined && lng !== null ? lng : (longitude !== undefined && longitude !== null ? longitude : null);
+  const effectiveReadOnly = readOnly !== undefined ? readOnly : (isEditable !== undefined ? !isEditable : false);
+  const effectiveOnChange = onChange || onLocationSelect;
 
   // Load Leaflet CSS and JS dynamically from CDN
   useEffect(() => {
@@ -68,8 +81,8 @@ export function NateeWarehouseMap({
     const L = (window as any).L;
     if (!L) return;
 
-    const initialLat = lat || 13.7563; // Default to Bangkok
-    const initialLng = lng || 100.5018;
+    const initialLat = effectiveLat || 13.7563; // Default to Bangkok
+    const initialLng = effectiveLng || 100.5018;
 
     if (!mapInstanceRef.current) {
       // Create Map instance
@@ -94,39 +107,39 @@ export function NateeWarehouseMap({
       // Create Marker
       const marker = L.marker([initialLat, initialLng], {
         icon: customIcon,
-        draggable: !readOnly,
+        draggable: !effectiveReadOnly,
       }).addTo(map);
       markerRef.current = marker;
 
-      // Click to pin on map (if not readOnly)
-      if (!readOnly) {
+      // Click to pin on map (if not effectiveReadOnly)
+      if (!effectiveReadOnly) {
         map.on('click', (e: any) => {
           const { lat: clickLat, lng: clickLng } = e.latlng;
           marker.setLatLng([clickLat, clickLng]);
-          if (onChange) onChange(clickLat, clickLng);
+          if (effectiveOnChange) effectiveOnChange(clickLat, clickLng);
           triggerReverseGeocode(clickLat, clickLng);
         });
 
         marker.on('dragend', () => {
           const position = marker.getLatLng();
-          if (onChange) onChange(position.lat, position.lng);
+          if (effectiveOnChange) effectiveOnChange(position.lat, position.lng);
           triggerReverseGeocode(position.lat, position.lng);
         });
       }
     } else {
       // Update Marker position if lat/lng changes from outside
-      if (lat && lng) {
-        markerRef.current.setLatLng([lat, lng]);
-        mapInstanceRef.current.setView([lat, lng], mapInstanceRef.current.getZoom());
+      if (effectiveLat && effectiveLng) {
+        markerRef.current.setLatLng([effectiveLat, effectiveLng]);
+        mapInstanceRef.current.setView([effectiveLat, effectiveLng], mapInstanceRef.current.getZoom());
       }
     }
 
     // Helper to perform reverse geocoding via Nominatim OpenStreetMap (safe & free!)
-    async function triggerReverseGeocode(latitude: number, longitude: number) {
-      if (readOnly || !onAddressChange) return;
+    async function triggerReverseGeocode(latVal: number, lngVal: number) {
+      if (effectiveReadOnly || !onAddressChange) return;
       try {
         const response = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&accept-language=th`
+          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latVal}&lon=${lngVal}&accept-language=th`
         );
         const data = await response.json();
         if (data && data.display_name) {
@@ -137,11 +150,14 @@ export function NateeWarehouseMap({
         console.error('Error reverse geocoding:', err);
       }
     }
-  }, [leafletLoaded, readOnly]);
+  }, [leafletLoaded, effectiveReadOnly, effectiveLat, effectiveLng]);
 
   // Search Address with local Thai province coordinates fallback + OSM Nominatim
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSearch = async (e?: React.SyntheticEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     const query = searchQuery.trim();
     if (!query || !leafletLoaded) return;
     const L = (window as any).L;
@@ -198,11 +214,11 @@ export function NateeWarehouseMap({
     }
 
     if (matchedProvince) {
-      const [latitude, longitude] = matchedProvince;
+      const [latitudeVal, longitudeVal] = matchedProvince;
       if (mapInstanceRef.current && markerRef.current) {
-        mapInstanceRef.current.setView([latitude, longitude], 13);
-        markerRef.current.setLatLng([latitude, longitude]);
-        if (onChange) onChange(latitude, longitude);
+        mapInstanceRef.current.setView([latitudeVal, longitudeVal], 13);
+        markerRef.current.setLatLng([latitudeVal, longitudeVal]);
+        if (effectiveOnChange) effectiveOnChange(latitudeVal, longitudeVal);
         if (onAddressChange) onAddressChange(`จังหวัด${matchedName} ประเทศไทย`);
       }
       setIsSearching(false);
@@ -222,13 +238,13 @@ export function NateeWarehouseMap({
       const results = await response.json();
       if (results && results.length > 0) {
         const first = results[0];
-        const latitude = parseFloat(first.lat);
-        const longitude = parseFloat(first.lon);
+        const latitudeVal = parseFloat(first.lat);
+        const longitudeVal = parseFloat(first.lon);
 
         if (mapInstanceRef.current && markerRef.current) {
-          mapInstanceRef.current.setView([latitude, longitude], 15);
-          markerRef.current.setLatLng([latitude, longitude]);
-          if (onChange) onChange(latitude, longitude);
+          mapInstanceRef.current.setView([latitudeVal, longitudeVal], 15);
+          markerRef.current.setLatLng([latitudeVal, longitudeVal]);
+          if (effectiveOnChange) effectiveOnChange(latitudeVal, longitudeVal);
           if (onAddressChange) onAddressChange(first.display_name || query);
         }
       }
@@ -239,49 +255,117 @@ export function NateeWarehouseMap({
     }
   };
 
+  const handleLatChange = (newLatStr: string) => {
+    const parsedLat = parseFloat(newLatStr);
+    const currentLng = effectiveLng || 100.5018;
+    if (!isNaN(parsedLat) && effectiveOnChange) {
+      effectiveOnChange(parsedLat, currentLng);
+      if (mapInstanceRef.current && markerRef.current) {
+        markerRef.current.setLatLng([parsedLat, currentLng]);
+        mapInstanceRef.current.setView([parsedLat, currentLng], mapInstanceRef.current.getZoom());
+      }
+    }
+  };
+
+  const handleLngChange = (newLngStr: string) => {
+    const parsedLng = parseFloat(newLngStr);
+    const currentLat = effectiveLat || 13.7563;
+    if (!isNaN(parsedLng) && effectiveOnChange) {
+      effectiveOnChange(currentLat, parsedLng);
+      if (mapInstanceRef.current && markerRef.current) {
+        markerRef.current.setLatLng([currentLat, parsedLng]);
+        mapInstanceRef.current.setView([currentLat, parsedLng], mapInstanceRef.current.getZoom());
+      }
+    }
+  };
+
+  const displayLat = effectiveLat !== null && effectiveLat !== undefined ? effectiveLat : 13.7563;
+  const displayLng = effectiveLng !== null && effectiveLng !== undefined ? effectiveLng : 100.5018;
+
   return (
     <div className="space-y-3 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
       <div className="flex justify-between items-center mb-1">
         <label className="block text-slate-800 font-extrabold text-[11px] uppercase tracking-wider">
           🗺️ แผนที่พิกัดคลังสินค้า Google Map / OpenStreetMap Pinpoint *
         </label>
-        {!readOnly && (
+        {!effectiveReadOnly && (
           <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-full animate-pulse">
-            📍 ปักหมุดได้เลย
+            📍 คลิกเพื่อปักหมุดบนแผนที่
           </span>
         )}
       </div>
 
-      {!readOnly && (
-        <form onSubmit={handleSearch} className="flex gap-1.5">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="พิมพ์จังหวัด, อำเภอ หรือชื่อสถานที่ เช่น ชุมพร, เชียงใหม่..."
-            className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-slate-800"
-          />
-          <button
-            type="submit"
-            disabled={isSearching}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition shrink-0 cursor-pointer disabled:bg-indigo-300"
-          >
-            {isSearching ? 'กำลังค้น...' : '🔍 ค้นหาและปักหมุด'}
-          </button>
-        </form>
+      {!effectiveReadOnly && (
+        <div className="space-y-2">
+          {/* Address Search Bar */}
+          <div className="flex gap-1.5">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSearch();
+                }
+              }}
+              placeholder="พิมพ์สถานที่, อำเภอ หรือจังหวัด เช่น ชุมพร, บางลำพู, เชียงใหม่..."
+              className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-slate-800"
+            />
+            <button
+              type="button"
+              onClick={handleSearch}
+              disabled={isSearching}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition shrink-0 cursor-pointer disabled:bg-indigo-300 shadow-sm"
+            >
+              {isSearching ? 'กำลังค้น...' : '🔍 ค้นหาบนแผนที่'}
+            </button>
+          </div>
+
+          {/* Latitude & Longitude Inputs */}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <div className="space-y-1">
+              <label className="block text-[10px] font-bold text-slate-600">
+                📍 ละติจูด (Latitude)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={displayLat}
+                onChange={(e) => handleLatChange(e.target.value)}
+                placeholder="เช่น 13.756300"
+                className="w-full border border-slate-200 bg-white rounded-xl px-2.5 py-1.5 text-xs font-mono font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="block text-[10px] font-bold text-slate-600">
+                📍 ลองจิจูด (Longitude)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={displayLng}
+                onChange={(e) => handleLngChange(e.target.value)}
+                placeholder="เช่น 100.501800"
+                className="w-full border border-slate-200 bg-white rounded-xl px-2.5 py-1.5 text-xs font-mono font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       <div
         ref={mapRef}
         className="w-full rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 shadow-inner"
-        style={{ height: readOnly ? '200px' : '260px', zIndex: 1 }}
+        style={{ height: effectiveReadOnly ? '200px' : '260px', zIndex: 1 }}
       />
 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1.5 text-[10px] text-slate-500 font-mono">
-        <span>📍 พิกัด GPS: {lat ? lat.toFixed(6) : '13.756300'} , {lng ? lng.toFixed(6) : '100.501800'}</span>
-        {!readOnly && (
+        <span>📍 พิกัด GPS: {Number(displayLat).toFixed(6)} , {Number(displayLng).toFixed(6)}</span>
+        {!effectiveReadOnly && (
           <span className="text-slate-400 font-medium italic">
-            * ท่านสามารถคลิกหรือลากจุดสีน้ำเงินเพื่อความแม่นยำสูงสุด
+            * ท่านสามารถลากจุดสีน้ำเงิน หรือพิมพ์พิกัดตัวเลขในช่องละติจูด/ลองจิจูดได้โดยตรงค่ะ
           </span>
         )}
       </div>

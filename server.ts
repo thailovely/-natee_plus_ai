@@ -5728,7 +5728,7 @@ app.get('/api/bank-settings', (req, res) => {
       qrCodeUrl: ""
     },
     promoConfig: db.bankSettings?.promoConfig || {
-      active: true,
+      active: false,
       title: '🔥 โปรโมชั่นนาทีทอง มาร์เก็ตนทีพลัส',
       subtitle: 'ช้อปคุ้ม รับส่วนลดพิเศษและคะแนน PV สะสมเข้าบัญชีทันที!',
       imageUrl: 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80',

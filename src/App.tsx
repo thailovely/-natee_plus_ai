@@ -10,7 +10,7 @@ import {
   MessageSquare, BookOpen, BarChart2, Home, ShoppingCart, ChevronRight,
   Binary, Award, Heart, ArrowLeftRight, Receipt, Calculator, Database
 } from 'lucide-react';
-import { thaiAddressData } from './thaiAddressData';
+import { thaiAddressData, searchThaiAddress } from './thaiAddressData';
 import { NateeWarehouseMap } from './components/NateeWarehouseMap';
 import {
   initGoogleSheetsAuth,
@@ -265,17 +265,10 @@ export default function App() {
   const [newPinConfirm, setNewPinConfirm] = useState('');
 
   // Admin Promo Pop-up Modal State (Shopee/Lazada style)
-  const [showPromoPopup, setShowPromoPopup] = useState(() => {
-    try {
-      const dismissed = sessionStorage.getItem('natee_promo_dismissed');
-      return !dismissed;
-    } catch (e) {
-      return true;
-    }
-  });
+  const [showPromoPopup, setShowPromoPopup] = useState<boolean>(false);
 
   const [promoConfig, setPromoConfig] = useState({
-    active: true,
+    active: false,
     title: '🔥 โปรโมชั่นนาทีทอง มาร์เก็ตนทีพลัส',
     subtitle: 'ช้อปคุ้ม รับส่วนลดพิเศษและคะแนน PV สะสมเข้าบัญชีทันที!',
     imageUrl: 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80',
@@ -1301,23 +1294,31 @@ export default function App() {
       setWarehouseTambonResults([]);
       return;
     }
-    const q = query.trim().toLowerCase();
-    const matches = thaiAddressData.filter((item: any) => 
-      item.tambon.toLowerCase().includes(q) ||
-      item.amphoe.toLowerCase().includes(q) ||
-      item.province.toLowerCase().includes(q) ||
-      String(item.zipcode).includes(q)
-    ).slice(0, 8);
+    const matches = searchThaiAddress(query, 8);
     setWarehouseTambonResults(matches);
   };
 
   const selectWarehouseTambon = (item: any) => {
-    setWarehouseSubdistrict(item.tambon);
-    setWarehouseDistrict(item.amphoe);
-    setWarehouseProvince(item.province);
-    setWarehouseZipcode(String(item.zipcode));
-    setWarehouseAddressQuery(`${item.tambon} > ${item.amphoe} > ${item.province} (${item.zipcode})`);
+    const sub = item.subdistrict || item.tambon || '';
+    const dist = item.district || item.amphoe || '';
+    const prov = item.province || '';
+    const zip = String(item.zipcode || '');
+
+    setWarehouseSubdistrict(sub);
+    setWarehouseDistrict(dist);
+    setWarehouseProvince(prov);
+    setWarehouseZipcode(zip);
+    setWarehouseAddressQuery(`ต.${sub} > อ.${dist} > จ.${prov} (${zip})`);
     setWarehouseTambonResults([]);
+
+    // Update sellerAddress automatically if in registration wizard
+    const houseStr = warehouseHouseNo ? `บ้านเลขที่ ${warehouseHouseNo} ` : '';
+    const mooStr = warehouseMoo ? `หมู่/ซอย ${warehouseMoo} ` : '';
+    const roadStr = warehouseRoad ? `ถนน ${warehouseRoad} ` : '';
+    const autoAddr = `${houseStr}${mooStr}${roadStr}ต.${sub} อ.${dist} จ.${prov} ${zip}`.trim();
+    if (!sellerAddress || sellerAddress.trim() === '') {
+      setSellerAddress(autoAddr);
+    }
   };
 
   const handleSaveWarehousePinAndAddress = async () => {
@@ -1875,7 +1876,7 @@ export default function App() {
                 return currentMember;
               });
               
-              if (currentMember.firstLogin) {
+              if (currentMember.firstLogin && currentUser?.firstLogin !== false) {
                 setIsFirstLoginModal(true);
               }
             }
@@ -2024,7 +2025,7 @@ export default function App() {
         profileFetchedAt.current = Date.now();
         setProfile(data.profile);
         setShippingAddress(data.profile.kycAddress || '');
-        if (data.profile.firstLogin) {
+        if (data.profile.firstLogin && currentUser?.firstLogin !== false) {
           setIsFirstLoginModal(true);
         }
 
@@ -3596,6 +3597,16 @@ export default function App() {
       }
       if (data.promoConfig) {
         setPromoConfig(data.promoConfig);
+        try {
+          const dismissed = sessionStorage.getItem('natee_promo_dismissed');
+          if (data.promoConfig.active && !dismissed) {
+            setShowPromoPopup(true);
+          } else {
+            setShowPromoPopup(false);
+          }
+        } catch (e) {
+          setShowPromoPopup(false);
+        }
       }
     } catch (err) {
       console.error("Error fetching bank settings", err);
@@ -9129,7 +9140,7 @@ export default function App() {
                       {(() => {
                         const getProductShopRating = (p: any): number => {
                           if (p?.sellerRating) return parseFloat(p.sellerRating);
-                          const str = p?.sellerStoreName || p?.sellerId || p?.id || 'store';
+                          const str = String(p?.sellerStoreName || p?.sellerId || p?.id || 'store');
                           let hash = 0;
                           for (let i = 0; i < str.length; i++) {
                             hash = str.charCodeAt(i) + ((hash << 5) - hash);
@@ -9141,7 +9152,7 @@ export default function App() {
                         const getProductSalesCount = (p: any): number => {
                           if (p?.salesCount) return parseInt(p.salesCount);
                           if (p?.isBestSeller) return 320;
-                          const str = p?.id || 'prod';
+                          const str = String(p?.id || 'prod');
                           let hash = 0;
                           for (let i = 0; i < str.length; i++) {
                             hash = str.charCodeAt(i) + ((hash << 5) - hash);
@@ -9160,11 +9171,11 @@ export default function App() {
 
                           if (!q) return true;
 
-                          const pName = (p.name || '').toLowerCase();
-                          const pBrand = (p.brand || p.brandName || '').toLowerCase();
-                          const pStore = (p.sellerStoreName || '').toLowerCase();
-                          const pCategory = (p.category || '').toLowerCase();
-                          const pSubcat = (p.subcategory || '').toLowerCase();
+                          const pName = String(p.name || '').toLowerCase();
+                          const pBrand = String(p.brand || p.brandName || '').toLowerCase();
+                          const pStore = String(p.sellerStoreName || '').toLowerCase();
+                          const pCategory = String(p.category || '').toLowerCase();
+                          const pSubcat = String(p.subcategory || '').toLowerCase();
 
                           return pName.includes(q) || pBrand.includes(q) || pStore.includes(q) || pCategory.includes(q) || pSubcat.includes(q);
                         });
@@ -9174,8 +9185,8 @@ export default function App() {
                         const displayList = [...filtered].sort((a, b) => {
                           const ratingA = getProductShopRating(a);
                           const ratingB = getProductShopRating(b);
-                          const pseudoA = (a.id.charCodeAt(0) + userSeed) % 17;
-                          const pseudoB = (b.id.charCodeAt(0) + userSeed) % 17;
+                          const pseudoA = (String(a?.id || 'a').charCodeAt(0) + userSeed) % 17;
+                          const pseudoB = (String(b?.id || 'b').charCodeAt(0) + userSeed) % 17;
                           
                           if (Math.abs(ratingA - ratingB) > 0.3) {
                             return ratingB - ratingA;
@@ -9409,7 +9420,7 @@ export default function App() {
                                       <div className="absolute top-3 right-3 bg-amber-500 text-white px-3 py-1 rounded-xl text-xs font-black shadow flex items-center gap-1">
                                         ⭐ {(() => {
                                           if (selectedMarketProduct.sellerRating) return selectedMarketProduct.sellerRating;
-                                          const str = selectedMarketProduct.sellerStoreName || selectedMarketProduct.sellerId || selectedMarketProduct.id;
+                                          const str = String(selectedMarketProduct.sellerStoreName || selectedMarketProduct.sellerId || selectedMarketProduct.id || 'store');
                                           let hash = 0;
                                           for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
                                           return (4.5 + Math.abs(hash % 6) / 10).toFixed(1);
@@ -9622,7 +9633,7 @@ export default function App() {
                               {(() => {
                                 const getShopRatingVal = (p: any): number => {
                                   if (p?.sellerRating) return parseFloat(p.sellerRating);
-                                  const str = p?.sellerStoreName || p?.sellerId || p?.id || 'store';
+                                  const str = String(p?.sellerStoreName || p?.sellerId || p?.id || 'store');
                                   let hash = 0;
                                   for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
                                   return parseFloat((4.5 + Math.abs(hash % 6) / 10).toFixed(1));
@@ -12400,20 +12411,98 @@ export default function App() {
                             </div>
                           </div>
 
-                          <div className="space-y-3">
+                          <div className="space-y-4 bg-slate-50/60 p-4 rounded-2xl border border-slate-200/80">
+                            <h4 className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                              🏭 2. ข้อมูลคลังสินค้า / โรงงาน และพิกัดแผนที่จัดส่ง
+                            </h4>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              <div>
+                                <label className="block text-slate-700 text-[11px] font-bold mb-1">บ้านเลขที่ / คลังสินค้า</label>
+                                <input 
+                                  type="text"
+                                  value={warehouseHouseNo}
+                                  onChange={(e) => setWarehouseHouseNo(e.target.value)}
+                                  placeholder="เช่น 99/1 คลัง A"
+                                  className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-indigo-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-slate-700 text-[11px] font-bold mb-1">หมู่ / ซอย</label>
+                                <input 
+                                  type="text"
+                                  value={warehouseMoo}
+                                  onChange={(e) => setWarehouseMoo(e.target.value)}
+                                  placeholder="เช่น หมู่ 4 ซอยสดใส"
+                                  className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-indigo-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-slate-700 text-[11px] font-bold mb-1">ถนน</label>
+                                <input 
+                                  type="text"
+                                  value={warehouseRoad}
+                                  onChange={(e) => setWarehouseRoad(e.target.value)}
+                                  placeholder="เช่น ถนนเพชรเกษม"
+                                  className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-indigo-500"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Tambon Auto-complete Search Box */}
+                            <div className="relative">
+                              <label className="block text-slate-700 text-[11px] font-bold mb-1">🔍 ค้นหาตำบล / อำเภอ / จังหวัด (คลังสินค้า) *</label>
+                              <div className="relative">
+                                <input 
+                                  type="text"
+                                  value={warehouseAddressQuery}
+                                  onChange={(e) => handleWarehouseTambonSearch(e.target.value)}
+                                  placeholder="พิมพ์ชื่อตำบล, อำเภอ, จังหวัด หรือรหัสไปรษณีย์ เช่น บางลำพู, เชียงใหม่..."
+                                  className="w-full border border-slate-200 bg-white rounded-xl pl-3 pr-8 py-2 text-xs focus:outline-none focus:border-indigo-500"
+                                />
+                                <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                              </div>
+
+                              {warehouseTambonResults.length > 0 && (
+                                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto divide-y divide-slate-100 text-xs">
+                                  {warehouseTambonResults.map((item: any, idx: number) => (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      onClick={() => selectWarehouseTambon(item)}
+                                      className="w-full text-left px-3 py-2 hover:bg-indigo-50 transition cursor-pointer flex justify-between items-center"
+                                    >
+                                      <span>ต. {item.subdistrict || item.tambon} &gt; อ. {item.district || item.amphoe} &gt; จ. {item.province}</span>
+                                      <span className="font-mono text-indigo-600 font-bold">{item.zipcode}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Selected Warehouse Location Summary */}
+                            {(warehouseProvince || warehouseDistrict || warehouseSubdistrict) && (
+                              <div className="bg-indigo-50/80 border border-indigo-100 rounded-xl p-2.5 text-xs flex flex-wrap gap-x-3 gap-y-1 font-medium text-indigo-950">
+                                <span>📍 ตำบล: <strong className="text-indigo-700">{warehouseSubdistrict}</strong></span>
+                                <span>อำเภอ: <strong className="text-indigo-700">{warehouseDistrict}</strong></span>
+                                <span>จังหวัด: <strong className="text-indigo-700">{warehouseProvince}</strong></span>
+                                <span>รหัสไปรษณีย์: <strong className="text-indigo-700 font-mono">{warehouseZipcode}</strong></span>
+                              </div>
+                            )}
+
                             <div className="space-y-1.5">
-                              <label className="block text-slate-700 font-bold">ที่ตั้งคลังสินค้าและจัดส่ง</label>
+                              <label className="block text-slate-700 text-[11px] font-bold">ที่ตั้งคลังสินค้าและจัดส่งแบบเต็ม (Full Address)</label>
                               <textarea 
                                 rows={2}
                                 required
                                 value={sellerAddress}
                                 onChange={(e) => setSellerAddress(e.target.value)}
-                                placeholder="กรอกข้อมูลที่อยู่รับของและส่งคืนคลังสินค้าจริง"
-                                className="w-full border border-slate-200 rounded-xl p-3 text-xs"
+                                placeholder="กรอกที่อยู่อย่างละเอียดเพื่อใช้สำหรับการรับ-ส่งคืนสินค้า"
+                                className="w-full border border-slate-200 bg-white rounded-xl p-2.5 text-xs focus:outline-none focus:border-indigo-500"
                               />
                             </div>
 
-                            {/* Map element */}
+                            {/* Interactive Pinpoint Map */}
                             <NateeWarehouseMap 
                               lat={warehouseLat} 
                               lng={warehouseLng} 
@@ -12422,7 +12511,9 @@ export default function App() {
                                 setWarehouseLng(lng);
                               }}
                               address={sellerAddress}
-                              onAddressChange={(addr) => setSellerAddress(addr)}
+                              onAddressChange={(addr) => {
+                                if (!sellerAddress) setSellerAddress(addr);
+                              }}
                             />
                           </div>
 
@@ -13050,7 +13141,7 @@ export default function App() {
                                       onClick={() => selectWarehouseTambon(item)}
                                       className="w-full text-left px-3 py-2 hover:bg-indigo-50 transition cursor-pointer flex justify-between items-center"
                                     >
-                                      <span>ต. {item.tambon} &gt; อ. {item.amphoe} &gt; จ. {item.province}</span>
+                                      <span>ต. {item.subdistrict || item.tambon} &gt; อ. {item.district || item.amphoe} &gt; จ. {item.province}</span>
                                       <span className="font-mono text-indigo-600 font-bold">{item.zipcode}</span>
                                     </button>
                                   ))}
@@ -22217,7 +22308,7 @@ export default function App() {
         )}
 
         {/* FULL SIZE IMAGE PREVIEW MODAL */}
-        {previewImageUrl && (
+        {Boolean(previewImageUrl) && typeof previewImageUrl === 'string' && (
           <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-[999999] animate-fade-in" onClick={() => setPreviewImageUrl(null)}>
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-2xl w-full shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
               <button 
