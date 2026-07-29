@@ -4637,6 +4637,39 @@ export default function App() {
     );
   };
 
+  const handleDeleteProduct = async (productId: string) => {
+    const sellerId = sellerSessionUser?.userId || currentUser?.userId || "admin";
+    triggerConfirm(
+      "ลบสินค้าออกจากระบบ",
+      "คุณต้องการลบสินค้าชิ้นนี้ออกจากร้านค้าและระบบอย่างถาวรใช่หรือไม่?",
+      async () => {
+        try {
+          const res = await fetch('/api/admin/product-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productId, userId: sellerId })
+          });
+          const d = await res.json();
+          if (d.success) {
+            showNotif(d.message, 'success');
+            if (sellerId) fetchSellerData(sellerId);
+            fetch('/api/products')
+              .then(r => r.json())
+              .then(data => { if (data.success && Array.isArray(data.products)) setProducts(data.products); });
+            fetch('/api/admin/all-products')
+              .then(r => r.json())
+              .then(data => { if (data.success && Array.isArray(data.products)) setAllSellerProducts(data.products); });
+            fetchAdminQueues();
+          } else {
+            showNotif(d.message, 'error');
+          }
+        } catch (err) {
+          showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+        }
+      }
+    );
+  };
+
   const handleAddPackageChoice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adminNewChoiceName.trim()) {
@@ -5278,6 +5311,7 @@ export default function App() {
         fetch('/api/admin/all-products')
           .then(r => r.json())
           .then(data => { if (data.success && Array.isArray(data.products)) setAllSellerProducts(data.products); });
+        fetchAdminQueues();
       } else {
         showNotif(d.message || "เกิดข้อผิดพลาดในการแก้ไขสินค้า", 'error');
       }
@@ -5668,17 +5702,34 @@ export default function App() {
                               ❌ ปฏิเสธ
                             </button>
                             <button
-                              onClick={() => setEditingQueueProd({
-                                id: item.id,
-                                name: item.name,
-                                price: parseFloat(item.price) || 0,
-                                pv: parseFloat(item.pv) || 0,
-                                cost: item.cost !== undefined ? parseFloat(item.cost) : Math.floor((parseFloat(item.price) || 0) * 0.3)
-                              })}
-                              className="bg-amber-500 hover:bg-amber-400 text-white px-2.5 py-1.5 rounded-xl text-[10px] font-bold cursor-pointer transition shadow-sm"
-                              title="ปรับปรุงแก้ไขราคาหรือ PV ก่อนอนุมัติ"
+                              onClick={() => {
+                                const imgList = Array.isArray(item.images) && item.images.length > 0
+                                  ? item.images
+                                  : [item.image || item.imageFile].filter(Boolean);
+                                setEditingProduct({
+                                  ...item,
+                                  images: imgList,
+                                  discountPercent: item.discountPercent || '0',
+                                  shippingFeeBase: item.shippingFeeBase || '35',
+                                  shippingDiscount: item.shippingDiscount || '0',
+                                  weight: item.weight || '350',
+                                  width: item.width || '10',
+                                  length: item.length || '10',
+                                  height: item.height || '10'
+                                });
+                                setShowEditProductModal(true);
+                              }}
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1.5 rounded-xl text-[10px] font-bold cursor-pointer transition shadow-sm"
+                              title="แก้ไขรายละเอียดสินค้าและจัดการเปลี่ยนรูปภาพ"
                             >
-                              ✏️ แก้ไข
+                              ✏️ แก้ไขสินค้า/รูปภาพ
+                            </button>
+                            <button
+                              onClick={() => handleDeleteProduct(item.id)}
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-xl text-[10px] font-bold cursor-pointer transition border border-slate-200"
+                              title="ลบสินค้านี้ออกจากระบบถาวร"
+                            >
+                              🗑️ ลบสินค้า
                             </button>
                           </div>
                         </td>
@@ -6570,15 +6621,30 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row relative">
       {/* Global alert bar */}
       {notif && (
-        <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[99999] p-5 rounded-2xl shadow-2xl border-2 text-base max-w-md w-[90%] flex items-center gap-3 backdrop-blur-md transition-all duration-300 animate-slideDown ${
-          notif.type === 'success' 
-            ? 'bg-emerald-600/95 text-white border-emerald-400 shadow-emerald-500/20' 
-            : notif.type === 'error'
-            ? 'bg-rose-600/95 text-white border-rose-400 shadow-rose-500/30 font-bold'
-            : 'bg-slate-800/95 text-white border-slate-600 shadow-slate-950/40'
-        }`}>
+        <div 
+          onClick={() => setNotif(null)}
+          className={`fixed top-6 left-1/2 -translate-x-1/2 z-[9000] p-4 sm:p-5 rounded-2xl shadow-2xl border-2 text-sm sm:text-base max-w-md w-[90%] flex items-center gap-3 backdrop-blur-md transition-all duration-300 animate-slideDown cursor-pointer group ${
+            notif.type === 'success' 
+              ? 'bg-emerald-600/95 text-white border-emerald-400 shadow-emerald-500/20' 
+              : notif.type === 'error'
+              ? 'bg-rose-600/95 text-white border-rose-400 shadow-rose-500/30 font-bold'
+              : 'bg-slate-800/95 text-white border-slate-600 shadow-slate-950/40'
+          }`}
+          title="คลิกเพื่อปิดการแจ้งเตือนนี้"
+        >
           <AlertCircle size={22} className="shrink-0" />
           <span className="flex-1 leading-snug">{notif.message}</span>
+          <button 
+            type="button" 
+            onClick={(e) => {
+              e.stopPropagation();
+              setNotif(null);
+            }} 
+            className="text-white/80 hover:text-white bg-black/20 hover:bg-black/40 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold transition shrink-0"
+            title="ปิดข้อความแจ้งเตือน"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -7103,7 +7169,6 @@ export default function App() {
                       setActiveTab('shop');
                       setShopPortalView('store');
                       setShopSubTab('myOrders');
-                      showNotif('เปิดหน้ารายงานประวัติการสั่งซื้อสินค้า', 'info');
                     }}
                     className={`px-3 py-1.5 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer ${
                       activeTab === 'shop' && shopPortalView === 'store' && shopSubTab === 'myOrders' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
@@ -7122,7 +7187,6 @@ export default function App() {
                         setShowCheckoutModal(true);
                       } else {
                         setShopSubTab('myOrders');
-                        showNotif('เปิดหน้ารายการสินค้าที่สั่งซื้อ และติดตามการจัดส่ง', 'info');
                       }
                     }}
                     className={`px-3 py-1.5 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer relative ${
@@ -9500,28 +9564,43 @@ export default function App() {
                                     📌 แชร์สินค้านี้เพื่อรับ PV
                                   </button>
                                   {(currentUser?.role === 'Admin' || (selectedMarketProduct.sellerId && (selectedMarketProduct.sellerId === currentUser?.userId || selectedMarketProduct.sellerId === sellerSessionUser?.userId))) && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const pToEdit = selectedMarketProduct;
-                                        setSelectedMarketProduct(null);
-                                        setEditingProduct({
-                                          ...pToEdit,
-                                          discountPercent: pToEdit.discountPercent || '0',
-                                          shippingFeeBase: pToEdit.shippingFeeBase || '35',
-                                          shippingDiscount: pToEdit.shippingDiscount || pToEdit.sellerCoPay || '0',
-                                          weight: pToEdit.weight || '350',
-                                          width: pToEdit.width || '10',
-                                          length: pToEdit.length || '10',
-                                          height: pToEdit.height || '10'
-                                        });
-                                        setShowEditProductModal(true);
-                                      }}
-                                      className="bg-indigo-700 hover:bg-indigo-600 text-white font-extrabold px-5 py-3.5 rounded-2xl text-xs transition shadow-md cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
-                                      title="แก้ไขรายละเอียดสินค้าและรูปภาพ"
-                                    >
-                                      ✏️ แก้ไขสินค้า / เปลี่ยนรูปภาพ
-                                    </button>
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const pToEdit = selectedMarketProduct;
+                                          setSelectedMarketProduct(null);
+                                          setEditingProduct({
+                                            ...pToEdit,
+                                            discountPercent: pToEdit.discountPercent || '0',
+                                            shippingFeeBase: pToEdit.shippingFeeBase || '35',
+                                            shippingDiscount: pToEdit.shippingDiscount || pToEdit.sellerCoPay || '0',
+                                            weight: pToEdit.weight || '350',
+                                            width: pToEdit.width || '10',
+                                            length: pToEdit.length || '10',
+                                            height: pToEdit.height || '10'
+                                          });
+                                          setShowEditProductModal(true);
+                                        }}
+                                        className="bg-indigo-700 hover:bg-indigo-600 text-white font-extrabold px-4 py-3.5 rounded-2xl text-xs transition shadow-md cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                                        title="แก้ไขรายละเอียดสินค้าและรูปภาพ"
+                                      >
+                                        ✏️ แก้ไขสินค้า / เปลี่ยนรูปภาพ
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const pId = selectedMarketProduct.id;
+                                          const pName = selectedMarketProduct.name;
+                                          setSelectedMarketProduct(null);
+                                          handleDeleteProduct(pId, pName);
+                                        }}
+                                        className="bg-rose-600 hover:bg-rose-500 text-white font-extrabold px-4 py-3.5 rounded-2xl text-xs transition shadow-md cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                                        title="ลบสินค้าออกจากร้านค้าอย่างถาวร"
+                                      >
+                                        🗑️ ลบสินค้า
+                                      </button>
+                                    </>
                                   )}
                                 </div>
                               </div>
@@ -12705,7 +12784,6 @@ export default function App() {
                           type="button"
                           onClick={() => {
                             setSellerPortalSubTab('products');
-                            showNotif("เปิดระบบจัดการสินค้า", "info");
                           }}
                           className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
                             sellerPortalSubTab === 'products'
@@ -12726,7 +12804,6 @@ export default function App() {
                           onClick={() => {
                             setSellerPortalSubTab('orders');
                             setSellerOrderFilter('All');
-                            showNotif("เปิดระบบคำสั่งซื้อทั้งหมด", "info");
                           }}
                           className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
                             sellerPortalSubTab === 'orders' && sellerOrderFilter === 'All'
@@ -12746,7 +12823,6 @@ export default function App() {
                           type="button"
                           onClick={() => {
                             setSellerPortalSubTab('finance');
-                            showNotif("เปิดระบบการเงินและบัญชีรายได้", "info");
                           }}
                           className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
                             sellerPortalSubTab === 'finance'
@@ -12766,7 +12842,6 @@ export default function App() {
                           type="button"
                           onClick={() => {
                             setSellerPortalSubTab('stats');
-                            showNotif("เปิดระบบสถิติร้านค้า", "info");
                           }}
                           className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
                             sellerPortalSubTab === 'stats'
@@ -12792,7 +12867,6 @@ export default function App() {
                           type="button"
                           onClick={() => {
                             setSellerPortalSubTab('home');
-                            showNotif("กลับสู่หน้าหลักแดชบอร์ด", "info");
                           }}
                           className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
                             sellerPortalSubTab === 'home'
@@ -12812,7 +12886,6 @@ export default function App() {
                           type="button"
                           onClick={() => {
                             setSellerPortalSubTab('chat');
-                            showNotif("เปิดระบบห้องสนทนากับลูกค้า", "info");
                           }}
                           className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
                             sellerPortalSubTab === 'chat'
@@ -12832,7 +12905,6 @@ export default function App() {
                           type="button"
                           onClick={() => {
                             setSellerPortalSubTab('learning');
-                            showNotif("เปิดคู่มืออบรมและกฎระเบียบ", "info");
                           }}
                           className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
                             sellerPortalSubTab === 'learning'
@@ -12852,7 +12924,6 @@ export default function App() {
                           type="button"
                           onClick={() => {
                             setSellerPortalSubTab('info');
-                            showNotif("เปิดระบบข้อมูลที่ตั้งคลังสินค้า", "info");
                           }}
                           className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
                             sellerPortalSubTab === 'info'
@@ -13557,7 +13628,7 @@ export default function App() {
                                       </div>
                                     </div>
 
-                                    <div className="flex justify-end pt-2 border-t border-slate-100">
+                                    <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                                       <button
                                         type="button"
                                         onClick={() => {
@@ -13572,7 +13643,14 @@ export default function App() {
                                         }}
                                         className="text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1 rounded-lg transition cursor-pointer"
                                       >
-                                        ✏️ แก้ไขไขรายละเอียดสินค้า
+                                        ✏️ แก้ไขรายละเอียดสินค้า & เปลี่ยนรูปภาพ
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteProduct(p.id)}
+                                        className="text-[10px] font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 px-3 py-1 rounded-lg transition cursor-pointer"
+                                      >
+                                        🗑️ ลบสินค้า
                                       </button>
                                     </div>
                                   </div>
@@ -15990,7 +16068,14 @@ export default function App() {
                                           }}
                                           className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-xl text-[10px] cursor-pointer transition"
                                         >
-                                          แก้ไขราคา / รายละเอียด
+                                          ✏️ แก้ไข / เปลี่ยนรูป
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeleteProduct(prod.id)}
+                                          className="bg-rose-600 hover:bg-rose-500 text-white font-bold px-3 py-1.5 rounded-xl text-[10px] cursor-pointer transition shadow-xs ml-1.5"
+                                          title="ลบสินค้าออกจากร้านค้าและระบบ"
+                                        >
+                                          🗑️ ลบสินค้า
                                         </button>
                                       </td>
                                     </tr>
@@ -21700,23 +21785,40 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
-                  <button 
+                <div className="flex gap-2 justify-between items-center pt-2 border-t border-slate-100">
+                  <button
                     type="button"
                     onClick={() => {
+                      const pId = editingProduct.id;
+                      const pName = editingProduct.name;
                       setShowEditProductModal(false);
                       setEditingProduct(null);
+                      handleDeleteProduct(pId, pName);
                     }}
-                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition active:scale-95"
+                    className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-2 rounded-xl text-xs font-bold cursor-pointer transition active:scale-95 flex items-center gap-1"
                   >
-                    ยกเลิก
+                    🗑️ ลบสินค้านี้
                   </button>
-                  <button 
-                    type="submit"
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition shadow-md shadow-indigo-600/20 cursor-pointer active:scale-95"
-                  >
-                    💾 บันทึกการแก้ไข (ส่งตรวจสอบใหม่)
-                  </button>
+                  <div className="flex gap-2">
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setShowEditProductModal(false);
+                        setEditingProduct(null);
+                      }}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition active:scale-95"
+                    >
+                      ยกเลิก
+                    </button>
+                    <button 
+                      type="submit"
+                      className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl text-xs font-bold transition shadow-md shadow-indigo-600/20 cursor-pointer active:scale-95"
+                    >
+                      {currentUser?.role === 'Admin' || sellerSessionUser?.role === 'Admin' || !!originalAdmin
+                        ? '💾 บันทึกการแก้ไข (อนุมัติทันที)'
+                        : '💾 บันทึกการแก้ไข (ส่งแอดมินอนุมัติ)'}
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>

@@ -222,9 +222,54 @@ function setupServerRealTimeSync() {
             const incomingStr = JSON.stringify(incomingData);
             
             if (originalStr !== incomingStr) {
-              cacheDb[key] = incomingData;
+              if (Array.isArray(incomingData) && Array.isArray(cacheDb[key])) {
+                let hasLocalOnlyItems = false;
+                if (key === 'members') {
+                  const merged = [...incomingData];
+                  for (const localM of cacheDb.members) {
+                    if (!localM || !localM.userId) continue;
+                    const idx = merged.findIndex((m: any) => m.userId === localM.userId);
+                    if (idx === -1) {
+                      merged.push(localM);
+                      hasLocalOnlyItems = true;
+                    } else {
+                      if (localM.lastUpdated && merged[idx].lastUpdated && localM.lastUpdated > merged[idx].lastUpdated) {
+                        merged[idx] = localM;
+                      } else if (localM.sellerStatus === 'Active' && merged[idx].sellerStatus !== 'Active') {
+                        merged[idx].sellerStatus = 'Active';
+                        if (localM.sellerCode) merged[idx].sellerCode = localM.sellerCode;
+                      }
+                    }
+                  }
+                  cacheDb.members = merged;
+                } else if (key === 'products' || key === 'sellerProducts' || key === 'orders' || key === 'transactions') {
+                  const merged = [...incomingData];
+                  for (const localItem of cacheDb[key]) {
+                    if (!localItem || !localItem.id) continue;
+                    const idx = merged.findIndex((item: any) => item.id === localItem.id);
+                    if (idx === -1) {
+                      merged.push(localItem);
+                      hasLocalOnlyItems = true;
+                    } else if (key === 'sellerProducts' && localItem.status === 'Approved' && merged[idx].status !== 'Approved') {
+                      merged[idx].status = 'Approved';
+                      hasLocalOnlyItems = true;
+                    }
+                  }
+                  cacheDb[key] = merged;
+                } else {
+                  cacheDb[key] = incomingData;
+                }
+
+                if (hasLocalOnlyItems) {
+                  console.log(`🛡️ [Server Real-Time Sync] Preserved local items for '${key}' during sync merge.`);
+                  saveDbToFirestore(cacheDb).catch(() => {});
+                }
+              } else {
+                cacheDb[key] = incomingData;
+              }
+
               if (key === 'members') {
-                console.log(`🔔 [Server Real-Time Sync] Synced 'members' from Firestore. Total members: ${incomingData?.length || 0}`);
+                console.log(`🔔 [Server Real-Time Sync] Synced 'members' from Firestore. Total members: ${cacheDb.members?.length || 0}`);
               } else if (key === 'bankSettings') {
                 console.log(`🔔 [Server Real-Time Sync] Synced 'bankSettings' from Firestore.`);
               } else {
@@ -382,11 +427,8 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
       // Merge members (union by userId)
       const mergedMembers = [...(loadedData.members || [])];
       let hasMergedChanges = false;
-      
-      const isProductionMode = process.env.NODE_ENV === 'production' || (typeof __filename !== 'undefined' && __filename.endsWith('.cjs'));
-      const skipLocalMerge = isProductionMode && mergedMembers.length > 0;
 
-      if (!skipLocalMerge && localDb && Array.isArray(localDb.members)) {
+      if (localDb && Array.isArray(localDb.members)) {
         for (const localMember of localDb.members) {
           if (!localMember || !localMember.userId) continue;
           const idx = mergedMembers.findIndex((m: any) => m.userId === localMember.userId);
@@ -1325,6 +1367,7 @@ function writeDb(data) {
     }
   }
   cacheDb = data;
+  isDatabaseLoadedFromFirestore = true;
   const currentDbFile = isSandboxActive ? DB_FILE_SANDBOX : DB_FILE;
   fs.writeFileSync(currentDbFile, JSON.stringify(data, null, 2), 'utf8');
   saveDbToFirestore(data).catch(err => {
@@ -5339,12 +5382,12 @@ app.post('/api/seller/product/edit', (req, res) => {
   const member = db.members.find(m => m.userId === userId);
   const isAdmin = member?.role === 'Admin' || userId === 'admin' || (typeof userId === 'string' && userId.startsWith('admin_'));
 
-  if (!isAdmin && (!member || member.sellerStatus !== "Active")) {
-    return res.status(403).json({ success: false, message: "เฉพาะผู้ขายที่ผ่านการอนุมัติร้านค้าหรือผู้ดูแลระบบเท่านั้นที่แก้ไขข้อมูลสินค้าได้" });
+  const prod = db.sellerProducts.find(p => p.id === productId);
+  if (!prod) return res.status(404).json({ success: false, message: "ไม่พบสินค้าชิ้นนี้ในระบบ" });
+
+  if (!isAdmin && prod.sellerId && prod.sellerId !== userId && member?.userId !== prod.sellerId) {
+    return res.status(403).json({ success: false, message: "คุณไม่มีสิทธิ์แก้ไขสินค้าของร้านค้าอื่น" });
   }
-  
-  const prod = db.sellerProducts.find(p => p.id === productId && (p.sellerId === userId || isAdmin));
-  if (!prod) return res.status(404).json({ success: false, message: "ไม่พบสินค้าชิ้นนี้" });
 
   let processedImages: string[] = [];
   if (Array.isArray(images) && images.length > 0) {
@@ -5416,7 +5459,7 @@ app.post('/api/seller/product/edit', (req, res) => {
   prod.customerShippingFee = parseFloat(customerShippingFee) || 35;
   prod.netPayout = parseFloat(netPayout) || 0;
   
-  const isApproved = !!approveInstantly || isAdmin || prod.status === "Approved";
+  const isApproved = !!approveInstantly || isAdmin;
 
   if (isApproved) {
     prod.status = "Approved";
@@ -5439,6 +5482,7 @@ app.post('/api/seller/product/edit', (req, res) => {
       description: prod.description,
       shortDescription: prod.shortDescription || "",
       category: prod.category || "General",
+      sellerId: prod.sellerId,
       sellerCode: prod.sellerCode,
       sellerStoreName: prod.sellerStoreName,
       subcategory: prod.subcategory || "",
@@ -5469,6 +5513,37 @@ app.post('/api/seller/product/edit', (req, res) => {
       ? "แอดมินใช้สิทธิ์แทรกแซง: แก้ไขข้อมูลและอนุมัติสินค้าทันทีสำเร็จ! ✨" 
       : "แก้ไขรายละเอียดสินค้าสำเร็จ! นำส่งให้แอดมินอนุมัติใหม่อีกครั้งเพื่อความโปร่งใสเรียบร้อยแล้วค่ะ" 
   });
+});
+
+// ADMIN / SELLER DELETE PRODUCT
+app.post('/api/admin/product-delete', (req, res) => {
+  const { productId, userId } = req.body;
+  const db = readDb();
+  
+  const member = db.members.find(m => m.userId === userId);
+  const isAdmin = member?.role === 'Admin' || userId === 'admin' || (typeof userId === 'string' && userId.startsWith('admin_'));
+
+  const prod = db.sellerProducts.find(p => p.id === productId);
+  if (!prod) {
+    const mainOnly = db.products.find(p => p.id === productId);
+    if (!mainOnly) return res.status(404).json({ success: false, message: "ไม่พบสินค้าในระบบ" });
+    if (!isAdmin && mainOnly.sellerId && mainOnly.sellerId !== userId && member?.userId !== mainOnly.sellerId) {
+      return res.status(403).json({ success: false, message: "คุณไม่มีสิทธิ์ลบสินค้าของร้านค้าอื่น" });
+    }
+    db.products = db.products.filter(p => p.id !== productId);
+    writeDb(db);
+    return res.json({ success: true, message: `ลบสินค้า "${mainOnly.name}" ออกจากระบบเรียบร้อยแล้ว!` });
+  }
+
+  if (!isAdmin && prod.sellerId && prod.sellerId !== userId && member?.userId !== prod.sellerId) {
+    return res.status(403).json({ success: false, message: "คุณไม่มีสิทธิ์ลบสินค้าของร้านค้าอื่น" });
+  }
+
+  db.sellerProducts = db.sellerProducts.filter(p => p.id !== productId);
+  db.products = db.products.filter(p => p.id !== productId);
+
+  writeDb(db);
+  res.json({ success: true, message: `ลบสินค้า "${prod.name}" ออกจากร้านค้าและระบบเรียบร้อยแล้ว!` });
 });
 
 // GET ALL ORDERS FOR ADMIN REPORT
