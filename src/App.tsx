@@ -4287,6 +4287,30 @@ export default function App() {
     setShowPurchaseConfirmModal(false);
   };
 
+  const getProductShopRating = (p: any): number => {
+    if (!p) return 4.8;
+    if (p?.sellerRating) return parseFloat(p.sellerRating);
+    const str = String(p?.sellerStoreName || p?.sellerId || p?.id || 'store');
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const r = 4.5 + Math.abs(hash % 6) / 10;
+    return parseFloat(r.toFixed(1));
+  };
+
+  const getProductSalesCount = (p: any): number => {
+    if (!p) return 100;
+    if (p?.salesCount) return parseInt(p.salesCount);
+    if (p?.isBestSeller) return 320;
+    const str = String(p?.id || 'prod');
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return 40 + Math.abs(hash % 260);
+  };
+
   // Purchase Package or General Product
   const handlePurchaseProduct = async (prodId: string, bypassChoice = false, customChoiceId?: string) => {
     const product = products.find(p => p.id === prodId);
@@ -9065,20 +9089,24 @@ export default function App() {
                   {/* Package List */}
                   <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                     {products.filter(p => p.category === 'Package').map(p => (
-                      <div key={p.id} className="bg-white border border-slate-100 rounded-3xl p-4 shadow-sm flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition">
+                      <div 
+                        key={p.id} 
+                        onClick={() => handlePurchaseProduct(p.id)}
+                        className="bg-white border border-slate-100 hover:border-indigo-300 rounded-3xl p-4 shadow-sm flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition cursor-pointer"
+                      >
                         <div>
-                          <div className="overflow-hidden rounded-2xl mb-3 h-24">
+                          <div className="overflow-hidden rounded-2xl mb-3 h-24 bg-slate-100">
                             <img 
                               src={p.image || (p.images && p.images[0]) || p.imageUrl || p.imageFile || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'} 
                               onError={(e) => {
                                 (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80';
                               }}
-                              className="w-full h-full object-cover group-hover:scale-105 transition duration-300" 
+                              className="w-full h-full object-cover group-hover:scale-105 transition duration-300 cursor-pointer" 
                               alt={p.name || ''}
                             />
                           </div>
-                          <h4 className="text-xs font-bold text-slate-900 leading-tight">{p.name}</h4>
-                          <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">{p.description}</p>
+                          <h4 className="text-xs font-bold text-slate-900 leading-tight group-hover:text-indigo-600 transition">{p.name}</h4>
+                          <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed line-clamp-2">{p.description}</p>
                         </div>
                         <div className="mt-4 pt-3 border-t border-slate-100">
                           <div className="flex justify-between items-center text-xs mb-3">
@@ -9086,10 +9114,14 @@ export default function App() {
                             <span className="bg-sky-50 text-sky-700 px-1.5 py-0.5 rounded text-[10px] font-bold">+{p.pv} PV</span>
                           </div>
                           <button 
-                            onClick={() => handlePurchaseProduct(p.id)}
-                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-xl text-[10px] font-bold transition cursor-pointer"
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePurchaseProduct(p.id);
+                            }}
+                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-xl text-[10px] font-bold transition cursor-pointer shadow-sm"
                           >
-                            สั่งซื้อแพ็กเกจทันที
+                            🛒 สั่งซื้อแพ็กเกจทันที
                           </button>
                         </div>
                       </div>
@@ -9138,28 +9170,6 @@ export default function App() {
 
                       {/* Dynamic Product Grid - Photo-Focused Display */}
                       {(() => {
-                        const getProductShopRating = (p: any): number => {
-                          if (p?.sellerRating) return parseFloat(p.sellerRating);
-                          const str = String(p?.sellerStoreName || p?.sellerId || p?.id || 'store');
-                          let hash = 0;
-                          for (let i = 0; i < str.length; i++) {
-                            hash = str.charCodeAt(i) + ((hash << 5) - hash);
-                          }
-                          const r = 4.5 + Math.abs(hash % 6) / 10;
-                          return parseFloat(r.toFixed(1));
-                        };
-
-                        const getProductSalesCount = (p: any): number => {
-                          if (p?.salesCount) return parseInt(p.salesCount);
-                          if (p?.isBestSeller) return 320;
-                          const str = String(p?.id || 'prod');
-                          let hash = 0;
-                          for (let i = 0; i < str.length; i++) {
-                            hash = str.charCodeAt(i) + ((hash << 5) - hash);
-                          }
-                          return 40 + Math.abs(hash % 260);
-                        };
-
                         const nonPackages = products.filter(p => p.category !== 'Package');
                         const currentCat = (window as any)._shopCategory || 'All';
                         const q = shopSearchQuery.toLowerCase().trim();
@@ -9229,11 +9239,21 @@ export default function App() {
                               return (
                                 <div 
                                   key={p.id} 
-                                  onClick={() => setSelectedMarketProduct(p)}
+                                  onClick={() => {
+                                    setSelectedMarketProduct(p);
+                                    setMarketProductQty(1);
+                                  }}
                                   className="bg-white border border-slate-200/80 hover:border-orange-400 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between group cursor-pointer relative"
                                 >
                                   {/* Top Image Container - Photo Focused (Reduced 25% height) */}
-                                  <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100">
+                                  <div 
+                                    className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100 cursor-pointer"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedMarketProduct(p);
+                                      setMarketProductQty(1);
+                                    }}
+                                  >
                                     <img 
                                       src={p.image || (p.images && p.images[0]) || p.imageUrl || p.imageFile || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'} 
                                       onError={(e) => {
@@ -9309,9 +9329,18 @@ export default function App() {
 
                                       <div className="flex gap-1 pt-0.5">
                                         <button 
+                                          type="button"
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            setSelectedMarketProduct(p);
+                                            if (!currentUser) {
+                                              showNotif('กรุณาเข้าสู่ระบบหรือสมัครสมาชิกก่อนสั่งซื้อสินค้าค่ะ', 'info');
+                                              setAuthMode('login');
+                                              setShowLoginModal(true);
+                                              return;
+                                            }
+                                            setCheckoutMarketProduct(p);
+                                            setMarketProductQty(1);
+                                            setShowMarketCheckoutModal(true);
                                           }}
                                           className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white py-1.5 rounded-xl text-[10px] font-extrabold transition shadow-sm cursor-pointer text-center"
                                         >
@@ -9363,341 +9392,7 @@ export default function App() {
                         );
                       })()}
 
-                      {/* PRODUCT DETAIL MODAL (PAGE 2) */}
-                      {selectedMarketProduct && (
-                        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 overflow-y-auto p-4 sm:p-6 flex items-center justify-center animate-fadeIn">
-                          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 sm:p-8 space-y-6 shadow-2xl border border-indigo-100 relative max-h-[90vh] overflow-y-auto">
-                            {/* Close Button */}
-                            <button
-                              onClick={() => setSelectedMarketProduct(null)}
-                              className="absolute top-5 right-5 w-9 h-9 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full flex items-center justify-center text-lg font-bold transition cursor-pointer z-20"
-                            >
-                              ✕
-                            </button>
-
-                            {/* Main Product Info */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                              {/* Product Image Gallery & Desktop Hover Zoom */}
-                              {(() => {
-                                const rawImgs = [
-                                  selectedMarketProduct.image,
-                                  selectedMarketProduct.imageFile,
-                                  selectedMarketProduct.imageUrl,
-                                  selectedMarketProduct.image2,
-                                  selectedMarketProduct.image3,
-                                  ...(Array.isArray(selectedMarketProduct.images) ? selectedMarketProduct.images : [])
-                                ].filter((img): img is string => typeof img === 'string' && img.trim().length > 0);
-
-                                const uniqueImgs = Array.from(new Set(rawImgs));
-                                const modalImages = uniqueImgs.length > 0 
-                                  ? uniqueImgs 
-                                  : [selectedMarketProduct.image || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'];
-
-                                const activeImg = (window as any)._activeModalImg && modalImages.includes((window as any)._activeModalImg)
-                                  ? (window as any)._activeModalImg
-                                  : modalImages[0];
-
-                                const prodSales = getProductSalesCount(selectedMarketProduct);
-
-                                return (
-                                  <div className="space-y-3">
-                                    <div 
-                                      onClick={() => setPreviewImageUrl(activeImg)}
-                                      className="overflow-hidden rounded-2xl border border-slate-100 h-56 relative shadow-inner bg-slate-50 group cursor-pointer cursor-zoom-in"
-                                      title="คลิกเพื่อดูรูปภาพขนาดใหญ่"
-                                    >
-                                      <img 
-                                        src={activeImg || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'} 
-                                        onError={(e) => {
-                                          (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80';
-                                        }}
-                                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-125" 
-                                        alt={selectedMarketProduct.name} 
-                                      />
-                                      <div className="absolute top-3 left-3 bg-indigo-900/90 text-white px-3 py-1 rounded-xl text-xs font-bold border border-white/20 shadow">
-                                        🏪 {selectedMarketProduct.sellerStoreName || 'นที พลัส มาร์เก็ต'}
-                                      </div>
-                                      <div className="absolute top-3 right-3 bg-amber-500 text-white px-3 py-1 rounded-xl text-xs font-black shadow flex items-center gap-1">
-                                        ⭐ {(() => {
-                                          if (selectedMarketProduct.sellerRating) return selectedMarketProduct.sellerRating;
-                                          const str = String(selectedMarketProduct.sellerStoreName || selectedMarketProduct.sellerId || selectedMarketProduct.id || 'store');
-                                          let hash = 0;
-                                          for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-                                          return (4.5 + Math.abs(hash % 6) / 10).toFixed(1);
-                                        })()} / 5.0
-                                      </div>
-                                      <div className="absolute bottom-2 left-2 bg-slate-900/85 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-md font-bold shadow-md">
-                                        🔥 ขายแล้ว {prodSales} ชิ้น
-                                      </div>
-                                      <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-md pointer-events-none">
-                                        🔍 นำเมาส์ไปชี้เพื่อขยาย
-                                      </div>
-                                    </div>
-
-                                    {/* Thumbnail Gallery Slider Below */}
-                                    <div className="flex gap-2 overflow-x-auto pb-1">
-                                      {modalImages.map((imgUrl, imgIdx) => (
-                                        <button
-                                          key={imgIdx}
-                                          onClick={() => {
-                                            (window as any)._activeModalImg = imgUrl;
-                                            setMlmSearchId(prev => prev + 1);
-                                          }}
-                                          className={`w-16 h-16 rounded-xl border-2 overflow-hidden flex-shrink-0 cursor-pointer transition ${
-                                            activeImg === imgUrl
-                                              ? 'border-orange-500 shadow-md scale-105'
-                                              : 'border-slate-200 opacity-70 hover:opacity-100'
-                                          }`}
-                                        >
-                                          <img src={imgUrl} className="w-full h-full object-cover" alt={`thumbnail ${imgIdx + 1}`} />
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-
-                              {/* Product Details & Purchase Action */}
-                              <div className="space-y-4">
-                                <div className="space-y-1">
-                                  <span className="inline-block bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-extrabold">
-                                    {selectedMarketProduct.category || 'สินค้าทั่วไป'} {selectedMarketProduct.subcategory ? `• ${selectedMarketProduct.subcategory}` : ''}
-                                  </span>
-                                  <h3 className="text-xl font-black text-slate-900 leading-snug">
-                                    {selectedMarketProduct.name}
-                                  </h3>
-                                  {(selectedMarketProduct.brand || selectedMarketProduct.brandName) && (
-                                    <p className="text-xs text-indigo-600 font-bold">
-                                      🏷️ แบรนด์สินค้า (Brand): <span className="text-slate-800">{selectedMarketProduct.brand || selectedMarketProduct.brandName}</span>
-                                    </p>
-                                  )}
-                                </div>
-
-                                <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl space-y-2">
-                                  <div className="flex justify-between items-baseline">
-                                    <div className="text-2xl font-black text-indigo-600">
-                                      ฿ {selectedMarketProduct.price?.toLocaleString()}
-                                    </div>
-                                    {(['S','M','L','XL','XXL'].includes(profile?.rank || '') || profile?.role === 'Admin' || profile?.role === 'Manager') ? (
-                                      <div className="bg-emerald-100 text-emerald-800 text-xs font-black px-3 py-1 rounded-xl">
-                                        +{selectedMarketProduct.pv || Math.floor(parseFloat(selectedMarketProduct.price) * 0.5)} PV
-                                      </div>
-                                    ) : (
-                                      <div className="bg-slate-100 text-slate-500 text-[11px] font-semibold px-3 py-1 rounded-xl" title="เฉพาะสมาชิกตำแหน่ง S ขึ้นไป">
-                                        🔒 คะแนน PV เฉพาะตำแหน่ง S ขึ้นไป
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 text-[11px] text-slate-600 font-medium">
-                                    <div>
-                                      🚚 ค่าจัดส่ง: <strong className="text-emerald-700">{selectedMarketProduct.shippingFee ? `฿${selectedMarketProduct.shippingFee}` : 'จัดส่งฟรีทั่วประเทศ'}</strong>
-                                    </div>
-                                    <div>
-                                      🏷️ ส่วนลดสิทธิ์สมาชิก: <strong className="text-indigo-600">{selectedMarketProduct.discount || 'ใช้ E-Coupon ลดสูงสุด'}</strong>
-                                    </div>
-                                  </div>
-
-                                  <p className="text-[10px] text-slate-400 pt-1">
-                                    ชำระด้วย E-Coupon สะสมส่วนลดเป็นอันดับแรก หากไม่พอระบบหักส่วนต่างจาก E-Cash อัตโนมัติ
-                                  </p>
-                                </div>
-
-                                <div className="space-y-2 text-xs">
-                                  <h4 className="font-bold text-slate-800 flex items-center gap-1.5">
-                                    💡 จุดเด่นและคุณสมบัติสินค้า:
-                                  </h4>
-                                  <p className="text-slate-600 bg-amber-50/60 border border-amber-100 p-3 rounded-xl leading-relaxed">
-                                    {selectedMarketProduct.shortDescription || selectedMarketProduct.description || "สินค้าคุณภาพที่ผ่านการรับรองและตรวจสอบมาตรฐานเรียบร้อยแล้ว"}
-                                  </p>
-                                </div>
-
-                                {selectedMarketProduct.description && selectedMarketProduct.description !== selectedMarketProduct.shortDescription && (
-                                  <div className="space-y-1 text-xs">
-                                    <h4 className="font-bold text-slate-800">📄 รายละเอียดสินค้าเพิ่มเติม:</h4>
-                                    <p className="text-slate-500 text-[11px] leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                      {selectedMarketProduct.description}
-                                    </p>
-                                  </div>
-                                )}
-
-                                {/* Quantity Selector (+ / -) */}
-                                <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-3 rounded-2xl">
-                                  <span className="text-xs font-bold text-slate-700">จำนวนสินค้าที่ต้องการ:</span>
-                                  <div className="flex items-center gap-3">
-                                    <button
-                                      type="button"
-                                      onClick={() => setMarketProductQty(prev => Math.max(1, prev - 1))}
-                                      className="w-8 h-8 rounded-xl bg-white border border-slate-300 text-slate-700 font-black hover:bg-slate-100 flex items-center justify-center transition active:scale-95 cursor-pointer shadow-sm"
-                                    >
-                                      -
-                                    </button>
-                                    <span className="font-mono font-black text-sm text-indigo-700 min-w-[24px] text-center">
-                                      {marketProductQty}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => setMarketProductQty(prev => prev + 1)}
-                                      className="w-8 h-8 rounded-xl bg-white border border-slate-300 text-slate-700 font-black hover:bg-slate-100 flex items-center justify-center transition active:scale-95 cursor-pointer shadow-sm"
-                                    >
-                                      +
-                                    </button>
-                                  </div>
-                                </div>
-
-                                <div className="flex flex-col sm:flex-row gap-2.5">
-                                  <button
-                                    onClick={() => {
-                                      if (!currentUser) {
-                                        showNotif('กรุณาเข้าสู่ระบบหรือสมัครสมาชิกก่อนสั่งซื้อสินค้าค่ะ', 'info');
-                                        setAuthMode('login');
-                                        setShowLoginModal(true);
-                                        return;
-                                      }
-                                      setCheckoutMarketProduct(selectedMarketProduct);
-                                      setShowMarketCheckoutModal(true);
-                                      setSelectedMarketProduct(null);
-                                    }}
-                                    className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold py-3.5 rounded-2xl shadow-lg hover:shadow transition cursor-pointer text-sm flex items-center justify-center gap-2"
-                                  >
-                                    🛒 สั่งซื้อสินค้า (฿{(selectedMarketProduct.price * marketProductQty).toLocaleString()})
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      const refCode = profile?.userId || 'CENTRAL';
-                                      const link = `${window.location.origin}/?ref=${refCode}&productId=${selectedMarketProduct.id}`;
-                                      navigator.clipboard.writeText(link);
-                                      showNotif('คัดลอกลิงก์ปักตะกร้าแชร์สินค้านี้สำเร็จ! (PV จะวิ่งเข้าเจ้าของลิงก์ทันที)', 'success');
-                                    }}
-                                    className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-5 py-3.5 rounded-2xl text-xs transition shadow-md cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
-                                    title="แชร์สินค้านี้เพื่อรับ PV / ค่าคอม Affiliate"
-                                  >
-                                    📌 แชร์สินค้านี้เพื่อรับ PV
-                                  </button>
-                                  {(currentUser?.role === 'Admin' || (selectedMarketProduct.sellerId && (selectedMarketProduct.sellerId === currentUser?.userId || selectedMarketProduct.sellerId === sellerSessionUser?.userId))) && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const pToEdit = selectedMarketProduct;
-                                          setSelectedMarketProduct(null);
-                                          setEditingProduct({
-                                            ...pToEdit,
-                                            discountPercent: pToEdit.discountPercent || '0',
-                                            shippingFeeBase: pToEdit.shippingFeeBase || '35',
-                                            shippingDiscount: pToEdit.shippingDiscount || pToEdit.sellerCoPay || '0',
-                                            weight: pToEdit.weight || '350',
-                                            width: pToEdit.width || '10',
-                                            length: pToEdit.length || '10',
-                                            height: pToEdit.height || '10'
-                                          });
-                                          setShowEditProductModal(true);
-                                        }}
-                                        className="bg-indigo-700 hover:bg-indigo-600 text-white font-extrabold px-4 py-3.5 rounded-2xl text-xs transition shadow-md cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
-                                        title="แก้ไขรายละเอียดสินค้าและรูปภาพ"
-                                      >
-                                        ✏️ แก้ไขสินค้า / เปลี่ยนรูปภาพ
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const pId = selectedMarketProduct.id;
-                                          const pName = selectedMarketProduct.name;
-                                          setSelectedMarketProduct(null);
-                                          handleDeleteProduct(pId, pName);
-                                        }}
-                                        className="bg-rose-600 hover:bg-rose-500 text-white font-extrabold px-4 py-3.5 rounded-2xl text-xs transition shadow-md cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
-                                        title="ลบสินค้าออกจากร้านค้าอย่างถาวร"
-                                      >
-                                        🗑️ ลบสินค้า
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* SECTION: สินค้าของร้านอื่นๆ ในประเภทหมวดหมู่เดียวกัน (เรียงตามลำดับคะแนนดาว ของร้าน) */}
-                            <div className="pt-6 border-t border-slate-100 space-y-4">
-                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1">
-                                <div>
-                                  <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                                    🛍️ สินค้าจากร้านอื่นๆ ในหมวดหมู่เดียวกัน
-                                  </h4>
-                                  <p className="text-[11px] text-slate-400">
-                                    หมวดหมู่ "{selectedMarketProduct.category || 'ทั่วไป'}" • เรียงลำดับตามคะแนนดาวของร้านค้าจากสูงไปต่ำ ⭐
-                                  </p>
-                                </div>
-                              </div>
-
-                              {(() => {
-                                const getShopRatingVal = (p: any): number => {
-                                  if (p?.sellerRating) return parseFloat(p.sellerRating);
-                                  const str = String(p?.sellerStoreName || p?.sellerId || p?.id || 'store');
-                                  let hash = 0;
-                                  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-                                  return parseFloat((4.5 + Math.abs(hash % 6) / 10).toFixed(1));
-                                };
-
-                                // Filter products in same category excluding current product
-                                const sameCatProducts = products
-                                  .filter(p => p.category !== 'Package' && p.id !== selectedMarketProduct.id && p.category === selectedMarketProduct.category)
-                                  .sort((a, b) => getShopRatingVal(b) - getShopRatingVal(a)); // Sorted by store star rating descending!
-
-                                if (sameCatProducts.length === 0) {
-                                  return (
-                                    <div className="py-8 text-center text-slate-400 text-xs bg-slate-50 rounded-2xl border border-slate-100">
-                                      ยังไม่มีสินค้าชิ้นอื่นจากร้านพาร์ทเนอร์ในหมวดหมู่นี้ค่ะ
-                                    </div>
-                                  );
-                                }
-
-                                return (
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                    {sameCatProducts.map(otherP => {
-                                      const ratingVal = getShopRatingVal(otherP);
-                                      const otherPv = otherP.pv || Math.floor(parseFloat(otherP.price) * 0.5);
-                                      return (
-                                        <div
-                                          key={otherP.id}
-                                          onClick={() => setSelectedMarketProduct(otherP)}
-                                          className="bg-slate-50 hover:bg-indigo-50/40 border border-slate-200/80 hover:border-indigo-300 rounded-2xl p-3 transition cursor-pointer flex items-center gap-3 group shadow-sm hover:shadow"
-                                        >
-                                          <img 
-                                            src={otherP.image || (otherP.images && otherP.images[0]) || otherP.imageUrl || otherP.imageFile || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'} 
-                                            onError={(e) => {
-                                              (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80';
-                                            }}
-                                            className="w-12 h-12 object-cover rounded-xl group-hover:scale-105 transition flex-shrink-0" 
-                                            alt={otherP.name} 
-                                          />
-                                          <div className="flex-1 min-w-0 space-y-1">
-                                            <div className="flex items-center gap-1.5">
-                                              <span className="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.2 rounded">
-                                                ⭐ {ratingVal}
-                                              </span>
-                                              <span className="text-[10px] font-bold text-slate-700 truncate">
-                                                🏪 {otherP.sellerStoreName || 'ร้านค้าพาร์ทเนอร์'}
-                                              </span>
-                                            </div>
-                                            <h5 className="text-xs font-bold text-slate-900 truncate group-hover:text-indigo-600 transition">
-                                              {otherP.name}
-                                            </h5>
-                                            <div className="flex justify-between items-center text-[11px] pt-0.5">
-                                              <span className="font-black text-indigo-600">฿ {otherP.price?.toLocaleString()}</span>
-                                              <span className="text-emerald-700 font-bold text-[9px]">+{otherPv} PV</span>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                      {/* PRODUCT DETAIL MODAL MOVED TO GLOBAL ROOT LEVEL */}
                     </div>
                   )}
                 </div>
@@ -22942,6 +22637,342 @@ export default function App() {
                 >
                   ✓ อนุมัติจำหน่าย
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: GLOBAL PRODUCT DETAIL & PURCHASE */}
+        {selectedMarketProduct && (
+          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 overflow-y-auto p-4 sm:p-6 flex items-center justify-center animate-fadeIn">
+            <div className="bg-white rounded-3xl max-w-4xl w-full p-6 sm:p-8 space-y-6 shadow-2xl border border-indigo-100 relative max-h-[90vh] overflow-y-auto">
+              {/* Close Button */}
+              <button
+                onClick={() => setSelectedMarketProduct(null)}
+                className="absolute top-5 right-5 w-9 h-9 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full flex items-center justify-center text-lg font-bold transition cursor-pointer z-20"
+              >
+                ✕
+              </button>
+
+              {/* Main Product Info */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                {/* Product Image Gallery & Desktop Hover Zoom */}
+                {(() => {
+                  const rawImgs = [
+                    selectedMarketProduct.image,
+                    selectedMarketProduct.imageFile,
+                    selectedMarketProduct.imageUrl,
+                    selectedMarketProduct.image2,
+                    selectedMarketProduct.image3,
+                    ...(Array.isArray(selectedMarketProduct.images) ? selectedMarketProduct.images : [])
+                  ].filter((img): img is string => typeof img === 'string' && img.trim().length > 0);
+
+                  const uniqueImgs = Array.from(new Set(rawImgs));
+                  const modalImages = uniqueImgs.length > 0 
+                    ? uniqueImgs 
+                    : [selectedMarketProduct.image || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'];
+
+                  const activeImg = (window as any)._activeModalImg && modalImages.includes((window as any)._activeModalImg)
+                    ? (window as any)._activeModalImg
+                    : modalImages[0];
+
+                  const prodSales = getProductSalesCount(selectedMarketProduct);
+
+                  return (
+                    <div className="space-y-3">
+                      <div 
+                        onClick={() => setPreviewImageUrl(activeImg)}
+                        className="overflow-hidden rounded-2xl border border-slate-100 h-56 relative shadow-inner bg-slate-50 group cursor-pointer cursor-zoom-in"
+                        title="คลิกเพื่อดูรูปภาพขนาดใหญ่"
+                      >
+                        <img 
+                          src={activeImg || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'} 
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80';
+                          }}
+                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-125" 
+                          alt={selectedMarketProduct.name} 
+                        />
+                        <div className="absolute top-3 left-3 bg-indigo-900/90 text-white px-3 py-1 rounded-xl text-xs font-bold border border-white/20 shadow">
+                          🏪 {selectedMarketProduct.sellerStoreName || 'นที พลัส มาร์เก็ต'}
+                        </div>
+                        <div className="absolute top-3 right-3 bg-amber-500 text-white px-3 py-1 rounded-xl text-xs font-black shadow flex items-center gap-1">
+                          ⭐ {(() => {
+                            if (selectedMarketProduct.sellerRating) return selectedMarketProduct.sellerRating;
+                            const str = String(selectedMarketProduct.sellerStoreName || selectedMarketProduct.sellerId || selectedMarketProduct.id || 'store');
+                            let hash = 0;
+                            for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                            return (4.5 + Math.abs(hash % 6) / 10).toFixed(1);
+                          })()} / 5.0
+                        </div>
+                        <div className="absolute bottom-2 left-2 bg-slate-900/85 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-md font-bold shadow-md">
+                          🔥 ขายแล้ว {prodSales} ชิ้น
+                        </div>
+                        <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-md pointer-events-none">
+                          🔍 นำเมาส์ไปชี้เพื่อขยาย
+                        </div>
+                      </div>
+
+                      {/* Thumbnail Gallery Slider Below */}
+                      <div className="flex gap-2 overflow-x-auto pb-1">
+                        {modalImages.map((imgUrl, imgIdx) => (
+                          <button
+                            key={imgIdx}
+                            onClick={() => {
+                              (window as any)._activeModalImg = imgUrl;
+                              setMlmSearchId(prev => prev + 1);
+                            }}
+                            className={`w-16 h-16 rounded-xl border-2 overflow-hidden flex-shrink-0 cursor-pointer transition ${
+                              activeImg === imgUrl
+                                ? 'border-orange-500 shadow-md scale-105'
+                                : 'border-slate-200 opacity-70 hover:opacity-100'
+                            }`}
+                          >
+                            <img src={imgUrl} className="w-full h-full object-cover" alt={`thumbnail ${imgIdx + 1}`} />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Product Details & Purchase Action */}
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <span className="inline-block bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-extrabold">
+                      {selectedMarketProduct.category || 'สินค้าทั่วไป'} {selectedMarketProduct.subcategory ? `• ${selectedMarketProduct.subcategory}` : ''}
+                    </span>
+                    <h3 className="text-xl font-black text-slate-900 leading-snug">
+                      {selectedMarketProduct.name}
+                    </h3>
+                    {(selectedMarketProduct.brand || selectedMarketProduct.brandName) && (
+                      <p className="text-xs text-indigo-600 font-bold">
+                        🏷️ แบรนด์สินค้า (Brand): <span className="text-slate-800">{selectedMarketProduct.brand || selectedMarketProduct.brandName}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl space-y-2">
+                    <div className="flex justify-between items-baseline">
+                      <div className="text-2xl font-black text-indigo-600">
+                        ฿ {selectedMarketProduct.price?.toLocaleString()}
+                      </div>
+                      {(['S','M','L','XL','XXL'].includes(profile?.rank || '') || profile?.role === 'Admin' || profile?.role === 'Manager') ? (
+                        <div className="bg-emerald-100 text-emerald-800 text-xs font-black px-3 py-1 rounded-xl">
+                          +{selectedMarketProduct.pv || Math.floor(parseFloat(selectedMarketProduct.price) * 0.5)} PV
+                        </div>
+                      ) : (
+                        <div className="bg-slate-100 text-slate-500 text-[11px] font-semibold px-3 py-1 rounded-xl" title="เฉพาะสมาชิกตำแหน่ง S ขึ้นไป">
+                          🔒 คะแนน PV เฉพาะตำแหน่ง S ขึ้นไป
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 text-[11px] text-slate-600 font-medium">
+                      <div>
+                        🚚 ค่าจัดส่ง: <strong className="text-emerald-700">{selectedMarketProduct.shippingFee ? `฿${selectedMarketProduct.shippingFee}` : 'จัดส่งฟรีทั่วประเทศ'}</strong>
+                      </div>
+                      <div>
+                        🏷️ ส่วนลดสิทธิ์สมาชิก: <strong className="text-indigo-600">{selectedMarketProduct.discount || 'ใช้ E-Coupon ลดสูงสุด'}</strong>
+                      </div>
+                    </div>
+
+                    <p className="text-[10px] text-slate-400 pt-1">
+                      ชำระด้วย E-Coupon สะสมส่วนลดเป็นอันดับแรก หากไม่พอระบบหักส่วนต่างจาก E-Cash อัตโนมัติ
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <h4 className="font-bold text-slate-800 flex items-center gap-1.5">
+                      💡 จุดเด่นและคุณสมบัติสินค้า:
+                    </h4>
+                    <p className="text-slate-600 bg-amber-50/60 border border-amber-100 p-3 rounded-xl leading-relaxed">
+                      {selectedMarketProduct.shortDescription || selectedMarketProduct.description || "สินค้าคุณภาพที่ผ่านการรับรองและตรวจสอบมาตรฐานเรียบร้อยแล้ว"}
+                    </p>
+                  </div>
+
+                  {selectedMarketProduct.description && selectedMarketProduct.description !== selectedMarketProduct.shortDescription && (
+                    <div className="space-y-1 text-xs">
+                      <h4 className="font-bold text-slate-800">📄 รายละเอียดสินค้าเพิ่มเติม:</h4>
+                      <p className="text-slate-500 text-[11px] leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        {selectedMarketProduct.description}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Quantity Selector (+ / -) */}
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                    <span className="text-xs font-bold text-slate-700">จำนวนสินค้าที่ต้องการ:</span>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setMarketProductQty(prev => Math.max(1, prev - 1))}
+                        className="w-8 h-8 rounded-xl bg-white border border-slate-300 text-slate-700 font-black hover:bg-slate-100 flex items-center justify-center transition active:scale-95 cursor-pointer shadow-sm"
+                      >
+                        -
+                      </button>
+                      <span className="font-mono font-black text-sm text-indigo-700 min-w-[24px] text-center">
+                        {marketProductQty}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setMarketProductQty(prev => prev + 1)}
+                        className="w-8 h-8 rounded-xl bg-white border border-slate-300 text-slate-700 font-black hover:bg-slate-100 flex items-center justify-center transition active:scale-95 cursor-pointer shadow-sm"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2.5">
+                    <button
+                      onClick={() => {
+                        if (!currentUser) {
+                          showNotif('กรุณาเข้าสู่ระบบหรือสมัครสมาชิกก่อนสั่งซื้อสินค้าค่ะ', 'info');
+                          setAuthMode('login');
+                          setShowLoginModal(true);
+                          return;
+                        }
+                        setCheckoutMarketProduct(selectedMarketProduct);
+                        setShowMarketCheckoutModal(true);
+                        setSelectedMarketProduct(null);
+                      }}
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold py-3.5 rounded-2xl shadow-lg hover:shadow transition cursor-pointer text-sm flex items-center justify-center gap-2"
+                    >
+                      🛒 สั่งซื้อสินค้า (฿{(selectedMarketProduct.price * marketProductQty).toLocaleString()})
+                    </button>
+                    <button
+                      onClick={() => {
+                        const refCode = profile?.userId || 'CENTRAL';
+                        const link = `${window.location.origin}/?ref=${refCode}&productId=${selectedMarketProduct.id}`;
+                        navigator.clipboard.writeText(link);
+                        showNotif('คัดลอกลิงก์ปักตะกร้าแชร์สินค้านี้สำเร็จ! (PV จะวิ่งเข้าเจ้าของลิงก์ทันที)', 'success');
+                      }}
+                      className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-5 py-3.5 rounded-2xl text-xs transition shadow-md cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                      title="แชร์สินค้านี้เพื่อรับ PV / ค่าคอม Affiliate"
+                    >
+                      📌 แชร์สินค้านี้เพื่อรับ PV
+                    </button>
+                    {(currentUser?.role === 'Admin' || (selectedMarketProduct.sellerId && (selectedMarketProduct.sellerId === currentUser?.userId || selectedMarketProduct.sellerId === sellerSessionUser?.userId))) && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const pToEdit = selectedMarketProduct;
+                            setSelectedMarketProduct(null);
+                            setEditingProduct({
+                              ...pToEdit,
+                              discountPercent: pToEdit.discountPercent || '0',
+                              shippingFeeBase: pToEdit.shippingFeeBase || '35',
+                              shippingDiscount: pToEdit.shippingDiscount || pToEdit.sellerCoPay || '0',
+                              weight: pToEdit.weight || '350',
+                              width: pToEdit.width || '10',
+                              length: pToEdit.length || '10',
+                              height: pToEdit.height || '10'
+                            });
+                            setShowEditProductModal(true);
+                          }}
+                          className="bg-indigo-700 hover:bg-indigo-600 text-white font-extrabold px-4 py-3.5 rounded-2xl text-xs transition shadow-md cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                          title="แก้ไขรายละเอียดสินค้าและรูปภาพ"
+                        >
+                          ✏️ แก้ไขสินค้า / เปลี่ยนรูปภาพ
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const pId = selectedMarketProduct.id;
+                            const pName = selectedMarketProduct.name;
+                            setSelectedMarketProduct(null);
+                            handleDeleteProduct(pId, pName);
+                          }}
+                          className="bg-rose-600 hover:bg-rose-500 text-white font-extrabold px-4 py-3.5 rounded-2xl text-xs transition shadow-md cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                          title="ลบสินค้าออกจากร้านค้าอย่างถาวร"
+                        >
+                          🗑️ ลบสินค้า
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION: สินค้าของร้านอื่นๆ ในประเภทหมวดหมู่เดียวกัน (เรียงตามลำดับคะแนนดาว ของร้าน) */}
+              <div className="pt-6 border-t border-slate-100 space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1">
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                      🛍️ สินค้าจากร้านอื่นๆ ในหมวดหมู่เดียวกัน
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      หมวดหมู่ "{selectedMarketProduct.category || 'ทั่วไป'}" • เรียงลำดับตามคะแนนดาวของร้านค้าจากสูงไปต่ำ ⭐
+                    </p>
+                  </div>
+                </div>
+
+                {(() => {
+                  const getShopRatingVal = (p: any): number => {
+                    if (p?.sellerRating) return parseFloat(p.sellerRating);
+                    const str = String(p?.sellerStoreName || p?.sellerId || p?.id || 'store');
+                    let hash = 0;
+                    for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                    return parseFloat((4.5 + Math.abs(hash % 6) / 10).toFixed(1));
+                  };
+
+                  // Filter products in same category excluding current product
+                  const sameCatProducts = products
+                    .filter(p => p.category !== 'Package' && p.id !== selectedMarketProduct.id && p.category === selectedMarketProduct.category)
+                    .sort((a, b) => getShopRatingVal(b) - getShopRatingVal(a)); // Sorted by store star rating descending!
+
+                  if (sameCatProducts.length === 0) {
+                    return (
+                      <div className="py-8 text-center text-slate-400 text-xs bg-slate-50 rounded-2xl border border-slate-100">
+                        ยังไม่มีสินค้าชิ้นอื่นจากร้านพาร์ทเนอร์ในหมวดหมู่นี้ค่ะ
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {sameCatProducts.map(otherP => {
+                        const ratingVal = getShopRatingVal(otherP);
+                        const otherPv = otherP.pv || Math.floor(parseFloat(otherP.price) * 0.5);
+                        return (
+                          <div
+                            key={otherP.id}
+                            onClick={() => setSelectedMarketProduct(otherP)}
+                            className="bg-slate-50 hover:bg-indigo-50/40 border border-slate-200/80 hover:border-indigo-300 rounded-2xl p-3 transition cursor-pointer flex items-center gap-3 group shadow-sm hover:shadow"
+                          >
+                            <img 
+                              src={otherP.image || (otherP.images && otherP.images[0]) || otherP.imageUrl || otherP.imageFile || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'} 
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80';
+                              }}
+                              className="w-12 h-12 object-cover rounded-xl group-hover:scale-105 transition flex-shrink-0" 
+                              alt={otherP.name} 
+                            />
+                            <div className="flex-1 min-w-0 space-y-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.2 rounded">
+                                  ⭐ {ratingVal}
+                                </span>
+                                <span className="text-[10px] font-bold text-slate-700 truncate">
+                                  🏪 {otherP.sellerStoreName || 'ร้านค้าพาร์ทเนอร์'}
+                                </span>
+                              </div>
+                              <h5 className="text-xs font-bold text-slate-900 truncate group-hover:text-indigo-600 transition">
+                                {otherP.name}
+                              </h5>
+                              <div className="flex justify-between items-center text-[11px] pt-0.5">
+                                <span className="font-black text-indigo-600">฿ {otherP.price?.toLocaleString()}</span>
+                                <span className="text-emerald-700 font-bold text-[9px]">+{otherPv} PV</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>

@@ -186,12 +186,8 @@ async function uploadImageToFirebaseOrKeepBase64(dataUrlOrPath: string, folderNa
     console.error("Error writing fallback upload file:", err);
   }
 
-  // Return base64 directly if image is small (< 800KB) so Firestore persists it permanently inside DB JSON, preventing 404 on Cloud Run container restarts!
-  if (dataUrlOrPath.length < 800000) {
-    return dataUrlOrPath;
-  }
-
-  return localPath || dataUrlOrPath;
+  // Return base64 directly so Firestore and JSON DB persist the image permanently, preventing 404 errors on container restarts!
+  return dataUrlOrPath;
 }
 
 try {
