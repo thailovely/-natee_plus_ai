@@ -2044,8 +2044,9 @@ export default function App() {
           setIsFirstLoginModal(true);
         }
 
-        if (shouldSyncEditStates) {
-          const p = data.profile;
+        const p = data.profile;
+        const isBlankState = !editBankName || !editBankAccount || !shipProv;
+        if (shouldSyncEditStates || isBlankState) {
           setEditUsername(p.username || '');
           setEditEmail(p.email || '');
           setEditPhone(p.phone || '');
@@ -2186,8 +2187,8 @@ export default function App() {
           username: editUsername,
           email: editEmail,
           phone: editPhone,
-          bankName: editBankName,
-          bankAccount: editBankAccount,
+          bankName: editBankName || profile?.bankName || '',
+          bankAccount: editBankAccount || profile?.bankAccount || '',
           idAddress: {
             province: idProv,
             district: idDist,
@@ -8134,33 +8135,59 @@ export default function App() {
                           />
                         </div>
 
-                        <div>
-                          <label className="block text-slate-700 text-xs font-bold mb-1">ธนาคารปลายทาง</label>
-                          <select
-                            value={editBankName}
-                            onChange={(e) => setEditBankName(e.target.value)}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none"
-                          >
-                            <option value="">-- ไม่ระบุ --</option>
-                            <option value="ธนาคารกสิกรไทย">กสิกรไทย (KBank)</option>
-                            <option value="ธนาคารไทยพาณิชย์">ไทยพาณิชย์ (SCB)</option>
-                            <option value="ธนาคารกรุงเทพ">กรุงเทพ (BBL)</option>
-                            <option value="ธนาคารกรุงไทย">กรุงไทย (KTB)</option>
-                            <option value="ธนาคารออมสิน">ออมสิน (GSB)</option>
-                            <option value="ธนาคารกรุงศรีอยุธยา">กรุงศรีอยุธยา (BAY)</option>
-                          </select>
-                        </div>
+                        {profile?.statusKyc === 'Active' ? (
+                          <div className="md:col-span-2 bg-emerald-50 border border-emerald-200 p-4 rounded-2xl space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
+                                <Lock size={14} className="text-emerald-600" />
+                                ธนาคารปลายทางรับคอมมิชชัน (อนุมัติ KYC แล้ว - ล็อกข้อมูล)
+                              </span>
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-0.5 rounded-full">
+                                🔒 ล็อกเรียบร้อยแล้ว
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 text-xs bg-white/80 p-3 rounded-xl border border-emerald-100/60">
+                              <div>
+                                <span className="text-slate-400 text-[10px] block">ธนาคาร:</span>
+                                <span className="font-bold text-slate-800">{profile?.bankName || 'ไม่ระบุ'}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 text-[10px] block">เลขที่บัญชี:</span>
+                                <span className="font-mono font-bold text-indigo-700">{profile?.bankAccount || 'ไม่ระบุ'}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div>
+                              <label className="block text-slate-700 text-xs font-bold mb-1">ธนาคารปลายทาง *</label>
+                              <select
+                                value={editBankName}
+                                onChange={(e) => setEditBankName(e.target.value)}
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none"
+                              >
+                                <option value="">-- ไม่ระบุ --</option>
+                                <option value="ธนาคารกสิกรไทย">กสิกรไทย (KBank)</option>
+                                <option value="ธนาคารไทยพาณิชย์">ไทยพาณิชย์ (SCB)</option>
+                                <option value="ธนาคารกรุงเทพ">กรุงเทพ (BBL)</option>
+                                <option value="ธนาคารกรุงไทย">กรุงไทย (KTB)</option>
+                                <option value="ธนาคารออมสิน">ออมสิน (GSB)</option>
+                                <option value="ธนาคารกรุงศรีอยุธยา">กรุงศรีอยุธยา (BAY)</option>
+                              </select>
+                            </div>
 
-                        <div className="md:col-span-2">
-                          <label className="block text-slate-700 text-xs font-bold mb-1">เลขบัญชีธนาคาร</label>
-                          <input 
-                            type="text" 
-                            value={editBankAccount} 
-                            onChange={(e) => setEditBankAccount(e.target.value.replace(/\D/g, ''))}
-                            placeholder="ระบุเลขบัญชีธนาคารเฉพาะตัวเลข"
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none"
-                          />
-                        </div>
+                            <div>
+                              <label className="block text-slate-700 text-xs font-bold mb-1">เลขบัญชีธนาคาร *</label>
+                              <input 
+                                type="text" 
+                                value={editBankAccount} 
+                                onChange={(e) => setEditBankAccount(e.target.value.replace(/\D/g, ''))}
+                                placeholder="ระบุเลขบัญชีธนาคารเฉพาะตัวเลข"
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none"
+                              />
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -8173,11 +8200,17 @@ export default function App() {
                       <div className="flex justify-between items-center border-b border-indigo-100/60 pb-2">
                         <span className="text-xs font-bold text-indigo-800 flex items-center gap-1.5">
                           <MapPin size={15} className="text-indigo-600" />
-                          ที่อยู่ตามบัตรประชาชน (Tambon Database System)
+                          ที่อยู่ตามบัตรประชาชน {profile?.statusKyc === 'Active' && '(ล็อกตาม KYC)'}
                         </span>
-                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100/80 px-2 py-0.5 rounded-full">
-                          ค้นหาอัตโนมัติ
-                        </span>
+                        {profile?.statusKyc === 'Active' ? (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            🔒 อนุมัติ KYC แล้ว
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100/80 px-2 py-0.5 rounded-full">
+                            ค้นหาอัตโนมัติ
+                          </span>
+                        )}
                       </div>
 
                       {/* 1. Address Search Auto-complete from Tambon Database */}
@@ -8448,143 +8481,145 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Pinned Shipping Map Coordinates Section */}
-                      <div className="mt-4 border-t border-slate-100 pt-4 space-y-3">
-                        <span className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider block flex items-center gap-1">
-                          📍 ปักหมุดแผนที่พิกัดที่อยู่จัดส่งคลังสินค้าปลายทาง (สำหรับบริษัทขนส่ง)
-                        </span>
+                      {/* Pinned Shipping Map Coordinates Section - Only visible to registered/approved sellers */}
+                      {profile?.sellerStatus === 'Active' && (
+                        <div className="mt-4 border-t border-slate-100 pt-4 space-y-3">
+                          <span className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider block flex items-center gap-1">
+                            📍 ปักหมุดแผนที่พิกัดที่อยู่จัดส่งคลังสินค้าปลายทาง (สำหรับร้านค้า)
+                          </span>
 
-                        {profile?.shippingPinStatus === 'Confirmed' && !isEditingMemberShippingPin && (
-                          <div className="space-y-2">
-                            <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-3 text-emerald-800 text-[11px] flex justify-between items-center">
-                              <div>
-                                <p className="font-bold">✓ พิกัดได้รับการยืนยันและล็อกเรียบร้อยแล้ว (ภาพนิ่ง)</p>
-                                <p className="font-mono text-[10px] mt-0.5 text-slate-500">พิกัดปัจจุบัน: {profile?.shippingLat?.toFixed(6)}, {profile?.shippingLng?.toFixed(6)}</p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setMemberShippingLat(profile?.shippingLat || 13.7563);
-                                  setMemberShippingLng(profile?.shippingLng || 100.5018);
-                                  setIsEditingMemberShippingPin(true);
-                                }}
-                                className="bg-white hover:bg-slate-50 text-indigo-600 border border-indigo-200 px-3 py-1 rounded-xl text-[10px] font-bold transition shadow-sm cursor-pointer"
-                              >
-                                ✏️ แก้ไขพิกัดปักหมุด
-                              </button>
-                            </div>
-                            <NateeWarehouseMap 
-                              lat={profile?.shippingLat || 13.7563} 
-                              lng={profile?.shippingLng || 100.5018} 
-                              readOnly={true}
-                            />
-                          </div>
-                        )}
-
-                        {profile?.shippingPinStatus === 'PendingApproval' && !isEditingMemberShippingPin && (
-                          <div className="space-y-2">
-                            <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3 text-amber-800 text-[11px] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                              <div>
-                                <p className="font-bold">⏳ สัญญาณเตือน: อยู่ระหว่างแอดมิน (Admin Market) ตรวจสอบอนุมัติพิกัดใหม่</p>
-                                <p className="font-mono text-[10px] mt-0.5 text-slate-500">พิกัดใหม่ที่ส่งขอ: {profile?.pendingShippingLat?.toFixed(6)}, {profile?.pendingShippingLng?.toFixed(6)}</p>
-                              </div>
-                              <button
-                                type="button"
-                                disabled
-                                className="bg-slate-100 text-slate-400 border border-slate-200 px-3 py-1 rounded-xl text-[10px] font-bold cursor-not-allowed shrink-0"
-                              >
-                                รอแอดมินอนุมัติ...
-                              </button>
-                            </div>
-                            <NateeWarehouseMap 
-                              lat={profile?.pendingShippingLat || 13.7563} 
-                              lng={profile?.pendingShippingLng || 100.5018} 
-                              readOnly={true}
-                            />
-                          </div>
-                        )}
-
-                        {(!profile?.shippingPinStatus || profile?.shippingPinStatus === 'NotPinned' || isEditingMemberShippingPin) && (
-                          <div className="space-y-3">
-                            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-slate-700 text-[11px] flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                              <div>
-                                <p className="font-bold text-slate-800">
-                                  {isEditingMemberShippingPin ? "🛠️ กำลังแก้ไขหมุดพิกัดเดิม" : "📍 กรุณาเลือกสถานที่และปักหมุดคลังจัดส่งของคุณ"}
-                                </p>
-                                <p className="text-slate-500 leading-normal mt-0.5">
-                                  เลื่อนแผนที่หรือปักตำแหน่งที่แม่นยำเพื่อความสะดวกในการจัดส่งสินค้าของระบบโลจิสติกส์ในอนาคตค่ะ
-                                </p>
-                              </div>
-                              <div className="flex gap-1.5 shrink-0">
-                                {isEditingMemberShippingPin && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setIsEditingMemberShippingPin(false)}
-                                    className="bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 px-3 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer"
-                                  >
-                                    ยกเลิก
-                                  </button>
-                                )}
+                          {profile?.shippingPinStatus === 'Confirmed' && !isEditingMemberShippingPin && (
+                            <div className="space-y-2">
+                              <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-3 text-emerald-800 text-[11px] flex justify-between items-center">
+                                <div>
+                                  <p className="font-bold">✓ พิกัดได้รับการยืนยันและล็อกเรียบร้อยแล้ว (ภาพนิ่ง)</p>
+                                  <p className="font-mono text-[10px] mt-0.5 text-slate-500">พิกัดปัจจุบัน: {profile?.shippingLat?.toFixed(6)}, {profile?.shippingLng?.toFixed(6)}</p>
+                                </div>
                                 <button
                                   type="button"
-                                  disabled={isSavingShippingPin}
-                                  onClick={async () => {
-                                    const targetLat = memberShippingLat || profile?.shippingLat;
-                                    const targetLng = memberShippingLng || profile?.shippingLng;
-                                    if (!targetLat || !targetLng) {
-                                      showNotif("กรุณาปักหมุดตำแหน่งในแผนที่ก่อนค่ะ", "warning");
-                                      return;
-                                    }
-                                    if (!window.confirm("คุณต้องการยืนยันพิกัดจุดจัดส่งนี้ใช่หรือไม่? เมื่อกดยืนยันแล้ว พิกัดจะถูกล็อกเป็นภาพนิ่งทันที")) {
-                                      return;
-                                    }
-                                    setIsSavingShippingPin(true);
-                                    try {
-                                      const res = await fetch('/api/member/update-shipping-pin', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({
-                                          userId: profile?.userId,
-                                          lat: targetLat,
-                                          lng: targetLng
-                                        })
-                                      });
-                                      const resData = await res.json();
-                                      if (resData.success) {
-                                        showNotif(resData.message, 'success');
-                                        setIsEditingMemberShippingPin(false);
-                                        if (resData.profile) {
-                                          setProfile(resData.profile);
-                                        } else {
-                                          fetchProfile(true);
-                                        }
-                                      } else {
-                                        showNotif(resData.message || 'เกิดข้อผิดพลาดในการบันทึกพิกัด', 'error');
-                                      }
-                                    } catch (err) {
-                                      showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
-                                    } finally {
-                                      setIsSavingShippingPin(false);
-                                    }
+                                  onClick={() => {
+                                    setMemberShippingLat(profile?.shippingLat || 13.7563);
+                                    setMemberShippingLng(profile?.shippingLng || 100.5018);
+                                    setIsEditingMemberShippingPin(true);
                                   }}
-                                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-xl text-[10px] font-bold transition shadow shadow-indigo-200 cursor-pointer disabled:bg-slate-400"
+                                  className="bg-white hover:bg-slate-50 text-indigo-600 border border-indigo-200 px-3 py-1 rounded-xl text-[10px] font-bold transition shadow-sm cursor-pointer"
                                 >
-                                  {isSavingShippingPin ? 'กำลังบันทึก...' : '💾 ยืนยันพิกัดจัดส่ง'}
+                                  ✏️ แก้ไขพิกัดปักหมุด
                                 </button>
                               </div>
+                              <NateeWarehouseMap 
+                                lat={profile?.shippingLat || 13.7563} 
+                                lng={profile?.shippingLng || 100.5018} 
+                                readOnly={true}
+                              />
                             </div>
-                            <NateeWarehouseMap 
-                              lat={memberShippingLat || profile?.shippingLat || 13.7563} 
-                              lng={memberShippingLng || profile?.shippingLng || 100.5018} 
-                              readOnly={false}
-                              onChange={(lat, lng) => {
-                                setMemberShippingLat(lat);
-                                setMemberShippingLng(lng);
-                              }}
-                            />
-                          </div>
-                        )}
-                      </div>
+                          )}
+
+                          {profile?.shippingPinStatus === 'PendingApproval' && !isEditingMemberShippingPin && (
+                            <div className="space-y-2">
+                              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3 text-amber-800 text-[11px] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                                <div>
+                                  <p className="font-bold">⏳ สัญญาณเตือน: อยู่ระหว่างแอดมิน (Admin Market) ตรวจสอบอนุมัติพิกัดใหม่</p>
+                                  <p className="font-mono text-[10px] mt-0.5 text-slate-500">พิกัดใหม่ที่ส่งขอ: {profile?.pendingShippingLat?.toFixed(6)}, {profile?.pendingShippingLng?.toFixed(6)}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="bg-slate-100 text-slate-400 border border-slate-200 px-3 py-1 rounded-xl text-[10px] font-bold cursor-not-allowed shrink-0"
+                                >
+                                  รอแอดมินอนุมัติ...
+                                </button>
+                              </div>
+                              <NateeWarehouseMap 
+                                lat={profile?.pendingShippingLat || 13.7563} 
+                                lng={profile?.pendingShippingLng || 100.5018} 
+                                readOnly={true}
+                              />
+                            </div>
+                          )}
+
+                          {(!profile?.shippingPinStatus || profile?.shippingPinStatus === 'NotPinned' || isEditingMemberShippingPin) && (
+                            <div className="space-y-3">
+                              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-slate-700 text-[11px] flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                                <div>
+                                  <p className="font-bold text-slate-800">
+                                    {isEditingMemberShippingPin ? "🛠️ กำลังแก้ไขหมุดพิกัดเดิม" : "📍 กรุณาเลือกสถานที่และปักหมุดคลังจัดส่งของคุณ"}
+                                  </p>
+                                  <p className="text-slate-500 leading-normal mt-0.5">
+                                    เลื่อนแผนที่หรือปักตำแหน่งที่แม่นยำเพื่อความสะดวกในการจัดส่งสินค้าของระบบโลจิสติกส์ในอนาคตค่ะ
+                                  </p>
+                                </div>
+                                <div className="flex gap-1.5 shrink-0">
+                                  {isEditingMemberShippingPin && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setIsEditingMemberShippingPin(false)}
+                                      className="bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 px-3 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer"
+                                    >
+                                      ยกเลิก
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    disabled={isSavingShippingPin}
+                                    onClick={async () => {
+                                      const targetLat = memberShippingLat || profile?.shippingLat;
+                                      const targetLng = memberShippingLng || profile?.shippingLng;
+                                      if (!targetLat || !targetLng) {
+                                        showNotif("กรุณาปักหมุดตำแหน่งในแผนที่ก่อนค่ะ", "warning");
+                                        return;
+                                      }
+                                      if (!window.confirm("คุณต้องการยืนยันพิกัดจุดจัดส่งนี้ใช่หรือไม่? เมื่อกดยืนยันแล้ว พิกัดจะถูกล็อกเป็นภาพนิ่งทันที")) {
+                                        return;
+                                      }
+                                      setIsSavingShippingPin(true);
+                                      try {
+                                        const res = await fetch('/api/member/update-shipping-pin', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({
+                                            userId: profile?.userId,
+                                            lat: targetLat,
+                                            lng: targetLng
+                                          })
+                                        });
+                                        const resData = await res.json();
+                                        if (resData.success) {
+                                          showNotif(resData.message, 'success');
+                                          setIsEditingMemberShippingPin(false);
+                                          if (resData.profile) {
+                                            setProfile(resData.profile);
+                                          } else {
+                                            fetchProfile(true);
+                                          }
+                                        } else {
+                                          showNotif(resData.message || 'เกิดข้อผิดพลาดในการบันทึกพิกัด', 'error');
+                                        }
+                                      } catch (err) {
+                                        showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
+                                      } finally {
+                                        setIsSavingShippingPin(false);
+                                      }
+                                    }}
+                                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-xl text-[10px] font-bold transition shadow shadow-indigo-200 cursor-pointer disabled:bg-slate-400"
+                                  >
+                                    {isSavingShippingPin ? 'กำลังบันทึก...' : '💾 ยืนยันพิกัดจัดส่ง'}
+                                  </button>
+                                </div>
+                              </div>
+                              <NateeWarehouseMap 
+                                lat={memberShippingLat || profile?.shippingLat || 13.7563} 
+                                lng={memberShippingLng || profile?.shippingLng || 100.5018} 
+                                readOnly={false}
+                                onChange={(lat, lng) => {
+                                  setMemberShippingLat(lat);
+                                  setMemberShippingLng(lng);
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                   </div>

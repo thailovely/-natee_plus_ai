@@ -1367,6 +1367,17 @@ function readDb() {
       if (m.sellerStatus === 'Active' && m.statusKyc !== 'Active') {
         m.statusKyc = 'Active';
       }
+      // Self-heal bank details from KYC if missing
+      if (!m.bankName && m.kycBankName) m.bankName = m.kycBankName;
+      if (!m.bankAccount && m.kycBankAccount) m.bankAccount = m.kycBankAccount;
+      if (!m.kycBankName && m.bankName) m.kycBankName = m.bankName;
+      if (!m.kycBankAccount && m.bankAccount) m.kycBankAccount = m.bankAccount;
+
+      // Lock shipping pin status if coordinates exist
+      if (m.shippingLat && (!m.shippingPinStatus || m.shippingPinStatus === 'NotPinned')) {
+        m.shippingPinStatus = 'Confirmed';
+      }
+
       recalculateMemberEligibleRights(db, m);
     });
   }
@@ -1466,12 +1477,15 @@ function writeDb(data) {
     }
   }
   cacheDb = data;
-  isDatabaseLoadedFromFirestore = true;
   const currentDbFile = isSandboxActive ? DB_FILE_SANDBOX : DB_FILE;
   fs.writeFileSync(currentDbFile, JSON.stringify(data, null, 2), 'utf8');
-  saveDbToFirestore(data).catch(err => {
-    console.error("❌ Async save to Firestore failed:", err);
-  });
+  if (isDatabaseLoadedFromFirestore) {
+    saveDbToFirestore(data).catch(err => {
+      console.error("❌ Async save to Firestore failed:", err);
+    });
+  } else {
+    console.warn("⚠️ [writeDb] Deferred async save to Firestore because loadDbFromFirestore is still loading from Firestore.");
+  }
 }
 
 // -------------------------------------------------------------
@@ -2508,6 +2522,20 @@ app.get('/api/member/profile/:userId', (req, res) => {
     .filter((t: any) => t.userId === member.userId && (!t.status || t.status === "Approved") && t.currency === "E-Coupon" && (t.amount || 0) > 0)
     .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
   
+  // Self-heal bank details from KYC if missing on member
+  let hasSelfHealed = false;
+  if (!member.bankName && member.kycBankName) {
+    member.bankName = member.kycBankName;
+    hasSelfHealed = true;
+  }
+  if (!member.bankAccount && member.kycBankAccount) {
+    member.bankAccount = member.kycBankAccount;
+    hasSelfHealed = true;
+  }
+  if (hasSelfHealed) {
+    writeDb(db);
+  }
+
   // Return safe profile summary data
   res.json({
     success: true,
@@ -2520,9 +2548,9 @@ app.get('/api/member/profile/:userId', (req, res) => {
       surname: member.surname,
       phone: member.phone,
       idCard: member.idCard,
-      bankName: member.bankName,
-      bankAccount: member.bankAccount,
-      bankAccountName: member.bankAccountName,
+      bankName: member.bankName || member.kycBankName || "",
+      bankAccount: member.bankAccount || member.kycBankAccount || "",
+      bankAccountName: member.bankAccountName || `${member.name || ''} ${member.surname || ''}`.trim(),
       sponsorId: member.sponsorId,
       rank: member.rank,
       statusKyc: member.statusKyc,
@@ -2534,6 +2562,10 @@ app.get('/api/member/profile/:userId', (req, res) => {
       totalCouponsEarned: parseFloat(totalCouponsEarned.toFixed(4)),
       eligibleRights: member.eligibleRights,
       planBPoints: member.planBPoints || 0,
+      kycAddress: member.kycAddress || "",
+      kycImgUrl: member.kycImgUrl || "",
+      kycBookUrl: member.kycBookUrl || "",
+      kycRejectReason: member.kycRejectReason || "",
       kycBeneficiary: member.kycBeneficiary || "",
       kycRelation: member.kycRelation || "",
       sellerStatus: member.sellerStatus || "NotApplied",
@@ -2546,6 +2578,19 @@ app.get('/api/member/profile/:userId', (req, res) => {
       useSameAddress: member.useSameAddress ?? false,
       selectedPackageId: member.selectedPackageId || "pack_s",
       selectedPackageItems: member.selectedPackageItems || [],
+      shippingLat: member.shippingLat || null,
+      shippingLng: member.shippingLng || null,
+      shippingPinStatus: member.shippingPinStatus || (member.shippingLat ? 'Confirmed' : 'NotPinned'),
+      pendingShippingLat: member.pendingShippingLat || null,
+      pendingShippingLng: member.pendingShippingLng || null,
+      warehouseAddress: member.warehouseAddress || "",
+      warehouseHouseNo: member.warehouseHouseNo || "",
+      warehouseMoo: member.warehouseMoo || "",
+      warehouseRoad: member.warehouseRoad || "",
+      warehouseProvince: member.warehouseProvince || "",
+      warehouseDistrict: member.warehouseDistrict || "",
+      warehouseSubdistrict: member.warehouseSubdistrict || "",
+      warehouseZipcode: member.warehouseZipcode || "",
       lastUpdated: member.lastUpdated || Date.now()
     }
   });
@@ -3235,9 +3280,21 @@ app.post('/api/member/update-profile', (req, res) => {
     member.username = username.toLowerCase().trim();
   }
 
-  // Update bank account info
-  if (bankName !== undefined) member.bankName = bankName;
-  if (bankAccount !== undefined) member.bankAccount = bankAccount;
+  // Update bank account info safely:
+  // 1. If KYC is Active, lock bankName and bankAccount unless member doesn't have one set yet
+  // 2. Never overwrite existing non-empty bankName/bankAccount with empty strings!
+  if (bankName !== undefined && typeof bankName === 'string' && bankName.trim() !== '') {
+    if (member.statusKyc !== 'Active' || !member.bankName) {
+      member.bankName = bankName.trim();
+      member.kycBankName = bankName.trim();
+    }
+  }
+  if (bankAccount !== undefined && typeof bankAccount === 'string' && bankAccount.trim() !== '') {
+    if (member.statusKyc !== 'Active' || !member.bankAccount) {
+      member.bankAccount = bankAccount.trim();
+      member.kycBankAccount = bankAccount.trim();
+    }
+  }
 
   // Update email and phone
   if (email !== undefined) member.email = email;
@@ -3252,9 +3309,27 @@ app.post('/api/member/update-profile', (req, res) => {
     member.phone = phone;
   }
 
-  // Update address info
-  if (idAddress !== undefined) member.idAddress = idAddress;
-  if (shippingAddress !== undefined) member.shippingAddress = shippingAddress;
+  // Update address info safely
+  if (idAddress && typeof idAddress === 'object') {
+    // Lock ID address if KYC is Active
+    if (member.statusKyc !== 'Active' || !member.idAddress || !member.idAddress.province) {
+      member.idAddress = {
+        ...(member.idAddress || {}),
+        ...idAddress
+      };
+    }
+  }
+
+  if (shippingAddress && typeof shippingAddress === 'object') {
+    const hasShippingFields = Object.values(shippingAddress).some(val => Boolean(val && String(val).trim()));
+    if (hasShippingFields) {
+      member.shippingAddress = {
+        ...(member.shippingAddress || {}),
+        ...shippingAddress
+      };
+    }
+  }
+
   if (useSameAddress !== undefined) member.useSameAddress = useSameAddress;
 
   // Note: member.name and member.surname are NOT updated here to satisfy "แก้ชื่อ สกุลไม่ได้"
@@ -5415,6 +5490,18 @@ app.post('/api/admin/kyc-approve', (req, res) => {
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
   
   member.statusKyc = "Active";
+
+  // Lock and preserve bank details from KYC submission
+  if (!member.bankName && member.kycBankName) member.bankName = member.kycBankName;
+  if (!member.bankAccount && member.kycBankAccount) member.bankAccount = member.kycBankAccount;
+  if (member.bankName) member.kycBankName = member.bankName;
+  if (member.bankAccount) member.kycBankAccount = member.bankAccount;
+
+  // Lock shipping map pin status if coordinates exist
+  if (member.shippingLat && (!member.shippingPinStatus || member.shippingPinStatus === 'NotPinned')) {
+    member.shippingPinStatus = 'Confirmed';
+  }
+
   writeDb(db);
   res.json({ success: true, message: `อนุมัติเอกสารตัวตน (KYC) สมาชิก ${member.name} สำเร็จแล้ว` });
 });
