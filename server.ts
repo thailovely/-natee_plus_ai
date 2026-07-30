@@ -4538,7 +4538,7 @@ app.post('/api/seller/product', async (req, res) => {
     userId, productName, price, pv, imageFile, images, description, shortDescription, category, cost,
     subcategory, weight, width, length, height, volumetricWeight, chargeableWeight,
     baseShippingCost, sellerCoPay, customerShippingFee, netPayout, approveInstantly,
-    discountPercent, shippingFeeBase, shippingDiscount, affiliateCommission
+    discountPercent, shippingFeeBase, shippingDiscount, affiliateCommission, isAffiliateEnabled, extraPv, isAvailable
   } = req.body;
   const db = readDb();
   
@@ -4616,6 +4616,9 @@ app.post('/api/seller/product', async (req, res) => {
     discountPercent: parseFloat(discountPercent) || 0,
     shippingDiscount: parseFloat(shippingDiscount) || 0,
     affiliateCommission: parseFloat(affiliateCommission) || 0,
+    isAffiliateEnabled: isAffiliateEnabled !== false && isAffiliateEnabled !== 'false',
+    extraPv: parseFloat(extraPv) || 0,
+    isAvailable: isAvailable !== false && isAvailable !== 'false',
     netPayout: parseFloat(netPayout) || 0
   };
   
@@ -5292,6 +5295,13 @@ app.post('/api/admin/product-approve', (req, res) => {
     volumetricWeight: parseFloat(prod.volumetricWeight) || 0,
     chargeableWeight: parseFloat(prod.chargeableWeight) || 0,
     baseShippingCost: parseFloat(prod.baseShippingCost) || 35,
+    shippingFeeBase: parseFloat(prod.shippingFeeBase) || 35,
+    shippingDiscount: parseFloat(prod.shippingDiscount) || 0,
+    discountPercent: parseFloat(prod.discountPercent) || 0,
+    affiliateCommission: parseFloat(prod.affiliateCommission) || 0,
+    isAffiliateEnabled: prod.isAffiliateEnabled !== false,
+    extraPv: parseFloat(prod.extraPv) || 0,
+    isAvailable: prod.isAvailable !== false,
     sellerCoPay: parseFloat(prod.sellerCoPay) || 0,
     customerShippingFee: parseFloat(prod.customerShippingFee) || 35,
     netPayout: parseFloat(prod.netPayout) || 0
@@ -5420,7 +5430,8 @@ app.post('/api/seller/product/edit', async (req, res) => {
   const { 
     userId, productId, productName, price, discountPercent, shippingFeeBase, shippingDiscount, pv, imageFile, images, description, shortDescription, category, cost,
     subcategory, weight, width, length, height, volumetricWeight, chargeableWeight,
-    baseShippingCost, sellerCoPay, customerShippingFee, netPayout, approveInstantly
+    baseShippingCost, sellerCoPay, customerShippingFee, netPayout, approveInstantly,
+    affiliateCommission, isAffiliateEnabled, extraPv, isAvailable
   } = req.body;
   const db = readDb();
   
@@ -5496,6 +5507,10 @@ app.post('/api/seller/product/edit', async (req, res) => {
   prod.baseShippingCost = prod.shippingFeeBase;
   prod.sellerCoPay = prod.shippingDiscount;
   prod.customerShippingFee = parseFloat(customerShippingFee) || 35;
+  prod.affiliateCommission = parseFloat(affiliateCommission) || 0;
+  prod.isAffiliateEnabled = isAffiliateEnabled !== false && isAffiliateEnabled !== 'false';
+  prod.extraPv = parseFloat(extraPv) || 0;
+  prod.isAvailable = isAvailable !== false && isAvailable !== 'false';
   prod.netPayout = parseFloat(netPayout) || 0;
   
   const isApproved = !!approveInstantly || isAdmin;
@@ -5534,6 +5549,10 @@ app.post('/api/seller/product/edit', async (req, res) => {
       baseShippingCost: prod.baseShippingCost || 35,
       sellerCoPay: prod.sellerCoPay || 0,
       customerShippingFee: prod.customerShippingFee || 35,
+      affiliateCommission: prod.affiliateCommission || 0,
+      isAffiliateEnabled: prod.isAffiliateEnabled !== false,
+      extraPv: prod.extraPv || 0,
+      isAvailable: prod.isAvailable !== false,
       netPayout: prod.netPayout || 0
     });
   } else {
@@ -5551,6 +5570,41 @@ app.post('/api/seller/product/edit', async (req, res) => {
     message: isApproved 
       ? "แอดมินใช้สิทธิ์แทรกแซง: แก้ไขข้อมูลและอนุมัติสินค้าทันทีสำเร็จ! ✨" 
       : "แก้ไขรายละเอียดสินค้าสำเร็จ! นำส่งให้แอดมินอนุมัติใหม่อีกครั้งเพื่อความโปร่งใสเรียบร้อยแล้วค่ะ" 
+  });
+});
+
+// QUICK TOGGLE SELLER PRODUCT AVAILABILITY (IN STOCK / OUT OF STOCK)
+app.post('/api/seller/product/toggle-availability', (req, res) => {
+  const { productId, userId } = req.body;
+  const db = readDb();
+  
+  const member = db.members.find(m => m.userId === userId);
+  const isAdmin = member?.role === 'Admin' || userId === 'admin' || (typeof userId === 'string' && userId.startsWith('admin_'));
+
+  const prod = db.sellerProducts.find(p => p.id === productId);
+  if (!prod) return res.status(404).json({ success: false, message: "ไม่พบสินค้าชิ้นนี้ในระบบ" });
+
+  if (!isAdmin && prod.sellerId && prod.sellerId !== userId && member?.userId !== prod.sellerId) {
+    return res.status(403).json({ success: false, message: "คุณไม่มีสิทธิ์แก้ไขสินค้าของร้านค้าอื่น" });
+  }
+
+  // Toggle availability state
+  const newAvailable = prod.isAvailable === false ? true : false;
+  prod.isAvailable = newAvailable;
+
+  // Also update in main store products
+  const mainProd = db.products.find(p => p.id === productId);
+  if (mainProd) {
+    mainProd.isAvailable = newAvailable;
+  }
+
+  writeDb(db);
+  res.json({ 
+    success: true, 
+    isAvailable: newAvailable,
+    message: newAvailable 
+      ? `เปิดขายรายการสินค้า "${prod.name}" เรียบร้อยแล้วค่ะ 🟢` 
+      : `ปิดรายการสินค้า "${prod.name}" (สินค้าหมด / หยุดขายชั่วคราว) เรียบร้อยแล้วค่ะ 🔴` 
   });
 });
 

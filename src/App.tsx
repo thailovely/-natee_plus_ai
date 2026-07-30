@@ -775,6 +775,9 @@ export default function App() {
     shippingFeeBase: '35',
     shippingDiscount: '0',
     affiliateCommission: '0',
+    isAffiliateEnabled: true,
+    extraPv: '0',
+    isAvailable: true,
     stock: '100',
     pv: '',
     description: '',
@@ -5133,7 +5136,10 @@ export default function App() {
     discountPercentStr: string = '0',
     shippingFeeBaseStr: string = '35',
     shippingDiscountStr: string = '0',
-    quantity: number = 1
+    quantity: number = 1,
+    extraPvStr: string = '0',
+    affiliateCommissionStr: string = '0',
+    isAffiliateEnabled: boolean = true
   ) => {
     const originalPrice = parseFloat(priceStr) || 0;
     const discountPercent = parseFloat(discountPercentStr) || 0;
@@ -5141,15 +5147,13 @@ export default function App() {
     const shippingDiscount = parseFloat(shippingDiscountStr) || 0;
     const qty = Math.max(1, quantity);
 
+    const extraPv = Math.max(0, parseFloat(extraPvStr) || 0);
+    const affiliateCommission = isAffiliateEnabled ? Math.max(0, parseFloat(affiliateCommissionStr) || 0) : 0;
+
     // 1. Discounted product price
     const discountedPrice = Math.max(0, originalPrice * (1 - discountPercent / 100));
 
-    // 2. Shipping calculation per quantity with 50% tiered increment reduction:
-    // Item 1: base (35)
-    // Item 2: + 50% = +17.50
-    // Item 3: + 50% = +8.75
-    // Item 4: + 50% = +4.375...
-    // Max cap = 100 THB.
+    // 2. Shipping calculation per quantity
     let calculatedShipping = baseShippingFee;
     let currentIncrement = baseShippingFee;
     for (let i = 2; i <= qty; i++) {
@@ -5162,18 +5166,22 @@ export default function App() {
     // 3. Customer total payment
     const totalCustomerPaid = (discountedPrice * qty) + customerShippingFee;
 
-    // Step 1: VAT 7% Extraction (e.g. 135 / 1.07 = 126.17 before VAT, VAT = 8.83)
+    // Step 1: VAT 7% Extraction
     const priceExVat = totalCustomerPaid / 1.07;
     const vat = totalCustomerPaid - priceExVat;
 
-    // Step 2: Platform GP Fee 20% (from price before VAT)
+    // Step 2: Platform GP Fee 20%
     const gpAmount = priceExVat * 0.20;
 
-    // Step 3: Net Earnings to Seller (เงินเข้าร้านจริง)
-    const netPayout = Math.max(0, priceExVat - gpAmount);
+    // Step 3: Base PV (50% of GP) + Extra PV from seller
+    const basePv = Math.floor(gpAmount * 0.50);
+    const totalPvUnit = Math.floor(basePv + extraPv);
+    const totalPv = totalPvUnit * qty;
 
-    // Step 4: PV Points Calculation (50% of GP, integer floor)
-    const pv = Math.floor(gpAmount * 0.50);
+    // Step 4: Net Payout to Seller (Deduct VAT, GP, Affiliate Commission & Extra PV)
+    const affiliateDeduction = affiliateCommission * qty;
+    const extraPvDeduction = extraPv * qty;
+    const netPayout = Math.max(0, priceExVat - gpAmount - affiliateDeduction - extraPvDeduction);
 
     // Parcel Dimensions
     const weight = parseFloat(weightStr) || 0;
@@ -5198,8 +5206,15 @@ export default function App() {
       vat,
       priceExVat,
       gpAmount,
+      basePv,
+      extraPv,
+      pv: totalPvUnit,
+      totalPv,
+      affiliateCommission,
+      isAffiliateEnabled,
+      affiliateDeduction,
+      extraPvDeduction,
       netPayout,
-      pv,
       weight,
       width,
       length,
@@ -5231,7 +5246,10 @@ export default function App() {
         newProd.discountPercent,
         newProd.shippingFeeBase,
         newProd.shippingDiscount,
-        1
+        1,
+        newProd.extraPv,
+        newProd.affiliateCommission,
+        newProd.isAffiliateEnabled
       );
       const res = await fetch('/api/seller/product', {
         method: 'POST',
@@ -5244,6 +5262,9 @@ export default function App() {
           shippingFeeBase: newProd.shippingFeeBase,
           shippingDiscount: newProd.shippingDiscount,
           affiliateCommission: newProd.affiliateCommission,
+          isAffiliateEnabled: newProd.isAffiliateEnabled,
+          extraPv: newProd.extraPv,
+          isAvailable: newProd.isAvailable,
           pv: calc.pv,
           description: newProd.description,
           category: newProd.category,
@@ -5269,7 +5290,8 @@ export default function App() {
         showNotif(d.message || "ยื่นอนุมัติเพิ่มรายการสินค้าเรียบร้อยแล้วค่ะ", 'success');
         setNewProd({ 
           name: '', price: '100', discountPercent: '0', shippingFeeBase: '35', shippingDiscount: '0',
-          affiliateCommission: '0', stock: '100', pv: '', description: '', shortDescription: '',
+          affiliateCommission: '0', isAffiliateEnabled: true, extraPv: '0', isAvailable: true,
+          stock: '100', pv: '', description: '', shortDescription: '',
           category: 'General', subcategory: '', images: [], imageFile: '', cost: '', weight: '350',
           width: '10', length: '10', height: '10' 
         });
@@ -5297,7 +5319,10 @@ export default function App() {
         editingProduct.discountPercent,
         editingProduct.shippingFeeBase,
         editingProduct.shippingDiscount,
-        1
+        1,
+        editingProduct.extraPv || '0',
+        editingProduct.affiliateCommission || '0',
+        editingProduct.isAffiliateEnabled !== false
       );
       const res = await fetch('/api/seller/product/edit', {
         method: 'POST',
@@ -5311,6 +5336,9 @@ export default function App() {
           shippingFeeBase: editingProduct.shippingFeeBase,
           shippingDiscount: editingProduct.shippingDiscount,
           affiliateCommission: editingProduct.affiliateCommission,
+          isAffiliateEnabled: editingProduct.isAffiliateEnabled !== false,
+          extraPv: editingProduct.extraPv || 0,
+          isAvailable: editingProduct.isAvailable !== false,
           pv: calc.pv,
           description: editingProduct.description,
           category: editingProduct.category,
@@ -9221,6 +9249,7 @@ export default function App() {
                               const displayPv = p.pv || Math.floor(parseFloat(p.price) * 0.5);
                               const rating = getProductShopRating(p);
                               const sales = getProductSalesCount(p);
+                              const isOutOfStock = p.isAvailable === false;
                               
                               const catMap: Record<string, string> = {
                                 Fashion: '👗 แฟชั่น',
@@ -9236,6 +9265,14 @@ export default function App() {
                               };
                               const catLabel = catMap[p.category] || p.category || '📦 ทั่วไป';
 
+                              const imgList = Array.isArray(p.images) && p.images.length > 0 ? p.images.filter(Boolean) : [];
+                              const displayImage = imgList.find((i: string) => typeof i === 'string' && !i.includes('unsplash'))
+                                || (p.imageFile && !p.imageFile.includes('unsplash') && p.imageFile)
+                                || (p.image && !p.image.includes('unsplash') && p.image)
+                                || (p.imageUrl && !p.imageUrl.includes('unsplash') && p.imageUrl)
+                                || imgList[0] || p.imageFile || p.image || p.imageUrl 
+                                || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80';
+
                               return (
                                 <div 
                                   key={p.id} 
@@ -9243,9 +9280,11 @@ export default function App() {
                                     setSelectedMarketProduct(p);
                                     setMarketProductQty(1);
                                   }}
-                                  className="bg-white border border-slate-200/80 hover:border-orange-400 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between group cursor-pointer relative"
+                                  className={`bg-white border hover:border-orange-400 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between group cursor-pointer relative ${
+                                    isOutOfStock ? 'border-rose-200 opacity-90' : 'border-slate-200/80'
+                                  }`}
                                 >
-                                  {/* Top Image Container - Photo Focused (Reduced 25% height) */}
+                                  {/* Top Image Container - Photo Focused */}
                                   <div 
                                     className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100 cursor-pointer"
                                     onClick={(e) => {
@@ -9255,13 +9294,22 @@ export default function App() {
                                     }}
                                   >
                                     <img 
-                                      src={p.image || (p.images && p.images[0]) || p.imageUrl || p.imageFile || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'} 
+                                      src={displayImage} 
                                       onError={(e) => {
                                         (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80';
                                       }}
-                                      className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-500 ease-out" 
+                                      className={`w-full h-full object-cover group-hover:scale-108 transition-transform duration-500 ease-out ${isOutOfStock ? 'grayscale-30' : ''}`}
                                       alt={p.name} 
                                     />
+
+                                    {/* Out of stock overlay badge if unavailable */}
+                                    {isOutOfStock && (
+                                      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[1px] flex items-center justify-center z-10 pointer-events-none">
+                                        <span className="bg-rose-600 text-white font-black text-xs px-3 py-1 rounded-full shadow-lg border border-white/30">
+                                          🔴 สินค้าหมด (Out of Stock)
+                                        </span>
+                                      </div>
+                                    )}
 
                                     {/* Store Name Badge */}
                                     <div className="absolute top-2 left-2 z-10 pointer-events-none">
@@ -13164,6 +13212,86 @@ export default function App() {
                               </div>
                             </div>
 
+                             {/* Affiliate, Extra PV, & Availability Settings Block */}
+                            <div className="bg-amber-50/50 border border-amber-200/80 p-4 rounded-2xl space-y-3">
+                              <div className="flex items-center justify-between border-b border-amber-200/60 pb-2">
+                                <h5 className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5 text-amber-900">
+                                  ⚙️ ตั้งค่าระบบ Affiliate (ปักตะกร้า), PV เพิ่มเติม & สถานะการขาย
+                                </h5>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                                {/* 1. Status Toggle (In Stock / Out of Stock) */}
+                                <div className="bg-white p-3 rounded-xl border border-amber-100 space-y-2 flex flex-col justify-between">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-slate-700">สถานะรายการสินค้า:</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setNewProd(prev => ({ ...prev, isAvailable: !prev.isAvailable }))}
+                                      className={`px-3 py-1 rounded-full text-[10px] font-black transition cursor-pointer ${
+                                        newProd.isAvailable 
+                                          ? 'bg-emerald-500 text-white shadow-sm' 
+                                          : 'bg-rose-500 text-white shadow-sm'
+                                      }`}
+                                    >
+                                      {newProd.isAvailable ? '🟢 พร้อมขาย (In Stock)' : '🔴 สินค้าหมด / ปิดขาย'}
+                                    </button>
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 leading-tight">
+                                    เปิด = สินค้าแสดงพร้อมสั่งซื้อ | ปิด = ขึ้นสถานะสินค้าหมด
+                                  </p>
+                                </div>
+
+                                {/* 2. Affiliate Commission Settings */}
+                                <div className="bg-white p-3 rounded-xl border border-amber-100 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-slate-700">ระบบปักตะกร้า Affiliate:</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setNewProd(prev => ({ ...prev, isAffiliateEnabled: !prev.isAffiliateEnabled }))}
+                                      className={`px-3 py-1 rounded-full text-[10px] font-black transition cursor-pointer ${
+                                        newProd.isAffiliateEnabled 
+                                          ? 'bg-indigo-600 text-white shadow-sm' 
+                                          : 'bg-slate-300 text-slate-600'
+                                      }`}
+                                    >
+                                      {newProd.isAffiliateEnabled ? '🟢 เปิดให้ปักตะกร้า' : '⚪ ปิดปักตะกร้า'}
+                                    </button>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                                      ค่าคอมมิชชั่น Affiliate (บาท/ชิ้น):
+                                    </label>
+                                    <input
+                                      type="number"
+                                      disabled={!newProd.isAffiliateEnabled}
+                                      value={newProd.affiliateCommission}
+                                      onChange={(e) => setNewProd(prev => ({ ...prev, affiliateCommission: e.target.value }))}
+                                      placeholder="0"
+                                      className="w-full border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-indigo-700 disabled:bg-slate-100 disabled:text-slate-400"
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* 3. Extra PV Setting */}
+                                <div className="bg-white p-3 rounded-xl border border-amber-100 space-y-2">
+                                  <label className="block font-bold text-slate-700 text-xs">
+                                    🎁 เพิ่มคะแนน PV (PV เพิ่มเติมจากร้าน):
+                                  </label>
+                                  <input
+                                    type="number"
+                                    value={newProd.extraPv}
+                                    onChange={(e) => setNewProd(prev => ({ ...prev, extraPv: e.target.value }))}
+                                    placeholder="0"
+                                    className="w-full border border-purple-200 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-purple-700 bg-purple-50/30"
+                                  />
+                                  <p className="text-[10px] text-purple-800 font-medium leading-tight">
+                                    * 1 PV เพิ่มเติม = นำไปหัก 1 บาท ในยอดโอนสุทธิร้านค้า
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
                             {/* Package Weight & Dimensions */}
                             <div className="bg-indigo-50/40 border border-indigo-100 p-4 rounded-2xl space-y-3">
                               <h5 className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5 text-indigo-900">
@@ -13228,7 +13356,10 @@ export default function App() {
                                 newProd.discountPercent,
                                 newProd.shippingFeeBase,
                                 newProd.shippingDiscount,
-                                1
+                                1,
+                                newProd.extraPv,
+                                newProd.affiliateCommission,
+                                newProd.isAffiliateEnabled
                               );
                               return (
                                 <div className="bg-slate-900 text-slate-100 p-4.5 rounded-2xl space-y-3 font-sans shadow-md border border-slate-800">
@@ -13276,19 +13407,33 @@ export default function App() {
                                         <span>หักค่าธรรมเนียม GP 20%:</span>
                                         <span className="font-mono">- ฿ {calc.gpAmount.toFixed(2)}</span>
                                       </div>
+                                      {calc.isAffiliateEnabled && calc.affiliateCommission > 0 && (
+                                        <div className="flex justify-between text-amber-400 font-bold">
+                                          <span>หักค่าคอม Affiliate (ปักตะกร้า):</span>
+                                          <span className="font-mono">- ฿ {calc.affiliateCommission.toFixed(2)}</span>
+                                        </div>
+                                      )}
+                                      {calc.extraPv > 0 && (
+                                        <div className="flex justify-between text-purple-300 font-bold">
+                                          <span>หักค่า PV เพิ่มเติม ({calc.extraPv} PV):</span>
+                                          <span className="font-mono">- ฿ {calc.extraPv.toFixed(2)}</span>
+                                        </div>
+                                      )}
                                       <div className="flex justify-between text-emerald-400 border-t border-slate-700 pt-1.5 font-extrabold">
                                         <span>ยอดโอนรับสุทธิร้านค้า (Net Payout):</span>
                                         <span className="font-mono text-sm text-emerald-300">฿ {calc.netPayout.toFixed(2)}</span>
                                       </div>
                                       <div className="flex justify-between text-purple-300 text-[10px] pt-1">
-                                        <span>จัดสรร PV ให้ระบบ (50% ของ GP):</span>
-                                        <span className="font-mono font-extrabold text-purple-300">{calc.pv} PV</span>
+                                        <span>คะแนน PV รวม (GP PV + เพิ่มเติม):</span>
+                                        <span className="font-mono font-extrabold text-purple-300">
+                                          {calc.pv} PV ({calc.basePv} + {calc.extraPv})
+                                        </span>
                                       </div>
                                     </div>
                                   </div>
 
                                   <p className="text-[10px] text-slate-400 italic leading-snug pt-1">
-                                    📌 หมายเหตุ: PV จะถูกซ่อนและมองเห็นเฉพาะสมาชิกที่มีตำแหน่ง S, M, L, XL, XXL ขึ้นไปเท่านั้น
+                                    📌 หมายเหตุ: ค่าคอมมิชชั่น Affiliate และ PV เพิ่มเติม จะถูกนำไปหักจากยอดโอนสุทธิร้านค้าโดยอัตโนมัติ
                                   </p>
                                 </div>
                               );
@@ -13396,9 +13541,42 @@ export default function App() {
                                       <div className="flex-1 min-w-0">
                                         <div className="flex items-start justify-between gap-1">
                                           <h5 className="text-xs font-bold text-slate-900 truncate">{p.name}</h5>
-                                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 ${badgeColor}`}>
-                                            {statusTxt}
-                                          </span>
+                                          <div className="flex items-center gap-1 shrink-0">
+                                            <button
+                                              type="button"
+                                              onClick={async () => {
+                                                try {
+                                                  const sellerId = sellerSessionUser?.userId || currentUser?.userId;
+                                                  const res = await fetch('/api/seller/product/toggle-availability', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({ productId: p.id, userId: sellerId })
+                                                  });
+                                                  const d = await res.json();
+                                                  if (d.success) {
+                                                    showNotif(d.message, 'success');
+                                                    if (sellerId) fetchSellerData(sellerId);
+                                                    fetch('/api/products').then(r => r.json()).then(data => { if (data.success && Array.isArray(data.products)) setProducts(data.products); });
+                                                  } else {
+                                                    showNotif(d.message, 'error');
+                                                  }
+                                                } catch (err) {
+                                                  showNotif("เกิดข้อผิดพลาดในการเปลี่ยนสถานะสินค้า", "error");
+                                                }
+                                              }}
+                                              className={`text-[9px] font-bold px-2 py-0.5 rounded-full transition cursor-pointer flex items-center gap-1 ${
+                                                p.isAvailable !== false
+                                                  ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                                                  : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
+                                              }`}
+                                              title="คลิกสวิตช์เปิด/ปิดรายการสินค้า (สินค้าหมด หรือ พร้อมขาย)"
+                                            >
+                                              {p.isAvailable !== false ? '🟢 พร้อมขาย' : '🔴 สินค้าหมด'}
+                                            </button>
+                                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${badgeColor}`}>
+                                              {statusTxt}
+                                            </span>
+                                          </div>
                                         </div>
                                         <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{p.description || "ไม่มีคำอธิบาย"}</p>
                                         <div className="mt-2 text-[10px] space-y-0.5">
@@ -13410,6 +13588,22 @@ export default function App() {
                                             <span className="text-slate-500">ยอดรับสุทธิร้านค้า:</span>
                                             <strong className="text-emerald-600 font-bold">฿{parseFloat(p.netPayout || p.price * 0.8).toFixed(2)}</strong>
                                           </div>
+                                        </div>
+
+                                        {/* Affiliate & Extra PV Badges */}
+                                        <div className="flex flex-wrap items-center gap-1 mt-2 pt-1.5 border-t border-slate-100 text-[9px]">
+                                          <span className={`px-1.5 py-0.5 rounded font-extrabold ${
+                                            p.isAffiliateEnabled !== false && parseFloat(p.affiliateCommission) > 0
+                                              ? 'bg-amber-100 text-amber-900 border border-amber-200'
+                                              : 'bg-slate-100 text-slate-500'
+                                          }`}>
+                                            {p.isAffiliateEnabled !== false && parseFloat(p.affiliateCommission) > 0
+                                              ? `📌 ปักตะกร้า ฿${p.affiliateCommission}/ชิ้น`
+                                              : '⚪ ปิดปักตะกร้า'}
+                                          </span>
+                                          <span className="bg-purple-100 text-purple-900 px-1.5 py-0.5 rounded font-extrabold border border-purple-200">
+                                            ✨ PV รวม: {p.pv || 0} PV {p.extraPv ? `(ร้านเพิ่ม +${p.extraPv})` : ''}
+                                          </span>
                                         </div>
                                       </div>
                                     </div>
@@ -13423,13 +13617,17 @@ export default function App() {
                                             images: imgList,
                                             discountPercent: p.discountPercent || '0',
                                             shippingFeeBase: p.shippingFeeBase || '35',
-                                            shippingDiscount: p.shippingDiscount || '0'
+                                            shippingDiscount: p.shippingDiscount || '0',
+                                            affiliateCommission: p.affiliateCommission || '0',
+                                            isAffiliateEnabled: p.isAffiliateEnabled !== false,
+                                            extraPv: p.extraPv || '0',
+                                            isAvailable: p.isAvailable !== false
                                           });
                                           setShowEditProductModal(true);
                                         }}
                                         className="text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1 rounded-lg transition cursor-pointer"
                                       >
-                                        ✏️ แก้ไขรายละเอียดสินค้า & เปลี่ยนรูปภาพ
+                                        ✏️ แก้ไขรายละเอียดสินค้า & ตั้งค่า
                                       </button>
                                       <button
                                         type="button"
@@ -21383,6 +21581,86 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Affiliate, Extra PV, & Availability Settings Block in Edit Modal */}
+                <div className="bg-amber-50/60 border border-amber-200/80 p-4 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between border-b border-amber-200/60 pb-2">
+                    <h5 className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5 text-amber-900">
+                      ⚙️ ตั้งค่าระบบ Affiliate (ปักตะกร้า), PV เพิ่มเติม & สถานะการขาย
+                    </h5>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                    {/* 1. Status Toggle (In Stock / Out of Stock) */}
+                    <div className="bg-white p-3 rounded-xl border border-amber-100 space-y-2 flex flex-col justify-between">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-700">สถานะรายการสินค้า:</span>
+                        <button
+                          type="button"
+                          onClick={() => setEditingProduct(prev => ({ ...prev, isAvailable: prev.isAvailable === false ? true : false }))}
+                          className={`px-3 py-1 rounded-full text-[10px] font-black transition cursor-pointer ${
+                            editingProduct.isAvailable !== false 
+                              ? 'bg-emerald-500 text-white shadow-sm' 
+                              : 'bg-rose-500 text-white shadow-sm'
+                          }`}
+                        >
+                          {editingProduct.isAvailable !== false ? '🟢 พร้อมขาย (In Stock)' : '🔴 สินค้าหมด / ปิดขาย'}
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-slate-500 leading-tight">
+                        เปิด = สินค้าแสดงพร้อมสั่งซื้อ | ปิด = ขึ้นสถานะสินค้าหมด
+                      </p>
+                    </div>
+
+                    {/* 2. Affiliate Commission Settings */}
+                    <div className="bg-white p-3 rounded-xl border border-amber-100 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-700">ระบบปักตะกร้า Affiliate:</span>
+                        <button
+                          type="button"
+                          onClick={() => setEditingProduct(prev => ({ ...prev, isAffiliateEnabled: prev.isAffiliateEnabled === false ? true : false }))}
+                          className={`px-3 py-1 rounded-full text-[10px] font-black transition cursor-pointer ${
+                            editingProduct.isAffiliateEnabled !== false 
+                              ? 'bg-indigo-600 text-white shadow-sm' 
+                              : 'bg-slate-300 text-slate-600'
+                          }`}
+                        >
+                          {editingProduct.isAffiliateEnabled !== false ? '🟢 เปิดให้ปักตะกร้า' : '⚪ ปิดปักตะกร้า'}
+                        </button>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                          ค่าคอมมิชชั่น Affiliate (บาท/ชิ้น):
+                        </label>
+                        <input
+                          type="number"
+                          disabled={editingProduct.isAffiliateEnabled === false}
+                          value={editingProduct.affiliateCommission || '0'}
+                          onChange={(e) => setEditingProduct(prev => ({ ...prev, affiliateCommission: e.target.value }))}
+                          placeholder="0"
+                          className="w-full border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-indigo-700 disabled:bg-slate-100 disabled:text-slate-400"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 3. Extra PV Setting */}
+                    <div className="bg-white p-3 rounded-xl border border-amber-100 space-y-2">
+                      <label className="block font-bold text-slate-700 text-xs">
+                        🎁 เพิ่มคะแนน PV (PV เพิ่มเติมจากร้าน):
+                      </label>
+                      <input
+                        type="number"
+                        value={editingProduct.extraPv || '0'}
+                        onChange={(e) => setEditingProduct(prev => ({ ...prev, extraPv: e.target.value }))}
+                        placeholder="0"
+                        className="w-full border border-purple-200 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-purple-700 bg-purple-50/30"
+                      />
+                      <p className="text-[10px] text-purple-800 font-medium leading-tight">
+                        * 1 PV เพิ่มเติม = นำไปหัก 1 บาท ในยอดโอนสุทธิร้านค้า
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-700 font-semibold mb-1">ต้นทุนประเมินร้านค้า (บาท)</label>
@@ -21448,7 +21726,10 @@ export default function App() {
                     editingProduct.discountPercent?.toString() || '0',
                     editingProduct.shippingFeeBase?.toString() || '35',
                     editingProduct.shippingDiscount?.toString() || editingProduct.sellerCoPay?.toString() || '0',
-                    1
+                    1,
+                    editingProduct.extraPv?.toString() || '0',
+                    editingProduct.affiliateCommission?.toString() || '0',
+                    editingProduct.isAffiliateEnabled !== false
                   );
                   return (
                     <div className="bg-slate-900 text-slate-100 p-4 rounded-2xl space-y-3 font-sans shadow-md border border-slate-800">
@@ -21496,19 +21777,33 @@ export default function App() {
                             <span>หักค่าธรรมเนียม GP 20%:</span>
                             <span className="font-mono">- ฿ {calc.gpAmount.toFixed(2)}</span>
                           </div>
+                          {calc.isAffiliateEnabled && calc.affiliateCommission > 0 && (
+                            <div className="flex justify-between text-amber-400 font-bold">
+                              <span>หักค่าคอม Affiliate (ปักตะกร้า):</span>
+                              <span className="font-mono">- ฿ {calc.affiliateCommission.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {calc.extraPv > 0 && (
+                            <div className="flex justify-between text-purple-300 font-bold">
+                              <span>หักค่า PV เพิ่มเติม ({calc.extraPv} PV):</span>
+                              <span className="font-mono">- ฿ {calc.extraPv.toFixed(2)}</span>
+                            </div>
+                          )}
                           <div className="flex justify-between text-emerald-400 border-t border-slate-700 pt-1.5 font-extrabold">
                             <span>ยอดโอนรับสุทธิร้านค้า (Net Payout):</span>
                             <span className="font-mono text-xs text-emerald-300">฿ {calc.netPayout.toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between text-purple-300 text-[10px] pt-1">
-                            <span>จัดสรร PV ให้ระบบ (50% ของ GP):</span>
-                            <span className="font-mono font-extrabold text-purple-300">{calc.pv} PV</span>
+                            <span>คะแนน PV รวม (GP PV + เพิ่มเติม):</span>
+                            <span className="font-mono font-extrabold text-purple-300">
+                              {calc.pv} PV ({calc.basePv} + {calc.extraPv})
+                            </span>
                           </div>
                         </div>
                       </div>
 
                       <p className="text-[10px] text-slate-400 italic leading-snug pt-1">
-                        📌 หมายเหตุ: PV จะถูกซ่อนและมองเห็นเฉพาะสมาชิกที่มีตำแหน่ง S, M, L, XL, XXL ขึ้นไปเท่านั้น
+                        📌 หมายเหตุ: ค่าคอมมิชชั่น Affiliate และ PV เพิ่มเติม จะถูกนำไปหักจากยอดโอนสุทธิร้านค้าโดยอัตโนมัติ
                       </p>
                     </div>
                   );
@@ -22658,19 +22953,21 @@ export default function App() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
                 {/* Product Image Gallery & Desktop Hover Zoom */}
                 {(() => {
-                  const rawImgs = [
-                    selectedMarketProduct.image,
+                  const allImgs = [
+                    ...(Array.isArray(selectedMarketProduct.images) ? selectedMarketProduct.images : []),
                     selectedMarketProduct.imageFile,
+                    selectedMarketProduct.image,
                     selectedMarketProduct.imageUrl,
                     selectedMarketProduct.image2,
-                    selectedMarketProduct.image3,
-                    ...(Array.isArray(selectedMarketProduct.images) ? selectedMarketProduct.images : [])
+                    selectedMarketProduct.image3
                   ].filter((img): img is string => typeof img === 'string' && img.trim().length > 0);
 
+                  const customImgs = allImgs.filter(img => !img.includes('unsplash'));
+                  const rawImgs = customImgs.length > 0 ? customImgs : allImgs;
                   const uniqueImgs = Array.from(new Set(rawImgs));
                   const modalImages = uniqueImgs.length > 0 
                     ? uniqueImgs 
-                    : [selectedMarketProduct.image || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'];
+                    : ['https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'];
 
                   const activeImg = (window as any)._activeModalImg && modalImages.includes((window as any)._activeModalImg)
                     ? (window as any)._activeModalImg
@@ -22825,22 +23122,32 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-col sm:flex-row gap-2.5">
-                    <button
-                      onClick={() => {
-                        if (!currentUser) {
-                          showNotif('กรุณาเข้าสู่ระบบหรือสมัครสมาชิกก่อนสั่งซื้อสินค้าค่ะ', 'info');
-                          setAuthMode('login');
-                          setShowLoginModal(true);
-                          return;
-                        }
-                        setCheckoutMarketProduct(selectedMarketProduct);
-                        setShowMarketCheckoutModal(true);
-                        setSelectedMarketProduct(null);
-                      }}
-                      className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold py-3.5 rounded-2xl shadow-lg hover:shadow transition cursor-pointer text-sm flex items-center justify-center gap-2"
-                    >
-                      🛒 สั่งซื้อสินค้า (฿{(selectedMarketProduct.price * marketProductQty).toLocaleString()})
-                    </button>
+                    {selectedMarketProduct.isAvailable === false ? (
+                      <button
+                        type="button"
+                        disabled
+                        className="flex-1 bg-slate-300 text-slate-600 font-extrabold py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 cursor-not-allowed"
+                      >
+                        🔴 สินค้าหมดชั่วคราว (Out of Stock)
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          if (!currentUser) {
+                            showNotif('กรุณาเข้าสู่ระบบหรือสมัครสมาชิกก่อนสั่งซื้อสินค้าค่ะ', 'info');
+                            setAuthMode('login');
+                            setShowLoginModal(true);
+                            return;
+                          }
+                          setCheckoutMarketProduct(selectedMarketProduct);
+                          setShowMarketCheckoutModal(true);
+                          setSelectedMarketProduct(null);
+                        }}
+                        className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold py-3.5 rounded-2xl shadow-lg hover:shadow transition cursor-pointer text-sm flex items-center justify-center gap-2"
+                      >
+                        🛒 สั่งซื้อสินค้า (฿{(selectedMarketProduct.price * marketProductQty).toLocaleString()})
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         const refCode = profile?.userId || 'CENTRAL';
