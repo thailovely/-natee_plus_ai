@@ -164,6 +164,7 @@ export default function App() {
   const [sellerWelcomeShown, setSellerWelcomeShown] = useState(false);
   const [sellerRegulationsText, setSellerRegulationsText] = useState('');
   const [selectedMarketProduct, setSelectedMarketProduct] = useState<any>(null);
+  const [selectedModalActiveImg, setSelectedModalActiveImg] = useState<string>('');
 
   // Password Visibility States
   const [showSellerLoginPassword, setShowSellerLoginPassword] = useState(false);
@@ -9278,6 +9279,7 @@ export default function App() {
                                   key={p.id} 
                                   onClick={() => {
                                     setSelectedMarketProduct(p);
+                                    setSelectedModalActiveImg('');
                                     setMarketProductQty(1);
                                   }}
                                   className={`bg-white border hover:border-orange-400 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between group cursor-pointer relative ${
@@ -9290,6 +9292,7 @@ export default function App() {
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setSelectedMarketProduct(p);
+                                      setSelectedModalActiveImg('');
                                       setMarketProductQty(1);
                                     }}
                                   >
@@ -22969,8 +22972,8 @@ export default function App() {
                     ? uniqueImgs 
                     : ['https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'];
 
-                  const activeImg = (window as any)._activeModalImg && modalImages.includes((window as any)._activeModalImg)
-                    ? (window as any)._activeModalImg
+                  const activeImg = selectedModalActiveImg && modalImages.includes(selectedModalActiveImg)
+                    ? selectedModalActiveImg
                     : modalImages[0];
 
                   const prodSales = getProductSalesCount(selectedMarketProduct);
@@ -23015,10 +23018,8 @@ export default function App() {
                         {modalImages.map((imgUrl, imgIdx) => (
                           <button
                             key={imgIdx}
-                            onClick={() => {
-                              (window as any)._activeModalImg = imgUrl;
-                              setMlmSearchId(prev => prev + 1);
-                            }}
+                            type="button"
+                            onClick={() => setSelectedModalActiveImg(imgUrl)}
                             className={`w-16 h-16 rounded-xl border-2 overflow-hidden flex-shrink-0 cursor-pointer transition ${
                               activeImg === imgUrl
                                 ? 'border-orange-500 shadow-md scale-105'
@@ -23246,7 +23247,10 @@ export default function App() {
                         return (
                           <div
                             key={otherP.id}
-                            onClick={() => setSelectedMarketProduct(otherP)}
+                            onClick={() => {
+                              setSelectedMarketProduct(otherP);
+                              setSelectedModalActiveImg('');
+                            }}
                             className="bg-slate-50 hover:bg-indigo-50/40 border border-slate-200/80 hover:border-indigo-300 rounded-2xl p-3 transition cursor-pointer flex items-center gap-3 group shadow-sm hover:shadow"
                           >
                             <img 

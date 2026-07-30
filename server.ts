@@ -586,29 +586,61 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
         }
       }
 
-      // Guarantee ALL approved sellerProducts exist in main products store
+      // Guarantee ALL approved sellerProducts exist in main products store and are synchronized with latest sellerProduct data
       if (Array.isArray(mergedSellerProducts)) {
         for (const sProd of mergedSellerProducts) {
           if (sProd && sProd.status === 'Approved' && sProd.id) {
-            const existsInMain = mergedProducts.some((p: any) => p.id === sProd.id);
-            if (!existsInMain) {
+            const idx = mergedProducts.findIndex((p: any) => p.id === sProd.id);
+            const formattedProd = {
+              ...sProd,
+              id: sProd.id,
+              name: sProd.name,
+              price: parseFloat(sProd.price) || 0,
+              pv: parseFloat(sProd.pv) || 0,
+              cost: sProd.cost !== undefined ? parseFloat(sProd.cost) : Math.floor((parseFloat(sProd.price) || 0) * 0.30),
+              image: sProd.image || (sProd.images && sProd.images[0]) || "",
+              images: sProd.images && sProd.images.length > 0 ? sProd.images : [sProd.image].filter(Boolean),
+              category: sProd.category || "General",
+              sellerId: sProd.sellerId || "",
+              sellerCode: sProd.sellerCode || "",
+              sellerStoreName: sProd.sellerStoreName || "",
+              subcategory: sProd.subcategory || "",
+              weight: sProd.weight || 0,
+              width: sProd.width || 0,
+              length: sProd.length || 0,
+              height: sProd.height || 0,
+              volumetricWeight: sProd.volumetricWeight || 0,
+              chargeableWeight: sProd.chargeableWeight || 0,
+              baseShippingCost: sProd.baseShippingCost || 35,
+              sellerCoPay: sProd.sellerCoPay || 0,
+              customerShippingFee: sProd.customerShippingFee || 35,
+              affiliateCommission: sProd.affiliateCommission || 0,
+              isAffiliateEnabled: sProd.isAffiliateEnabled !== false,
+              extraPv: sProd.extraPv || 0,
+              isAvailable: sProd.isAvailable !== false,
+              netPayout: sProd.netPayout || 0,
+              status: "Approved"
+            };
+
+            if (idx === -1) {
               console.log(`🛠️ [Self-Heal Product] Restoring approved seller product into main store: ${sProd.id} / ${sProd.name}`);
-              mergedProducts.push({
-                ...sProd,
-                id: sProd.id,
-                name: sProd.name,
-                price: parseFloat(sProd.price) || 0,
-                pv: parseFloat(sProd.pv) || 0,
-                cost: sProd.cost !== undefined ? parseFloat(sProd.cost) : Math.floor((parseFloat(sProd.price) || 0) * 0.30),
-                image: sProd.image || (sProd.images && sProd.images[0]) || "",
-                images: sProd.images && sProd.images.length > 0 ? sProd.images : [sProd.image].filter(Boolean),
-                category: sProd.category || "General",
-                sellerId: sProd.sellerId || "",
-                sellerCode: sProd.sellerCode || "",
-                sellerStoreName: sProd.sellerStoreName || "",
-                status: "Approved"
-              });
+              mergedProducts.push(formattedProd);
               hasMergedChanges = true;
+            } else {
+              // Always synchronize main store product with seller product updates
+              const existing = mergedProducts[idx];
+              if (
+                existing.image !== formattedProd.image ||
+                JSON.stringify(existing.images) !== JSON.stringify(formattedProd.images) ||
+                existing.name !== formattedProd.name ||
+                existing.price !== formattedProd.price ||
+                existing.isAvailable !== formattedProd.isAvailable ||
+                existing.pv !== formattedProd.pv
+              ) {
+                console.log(`🔄 [Sync Product Data] Updating main store product ${sProd.id} (${sProd.name}) to match latest seller product data`);
+                mergedProducts[idx] = { ...existing, ...formattedProd };
+                hasMergedChanges = true;
+              }
             }
           }
         }
