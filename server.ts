@@ -190,6 +190,55 @@ async function uploadImageToFirebaseOrKeepBase64(dataUrlOrPath: string, folderNa
   return dataUrlOrPath;
 }
 
+// SYSTEM NOTIFICATION HELPER (LINE NOTIFY & WEBHOOK)
+async function sendSystemNotification(eventType: 'withdrawal' | 'new_shop' | 'new_order', messageText: string) {
+  try {
+    const db = readDb();
+    const settings = db.bankSettings?.notifySettings || {};
+    
+    // Check if event notification is enabled
+    if (eventType === 'withdrawal' && settings.notifyWithdrawal === false) return;
+    if (eventType === 'new_shop' && settings.notifyNewShop === false) return;
+    if (eventType === 'new_order' && settings.notifyNewOrder === false) return;
+
+    const token = settings.lineNotifyToken || process.env.LINE_NOTIFY_TOKEN;
+    const webhook = settings.webhookUrl || process.env.WEBHOOK_URL;
+
+    // Send to LINE Notify if token exists
+    if (token) {
+      try {
+        const formData = new URLSearchParams();
+        formData.append('message', '\n' + messageText);
+        await fetch('https://notify-api.line.me/api/notify', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: formData.toString()
+        });
+      } catch (err) {
+        console.error('LINE Notify Error:', err);
+      }
+    }
+
+    // Send to Webhook if URL exists
+    if (webhook) {
+      try {
+        await fetch(webhook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: messageText, text: messageText, event: eventType, timestamp: new Date().toISOString() })
+        });
+      } catch (err) {
+        console.error('Webhook Error:', err);
+      }
+    }
+  } catch (err) {
+    console.error('sendSystemNotification error:', err);
+  }
+}
+
 try {
   const firebaseConfigPath = path.join(appDir, 'firebase-applet-config.json');
   if (fs.existsSync(firebaseConfigPath)) {
@@ -3187,6 +3236,7 @@ app.post('/api/member/withdraw', (req, res) => {
   db.systemStats.totalCompanyProfits = parseFloat((db.systemStats.totalCompanyProfits + platformCharge).toFixed(4));
   
   writeDb(db);
+  sendSystemNotification('withdrawal', `💸 มีคำขอถอนเงิน e-Money ใหม่!\nสมาชิก: ${member.name || ''} (${member.userId})\nยอดถอน: ฿${amt.toLocaleString('th-TH')}\nยอดโอนสุทธิ: ฿${netReceived.toLocaleString('th-TH')}\nธนาคาร: ${member.bankName || '-'} (${member.bankAccount || '-'})`);
   res.json({
     success: true,
     message: "ส่งคำถอนเงินสำเร็จ! เงินจะโอนเข้าบัญชีของคุณภายใน 48 ชั่วโมง",
@@ -4158,6 +4208,7 @@ app.post('/api/shop/purchase', (req, res) => {
   }
   
   writeDb(db);
+  sendSystemNotification('new_order', `🛒 มีคำสั่งซื้อสินค้าใหม่!\nเลขที่: ${orderId}\nผู้ซื้อ: ${member.name || ''} (${member.userId})\nสินค้า: ${product.name} (x${qty})\nราคารวม: ฿${totalPrice.toLocaleString('th-TH')}`);
   res.json({
     success: true,
     message: "สั่งซื้อและชำระเงินเรียบร้อยแล้วค่ะ!",
@@ -4614,6 +4665,7 @@ app.post('/api/seller/apply-with-otp', (req, res) => {
   delete db.otps[member.userId];
   
   writeDb(db);
+  sendSystemNotification('new_shop', `🏪 มีร้านค้าใหม่ลงทะเบียนขออนุมัติ!\nชื่อร้าน: ${storeName}\nผู้สมัคร: ${member.name || ''} (${member.userId})\nรหัสร้านค้า: ${code}`);
   res.json({ 
     success: true, 
     code,
@@ -4695,7 +4747,9 @@ app.get('/api/seller/regulations', (req, res) => {
 3. ห้ามตั้งชื่อร้านค้าที่ซ้ำกับแบรนด์อื่น หรือมีอักขระพิเศษ (@, #, $, %, ^, &, *)
 4. สินค้าที่จำหน่ายในร้านต้องเป็นสินค้าที่ถูกต้องตามกฎหมาย และไม่ละเมิดลิขสิทธิ์
 5. การหักค่าธรรมเนียมระบบ (GP) จะคำนวณที่อัตรา 20% โดย 50% ของ GP จะถูกปันผลกลับคืนสายงาน MLM ของท่าน
-6. ปฏิบัติตามนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) อย่างเคร่งครัด`;
+6. ปฏิบัติตามนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) อย่างเคร่งครัด
+7. สมาชิกทั่วไปที่ยังไม่ได้ลงทะเบียนเปิดร้านค้าจะไม่เห็นหมุดแผนที่คลังสินค้า และเมื่อได้รับการอนุมัติร้านค้าและยืนยันปักหมุดแล้ว หมุดแผนที่คลังสินค้าจะแสดงในหน้าหลักพอร์ทัลร้านค้า (Partner Portal)
+8. หมุดตำแหน่งคลังสินค้าและพิกัดจัดส่งจะถูกล็อกเป็นภาพนิ่งเมื่อยืนยันเรียบร้อยแล้ว หากต้องการย้ายหรือแก้ไขพิกัด ต้องยื่นขออนุมัติปรับเปลี่ยนพิกัดกับทางแอดมินระบบ`;
 
   // Migration: If it contains the old term "ระดับ S/M ขึ้นไป" or "มีสถานะตั้งแต่ระดับ S/M ขึ้นไป", replace it or force update
   if (regulations.includes("ระดับ S/M ขึ้นไป") || regulations.includes("มีสถานะตั้งแต่ระดับ S/M ขึ้นไป")) {
@@ -6357,6 +6411,58 @@ app.post('/api/admin/promo-config', async (req, res) => {
 
   writeDb(db);
   res.json({ success: true, message: "บันทึกข้อมูล Pop-Up โปรโมชั่นเรียบร้อยแล้วค่ะ", promoConfig: db.bankSettings.promoConfig });
+});
+
+// GET & SAVE LINE NOTIFY & WEBHOOK SETTINGS
+app.get('/api/admin/notify-settings', (req, res) => {
+  const db = readDb();
+  const settings = db.bankSettings?.notifySettings || {
+    lineNotifyToken: process.env.LINE_NOTIFY_TOKEN || "",
+    webhookUrl: process.env.WEBHOOK_URL || "",
+    notifyWithdrawal: true,
+    notifyNewShop: true,
+    notifyNewOrder: true
+  };
+  res.json({ success: true, settings });
+});
+
+app.post('/api/admin/notify-settings', (req, res) => {
+  const { lineNotifyToken, webhookUrl, notifyWithdrawal, notifyNewShop, notifyNewOrder, editorUserId } = req.body;
+  const db = readDb();
+
+  if (editorUserId) {
+    const editor = db.members.find(m => m.userId === editorUserId);
+    if (!editor || (editor.role !== 'Manager' && editor.role !== 'Admin')) {
+      return res.status(403).json({ success: false, message: "ไม่มีสิทธิ์ในการแก้ไขตั้งค่าระบบ (เฉพาะสิทธิ์ Manager หรือ Admin เท่านั้น)" });
+    }
+  }
+
+  if (!db.bankSettings) {
+    db.bankSettings = {
+      bankName: "ธนาคารไทยพาณิชย์",
+      bankAccount: "111-222-3333",
+      bankAccountName: "บริษัท นที พลัส มาร์เก็ต จำกัด"
+    };
+  }
+
+  db.bankSettings.notifySettings = {
+    lineNotifyToken: lineNotifyToken !== undefined ? lineNotifyToken.trim() : (db.bankSettings.notifySettings?.lineNotifyToken || ""),
+    webhookUrl: webhookUrl !== undefined ? webhookUrl.trim() : (db.bankSettings.notifySettings?.webhookUrl || ""),
+    notifyWithdrawal: notifyWithdrawal !== undefined ? !!notifyWithdrawal : true,
+    notifyNewShop: notifyNewShop !== undefined ? !!notifyNewShop : true,
+    notifyNewOrder: notifyNewOrder !== undefined ? !!notifyNewOrder : true
+  };
+
+  writeDb(db);
+  res.json({ success: true, message: "บันทึกการตั้งค่าระบบแจ้งเตือนเรียบร้อยแล้วค่ะ", settings: db.bankSettings.notifySettings });
+});
+
+// TEST SEND NOTIFICATION
+app.post('/api/admin/test-notify', async (req, res) => {
+  const { message } = req.body;
+  const msg = message || "🧪 ทดสอบการส่งแจ้งเตือนจากระบบ Natee Plus Market สำเร็จสมบูรณ์!";
+  await sendSystemNotification('withdrawal', msg);
+  res.json({ success: true, message: "ส่งข้อความทดสอบแจ้งเตือนเรียบร้อยแล้วค่ะ" });
 });
 
 // GET FIREBASE CLIENT CONFIG FOR REAL-TIME SYNC
