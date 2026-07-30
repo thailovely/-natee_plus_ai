@@ -794,6 +794,7 @@ export default function App() {
     height: '10'
   });
   const [shopSubTab, setShopSubTab] = useState<'packages' | 'shop' | 'myOrders'>('shop');
+  const [selectedShopCategory, setSelectedShopCategory] = useState<string>('All');
   const [shopPortalView, setShopPortalView] = useState<'portal' | 'store' | 'packages'>('store');
   const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
   const [sellerProducts, setSellerProducts] = useState<any[]>([]);
@@ -1479,13 +1480,13 @@ export default function App() {
     }
   }, [sellerSessionUser]);
 
-  // Auto-login to Partner Portal if member shop is approved ('Active') or in test mode
+  // Auto-login to Partner Portal if member shop is approved ('Active') and KYC is approved ('Active')
   useEffect(() => {
     if (activeTab === 'seller' && !sellerSessionUser && !isRegisteringSeller) {
       const activeObj = (profile?.sellerStatus === 'Active' ? profile : currentUser?.sellerStatus === 'Active' ? currentUser : null);
-      if (activeObj) {
+      if (activeObj && (activeObj.statusKyc === 'Active' || activeObj.role === 'Admin' || activeObj.role === 'Manager')) {
         setSellerSessionUser(activeObj);
-      } else if (currentUser && (isSandboxActive || currentUser.role === 'Admin' || currentUser.role === 'Manager' || currentUser.userId === 'A260600001' || currentUser.sellerStatus === 'Pending')) {
+      } else if (currentUser && (currentUser.role === 'Admin' || currentUser.role === 'Manager')) {
         const autoSeller = {
           ...currentUser,
           sellerStatus: 'Active',
@@ -5144,7 +5145,9 @@ export default function App() {
   ) => {
     const originalPrice = parseFloat(priceStr) || 0;
     const discountPercent = parseFloat(discountPercentStr) || 0;
-    const baseShippingFee = Math.max(35, parseFloat(shippingFeeBaseStr) || 35);
+    const baseShippingFee = (shippingFeeBaseStr !== undefined && shippingFeeBaseStr !== '' && !isNaN(parseFloat(shippingFeeBaseStr)))
+      ? Math.max(0, parseFloat(shippingFeeBaseStr))
+      : 35;
     const shippingDiscount = parseFloat(shippingDiscountStr) || 0;
     const qty = Math.max(1, quantity);
 
@@ -7841,7 +7844,7 @@ export default function App() {
                           </p>
                           <button
                             onClick={() => {
-                              setActiveTab('shopping');
+                              setActiveTab('shop');
                               setShopSubTab('packages');
                             }}
                             className="mt-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition shadow-sm cursor-pointer inline-flex items-center gap-1"
@@ -9275,14 +9278,13 @@ export default function App() {
                           { id: 'Lifestyle', icon: '🎨', label: 'ไลฟ์สไตล์' },
                           { id: 'General', icon: '📦', label: 'ทั่วไป' }
                         ].map(cat => {
-                          const isSelected = ((window as any)._shopCategory || 'All') === cat.id;
+                          const isSelected = selectedShopCategory === cat.id;
                           return (
                             <button
                               key={cat.id}
+                              type="button"
                               onClick={() => {
-                                (window as any)._shopCategory = cat.id;
-                                fetchProducts();
-                                setMlmSearchId(prev => prev);
+                                setSelectedShopCategory(cat.id);
                               }}
                               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer whitespace-nowrap shrink-0 border ${
                                 isSelected 
@@ -9300,7 +9302,7 @@ export default function App() {
                       {/* Dynamic Product Grid - Photo-Focused Display */}
                       {(() => {
                         const nonPackages = products.filter(p => p.category !== 'Package');
-                        const currentCat = (window as any)._shopCategory || 'All';
+                        const currentCat = selectedShopCategory || 'All';
                         const q = shopSearchQuery.toLowerCase().trim();
 
                         // Search Filter
@@ -12031,6 +12033,12 @@ export default function App() {
                           <button
                             type="button"
                             onClick={async () => {
+                              const kycOk = (profile?.statusKyc === 'Active' || currentUser?.statusKyc === 'Active' || currentUser?.role === 'Admin' || currentUser?.role === 'Manager');
+                              if (!kycOk) {
+                                showNotif("🔒 บัญชีของคุณยังไม่ได้ผ่านการอนุมัติยืนยันตัวตน (KYC) กรุณายื่นเอกสารและรอการอนุมัติ KYC ในเมนูโปรไฟล์ก่อนนะคะ", 'warning');
+                                setActiveTab('profile');
+                                return;
+                              }
                               const autoSeller = {
                                 ...currentUser,
                                 sellerStatus: 'Active',
@@ -12046,6 +12054,25 @@ export default function App() {
                           </button>
                         )}
                       </form>
+
+                      {/* KYC Requirement Warning Banner if user is not KYC active */}
+                      {currentUser && profile?.statusKyc !== 'Active' && currentUser?.statusKyc !== 'Active' && currentUser?.role !== 'Admin' && currentUser?.role !== 'Manager' && (
+                        <div className="bg-amber-50 border border-amber-200 text-amber-900 p-4 rounded-2xl text-xs space-y-2">
+                          <div className="font-extrabold flex items-center gap-1.5 text-amber-800">
+                            🔒 จำเป็นต้องผ่านการยืนยันตัวตน (KYC) ก่อนเปิดร้านค้า
+                          </div>
+                          <p className="text-[11px] text-amber-700 leading-relaxed">
+                            ตามมาตรการความปลอดภัย คุณต้องยื่นเอกสารยืนยันตัวตนและได้รับการอนุมัติ KYC ก่อนเปิดร้านค้าหรือลงขายสินค้าค่ะ
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('profile')}
+                            className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold py-2 rounded-xl text-xs transition shadow-sm cursor-pointer"
+                          >
+                            📄 ไปที่เมนูโปรไฟล์ เพื่อยื่นเอกสาร KYC
+                          </button>
+                        </div>
+                      )}
 
                       <div className="border-t border-slate-100 pt-4 text-center">
                         {currentUser?.sellerStatus === 'Active' && !hasDismissedApprovedNotice ? (
@@ -12080,6 +12107,12 @@ export default function App() {
                         ) : (
                           <button
                             onClick={() => {
+                              const kycOk = (profile?.statusKyc === 'Active' || currentUser?.statusKyc === 'Active' || currentUser?.role === 'Admin' || currentUser?.role === 'Manager');
+                              if (!kycOk) {
+                                showNotif("🔒 สำหรับการสมัครเปิดร้านค้า คุณต้องผ่านการอนุมัติยืนยันตัวตน (KYC) ในเมนูโปรไฟล์ให้เรียบร้อยก่อนนะคะ", 'warning');
+                                setActiveTab('profile');
+                                return;
+                              }
                               setIsRegisteringSeller(true);
                               setSellerRegStep('rules');
                               setSellerRulesAgreed(false);
@@ -21711,7 +21744,7 @@ export default function App() {
                     </label>
                     <input 
                       type="number" 
-                      value={editingProduct.discountPercent || '0'}
+                      value={editingProduct.discountPercent ?? ''}
                       onChange={(e) => setEditingProduct(prev => ({ ...prev, discountPercent: e.target.value }))}
                       placeholder="0"
                       className="w-full border border-slate-200 bg-white rounded-xl px-3 py-1.5 text-xs text-rose-600 font-bold focus:ring-2 focus:ring-amber-400 outline-none"
@@ -21723,7 +21756,7 @@ export default function App() {
                     </label>
                     <input 
                       type="number" 
-                      value={editingProduct.shippingFeeBase || '35'}
+                      value={editingProduct.shippingFeeBase ?? ''}
                       onChange={(e) => setEditingProduct(prev => ({ ...prev, shippingFeeBase: e.target.value }))}
                       placeholder="35"
                       className="w-full border border-slate-200 bg-white rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-amber-400 outline-none"
@@ -21735,7 +21768,7 @@ export default function App() {
                     </label>
                     <input 
                       type="number" 
-                      value={editingProduct.shippingDiscount || editingProduct.sellerCoPay || '0'}
+                      value={editingProduct.shippingDiscount ?? editingProduct.sellerCoPay ?? ''}
                       onChange={(e) => setEditingProduct(prev => ({ ...prev, shippingDiscount: e.target.value, sellerCoPay: e.target.value }))}
                       placeholder="0"
                       className="w-full border border-slate-200 bg-white rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-amber-400 outline-none"
@@ -21934,7 +21967,7 @@ export default function App() {
                         <input
                           type="number"
                           disabled={editingProduct.isAffiliateEnabled === false}
-                          value={editingProduct.affiliateCommission || '0'}
+                          value={editingProduct.affiliateCommission ?? ''}
                           onChange={(e) => setEditingProduct(prev => ({ ...prev, affiliateCommission: e.target.value }))}
                           placeholder="0"
                           className="w-full border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-indigo-700 disabled:bg-slate-100 disabled:text-slate-400"
@@ -21949,7 +21982,7 @@ export default function App() {
                       </label>
                       <input
                         type="number"
-                        value={editingProduct.extraPv || '0'}
+                        value={editingProduct.extraPv ?? ''}
                         onChange={(e) => setEditingProduct(prev => ({ ...prev, extraPv: e.target.value }))}
                         placeholder="0"
                         className="w-full border border-purple-200 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-purple-700 bg-purple-50/30"

@@ -4384,6 +4384,10 @@ app.post('/api/seller/login', (req, res) => {
     return res.status(401).json({ success: false, message: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" });
   }
 
+  if (member.statusKyc !== 'Active' && member.role !== 'Admin' && member.role !== 'Manager') {
+    return res.status(403).json({ success: false, message: "บัญชีของคุณยังไม่ได้ผ่านการอนุมัติยืนยันตัวตน (KYC) กรุณายื่นเอกสารและรอการอนุมัติ KYC ในระบบก่อนเข้าใช้งานพอร์ทัลร้านค้านะคะ" });
+  }
+
   if (!member.sellerStatus || member.sellerStatus !== 'Active') {
     // Auto-approve in test environment, sandbox mode, for admin/manager, or pending requests
     if (isSandboxActive || member.role === 'Admin' || member.role === 'Manager' || member.username === 'nateeplus' || member.userId === 'A260600001' || member.userId === 'A260700001' || member.sellerStatus === 'Pending') {
@@ -4418,6 +4422,10 @@ app.post('/api/seller/send-otp', async (req, res) => {
   
   if (!member) {
     return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกในระบบ" });
+  }
+  
+  if (member.statusKyc !== "Active" && member.role !== 'Admin' && member.role !== 'Manager') {
+    return res.status(400).json({ success: false, message: "ท่านต้องผ่านการอนุมัติยืนยันตัวตน (KYC) ก่อนสมัครเปิดร้านค้าค่ะ กรุณายื่นเอกสารและรอการอนุมัติ KYC ในเมนูโปรไฟล์ก่อนนะคะ" });
   }
   
   if (!member.email || !member.email.includes('@')) {
@@ -4460,6 +4468,14 @@ app.post('/api/seller/apply-with-otp', (req, res) => {
     m.username.toLowerCase() === username.toLowerCase() || m.userId === username
   );
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกในระบบ" });
+
+  // A0. Validate KYC Status (Must be active KYC)
+  if (member.statusKyc !== "Active" && member.role !== 'Admin' && member.role !== 'Manager') {
+    return res.status(400).json({ 
+      success: false, 
+      message: "สำหรับการสมัครเปิดบัญชีร้านค้า Natee Plus Partner ท่านต้องผ่านการอนุมัติยืนยันตัวตน (KYC) ให้เรียบร้อยก่อนนะคะ กรุณายื่นเอกสาร KYC ในเมนูโปรไฟล์ให้ได้รับการอนุมัติก่อนค่ะ" 
+    });
+  }
   
   // A. Validate Rank (Member status/Rank Member or S/M/L/XL/XXL allowed)
   const allowedRanks = ["Member", "S", "M", "L", "XL", "XXL"];
