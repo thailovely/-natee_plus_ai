@@ -1640,7 +1640,12 @@ export default function App() {
               setSellerOrders(orders.filter((o: any) => currentUser && o.sellerId === currentUser.userId));
 
               // 4. Sync Products
-              setProducts(data.products || []);
+              if (Array.isArray(data.products) && data.products.length > 0) {
+                setProducts(prev => {
+                  if (JSON.stringify(prev) === JSON.stringify(data.products)) return prev;
+                  return data.products;
+                });
+              }
 
               // 5. Sync Seller Products
               const sellerProducts = data.sellerProducts || [];
@@ -1921,7 +1926,12 @@ export default function App() {
         safeSubscribe('products', (snapshot) => {
           if (snapshot.exists()) {
             const data = snapshot.data().data || [];
-            setProducts(data);
+            if (Array.isArray(data) && data.length > 0) {
+              setProducts(prev => {
+                if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
+                return data;
+              });
+            }
           }
         });
 
@@ -9321,13 +9331,13 @@ export default function App() {
                           return pName.includes(q) || pBrand.includes(q) || pStore.includes(q) || pCategory.includes(q) || pSubcat.includes(q);
                         });
 
-                        const userSeed = (profile?.userId || 'guest_user').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                        const stableSeed = 42; // Fixed seed to maintain stable layout during profile load
                         
                         const displayList = [...filtered].sort((a, b) => {
                           const ratingA = getProductShopRating(a);
                           const ratingB = getProductShopRating(b);
-                          const pseudoA = (String(a?.id || 'a').charCodeAt(0) + userSeed) % 17;
-                          const pseudoB = (String(b?.id || 'b').charCodeAt(0) + userSeed) % 17;
+                          const pseudoA = (String(a?.id || 'a').charCodeAt(0) + stableSeed) % 17;
+                          const pseudoB = (String(b?.id || 'b').charCodeAt(0) + stableSeed) % 17;
                           
                           if (Math.abs(ratingA - ratingB) > 0.3) {
                             return ratingB - ratingA;

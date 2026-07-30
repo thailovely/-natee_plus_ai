@@ -1363,7 +1363,12 @@ function readDb() {
   }
 
   if (db && db.members && Array.isArray(db.members)) {
-    db.members.forEach((m: any) => recalculateMemberEligibleRights(db, m));
+    db.members.forEach((m: any) => {
+      if (m.sellerStatus === 'Active' && m.statusKyc !== 'Active') {
+        m.statusKyc = 'Active';
+      }
+      recalculateMemberEligibleRights(db, m);
+    });
   }
 
   cacheDb = db;
@@ -5639,6 +5644,7 @@ app.post('/api/admin/store-approve', (req, res) => {
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
   
   member.sellerStatus = "Active";
+  member.statusKyc = "Active";
   if (!member.sellerCode) {
     member.sellerCode = generateSellerCode(db);
   }
