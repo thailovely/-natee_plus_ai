@@ -7264,6 +7264,22 @@ export default function App() {
                     )}
                   </button>
 
+                  {/* Icon 3.5: ตะกร้า Affiliate ของฉัน */}
+                  <button 
+                    onClick={() => {
+                      setActiveTab('shop');
+                      setShopPortalView('store');
+                      setShopSubTab('affiliateBasket');
+                      showNotif('แสดงรายการสินค้าที่คุณปักตะกร้าแชร์เพื่อรับคอมมิชชั่นค่ะ', 'info');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer relative ${
+                      activeTab === 'shop' && shopPortalView === 'store' && shopSubTab === 'affiliateBasket' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-600 hover:text-amber-800'
+                    }`}
+                    title="📌 ตะกร้า Affiliate ของฉัน (สินค้าที่ปักตะกร้าแชร์)"
+                  >
+                    📌
+                  </button>
+
                   {/* Icon 4: ระบบสมาชิก */}
                   <button 
                     onClick={() => {
@@ -9103,6 +9119,90 @@ export default function App() {
                             )}
                           </tbody>
                         </table>
+                      </div>
+                    </div>
+                  ) : shopSubTab === 'affiliateBasket' ? (
+                    <div className="bg-white border border-slate-100 p-5 sm:p-6 rounded-3xl shadow-sm space-y-6 animate-fadeIn">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-4">
+                        <div>
+                          <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                            📌 สินค้าในตะกร้า Affiliate ของฉัน (My Shared Products)
+                          </h3>
+                          <p className="text-xs text-slate-500 mt-1">
+                            รายการสินค้าที่คุณกดปักตะกร้าแชร์ไว้ คัดลอกลิงค์แชร์เพื่อนเพื่อรับค่าคอมมิชชั่น และสะสม PV เข้าตัวคุณ (ยศ S ขึ้นไป)
+                          </p>
+                        </div>
+                        <span className="bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold px-3 py-1.5 rounded-2xl shadow-2xs">
+                          💡 สมาชิกทุกตำแหน่งปักตะกร้าแชร์ได้ทันที
+                        </span>
+                      </div>
+
+                      {/* Affiliate Basket Product List Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                        {(() => {
+                          const allMarketProducts = [...products, ...sellerProducts];
+                          const myBookmarkedIds = (profile?.affiliateBookmarkedIds || []);
+                          const filteredAffProds = allMarketProducts.filter((p: any) => myBookmarkedIds.includes(p.id) || p.isAffiliateEnabled);
+
+                          if (filteredAffProds.length === 0) {
+                            return (
+                              <div className="col-span-full text-center py-12 text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                                <div className="text-4xl mb-2">📌</div>
+                                <div className="text-sm font-bold text-slate-700">ยังไม่มีสินค้าในตะกร้า Affiliate ของคุณ</div>
+                                <p className="text-xs text-slate-400 mt-1">เลือกดูสินค้าในหมวด Shopping และกดปุ่ม "📌 แชร์สินค้านี้เพื่อรับ PV" เพื่อปักตะกร้าได้เลยค่ะ</p>
+                              </div>
+                            );
+                          }
+
+                          return filteredAffProds.map((product: any) => {
+                            const refCode = profile?.userId || 'CENTRAL';
+                            const shareLink = `${window.location.origin}/?ref=${refCode}&productId=${product.id}`;
+                            const commVal = product.affiliateCommission ? `${product.affiliateCommission}%` : 'ค่าคอมมิชชั่นสูง';
+
+                            return (
+                              <div key={product.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col justify-between space-y-3 hover:shadow-md transition">
+                                <div className="flex gap-3 items-center">
+                                  <img 
+                                    src={product.image || product.imageUrl || product.imageFile || "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=300"} 
+                                    alt={product.name} 
+                                    className="w-16 h-16 rounded-xl object-cover shrink-0 border border-slate-200"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <div className="space-y-1 overflow-hidden">
+                                    <span className="text-[9px] bg-amber-500/20 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-extrabold">
+                                      คอมมิชชั่น: {commVal}
+                                    </span>
+                                    <h4 className="font-bold text-xs text-slate-900 truncate">{product.name}</h4>
+                                    <div className="text-xs font-mono font-black text-indigo-600">฿{(product.price || 0).toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">({product.pv || 0} PV)</span></div>
+                                  </div>
+                                </div>
+
+                                <div className="pt-2 border-t border-slate-200/80 flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(shareLink);
+                                      showNotif('คัดลอกลิงค์แชร์ปักตะกร้าสำเร็จ! นำไปส่งต่อในโซเชียลได้ทันทีค่ะ', 'success');
+                                    }}
+                                    className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2 rounded-xl text-xs shadow transition cursor-pointer flex items-center justify-center gap-1"
+                                  >
+                                    🔗 คัดลอกลิงค์แชร์
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedMarketProduct(product);
+                                    }}
+                                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-3 py-2 rounded-xl text-xs transition cursor-pointer"
+                                  >
+                                    🔍 ดูรายละเอียด
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          });
+                        })()}
                       </div>
                     </div>
                   ) : shopSubTab === 'packages' ? (
@@ -12756,6 +12856,28 @@ export default function App() {
                           </div>
                         </button>
 
+                        {/* เงินประกันร้านค้า */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSellerPortalSubTab('deposit');
+                          }}
+                          className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer ${
+                            sellerPortalSubTab === 'deposit'
+                              ? 'bg-amber-600 border-amber-400 text-white shadow-lg shadow-amber-600/20'
+                              : 'bg-slate-850 border-slate-800 hover:bg-slate-800 hover:border-slate-700 text-slate-300'
+                          }`}
+                        >
+                          <ShieldCheck size={20} className={sellerPortalSubTab === 'deposit' ? 'text-white' : 'text-amber-400'} />
+                          <div className="space-y-0.5">
+                            <div className="font-bold text-xs flex items-center gap-1">
+                              <span>เงินประกันร้านค้า</span>
+                              <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1 rounded font-mono">10x</span>
+                            </div>
+                            <div className="text-[9px] text-slate-400 leading-none">ประกันความเสี่ยง & ขยายวงเงิน</div>
+                          </div>
+                        </button>
+
                         {/* ข้อมูลร้าน */}
                         <button
                           type="button"
@@ -14054,6 +14176,181 @@ export default function App() {
                             </div>
                           </div>
                         </div>
+                      </div>
+                    )}
+
+                    {/* SECURITY DEPOSIT TAB */}
+                    {sellerPortalSubTab === 'deposit' && (
+                      <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
+                        <div className="flex flex-wrap justify-between items-center border-b border-slate-100 pb-3 gap-2">
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                              <span>🛡️ เงินประกันความเสี่ยงร้านค้า (Security Deposit Hub)</span>
+                            </h4>
+                            <p className="text-[11px] text-slate-400 mt-0.5">วางเงินประกันเพื่อขยายวงเงินวางขายสินค้า 10 เท่า และสร้างความเชื่อมั่นให้ผู้ซื้อ</p>
+                          </div>
+                          <span className="text-xs text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl font-bold font-mono border border-amber-200">
+                            อัตราส่วนขยายวงเงิน: 10 เท่าของเงินประกัน
+                          </span>
+                        </div>
+
+                        {/* Stats overview */}
+                        {(() => {
+                          const deposit = parseFloat(sellerSessionUser.securityDeposit || 0);
+                          const maxCap = deposit * 10;
+                          const activeSales = sellerOrders
+                            .filter((o: any) => o.status === 'Processing' || o.status === 'Paid')
+                            .reduce((sum: number, o: any) => sum + (parseFloat(o.totalPrice) || 0), 0);
+                          
+                          return (
+                            <div className="space-y-6">
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="bg-gradient-to-br from-amber-500 to-amber-600 text-white p-5 rounded-2xl shadow-md space-y-2 relative overflow-hidden">
+                                  <div className="text-xs font-semibold text-amber-100 uppercase tracking-wider">เงินประกันสะสมคงเหลือ</div>
+                                  <div className="text-3xl font-black font-mono">฿{deposit.toLocaleString()}</div>
+                                  <div className="text-[10px] text-amber-100/80">สามารถถอนคืนได้เมื่อไม่มีคำสั่งซื้อรอดำเนินการ</div>
+                                </div>
+
+                                <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-md space-y-2 relative overflow-hidden border border-slate-800">
+                                  <div className="text-xs font-semibold text-indigo-300 uppercase tracking-wider">วงเงินสิทธิ์ลงวางขายสินค้า (10x Cap)</div>
+                                  <div className="text-3xl font-black font-mono text-emerald-400">฿{maxCap.toLocaleString()}</div>
+                                  <div className="text-[10px] text-slate-400">คำนวณจากเงินประกัน ฿{deposit.toLocaleString()} × 10 เท่า</div>
+                                </div>
+
+                                <div className="bg-slate-50 border border-slate-200 p-5 rounded-2xl space-y-2">
+                                  <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider">ยอดขายรอดำเนินการจัดส่งค้างอยู่</div>
+                                  <div className="text-3xl font-black font-mono text-rose-600">฿{activeSales.toLocaleString()}</div>
+                                  <div className="text-[10px] text-slate-500">เงินประกันต้องค้างไว้อย่างน้อยเท่ากับยอดขายรอดำเนินการ</div>
+                                </div>
+                              </div>
+
+                              {/* Action Forms: Deposit & Withdraw */}
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                                {/* DEPOSIT FORM */}
+                                <div className="bg-emerald-50/40 border border-emerald-200/80 rounded-2xl p-5 space-y-4">
+                                  <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
+                                    <h5 className="font-bold text-emerald-950 text-xs flex items-center gap-1.5">
+                                      <span>➕ ฝากเงินประกันเพิ่ม (จากกระเป๋า E-Cash)</span>
+                                    </h5>
+                                    <span className="text-[10px] text-emerald-700 bg-white px-2 py-0.5 rounded font-mono border border-emerald-200">
+                                      E-Cash พร้อมใช้: ฿{(sellerSessionUser.balanceECash || 0).toLocaleString()}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-600">โอนเงินฝากประกันเพื่อขยายวงเงินการลงขายสินค้าเพิ่ม 10 เท่าทันที</p>
+                                  
+                                  <div className="space-y-3">
+                                    <div>
+                                      <label className="block text-[11px] font-bold text-slate-700 mb-1">ระบุจำนวนเงินที่ต้องการฝาก (บาท):</label>
+                                      <input 
+                                        type="number"
+                                        id="secDepositAmountInput"
+                                        placeholder="เช่น 1000"
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-mono text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                                      />
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        const inputEl = document.getElementById("secDepositAmountInput") as HTMLInputElement;
+                                        const amt = parseFloat(inputEl?.value || "0");
+                                        if (!amt || amt <= 0) {
+                                          showNotif("กรุณาระบุจำนวนเงินประกันที่ต้องการฝาก", "warning");
+                                          return;
+                                        }
+                                        try {
+                                          const res = await fetch("/api/seller/security-deposit/deposit", {
+                                            method: "POST",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ userId: sellerSessionUser.userId, amount: amt })
+                                          });
+                                          const data = await res.json();
+                                          if (data.success) {
+                                            showNotif(data.message, "success");
+                                            setSellerSessionUser((prev: any) => ({
+                                              ...prev,
+                                              securityDeposit: (prev.securityDeposit || 0) + amt,
+                                              balanceECash: data.newECash
+                                            }));
+                                            if (inputEl) inputEl.value = "";
+                                          } else {
+                                            showNotif(data.message, "error");
+                                          }
+                                        } catch (e) {
+                                          showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+                                        }
+                                      }}
+                                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 rounded-xl shadow transition cursor-pointer flex items-center justify-center gap-1.5"
+                                    >
+                                      🛡️ ยืนยันโอนฝากเงินประกันเพิ่ม
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* WITHDRAW FORM */}
+                                <div className="bg-rose-50/40 border border-rose-200/80 rounded-2xl p-5 space-y-4">
+                                  <div className="flex justify-between items-center border-b border-rose-100 pb-2">
+                                    <h5 className="font-bold text-rose-950 text-xs flex items-center gap-1.5">
+                                      <span>➖ ถอนเงินประกันคืน (เข้ากระเป๋า E-Cash)</span>
+                                    </h5>
+                                    <span className="text-[10px] text-rose-700 bg-white px-2 py-0.5 rounded font-mono border border-rose-200">
+                                      เงินประกันคงเหลือ: ฿{deposit.toLocaleString()}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-600">ถอนเงินประกันคืนกลับเข้ากระเป๋า E-Cash ได้ตลอดเวลาหากไม่มีออเดอร์ค้างจัดส่ง</p>
+                                  
+                                  <div className="space-y-3">
+                                    <div>
+                                      <label className="block text-[11px] font-bold text-slate-700 mb-1">ระบุจำนวนเงินที่ต้องการถอน (บาท):</label>
+                                      <input 
+                                        type="number"
+                                        id="secWithdrawAmountInput"
+                                        placeholder="เช่น 500"
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-mono text-slate-900 outline-none focus:ring-2 focus:ring-rose-500"
+                                      />
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        const inputEl = document.getElementById("secWithdrawAmountInput") as HTMLInputElement;
+                                        const amt = parseFloat(inputEl?.value || "0");
+                                        if (!amt || amt <= 0) {
+                                          showNotif("กรุณาระบุจำนวนเงินที่ต้องการถอน", "warning");
+                                          return;
+                                        }
+                                        try {
+                                          const res = await fetch("/api/seller/security-deposit/withdraw", {
+                                            method: "POST",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ userId: sellerSessionUser.userId, amount: amt })
+                                          });
+                                          const data = await res.json();
+                                          if (data.success) {
+                                            showNotif(data.message, "success");
+                                            setSellerSessionUser((prev: any) => ({
+                                              ...prev,
+                                              securityDeposit: Math.max(0, (prev.securityDeposit || 0) - amt),
+                                              balanceECash: data.newECash
+                                            }));
+                                            if (inputEl) inputEl.value = "";
+                                          } else {
+                                            showNotif(data.message, "error");
+                                          }
+                                        } catch (e) {
+                                          showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+                                        }
+                                      }}
+                                      className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs py-2.5 rounded-xl shadow transition cursor-pointer flex items-center justify-center gap-1.5"
+                                    >
+                                      💸 ยืนยันถอนเงินประกันคืนเข้า E-Cash
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
 
@@ -23150,16 +23447,39 @@ export default function App() {
                       </button>
                     )}
                     <button
-                      onClick={() => {
-                        const refCode = profile?.userId || 'CENTRAL';
+                      onClick={async () => {
+                        const refCode = profile?.userId || currentUser?.userId || 'CENTRAL';
                         const link = `${window.location.origin}/?ref=${refCode}&productId=${selectedMarketProduct.id}`;
                         navigator.clipboard.writeText(link);
-                        showNotif('คัดลอกลิงก์ปักตะกร้าแชร์สินค้านี้สำเร็จ! (PV จะวิ่งเข้าเจ้าของลิงก์ทันที)', 'success');
+                        
+                        if (currentUser?.userId) {
+                          try {
+                            const res = await fetch('/api/affiliate/toggle-basket', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ userId: currentUser.userId, productId: selectedMarketProduct.id })
+                            });
+                            const data = await res.json();
+                            if (data.success) {
+                              showNotif('📌 ปักตะกร้าลงใน "ตะกร้า Affiliate ของฉัน" และคัดลอกลิงค์แชร์สำเร็จ!', 'success');
+                              setProfile((prev: any) => ({
+                                ...prev,
+                                affiliateBookmarkedIds: data.bookmarkedIds
+                              }));
+                            } else {
+                              showNotif(data.message || 'คัดลอกลิงค์แชร์เรียบร้อยแล้ว!', 'info');
+                            }
+                          } catch (e) {
+                            showNotif('คัดลอกลิงก์ปักตะกร้าแชร์สินค้านี้สำเร็จ!', 'success');
+                          }
+                        } else {
+                          showNotif('คัดลอกลิงก์ปักตะกร้าแชร์สินค้านี้สำเร็จ! (เข้าสู่ระบบเพื่อบันทึกลงตะกร้า Affiliate)', 'success');
+                        }
                       }}
                       className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-5 py-3.5 rounded-2xl text-xs transition shadow-md cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
                       title="แชร์สินค้านี้เพื่อรับ PV / ค่าคอม Affiliate"
                     >
-                      📌 แชร์สินค้านี้เพื่อรับ PV
+                      📌 ปักตะกร้าแชร์สินค้านี้
                     </button>
                     {(currentUser?.role === 'Admin' || (selectedMarketProduct.sellerId && (selectedMarketProduct.sellerId === currentUser?.userId || selectedMarketProduct.sellerId === sellerSessionUser?.userId))) && (
                       <>

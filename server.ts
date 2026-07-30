@@ -1349,6 +1349,11 @@ function readDb() {
     hasPopulatedMissing = true;
   }
 
+  if (db && !db.affiliateItems) {
+    db.affiliateItems = [];
+    hasPopulatedMissing = true;
+  }
+
   if (hasPopulatedMissing) {
     cacheDb = db;
     fs.writeFileSync(currentDbFile, JSON.stringify(db, null, 2), 'utf8');
@@ -3592,15 +3597,27 @@ app.delete('/api/admin/package-choices/:id', (req, res) => {
 
 // BUY PACKAGE / SHOPPING
 app.post('/api/shop/purchase', (req, res) => {
-  const { userId, productId, quantity, shippingAddress, selectedChoiceId } = req.body;
+  const { userId, productId, quantity, shippingAddress, selectedChoiceId, ref, affiliateReferrerId } = req.body;
   const db = readDb();
   
   const member = db.members.find(m => m.userId === userId);
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
   
-  const product = db.products.find(p => p.id === productId);
+  const product = db.products.find(p => p.id === productId) || db.sellerProducts?.find(sp => sp.id === productId);
   if (!product) return res.status(404).json({ success: false, message: "ไม่พบสินค้า" });
   
+  // Validate Security Deposit for seller if general product
+  const sellerId = (product as any).sellerId || db.sellerProducts?.find((sp: any) => sp.id === product.id)?.sellerId || null;
+  if (sellerId && product.category !== "Package") {
+    const sellerDepositStats = getSellerDepositStats(db, sellerId);
+    if (sellerDepositStats.securityDeposit > 0 && sellerDepositStats.salesLimitRemaining < (product.price * (parseInt(quantity) || 1))) {
+      return res.status(400).json({
+        success: false,
+        message: `ไม่สามารถสั่งซื้อได้เนื่องจากร้านค้านี้มียอดขายรอดำเนินการจัดส่งเต็มวงเงินประกันความเสี่ยง (฿${sellerDepositStats.activeUnfulfilledSales.toLocaleString()} / วงเงินประกัน ฿${sellerDepositStats.securityDeposit.toLocaleString()}) กรุณาแจ้งร้านค้าฝากเงินประกันเพิ่มค่ะ`
+      });
+    }
+  }
+
   // If product is a package, validate selection
   const isPackage = product.category === "Package";
   const currentRank = member.rank || "Member";
@@ -3700,8 +3717,34 @@ app.post('/api/shop/purchase', (req, res) => {
     }
   }
   
-  // Record order
-  const sellerId = (product as any).sellerId || db.sellerProducts?.find((sp: any) => sp.id === product.id)?.sellerId || null;
+  // Calculate Shipping Fee (Stepped structure e.g. 35 + 17.50 + 8.75...)
+  const baseShippingFee = parseFloat(product.customerShippingFee || product.baseShippingCost || 35);
+  let orderShippingFee = baseShippingFee;
+  if (qty > 1) {
+    for (let i = 2; i <= qty; i++) {
+      orderShippingFee += baseShippingFee / Math.pow(2, i - 1);
+    }
+  }
+  orderShippingFee = parseFloat(orderShippingFee.toFixed(2));
+
+  // 100% Shipping Refund to seller + 3% Withholding Tax Deduction
+  const shippingWithholdingTax = parseFloat((orderShippingFee * 0.03).toFixed(2));
+  const shippingRefundNet = parseFloat((orderShippingFee - shippingWithholdingTax).toFixed(2));
+
+  // Affiliate & Commission Calculations
+  const referrerId = ref || affiliateReferrerId || null;
+  let affiliateCommissionAmount = 0;
+
+  if (referrerId && product.affiliateCommission) {
+    affiliateCommissionAmount = parseFloat((totalPrice * (parseFloat(product.affiliateCommission) / 100)).toFixed(2));
+  }
+
+  // Calculate Net Seller Payout:
+  const vatAmount = parseFloat((totalPrice * 7 / 107).toFixed(4));
+  const companyGp = parseFloat((totalPrice * 0.20).toFixed(4));
+  const netProductPayout = parseFloat((totalPrice - vatAmount - companyGp - affiliateCommissionAmount).toFixed(4));
+  const sellerPayoutAmount = parseFloat((netProductPayout + shippingRefundNet).toFixed(2));
+
   const sellerCode = (product as any).sellerCode || db.sellerProducts?.find((sp: any) => sp.id === product.id)?.sellerCode || null;
   const sellerStoreName = (product as any).sellerStoreName || db.sellerProducts?.find((sp: any) => sp.id === product.id)?.sellerStoreName || null;
 
@@ -3717,8 +3760,14 @@ app.post('/api/shop/purchase', (req, res) => {
     quantity: qty,
     totalPrice: totalPrice,
     totalPv: totalPv,
+    shippingFee: orderShippingFee,
+    shippingFeeRefund: orderShippingFee,
+    shippingWithholdingTax: shippingWithholdingTax,
+    affiliateCommissionAmount,
+    affiliateReferrerId: referrerId,
+    sellerPayoutAmount,
     shippingAddress: shippingAddress || member.kycAddress || "ไม่มีที่อยู่ผู้จัดส่ง",
-    status: productId === "pack_s" ? "Completed" : "Processing", // Will be marked as Completed by Admin
+    status: productId === "pack_s" ? "Completed" : "Processing",
     sellerId,
     sellerCode,
     sellerStoreName,
@@ -3863,33 +3912,112 @@ app.post('/api/shop/purchase', (req, res) => {
       );
     }
     
-    // 2. PV Allocation and Unilevel/Binary Tree Commissions
-    // PV Beneficiary Rule:
-    // - If buyer is rank S or higher (S, M, L, XL, XXL): PV stays with the buyer (สะสม PV เข้าตัวผู้ซื้อเอง)
-    // - If buyer is rank Member (ทั่วไป): PV transfers to sponsor (ผู้แนะนำ)
+    // 2. PV Allocation & Affiliate Rules
     const buyerRank = member.rank || "Member";
-    const isSOrAbove = buyerRank !== "Member" && buyerRank !== "";
+    const isBuyerSOrAbove = buyerRank !== "Member" && buyerRank !== "";
     
     let pvBeneficiaryId = member.userId;
-    if (isSOrAbove) {
-      member.personalPV = parseFloat(((member.personalPV || 0) + totalPv).toFixed(4));
-      pvBeneficiaryId = member.userId;
-    } else {
-      if (sponsor) {
-        sponsor.personalPV = parseFloat(((sponsor.personalPV || 0) + totalPv).toFixed(4));
-        pvBeneficiaryId = sponsor.userId;
+
+    if (referrerId) {
+      // ORDER VIA AFFILIATE SHARE LINK
+      const referrerMember = db.members.find((m: any) => m.userId === referrerId);
+      const referrerRank = referrerMember?.rank || "Member";
+      const isReferrerSOrAbove = referrerRank !== "Member" && referrerRank !== "";
+
+      // Pay Affiliate Commission to referrer (if set and available)
+      if (referrerMember && affiliateCommissionAmount > 0) {
+        referrerMember.balanceECash = parseFloat(((referrerMember.balanceECash || 0) + affiliateCommissionAmount).toFixed(4));
         db.transactions.push({
-          id: "PV_XFER_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-          userId: sponsor.userId,
+          id: "AFF_COMM_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+          userId: referrerMember.userId,
+          type: "Deposit",
+          amount: affiliateCommissionAmount,
+          currency: "E-Cash",
+          details: `รับค่าคอมมิชชั่น Affiliate จากการแชร์สินค้า ${product.name} (บิลสั่งซื้อโดย ${member.userId})`,
+          status: "Approved",
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      if (isReferrerSOrAbove) {
+        // Rule A: Referrer is rank S or higher -> PV belongs to Referrer!
+        pvBeneficiaryId = referrerMember.userId;
+        referrerMember.personalPV = parseFloat(((referrerMember.personalPV || 0) + totalPv).toFixed(4));
+        db.transactions.push({
+          id: "PV_AFF_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+          userId: referrerMember.userId,
           type: "Bonus",
           amount: totalPv,
           currency: "PV",
-          details: `รับ PV จำนวน ${totalPv} PV จากการสั่งซื้อสินค้าของสมาชิกสายงานรหัส ${member.userId} (ผู้ซื้อมีตำแหน่ง Member)`,
+          details: `รับ PV จำนวน ${totalPv} PV จากการปักตะกร้าแชร์สินค้า ${product.name} (ผู้แชร์มีตำแหน่ง S ขึ้นไป)`,
           status: "Approved",
           createdAt: new Date().toISOString()
         });
       } else {
-        pvBeneficiaryId = "A260600001";
+        // Referrer is Member (not S yet). PV goes to Seller!
+        const sellerMember = db.members.find((m: any) => m.userId === sellerId);
+        const sellerRank = sellerMember?.rank || "Member";
+        const isSellerSOrAbove = sellerRank !== "Member" && sellerRank !== "";
+
+        if (sellerMember && isSellerSOrAbove) {
+          // Rule B: Seller is rank S or higher -> PV belongs to Seller!
+          pvBeneficiaryId = sellerMember.userId;
+          sellerMember.personalPV = parseFloat(((sellerMember.personalPV || 0) + totalPv).toFixed(4));
+          db.transactions.push({
+            id: "PV_SELLER_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+            userId: sellerMember.userId,
+            type: "Bonus",
+            amount: totalPv,
+            currency: "PV",
+            details: `รับ PV จำนวน ${totalPv} PV จากยอดขายสินค้า ${product.name} (เนื่องจากผู้แชร์เป็น Member)`,
+            status: "Approved",
+            createdAt: new Date().toISOString()
+          });
+        } else if (sellerMember) {
+          // Rule C: Seller is also Member (not S yet) -> PV bounces up to Seller's Sponsor!
+          const sellerSponsor = db.members.find((m: any) => m.userId === sellerMember.sponsorId);
+          if (sellerSponsor) {
+            pvBeneficiaryId = sellerSponsor.userId;
+            sellerSponsor.personalPV = parseFloat(((sellerSponsor.personalPV || 0) + totalPv).toFixed(4));
+            db.transactions.push({
+              id: "PV_SPONSOR_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+              userId: sellerSponsor.userId,
+              type: "Bonus",
+              amount: totalPv,
+              currency: "PV",
+              details: `รับ PV จำนวน ${totalPv} PV โบนัสส่งต่อ จากร้านค้าสายงาน ${sellerMember.userId} (เนื่องจากเจ้าของร้านยังไม่อยู่ในตำแหน่ง S)`,
+              status: "Approved",
+              createdAt: new Date().toISOString()
+            });
+          } else {
+            pvBeneficiaryId = "A260600001";
+          }
+        } else {
+          pvBeneficiaryId = "A260600001";
+        }
+      }
+    } else {
+      // STANDARD DIRECT PURCHASE (NO AFFILIATE LINK)
+      if (isBuyerSOrAbove) {
+        member.personalPV = parseFloat(((member.personalPV || 0) + totalPv).toFixed(4));
+        pvBeneficiaryId = member.userId;
+      } else {
+        if (sponsor) {
+          sponsor.personalPV = parseFloat(((sponsor.personalPV || 0) + totalPv).toFixed(4));
+          pvBeneficiaryId = sponsor.userId;
+          db.transactions.push({
+            id: "PV_XFER_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+            userId: sponsor.userId,
+            type: "Bonus",
+            amount: totalPv,
+            currency: "PV",
+            details: `รับ PV จำนวน ${totalPv} PV จากการสั่งซื้อสินค้าของสมาชิกสายงานรหัส ${member.userId} (ผู้ซื้อมีตำแหน่ง Member)`,
+            status: "Approved",
+            createdAt: new Date().toISOString()
+          });
+        } else {
+          pvBeneficiaryId = "A260600001";
+        }
       }
     }
 
@@ -4617,6 +4745,16 @@ app.post('/api/seller/product', async (req, res) => {
   const priceVal = parseFloat(price) || 0;
   const costVal = cost !== undefined && cost !== "" ? parseFloat(cost) : Math.floor(priceVal * 0.30);
 
+  // Validate Security Deposit Listing Cap (10x rule)
+  const depositStats = getSellerDepositStats(db, userId);
+  const addedListingValue = priceVal * 10; // estimate listing impact
+  if (depositStats.securityDeposit > 0 && (depositStats.currentListingValue + addedListingValue) > depositStats.maxListingCap) {
+    return res.status(400).json({
+      success: false,
+      message: `ไม่สามารถเพิ่มสินค้าได้ เนื่องจากมูลค่าสินค้าเกินวงเงินประกัน 10 เท่า (เงินประกันปัจจุบัน ฿${depositStats.securityDeposit.toLocaleString()} วางขายได้ไม่เกิน ฿${depositStats.maxListingCap.toLocaleString()}) กรุณาเพิ่มเงินประกันในเมนูร้านค้าค่ะ`
+    });
+  }
+
   const isApproved = !!approveInstantly;
 
   const newProduct = {
@@ -4832,6 +4970,215 @@ app.post('/api/order/process-escrow-payouts', (req, res) => {
     success: true,
     message: `ประมวลผลระบบโอนเงินพักประกัน 15 วันเรียบร้อยแล้ว (ปลดล็อกโอนสำเร็จ ${result.processedCount} รายการ)`,
     processedCount: result.processedCount
+  });
+});
+
+// ==========================================
+// SELLER SECURITY DEPOSIT & AFFILIATE APIS
+// ==========================================
+
+// Helper: Get seller security deposit & active limit stats
+function getSellerDepositStats(db: any, sellerUserId: string) {
+  const member = db.members.find((m: any) => m.userId === sellerUserId);
+  const deposit = parseFloat(member?.securityDeposit || 0);
+  const maxListingCap = deposit * 10; // 10x listing multiplier rule
+
+  // Calculate current total listed value in store
+  const sellerProds = (db.sellerProducts || []).filter((p: any) => p.sellerId === sellerUserId && p.isAvailable !== false);
+  const currentListingValue = sellerProds.reduce((sum: number, p: any) => {
+    const pPrice = parseFloat(p.price) || 0;
+    const pStock = p.stock !== undefined ? parseFloat(p.stock) : 100;
+    return sum + (pPrice * Math.min(pStock, 50)); // capped calculation for listing value active
+  }, 0);
+
+  // Calculate active unfulfilled order sales (Processing orders)
+  const activeUnfulfilledSales = (db.orders || [])
+    .filter((o: any) => o.sellerId === sellerUserId && (o.status === 'Processing' || o.status === 'Paid'))
+    .reduce((sum: number, o: any) => sum + (parseFloat(o.totalPrice || o.price) || 0), 0);
+
+  return {
+    securityDeposit: deposit,
+    maxListingCap,
+    currentListingValue,
+    activeUnfulfilledSales,
+    salesLimitRemaining: Math.max(0, deposit - activeUnfulfilledSales),
+    canListMore: currentListingValue < maxListingCap || deposit === 0
+  };
+}
+
+// GET SELLER SECURITY DEPOSIT STATS
+app.get('/api/seller/security-deposit/:userId', (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  const stats = getSellerDepositStats(db, userId);
+  res.json({ success: true, stats });
+});
+
+// DEPOSIT INTO SECURITY DEPOSIT (Transfers from Seller E-Cash)
+app.post('/api/seller/security-deposit/deposit', (req, res) => {
+  const { userId, amount } = req.body;
+  const db = readDb();
+  const depositAmount = parseFloat(amount);
+  
+  if (!depositAmount || depositAmount <= 0) {
+    return res.status(400).json({ success: false, message: "กรุณาระบุจำนวนเงินประกันที่ถูกต้อง" });
+  }
+
+  const member = db.members.find((m: any) => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกร้านค้า" });
+
+  if ((member.balanceECash || 0) < depositAmount) {
+    return res.status(400).json({ success: false, message: "ยอดเงิน E-Cash ในกระเป๋าไม่เพียงพอสำหรับการโอนฝากเงินประกันร้านค้า" });
+  }
+
+  // Deduct E-Cash and add to securityDeposit
+  member.balanceECash = parseFloat(((member.balanceECash || 0) - depositAmount).toFixed(4));
+  member.securityDeposit = parseFloat(((member.securityDeposit || 0) + depositAmount).toFixed(4));
+
+  db.transactions.push({
+    id: "SEC_DEP_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+    userId: member.userId,
+    type: "Withdraw",
+    amount: depositAmount,
+    currency: "E-Cash",
+    details: `โอนฝากเงินประกันความเสี่ยงร้านค้า (Security Deposit) เพิ่มขึ้นเป็น ฿${member.securityDeposit.toLocaleString()}`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+
+  writeDb(db);
+  const stats = getSellerDepositStats(db, userId);
+  res.json({
+    success: true,
+    message: `ฝากเงินประกันสำเร็จ! ยอดเงินประกันสะสม ฿${member.securityDeposit.toLocaleString()} (ขยายวงเงินวางขายสินค้าเป็น ฿${stats.maxListingCap.toLocaleString()})`,
+    stats,
+    newECash: member.balanceECash
+  });
+});
+
+// WITHDRAW SECURITY DEPOSIT (Transfers back to Seller E-Cash)
+app.post('/api/seller/security-deposit/withdraw', (req, res) => {
+  const { userId, amount } = req.body;
+  const db = readDb();
+  const withdrawAmount = parseFloat(amount);
+
+  if (!withdrawAmount || withdrawAmount <= 0) {
+    return res.status(400).json({ success: false, message: "กรุณาระบุจำนวนเงินที่ต้องการถอน" });
+  }
+
+  const member = db.members.find((m: any) => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกร้านค้า" });
+
+  const currentDeposit = member.securityDeposit || 0;
+  if (currentDeposit < withdrawAmount) {
+    return res.status(400).json({ success: false, message: "ยอดเงินประกันคงเหลือไม่เพียงพอสำหรับการถอน" });
+  }
+
+  const stats = getSellerDepositStats(db, userId);
+  if (stats.activeUnfulfilledSales > (currentDeposit - withdrawAmount)) {
+    return res.status(400).json({
+      success: false,
+      message: `ไม่สามารถถอนเงินประกันได้ เนื่องจากมียอดขายรอดำเนินการจัดส่ง ฿${stats.activeUnfulfilledSales.toLocaleString()} ค้างอยู่ (ต้องคงเงินประกันไว้เท่ากับยอดขายรอดำเนินการ)`
+    });
+  }
+
+  member.securityDeposit = parseFloat((currentDeposit - withdrawAmount).toFixed(4));
+  member.balanceECash = parseFloat(((member.balanceECash || 0) + withdrawAmount).toFixed(4));
+
+  db.transactions.push({
+    id: "SEC_WD_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+    userId: member.userId,
+    type: "Deposit",
+    amount: withdrawAmount,
+    currency: "E-Cash",
+    details: `ถอนเงินประกันร้านค้ากลับเข้ากระเป๋า E-Cash คงเหลือเงินประกัน ฿${member.securityDeposit.toLocaleString()}`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+
+  writeDb(db);
+  const newStats = getSellerDepositStats(db, userId);
+  res.json({
+    success: true,
+    message: `ถอนเงินประกันคืนสำเร็จ ฿${withdrawAmount.toLocaleString()} ถอนกลับเข้ากระเป๋า E-Cash เรียบร้อยแล้วค่ะ`,
+    stats: newStats,
+    newECash: member.balanceECash
+  });
+});
+
+// AFFILIATE BASKET APIS
+
+// TOGGLE AFFILIATE BASKET (ปักตะกร้า / ถอดตะกร้า)
+app.post('/api/affiliate/toggle-basket', (req, res) => {
+  const { userId, productId } = req.body;
+  const db = readDb();
+
+  const member = db.members.find((m: any) => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
+
+  // Eligibility check: Must be Member role or higher, store approved, and KYC completed
+  if (member.role === 'Visitor' || member.role === 'User') {
+    return res.status(403).json({ success: false, message: "ผู้ปักตะกร้าแชร์สินค้าต้องเป็นสมาชิก (Member) ขึ้นไปค่ะ" });
+  }
+
+  if (member.kycStatus !== 'Approved') {
+    return res.status(403).json({ success: false, message: "คุณต้องผ่านการยืนยันตัวตน KYC ก่อนจึงจะสามารถปักตะกร้าและแชร์สินค้าได้ค่ะ" });
+  }
+
+  if (member.sellerStatus !== 'Approved') {
+    return res.status(403).json({ success: false, message: "คุณต้องอนุมัติเปิดร้านค้าผู้ขายให้เรียบร้อยก่อนจึงจะปักตะกร้าแชร์สินค้าได้ค่ะ" });
+  }
+
+  if (!db.affiliateItems) db.affiliateItems = [];
+
+  const existingIdx = db.affiliateItems.findIndex((item: any) => item.userId === userId && item.productId === productId);
+  let isBookmarked = false;
+
+  if (existingIdx !== -1) {
+    db.affiliateItems.splice(existingIdx, 1);
+    isBookmarked = false;
+  } else {
+    db.affiliateItems.push({
+      id: "AFF_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+      userId,
+      productId,
+      createdAt: new Date().toISOString()
+    });
+    isBookmarked = true;
+  }
+
+  writeDb(db);
+  res.json({
+    success: true,
+    isBookmarked,
+    message: isBookmarked 
+      ? "📌 ปักตะกร้าสินค้าสำเร็จ! คุณสามารถคัดลอกลิงค์แชร์เพื่อรับค่าคอมมิชชั่นได้ทันทีค่ะ" 
+      : "ถอดสินค้าออกจากตะกร้า Affiliate เรียบร้อยแล้วค่ะ"
+  });
+});
+
+// GET MY AFFILIATE BASKET
+app.get('/api/affiliate/my-basket/:userId', (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  if (!db.affiliateItems) db.affiliateItems = [];
+
+  const myAffItems = db.affiliateItems.filter((item: any) => item.userId === userId);
+  const myProductIds = myAffItems.map((item: any) => item.productId);
+
+  const allProducts = [...(db.products || []), ...(db.sellerProducts || [])];
+  const uniqueProductsMap = new Map();
+  allProducts.forEach((p: any) => {
+    if (myProductIds.includes(p.id) && !uniqueProductsMap.has(p.id)) {
+      uniqueProductsMap.set(p.id, p);
+    }
+  });
+
+  const productsList = Array.from(uniqueProductsMap.values());
+  res.json({
+    success: true,
+    products: productsList,
+    basketItems: myAffItems
   });
 });
 
