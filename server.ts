@@ -5033,6 +5033,45 @@ app.post('/api/order/confirm-received', (req, res) => {
   });
 });
 
+// CUSTOMER SUBMIT PRODUCT REVIEW & SELLER RATING
+app.post('/api/order/review', (req, res) => {
+  const { orderId, userId, rating, comment } = req.body;
+  const db = readDb();
+  const order = db.orders.find((o: any) => o.id === orderId);
+  if (!order) return res.status(404).json({ success: false, message: "ไม่พบบิลคำสั่งซื้อ" });
+
+  if (order.userId !== userId && order.buyerId !== userId) {
+    return res.status(403).json({ success: false, message: "คุณไม่มีสิทธิ์รีวิวคำสั่งซื้อนี้" });
+  }
+
+  const numRating = Math.min(5, Math.max(1, Number(rating) || 5));
+  const reviewObj = {
+    rating: numRating,
+    comment: comment || "",
+    reviewedAt: new Date().toISOString(),
+    buyerName: order.userName || order.buyerName || "ลูกค้าผู้สั่งซื้อ"
+  };
+
+  order.review = reviewObj;
+
+  // Record in global reviews for seller ratings
+  if (!db.reviews) db.reviews = [];
+  db.reviews.push({
+    id: `REV_${Date.now()}`,
+    orderId,
+    sellerId: order.sellerId || order.shopId,
+    productId: order.productId,
+    productName: order.productName,
+    rating: numRating,
+    comment: comment || "",
+    buyerName: reviewObj.buyerName,
+    createdAt: reviewObj.reviewedAt
+  });
+
+  writeDb(db);
+  res.json({ success: true, message: "บันทึกคะแนนดาวและรีวิวสินค้าเรียบร้อยแล้วค่ะ ⭐", review: reviewObj });
+});
+
 // CUSTOMER DISPUTE / RETURN PRODUCT (PAUSE ESCROW PAYOUT)
 app.post('/api/order/dispute', (req, res) => {
   const { orderId, userId, reason } = req.body;

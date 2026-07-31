@@ -776,6 +776,12 @@ export default function App() {
   const [planBSelectedTier, setPlanBSelectedTier] = useState<number>(1);
   const [showMlmRegisterModal, setShowMlmRegisterModal] = useState(false);
   
+  // Product Review States
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewingOrder, setReviewingOrder] = useState<any | null>(null);
+  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewComment, setReviewComment] = useState<string>('');
+  
   // Seller States
   const [sellerStoreName, setSellerStoreName] = useState('');
   const [sellerAddress, setSellerAddress] = useState('');
@@ -9072,7 +9078,7 @@ export default function App() {
                                               📋 คัดลอกเลขพัสดุ
                                             </button>
                                             
-                                            {!isDelivered && (
+                                            {!isDelivered ? (
                                               <button
                                                 type="button"
                                                 onClick={async () => {
@@ -9097,6 +9103,25 @@ export default function App() {
                                               >
                                                 ✔ ฉันได้รับสินค้าแล้ว
                                               </button>
+                                            ) : (
+                                              order.review ? (
+                                                <span className="bg-amber-50 text-amber-800 border border-amber-200/80 px-2 py-0.5 rounded-lg text-[9px] font-black inline-flex items-center gap-1 shadow-2xs">
+                                                  ⭐ ให้คะแนนแล้ว ({order.review.rating}/5)
+                                                </span>
+                                              ) : (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setReviewingOrder(order);
+                                                    setReviewRating(5);
+                                                    setReviewComment('');
+                                                    setShowReviewModal(true);
+                                                  }}
+                                                  className="bg-amber-500 hover:bg-amber-600 text-white font-black px-2 py-0.5 rounded-lg text-[9px] transition cursor-pointer shadow-sm inline-flex items-center gap-1"
+                                                >
+                                                  ⭐ เขียนรีวิวสินค้า
+                                                </button>
+                                              )
                                             )}
                                           </div>
 
@@ -23176,6 +23201,112 @@ export default function App() {
                     ปิดหน้าต่าง
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PRODUCT REVIEW & SELLER RATING MODAL */}
+        {showReviewModal && reviewingOrder && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-[999999] animate-fade-in" onClick={() => setShowReviewModal(false)}>
+            <div className="bg-white border border-slate-100 rounded-3xl p-6 max-w-md w-full shadow-2xl relative space-y-4" onClick={(e) => e.stopPropagation()}>
+              <button 
+                type="button"
+                onClick={() => setShowReviewModal(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 bg-slate-100 p-1.5 rounded-full cursor-pointer transition text-xs font-bold"
+              >
+                ✕
+              </button>
+
+              <div className="text-center space-y-1">
+                <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-3 py-0.5 rounded-full uppercase tracking-wider">
+                  ⭐ ให้คะแนนและรีวิวสินค้า
+                </span>
+                <h3 className="text-lg font-black text-slate-900 pt-1">
+                  {reviewingOrder.productName || 'สินค้าคำสั่งซื้อ'}
+                </h3>
+                <p className="text-xs text-slate-500 font-mono">
+                  เลขที่ออร์เดอร์: {reviewingOrder.id}
+                </p>
+              </div>
+
+              {/* Star Rating Select */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center space-y-2">
+                <label className="text-xs font-bold text-slate-700 block">ให้คะแนนดาวความพึงพอใจ:</label>
+                <div className="flex items-center justify-center gap-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setReviewRating(star)}
+                      className={`text-2xl transition transform hover:scale-125 cursor-pointer ${
+                        star <= reviewRating ? 'text-amber-400' : 'text-slate-300'
+                      }`}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+                <div className="text-[11px] font-extrabold text-amber-700">
+                  {reviewRating === 5 && '🌟 ประทับใจมากที่สุด (5 ดาว)'}
+                  {reviewRating === 4 && '👍 ดีมาก (4 ดาว)'}
+                  {reviewRating === 3 && '👌 ปานกลาง (3 ดาว)'}
+                  {reviewRating === 2 && '👎 พอใช้ (2 ดาว)'}
+                  {reviewRating === 1 && '💔 ปรับปรุง (1 ดาว)'}
+                </div>
+              </div>
+
+              {/* Comment Textarea */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">ข้อความรีวิวสินค้าเพิ่มเติม (ถ้ามี):</label>
+                <textarea
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                  placeholder="เขียนความประทับใจเกี่ยวกับสินค้า คุณภาพ ความเร็วในการจัดส่ง..."
+                  rows={3}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowReviewModal(false)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl transition cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch('/api/order/review', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          orderId: reviewingOrder.id,
+                          userId: currentUser?.userId,
+                          rating: reviewRating,
+                          comment: reviewComment
+                        })
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        showNotif(data.message, 'success');
+                        setShowReviewModal(false);
+                        fetchUserData();
+                      } else {
+                        showNotif(data.message || 'เกิดข้อผิดพลาดในการบันทึกรีวิว', 'error');
+                      }
+                    } catch (e) {
+                      showNotif('เกิดข้อผิดพลาดในการส่งข้อมูลรีวิว', 'error');
+                    }
+                  }}
+                  className="flex-1 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-extrabold py-2.5 rounded-xl transition shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  ⭐ ส่งรีวิวเรียบร้อย
+                </button>
               </div>
             </div>
           </div>
