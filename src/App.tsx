@@ -13482,6 +13482,49 @@ export default function App() {
                               <h5 className="font-bold text-amber-950 text-xs flex items-center gap-1.5">
                                 🏷️ กำหนดราคาและส่วนลดสินค้า
                               </h5>
+
+                              {/* Add Product Auto-Calculate helper container */}
+                              <div className="bg-white border border-amber-200/80 rounded-xl p-3 space-y-2 font-sans shadow-sm">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-bold text-amber-900 text-[11px] flex items-center gap-1">
+                                    💡 ระบบช่วยคำนวณราคาขายอัตโนมัติ (รวม GP 20% และ VAT 7%)
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                                  <div>
+                                    <label className="block text-slate-600 text-[10px] font-bold mb-1">
+                                      รายรับที่พาร์ทเนอร์ต้องการได้รับจริงสุทธิ (฿):
+                                    </label>
+                                    <div className="relative">
+                                      <input 
+                                        type="number"
+                                        placeholder="เช่น 800"
+                                        value={newProdTargetPayout}
+                                        onChange={(e) => {
+                                          const inputVal = e.target.value;
+                                          setNewProdTargetPayout(inputVal);
+                                          const targetVal = parseFloat(inputVal) || 0;
+                                          if (targetVal > 0) {
+                                            const calculatedPrice = Math.ceil(targetVal / 0.80);
+                                            setNewProd(prev => ({ ...prev, price: calculatedPrice.toString() }));
+                                          } else if (inputVal === '') {
+                                            setNewProd(prev => ({ ...prev, price: '' }));
+                                          }
+                                        }}
+                                        className="w-full bg-white border border-amber-300 rounded-xl pl-3 pr-10 py-1.5 text-xs text-amber-950 placeholder-amber-400 font-extrabold focus:ring-2 focus:ring-amber-400 outline-none"
+                                      />
+                                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-600 font-bold text-[10px]">บาท</span>
+                                    </div>
+                                  </div>
+                                  <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200/60 text-[10px] text-amber-900 leading-relaxed">
+                                    ราคาขายจำหน่ายหน้าเว็บแนะนำ: <strong className="text-amber-950 font-mono text-xs">฿ {newProd.price || 0}</strong>
+                                    <p className="text-[9.5px] text-amber-800/90 mt-0.5">
+                                      * หัก GP 20% แล้ว พาร์ทเนอร์จะได้รับเงิน <strong>฿ {newProdTargetPayout || Math.round((parseFloat(newProd.price || '0') || 0) * 0.80)}</strong> บาทพอดี (รวม VAT 7% เรียบร้อยแล้ว)
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+
                               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div>
                                   <label className="block text-slate-700 font-semibold mb-1">
@@ -13491,8 +13534,13 @@ export default function App() {
                                     type="number" 
                                     required
                                     value={newProd.price}
-                                    onChange={(e) => setNewProd(prev => ({ ...prev, price: e.target.value }))}
-                                    placeholder="เช่น 100"
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setNewProd(prev => ({ ...prev, price: val }));
+                                      const p = parseFloat(val) || 0;
+                                      setNewProdTargetPayout(p > 0 ? (p * 0.80).toString() : '');
+                                    }}
+                                    placeholder="เช่น 1000"
                                     className="w-full border border-amber-300 bg-white rounded-xl px-3 py-2 text-xs font-bold text-indigo-700 focus:ring-2 focus:ring-amber-400 outline-none"
                                   />
                                 </div>
@@ -22439,92 +22487,99 @@ export default function App() {
                       className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
                     />
                   </div>
-                  <div>
-                    <label className="block text-slate-700 font-semibold mb-1">ราคาตั้งขาย (บาท)</label>
-                    <input 
-                      type="number" 
-                      required
-                      value={editingProduct.price || ''}
-                      onChange={(e) => {
-                        setEditingProduct(prev => ({ ...prev, price: e.target.value }));
-                        // Keep target payout synced if manually edited
-                        const p = parseFloat(e.target.value) || 0;
-                        if (p > 0) {
-                          setEditProdTargetPayout((p * 0.80).toString());
-                        } else {
-                          setEditProdTargetPayout('');
-                        }
-                      }}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-indigo-600"
-                    />
-                  </div>
-                </div>
+                {/* Pricing & Financial Setup */}
+                <div className="bg-amber-50/50 border border-amber-200/60 rounded-2xl p-4 space-y-3">
+                  <h5 className="font-bold text-amber-950 text-xs flex items-center gap-1.5">
+                    🏷️ กำหนดราคาและส่วนลดสินค้า
+                  </h5>
 
-                {/* Edit Product Auto-Calculate helper container */}
-                <div className="bg-amber-50/70 border border-amber-100 rounded-2xl p-3 space-y-2 font-sans">
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-amber-900 text-[11px] flex items-center gap-1">
-                      💡 ระบบคำนวณราคาขายอัตโนมัติ (รวม GP 20% และ VAT 7%)
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-                    <div>
-                      <label className="block text-slate-600 text-[10px] font-bold mb-1">รายรับที่พาร์ทเนอร์ต้องการได้รับจริง (฿):</label>
-                      <div className="relative">
-                        <input 
-                          type="number"
-                          placeholder="เช่น 800"
-                          value={editProdTargetPayout}
-                          onChange={(e) => {
-                            const inputVal = e.target.value;
-                            setEditProdTargetPayout(inputVal);
-                            const targetVal = parseFloat(inputVal) || 0;
-                            if (targetVal > 0) {
-                              const calculatedPrice = Math.ceil(targetVal / 0.80);
-                              setEditingProduct(prev => ({ ...prev, price: calculatedPrice.toString() }));
-                            } else {
-                              setEditingProduct(prev => ({ ...prev, price: '' }));
-                            }
-                          }}
-                          className="w-full bg-white border border-amber-200 rounded-xl pl-3 pr-10 py-1.5 text-xs text-amber-950 placeholder-amber-400 font-extrabold focus:ring-2 focus:ring-amber-300 outline-none"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-600 font-bold text-[10px]">บาท</span>
+                  {/* Edit Product Auto-Calculate helper container */}
+                  <div className="bg-white border border-amber-200/80 rounded-xl p-3 space-y-2 font-sans shadow-sm">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-amber-900 text-[11px] flex items-center gap-1">
+                        💡 ระบบช่วยคำนวณราคาขายอัตโนมัติ (รวม GP 20% และ VAT 7%)
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                      <div>
+                        <label className="block text-slate-600 text-[10px] font-bold mb-1">
+                          รายรับที่พาร์ทเนอร์ต้องการได้รับจริงสุทธิ (฿):
+                        </label>
+                        <div className="relative">
+                          <input 
+                            type="number"
+                            placeholder="เช่น 800"
+                            value={editProdTargetPayout}
+                            onChange={(e) => {
+                              const inputVal = e.target.value;
+                              setEditProdTargetPayout(inputVal);
+                              const targetVal = parseFloat(inputVal) || 0;
+                              if (targetVal > 0) {
+                                const calculatedPrice = Math.ceil(targetVal / 0.80);
+                                setEditingProduct(prev => ({ ...prev, price: calculatedPrice.toString() }));
+                              } else if (inputVal === '') {
+                                setEditingProduct(prev => ({ ...prev, price: '' }));
+                              }
+                            }}
+                            className="w-full bg-white border border-amber-300 rounded-xl pl-3 pr-10 py-1.5 text-xs text-amber-950 placeholder-amber-400 font-extrabold focus:ring-2 focus:ring-amber-400 outline-none"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-600 font-bold text-[10px]">บาท</span>
+                        </div>
+                      </div>
+                      <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200/60 text-[10px] text-amber-900 leading-relaxed">
+                        ราคาขายจำหน่ายหน้าเว็บแนะนำ: <strong className="text-amber-950 font-mono text-xs">฿ {editingProduct.price || 0}</strong>
+                        <p className="text-[9.5px] text-amber-800/90 mt-0.5">
+                          * หัก GP 20% แล้ว พาร์ทเนอร์จะได้รับเงิน <strong>฿ {editProdTargetPayout || Math.round((parseFloat(editingProduct.price || '0') || 0) * 0.80)}</strong> บาทพอดี (รวม VAT 7% เรียบร้อยแล้ว)
+                        </p>
                       </div>
                     </div>
-                    <div className="bg-amber-100/30 p-2 rounded-xl border border-amber-200/50 text-[10px] text-amber-900 leading-relaxed">
-                      ราคาจำหน่ายหน้าเว็บแนะนำ: <strong className="text-amber-950 font-mono text-xs">฿ {editingProduct.price || 0}</strong>
-                      <p className="text-[9px] text-amber-700/80 mt-0.5">
-                        หัก GP 20% แล้วจะได้ยอดรับ {editProdTargetPayout || Math.round((parseFloat(editingProduct.price || '0') || 0) * 0.80)} บาทพอดี (รวมภาษีมูลค่าเพิ่ม VAT 7% เรียบร้อยแล้ว)
-                      </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-slate-700 font-semibold mb-1">
+                        ราคาตั้งขายปกติ (บาท) <span className="text-rose-500">*</span>
+                      </label>
+                      <input 
+                        type="number" 
+                        required
+                        value={editingProduct.price || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEditingProduct(prev => ({ ...prev, price: val }));
+                          const p = parseFloat(val) || 0;
+                          setEditProdTargetPayout(p > 0 ? (p * 0.80).toString() : '');
+                        }}
+                        placeholder="เช่น 1000"
+                        className="w-full border border-amber-300 bg-white rounded-xl px-3 py-2 text-xs font-bold text-indigo-700 focus:ring-2 focus:ring-amber-400 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-700 font-semibold mb-1">
+                        ส่วนลดโปรโมชั่น (%)
+                      </label>
+                      <input 
+                        type="number" 
+                        value={editingProduct.discountPercent ?? ''}
+                        onChange={(e) => setEditingProduct(prev => ({ ...prev, discountPercent: e.target.value }))}
+                        placeholder="0"
+                        className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2 text-xs text-rose-600 font-bold focus:ring-2 focus:ring-amber-400 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-700 font-semibold mb-1">
+                        ค่าขนส่งขั้นต่ำร้านค้า (บาท) <span className="text-xs text-slate-400">(ขั้นต่ำ 35)</span>
+                      </label>
+                      <input 
+                        type="number" 
+                        value={editingProduct.shippingFeeBase ?? ''}
+                        onChange={(e) => setEditingProduct(prev => ({ ...prev, shippingFeeBase: e.target.value }))}
+                        placeholder="35"
+                        className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-amber-400 outline-none"
+                      />
                     </div>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200/80">
-                  <div>
-                    <label className="block text-slate-700 font-semibold mb-1">
-                      ส่วนลดโปรโมชั่น (%)
-                    </label>
-                    <input 
-                      type="number" 
-                      value={editingProduct.discountPercent ?? ''}
-                      onChange={(e) => setEditingProduct(prev => ({ ...prev, discountPercent: e.target.value }))}
-                      placeholder="0"
-                      className="w-full border border-slate-200 bg-white rounded-xl px-3 py-1.5 text-xs text-rose-600 font-bold focus:ring-2 focus:ring-amber-400 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-700 font-semibold mb-1">
-                      ค่าขนส่งขั้นต่ำ <span className="text-[10px] text-slate-400">(ขั้นต่ำ 35฿)</span>
-                    </label>
-                    <input 
-                      type="number" 
-                      value={editingProduct.shippingFeeBase ?? ''}
-                      onChange={(e) => setEditingProduct(prev => ({ ...prev, shippingFeeBase: e.target.value }))}
-                      placeholder="35"
-                      className="w-full border border-slate-200 bg-white rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-amber-400 outline-none"
-                    />
-                  </div>
                   <div>
                     <label className="block text-slate-700 font-semibold mb-1">
                       ร้านช่วยสมทบค่าส่ง (บาท)

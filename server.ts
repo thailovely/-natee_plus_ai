@@ -4952,6 +4952,8 @@ app.post('/api/seller/product', async (req, res) => {
     return res.status(403).json({ success: false, message: "เฉพาะผู้ขายที่ผ่านการอนุมัติร้านค้าเท่านั้นที่เพิ่มสินค้าได้" });
   }
   
+  const newProductId = "prod_" + Math.random().toString(36).substr(2, 9).toUpperCase();
+
   let processedImages: string[] = [];
   if (Array.isArray(images) && images.length > 0) {
     for (let i = 0; i < Math.min(5, images.length); i++) {
@@ -4959,7 +4961,7 @@ app.post('/api/seller/product', async (req, res) => {
       if (typeof img === 'string' && img.trim()) {
         if (img.startsWith("data:")) {
           try {
-            const uploadedUrl = await uploadImageToFirebaseOrKeepBase64(img, 'products', `prod_${userId}_${i}`);
+            const uploadedUrl = await uploadImageToFirebaseOrKeepBase64(img, 'products', `${newProductId}_img_${i}_${Date.now()}`);
             processedImages.push(uploadedUrl);
           } catch (e) {
             console.error(e);
@@ -4973,7 +4975,7 @@ app.post('/api/seller/product', async (req, res) => {
 
   if (processedImages.length === 0 && imageFile && typeof imageFile === 'string' && imageFile.startsWith("data:")) {
     try {
-      const uploadedUrl = await uploadImageToFirebaseOrKeepBase64(imageFile, 'products', `prod_${userId}_0`);
+      const uploadedUrl = await uploadImageToFirebaseOrKeepBase64(imageFile, 'products', `${newProductId}_img_0_${Date.now()}`);
       processedImages.push(uploadedUrl);
     } catch (e) {
       console.error(e);
@@ -5003,7 +5005,7 @@ app.post('/api/seller/product', async (req, res) => {
   const isApproved = !!approveInstantly;
 
   const newProduct = {
-    id: "prod_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+    id: newProductId,
     sellerId: userId,
     sellerCode: member.sellerCode,
     sellerStoreName: member.sellerStoreName,
@@ -6114,7 +6116,17 @@ app.post('/api/seller/product/edit', async (req, res) => {
   const member = db.members.find(m => m.userId === userId);
   const isAdmin = member?.role === 'Admin' || userId === 'admin' || (typeof userId === 'string' && userId.startsWith('admin_'));
 
-  const prod = db.sellerProducts.find(p => p.id === productId);
+  let prod = db.sellerProducts.find(p => String(p.id) === String(productId));
+  if (!prod) {
+    const mainProd = db.products.find(p => String(p.id) === String(productId));
+    if (mainProd) {
+      prod = mainProd;
+      if (!db.sellerProducts.some(p => String(p.id) === String(productId))) {
+        db.sellerProducts.push(mainProd);
+      }
+    }
+  }
+
   if (!prod) return res.status(404).json({ success: false, message: "ไม่พบสินค้าชิ้นนี้ในระบบ" });
 
   if (!isAdmin && prod.sellerId && prod.sellerId !== userId && member?.userId !== prod.sellerId) {
@@ -6128,7 +6140,7 @@ app.post('/api/seller/product/edit', async (req, res) => {
       if (typeof img === 'string' && img.trim()) {
         if (img.startsWith("data:")) {
           try {
-            const uploadedUrl = await uploadImageToFirebaseOrKeepBase64(img, 'products', `prod_${userId}_${i}`);
+            const uploadedUrl = await uploadImageToFirebaseOrKeepBase64(img, 'products', `${productId}_img_${i}_${Date.now()}`);
             processedImages.push(uploadedUrl);
           } catch (e) {
             console.error(e);
@@ -6142,7 +6154,7 @@ app.post('/api/seller/product/edit', async (req, res) => {
 
   if (processedImages.length === 0 && imageFile && typeof imageFile === 'string' && imageFile.startsWith("data:")) {
     try {
-      const uploadedUrl = await uploadImageToFirebaseOrKeepBase64(imageFile, 'products', `prod_${userId}_0`);
+      const uploadedUrl = await uploadImageToFirebaseOrKeepBase64(imageFile, 'products', `${productId}_img_0_${Date.now()}`);
       processedImages.push(uploadedUrl);
     } catch (e) {
       console.error(e);
@@ -6197,7 +6209,7 @@ app.post('/api/seller/product/edit', async (req, res) => {
       delete prod.rejectReason;
     }
     // Update copy in main store products
-    db.products = db.products.filter(p => p.id !== productId);
+    db.products = db.products.filter(p => String(p.id) !== String(productId));
     db.products.push({
       id: prod.id,
       name: prod.name,
@@ -6237,7 +6249,7 @@ app.post('/api/seller/product/edit', async (req, res) => {
       delete prod.rejectReason;
     }
     // Remove from main store until approved again
-    db.products = db.products.filter(p => p.id !== productId);
+    db.products = db.products.filter(p => String(p.id) !== String(productId));
   }
   
   writeDb(db);
@@ -6257,7 +6269,17 @@ app.post('/api/seller/product/toggle-availability', (req, res) => {
   const member = db.members.find(m => m.userId === userId);
   const isAdmin = member?.role === 'Admin' || userId === 'admin' || (typeof userId === 'string' && userId.startsWith('admin_'));
 
-  const prod = db.sellerProducts.find(p => p.id === productId);
+  let prod = db.sellerProducts.find(p => String(p.id) === String(productId));
+  if (!prod) {
+    const mainProd = db.products.find(p => String(p.id) === String(productId));
+    if (mainProd) {
+      prod = mainProd;
+      if (!db.sellerProducts.some(p => String(p.id) === String(productId))) {
+        db.sellerProducts.push(mainProd);
+      }
+    }
+  }
+
   if (!prod) return res.status(404).json({ success: false, message: "ไม่พบสินค้าชิ้นนี้ในระบบ" });
 
   if (!isAdmin && prod.sellerId && prod.sellerId !== userId && member?.userId !== prod.sellerId) {
@@ -6269,7 +6291,7 @@ app.post('/api/seller/product/toggle-availability', (req, res) => {
   prod.isAvailable = newAvailable;
 
   // Also update in main store products
-  const mainProd = db.products.find(p => p.id === productId);
+  const mainProd = db.products.find(p => String(p.id) === String(productId));
   if (mainProd) {
     mainProd.isAvailable = newAvailable;
   }
