@@ -7307,12 +7307,6 @@ export default function App() {
                 {/* 2. รายงาน */}
                 <button 
                   onClick={() => {
-                    if (!currentUser) {
-                      showNotif('กรุณาเข้าสู่ระบบก่อนดูรายงานการสั่งซื้อค่ะ', 'info');
-                      setAuthMode('login');
-                      setShowLoginModal(true);
-                      return;
-                    }
                     setActiveTab('shop');
                     setShopPortalView('store');
                     setShopSubTab('myOrders');
@@ -7328,15 +7322,13 @@ export default function App() {
                 {/* 3. ตะกร้า (ดูสินค้าที่สั่ง ติดต่อร้านค้า ติดตามการจัดส่ง) */}
                 <button 
                   onClick={() => {
-                    if (!currentUser) {
-                      showNotif('กรุณาเข้าสู่ระบบเพื่อดูสินค้าที่สั่ง ติดต่อร้านค้า และติดตามการจัดส่งค่ะ', 'info');
-                      setAuthMode('login');
-                      setShowLoginModal(true);
-                      return;
-                    }
                     setActiveTab('shop');
                     setShopPortalView('store');
-                    setShopSubTab('myOrders');
+                    if (checkoutMarketProduct) {
+                      setShowMarketCheckoutModal(true);
+                    } else {
+                      setShopSubTab('myOrders');
+                    }
                   }}
                   className={`px-3 py-2 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer relative ${
                     activeTab === 'shop' && shopPortalView === 'store' && shopSubTab === 'myOrders' ? 'bg-white text-orange-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
@@ -7441,7 +7433,7 @@ export default function App() {
                       setActiveTab('shop');
                       setShopPortalView('store');
                       if (checkoutMarketProduct) {
-                        setShowCheckoutModal(true);
+                        setShowMarketCheckoutModal(true);
                       } else {
                         setShopSubTab('myOrders');
                       }
