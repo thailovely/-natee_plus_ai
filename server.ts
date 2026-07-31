@@ -1315,29 +1315,41 @@ function readDb() {
           const prodData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
           fs.writeFileSync(DB_FILE_SANDBOX, JSON.stringify(prodData, null, 2), 'utf8');
           cacheDb = prodData;
-          return prodData;
+          db = prodData;
         } catch (err) {}
       }
-      const defaultData = {
-        members: [],
-        products: [],
-        sellerProducts: [],
-        orders: [],
-        transactions: [],
-        planB_Tree: {},
-        csrFund: { balance: 0, history: [] },
-        systemStats: { totalPlanBReserves: 0, totalTaxReserves: 0, totalCompanyProfits: 0 },
-        otps: {},
-        packageProductChoices: [],
-        bankSettings: {
-          bankName: "ธนาคารไทยพาณิชย์",
-          bankAccount: "111-222-3333",
-          bankAccountName: "บริษัท นที พลัส มาร์เก็ต จำกัด",
-          qrCodeUrl: ""
-        }
-      };
-      cacheDb = defaultData;
-      return defaultData;
+      if (!db) {
+        const defaultData = {
+          members: [],
+          products: [],
+          sellerProducts: [],
+          orders: [],
+          transactions: [],
+          planB_Tree: {},
+          csrFund: { balance: 0, history: [] },
+          systemStats: { totalPlanBReserves: 0, totalTaxReserves: 0, totalCompanyProfits: 0 },
+          otps: {},
+          packageProductChoices: [],
+          bankSettings: {
+            bankName: "ธนาคารไทยพาณิชย์",
+            bankAccount: "111-222-3333",
+            bankAccountName: "บริษัท นที พลัส มาร์เก็ต จำกัด",
+            qrCodeUrl: ""
+          }
+        };
+        cacheDb = defaultData;
+        db = defaultData;
+      }
+    }
+  }
+
+  // FORCE CRITICAL REMOVAL of ghost products from memory reads
+  if (db) {
+    if (Array.isArray(db.products)) {
+      db.products = db.products.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+    }
+    if (Array.isArray(db.sellerProducts)) {
+      db.sellerProducts = db.sellerProducts.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
     }
   }
 
@@ -1512,6 +1524,16 @@ function recalculateMemberEligibleRights(db: any, member: any) {
 }
 
 function writeDb(data) {
+  // FORCE CRITICAL REMOVAL of ghost products from memory writes
+  if (data) {
+    if (Array.isArray(data.products)) {
+      data.products = data.products.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+    }
+    if (Array.isArray(data.sellerProducts)) {
+      data.sellerProducts = data.sellerProducts.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+    }
+  }
+
   if (data && data.members) {
     const seen = new Set();
     data.members = data.members.filter(m => {
