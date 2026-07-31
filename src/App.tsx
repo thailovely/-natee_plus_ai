@@ -1286,15 +1286,8 @@ export default function App() {
         if (d.success && Array.isArray(d.products)) {
           productsFetchedAt.current = Date.now();
           setProducts(prev => {
-            if (!Array.isArray(prev) || prev.length === 0) return d.products;
-            const merged = [...d.products];
-            for (const p of prev) {
-              if (p && p.id !== undefined && !merged.some((item: any) => item.id === p.id)) {
-                merged.push(p);
-              }
-            }
-            if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
-            return merged;
+            if (JSON.stringify(prev) === JSON.stringify(d.products)) return prev;
+            return d.products;
           });
           if (prodParam) {
             const found = d.products.find((p: any) => p.id === prodParam || p.id === Number(prodParam));
@@ -1991,15 +1984,8 @@ export default function App() {
             const data = snapshot.data().data || [];
             if (Array.isArray(data)) {
               setProducts(prev => {
-                if (!Array.isArray(prev) || prev.length === 0) return data;
-                const merged = [...data];
-                for (const p of prev) {
-                  if (p && p.id !== undefined && !merged.some((item: any) => item.id === p.id)) {
-                    merged.push(p);
-                  }
-                }
-                if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
-                return merged;
+                if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
+                return data;
               });
             }
           }
@@ -2011,26 +1997,18 @@ export default function App() {
             const data = snapshot.data().data || [];
             if (Array.isArray(data)) {
               setAllSellerProducts(prev => {
-                const merged = Array.isArray(prev) && prev.length > 0 ? [...data] : data;
-                if (Array.isArray(prev)) {
-                  for (const p of prev) {
-                    if (p && p.id !== undefined && !merged.some((item: any) => item.id === p.id)) {
-                      merged.push(p);
-                    }
-                  }
-                }
-                setSellerProducts(prevSeller => {
-                  const filtered = merged.filter((p: any) => currentUser && p.sellerId === currentUser.userId);
-                  if (JSON.stringify(prevSeller) === JSON.stringify(filtered)) return prevSeller;
-                  return filtered;
-                });
-                setProdQueue(prevQueue => {
-                  const pending = merged.filter((p: any) => p.status === 'Pending');
-                  if (JSON.stringify(prevQueue) === JSON.stringify(pending)) return prevQueue;
-                  return pending;
-                });
-                if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
-                return merged;
+                if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
+                return data;
+              });
+              setSellerProducts(prevSeller => {
+                const filtered = data.filter((p: any) => currentUser && p.sellerId === currentUser.userId);
+                if (JSON.stringify(prevSeller) === JSON.stringify(filtered)) return prevSeller;
+                return filtered;
+              });
+              setProdQueue(prevQueue => {
+                const pending = data.filter((p: any) => p.status === 'Pending');
+                if (JSON.stringify(prevQueue) === JSON.stringify(pending)) return prevQueue;
+                return pending;
               });
             }
           }
@@ -2563,15 +2541,8 @@ export default function App() {
       if (data.success && Array.isArray(data.products)) {
         productsFetchedAt.current = Date.now();
         setProducts(prev => {
-          if (!Array.isArray(prev) || prev.length === 0) return data.products;
-          const merged = [...data.products];
-          for (const p of prev) {
-            if (p && p.id !== undefined && !merged.some((item: any) => item.id === p.id)) {
-              merged.push(p);
-            }
-          }
-          if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
-          return merged;
+          if (JSON.stringify(prev) === JSON.stringify(data.products)) return prev;
+          return data.products;
         });
       }
       
@@ -2703,15 +2674,8 @@ export default function App() {
       if (dProds.success && Array.isArray(dProds.products)) {
         sellerProductsFetchedAt.current = Date.now();
         setAllSellerProducts(prev => {
-          if (!Array.isArray(prev) || prev.length === 0) return dProds.products;
-          const merged = [...dProds.products];
-          for (const p of prev) {
-            if (p && p.id !== undefined && !merged.some((item: any) => item.id === p.id)) {
-              merged.push(p);
-            }
-          }
-          if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
-          return merged;
+          if (JSON.stringify(prev) === JSON.stringify(dProds.products)) return prev;
+          return dProds.products;
         });
       }
 
@@ -4826,7 +4790,7 @@ export default function App() {
           if (d.success) {
             showNotif(d.message, 'success');
             if (sellerId) fetchSellerData(sellerId);
-            fetch('/api/products')
+            fetch('/api/shop/products')
               .then(r => r.json())
               .then(data => { if (data.success && Array.isArray(data.products)) setProducts(data.products); });
             fetch('/api/admin/all-products')
@@ -5582,7 +5546,7 @@ export default function App() {
         if (editingProduct.sellerId && editingProduct.sellerId !== sellerId) {
           fetchSellerData(editingProduct.sellerId);
         }
-        fetch('/api/products')
+        fetch('/api/shop/products')
           .then(r => r.json())
           .then(data => { if (data.success && Array.isArray(data.products)) setProducts(data.products); });
         fetch('/api/admin/all-products')
@@ -13936,7 +13900,7 @@ export default function App() {
                                                   if (d.success) {
                                                     showNotif(d.message, 'success');
                                                     if (sellerId) fetchSellerData(sellerId);
-                                                    fetch('/api/products').then(r => r.json()).then(data => { if (data.success && Array.isArray(data.products)) setProducts(data.products); });
+                                                    fetch('/api/shop/products').then(r => r.json()).then(data => { if (data.success && Array.isArray(data.products)) setProducts(data.products); });
                                                   } else {
                                                     showNotif(d.message, 'error');
                                                   }
