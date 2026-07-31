@@ -4586,6 +4586,87 @@ app.post('/api/seller/send-otp', async (req, res) => {
   });
 });
 
+// Request OTP for Seller Warehouse & Location Pin update
+app.post('/api/seller/send-warehouse-otp', async (req, res) => {
+  const { userId, username } = req.body;
+  const db = readDb();
+  
+  const searchKey = userId || username;
+  if (!searchKey) {
+    return res.status(400).json({ success: false, message: "กรุณาระบุรหัสสมาชิกหรือชื่อผู้ใช้งาน" });
+  }
+  
+  const member = db.members.find((m: any) => 
+    m.userId === searchKey || (m.username && m.username.toLowerCase() === searchKey.toLowerCase())
+  );
+  
+  if (!member) {
+    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกในระบบ" });
+  }
+  
+  if (!member.email || !member.email.includes('@')) {
+    return res.status(400).json({ success: false, message: "สมาชิกท่านนี้ยังไม่ได้ระบุอีเมลที่ถูกต้องในระบบ ไม่สามารถรับ OTP ได้ค่ะ" });
+  }
+  
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  if (!db.otps) {
+    db.otps = {};
+  }
+  db.otps[member.userId] = otpCode;
+  writeDb(db);
+
+  sendSystemEmail({
+    to: member.email,
+    subject: '[Natee Plus] รหัส OTP สำหรับบันทึกและล็อกพิกัดคลังสินค้า',
+    title: 'รหัส OTP ยืนยันการแก้ไขพิกัดคลังสินค้า',
+    otpCode: otpCode,
+    bodyText: `เรียนคุณ ${member.name || member.username}\nท่านได้ทำการขอรหัส OTP เพื่อยืนยันการเปลี่ยนแปลงพิกัดแผนที่และที่อยู่จัดส่งคลังสินค้าปลายทางในระบบ Natee Plus`
+  }).catch(err => console.error("Async email error:", err));
+  
+  res.json({
+    success: true,
+    otpSimulated: otpCode,
+    email: member.email,
+    message: `ระบบได้ส่งรหัส OTP สำหรับล็อกพิกัดคลังสินค้าไปยังอีเมล ${member.email} เรียบร้อยแล้วค่ะ`
+  });
+});
+
+// Confirm Seller Warehouse Update with Email OTP
+app.post('/api/seller/update-warehouse', (req, res) => {
+  const { userId, sellerAddress, warehouseLat, warehouseLng, otp } = req.body;
+  const db = readDb();
+  
+  if (!userId || !sellerAddress || !otp) {
+    return res.status(400).json({ success: false, message: "กรุณากรอกข้อมูลที่อยู่คลังสินค้าและรหัส OTP ให้ครบถ้วนค่ะ" });
+  }
+  
+  const member = db.members.find((m: any) => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกในระบบ" });
+
+  const savedOtp = db.otps ? db.otps[member.userId] : null;
+  if (!savedOtp || savedOtp !== otp) {
+    return res.status(400).json({ success: false, message: "รหัส OTP ไม่ถูกต้อง กรุณาตรวจสอบรหัสจากอีเมลหรือกดขอรับรหัสอีกครั้งค่ะ" });
+  }
+
+  const parsedLat = warehouseLat ? parseFloat(warehouseLat) : (member.warehouseLat || 13.7563);
+  const parsedLng = warehouseLng ? parseFloat(warehouseLng) : (member.warehouseLng || 100.5018);
+
+  member.sellerAddress = sellerAddress;
+  member.warehouseLat = parsedLat;
+  member.warehouseLng = parsedLng;
+  member.lat = parsedLat;
+  member.lng = parsedLng;
+
+  delete db.otps[member.userId];
+  writeDb(db);
+
+  res.json({
+    success: true,
+    message: "📍 บันทึกและล็อกพิกัดคลังสินค้าปลายทางเรียบร้อยแล้วค่ะ! ข้อมูลอัพเดทไปยังระบบของแอดมินโดยสมบูรณ์",
+    member
+  });
+});
+
 // 3. Confirm Seller Application with OTP and transaction PIN
 app.post('/api/seller/apply-with-otp', (req, res) => {
   const { username, storeName, storeAddress, warehouseLat, warehouseLng, otp, pin } = req.body;
@@ -4791,17 +4872,20 @@ app.post('/api/seller/regulations', (req, res) => {
 
 // Admin Update Seller Profile Directly
 app.post('/api/admin/seller-update-profile', (req, res) => {
-  const { userId, sellerCode, sellerStoreName, sellerStatus, name, surname, phone, email, rank, role } = req.body;
+  const { userId, sellerCode, sellerStoreName, storeName, sellerStatus, name, surname, phone, email, rank, role, sellerAddress, storeAddress, warehouseLat, warehouseLng } = req.body;
   const db = readDb();
   
   const member = db.members.find((m: any) => m.userId === userId);
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิกร้านค้าคนนี้" });
   
+  const targetStoreName = sellerStoreName || storeName;
+  const targetAddress = sellerAddress || storeAddress;
+
   // Validate duplicate store name if changed
-  if (sellerStoreName && sellerStoreName.trim().toLowerCase() !== (member.sellerStoreName || '').trim().toLowerCase()) {
+  if (targetStoreName && targetStoreName.trim().toLowerCase() !== (member.sellerStoreName || '').trim().toLowerCase()) {
     const isDuplicate = db.members.some((m: any) => 
       m.sellerStoreName && 
-      m.sellerStoreName.trim().toLowerCase() === sellerStoreName.trim().toLowerCase() &&
+      m.sellerStoreName.trim().toLowerCase() === targetStoreName.trim().toLowerCase() &&
       m.userId !== userId
     );
     if (isDuplicate) {
@@ -4809,14 +4893,25 @@ app.post('/api/admin/seller-update-profile', (req, res) => {
     }
     
     const specialCharRegex = /[^\u0E00-\u0E7Fa-zA-Z0-9\s\-]/;
-    if (specialCharRegex.test(sellerStoreName)) {
+    if (specialCharRegex.test(targetStoreName)) {
       return res.status(400).json({ success: false, message: "ชื่อร้านค้าต้องไม่มีเครื่องหมายหรือสัญลักษณ์พิเศษใด ๆ ค่ะ" });
     }
   }
 
   // Edit fields
   if (sellerCode !== undefined) member.sellerCode = sellerCode;
-  if (sellerStoreName !== undefined) member.sellerStoreName = sellerStoreName;
+  if (targetStoreName !== undefined) member.sellerStoreName = targetStoreName;
+  if (targetAddress !== undefined) member.sellerAddress = targetAddress;
+  if (warehouseLat !== undefined && warehouseLat !== null) {
+    const pLat = parseFloat(warehouseLat);
+    member.warehouseLat = pLat;
+    member.lat = pLat;
+  }
+  if (warehouseLng !== undefined && warehouseLng !== null) {
+    const pLng = parseFloat(warehouseLng);
+    member.warehouseLng = pLng;
+    member.lng = pLng;
+  }
   if (sellerStatus !== undefined) member.sellerStatus = sellerStatus;
   if (name !== undefined) member.name = name;
   if (surname !== undefined) member.surname = surname;

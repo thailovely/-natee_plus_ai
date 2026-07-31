@@ -208,6 +208,14 @@ export default function App() {
   const [warehouseAddressQuery, setWarehouseAddressQuery] = useState('');
   const [warehouseTambonResults, setWarehouseTambonResults] = useState<any[]>([]);
 
+  // Seller Warehouse Edit & OTP States
+  const [sellerWarehouseEditAddress, setSellerWarehouseEditAddress] = useState('');
+  const [sellerWarehouseEditLat, setSellerWarehouseEditLat] = useState<number>(13.7563);
+  const [sellerWarehouseEditLng, setSellerWarehouseEditLng] = useState<number>(100.5018);
+  const [sellerWarehouseOtp, setSellerWarehouseOtp] = useState('');
+  const [sellerWarehouseOtpSimulated, setSellerWarehouseOtpSimulated] = useState('');
+  const [sellerWarehouseOtpSent, setSellerWarehouseOtpSent] = useState(false);
+
   // System Notification Bell States
   const [systemNotifications, setSystemNotifications] = useState<any[]>([]);
   const [showMemberNotifs, setShowMemberNotifs] = useState(false);
@@ -5074,6 +5082,83 @@ export default function App() {
         setSellerRegulationsText(data.regulations);
       }
     } catch {}
+  };
+
+  useEffect(() => {
+    if (sellerSessionUser) {
+      if (sellerSessionUser.sellerAddress) setSellerWarehouseEditAddress(sellerSessionUser.sellerAddress);
+      const latVal = sellerSessionUser.warehouseLat || sellerSessionUser.lat;
+      const lngVal = sellerSessionUser.warehouseLng || sellerSessionUser.lng;
+      if (latVal) setSellerWarehouseEditLat(parseFloat(latVal));
+      if (lngVal) setSellerWarehouseEditLng(parseFloat(lngVal));
+    }
+  }, [sellerSessionUser?.userId, sellerSessionUser?.sellerAddress, sellerSessionUser?.warehouseLat, sellerSessionUser?.warehouseLng, sellerSessionUser?.lat, sellerSessionUser?.lng]);
+
+  const handleSendWarehouseOtp = async () => {
+    if (!sellerSessionUser?.userId) return;
+    try {
+      const res = await fetch('/api/seller/send-warehouse-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: sellerSessionUser.userId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSellerWarehouseOtpSent(true);
+        if (data.otpSimulated) setSellerWarehouseOtpSimulated(data.otpSimulated);
+        showNotif(data.message, "success");
+      } else {
+        showNotif(data.message, "error");
+      }
+    } catch (err) {
+      showNotif("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ส่ง OTP ได้ค่ะ", "error");
+    }
+  };
+
+  const handleUpdateWarehouseWithOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sellerSessionUser?.userId) return;
+    if (!sellerWarehouseOtp) {
+      showNotif("กรุณากรอกรหัส OTP จากอีเมลเพื่อยืนยันค่ะ", "error");
+      return;
+    }
+    if (!sellerWarehouseEditAddress.trim()) {
+      showNotif("กรุณากรอกที่อยู่คลังสินค้าปลายทางให้ครบถ้วนค่ะ", "error");
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/seller/update-warehouse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: sellerSessionUser.userId,
+          sellerAddress: sellerWarehouseEditAddress,
+          warehouseLat: sellerWarehouseEditLat,
+          warehouseLng: sellerWarehouseEditLng,
+          otp: sellerWarehouseOtp
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(data.message, "success");
+        setSellerWarehouseOtp('');
+        setSellerWarehouseOtpSimulated('');
+        setSellerWarehouseOtpSent(false);
+
+        if (data.member) {
+          setSellerSessionUser(data.member);
+          setProfile((prev: any) => ({ ...prev, ...data.member }));
+          setCurrentUser((prev: any) => ({ ...prev, ...data.member }));
+          // Reload admin queue lists to stay 100% in sync
+          fetchAdminQueues();
+        }
+      } else {
+        showNotif(data.message, "error");
+      }
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาดในการปรับปรุงพิกัดคลังสินค้า", "error");
+    }
   };
 
   const handleAdminUpdateSellerShop = async (e: React.FormEvent) => {
@@ -14663,46 +14748,144 @@ export default function App() {
 
                     {sellerPortalSubTab === 'info' && (
                       <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
-                        <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                          <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                            🏪 ข้อมูลคลังจัดส่งและแผนที่ GPS (Warehouse & Store Information)
-                          </h4>
-                          <span className="text-xs text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-lg font-mono">
-                            รหัส: {sellerSessionUser.sellerCode}
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-100 pb-4 gap-2">
+                          <div>
+                            <h4 className="text-sm font-extrabold text-slate-800 flex items-center gap-1.5">
+                              🏪 ข้อมูลที่อยู่จัดส่งและปักหมุดพิกัด GPS คลังสินค้า (Warehouse GPS Map Location)
+                            </h4>
+                            <p className="text-xs text-slate-500 mt-1">
+                              ปักหมุดตำแหน่งที่ตั้งคลังสินค้าปลายทางสำหรับการจัดส่งพัสดุ เมื่อท่านบันทึกและล็อกพิกัดเรียบร้อยแล้ว แอดมินจะมองเห็นพิกัดและที่อยู่นี้ตรงกันโดยสมบูรณ์
+                            </p>
+                          </div>
+                          <span className="text-xs text-indigo-600 font-bold bg-indigo-50 px-3 py-1 rounded-xl font-mono shrink-0">
+                            รหัสร้านค้า: {sellerSessionUser.sellerCode || '-'}
                           </span>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div className="space-y-4">
-                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-2 text-xs text-slate-700 leading-relaxed">
-                              <h5 className="font-bold text-slate-800 flex items-center gap-1">📍 ที่ตั้งคลังสินค้าสำหรับจัดส่งพัสดุ:</h5>
-                              <p className="font-medium">{sellerSessionUser.sellerAddress}</p>
-                              <div className="border-t border-slate-200/60 pt-2 mt-2 space-y-1 text-slate-600">
-                                <div>📞 <strong>เบอร์โทรติดต่อผู้ดูแลคลัง:</strong> {sellerSessionUser.sellerPhone || '08x-xxx-xxxx'}</div>
-                                <div>✉️ <strong>อีเมลประสานงานคลังสินค้า:</strong> {sellerSessionUser.email || 'warehouse@natee.plus'}</div>
-                                {sellerSessionUser.sellerTaxId && <div>🆔 <strong>หมายเลขประจำตัวผู้เสียภาษี (Tax ID):</strong> {sellerSessionUser.sellerTaxId}</div>}
-                                {sellerSessionUser.lat && sellerSessionUser.lng && (
-                                  <div>🌐 <strong>พิกัดละติจูด/ลองจิจูด:</strong> {sellerSessionUser.lat}, {sellerSessionUser.lng}</div>
-                                )}
-                              </div>
+                        <form onSubmit={handleUpdateWarehouseWithOtp} className="space-y-6 text-xs text-slate-700">
+                          {/* Security Notice Banner */}
+                          <div className="bg-amber-50/90 border border-amber-200/80 rounded-2xl p-4 text-xs space-y-2 shadow-xs">
+                            <div className="flex items-center gap-2 text-amber-950 font-extrabold text-xs">
+                              <ShieldCheck size={16} className="text-amber-600 shrink-0" />
+                              <span>🔒 ระบบความปลอดภัยมาตรฐานป้องกันการทุจริต (Email OTP Verification Required)</span>
                             </div>
-                            <div className="bg-indigo-50/30 border border-indigo-100 p-4 rounded-2xl text-xs text-slate-600 leading-relaxed">
-                              <strong>💡 หมายเหตุการยื่นเปลี่ยนพิกัด:</strong> หากทางร้านต้องการย้ายพิกัดคลังสินค้าหรือปรับเปลี่ยนที่อยู่จัดส่งจริง กรุณาติดต่อขอปรับเปลี่ยนโดยตรงกับทางเจ้าหน้าที่แอดมิน เพื่อความเสถียรในการดึงเรตติ้งค่าส่งจาก Shippop ค่ะ
-                            </div>
+                            <p className="text-slate-600 text-[11px] leading-relaxed">
+                              เนื่องจากคลังสินค้าเป็นจุดรับส่งและคืนพัสดุสำคัญ การแก้ไขที่อยู่คลังสินค้าและพิกัดแผนที่ GPS ทุกครั้ง จะต้องผ่านการยืนยันรหัส <strong>OTP ผ่านทางอีเมล</strong> (ส่งไปยัง: <strong className="text-indigo-700">{sellerSessionUser.email || 'อีเมลที่ลงทะเบียน'}</strong>) เพื่อป้องกันมิจฉาชีพแอบอ้างสวมรอยแก้ไขข้อมูลคลังสินค้าค่ะ
+                            </p>
                           </div>
 
-                          {/* Dynamic Interactive Warehouse Map display */}
-                          <div className="border border-slate-100 rounded-3xl overflow-hidden shadow-md bg-slate-50 p-3 flex flex-col justify-between min-h-[250px]">
-                            <h5 className="font-bold text-xs text-slate-800 mb-2">🗺️ แผนที่พิกัดคลังที่บันทึกในระบบ</h5>
-                            <div className="flex-1 rounded-2xl overflow-hidden border border-slate-200 bg-white">
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Warehouse Address & OTP Verification Panel */}
+                            <div className="space-y-4 flex flex-col justify-between">
+                              <div className="space-y-3">
+                                <div className="space-y-1.5">
+                                  <label className="block text-xs font-extrabold text-slate-800 flex items-center gap-1">
+                                    🏭 ที่อยู่จัดส่งคลังสินค้าปลายทาง (Full Warehouse Shipping Address) *
+                                  </label>
+                                  <p className="text-[10px] text-slate-400">
+                                    * หมายเหตุ: คลังสินค้าสำหรับจัดส่งพัสดุอาจไม่ใช่ที่อยู่ปัจจุบันของคุณ กรุณาระบุรายละเอียดที่อยู่คลังจริง
+                                  </p>
+                                  <textarea 
+                                    rows={3}
+                                    required
+                                    value={sellerWarehouseEditAddress}
+                                    onChange={(e) => setSellerWarehouseEditAddress(e.target.value)}
+                                    placeholder="ระบุบ้านเลขที่, ถนน, ตำบล, อำเภอ, จังหวัด และรหัสไปรษณีย์ ของคลังสินค้า..."
+                                    className="w-full border border-slate-200 bg-slate-50/50 rounded-xl p-3 text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:bg-white outline-none leading-relaxed transition"
+                                  />
+                                </div>
+
+                                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1.5 text-slate-600 text-[11px]">
+                                  <div className="flex justify-between">
+                                    <span>📞 <strong>ผู้ดูแลคลัง:</strong> {sellerSessionUser.sellerPhone || sellerSessionUser.phone || '08x-xxx-xxxx'}</span>
+                                    <span>✉️ <strong>อีเมล:</strong> {sellerSessionUser.email || '-'}</span>
+                                  </div>
+                                  <div className="font-mono text-indigo-700 font-bold bg-indigo-50/50 p-1.5 rounded-lg border border-indigo-100/50">
+                                    📍 พิกัด GPS คลังสินค้าที่ปักหมุดปัจจุบัน: Latitude {sellerWarehouseEditLat.toFixed(6)}, Longitude {sellerWarehouseEditLng.toFixed(6)}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* OTP Verification & Confirmation Box */}
+                              <div className="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-4 space-y-3 shadow-sm">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                  <div>
+                                    <h5 className="font-extrabold text-indigo-950 text-xs flex items-center gap-1">
+                                      🔑 รหัสยืนยัน OTP ทางอีเมล
+                                    </h5>
+                                    <p className="text-[10px] text-indigo-700/80">
+                                      กดปุ่มเพื่อขอรับรหัส OTP ส่งไปยัง {sellerSessionUser.email}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={handleSendWarehouseOtp}
+                                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition cursor-pointer shadow-sm shrink-0 flex items-center justify-center gap-1"
+                                  >
+                                    <span>{sellerWarehouseOtpSent ? '🔄 ขอส่ง OTP อีกครั้ง' : '📩 ขอรับรหัส OTP'}</span>
+                                  </button>
+                                </div>
+
+                                {sellerWarehouseOtpSimulated && (
+                                  <div className="bg-amber-100 border border-amber-300 text-amber-900 px-3 py-2 rounded-xl text-[11px] font-bold flex justify-between items-center animate-pulse">
+                                    <span>🔐 [Sandbox Simulation] รหัส OTP คือ: <strong className="text-sm font-mono tracking-widest text-indigo-900">{sellerWarehouseOtpSimulated}</strong></span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSellerWarehouseOtp(sellerWarehouseOtpSimulated)}
+                                      className="bg-amber-200 hover:bg-amber-300 text-amber-950 px-2.5 py-1 rounded-lg text-[10px] cursor-pointer"
+                                    >
+                                      กรอกอัตโนมัติ
+                                    </button>
+                                  </div>
+                                )}
+
+                                <div className="space-y-1">
+                                  <label className="block text-[11px] font-bold text-slate-700">
+                                    กรอกรหัส OTP 6 หลัก *
+                                  </label>
+                                  <input 
+                                    type="text"
+                                    required
+                                    maxLength={6}
+                                    value={sellerWarehouseOtp}
+                                    onChange={(e) => setSellerWarehouseOtp(e.target.value)}
+                                    placeholder="กรอกรหัส 6 หลักจากอีเมล"
+                                    className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2 text-sm font-mono font-black tracking-widest text-center focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                                  />
+                                </div>
+
+                                <button
+                                  type="submit"
+                                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-xl text-xs transition cursor-pointer shadow-md flex justify-center items-center gap-1.5"
+                                >
+                                  <span>🔒 บันทึกและล็อกพิกัดคลังสินค้าปลายทาง</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Map Selector & Pinpoint Canvas */}
+                            <div className="space-y-2">
+                              <label className="block text-xs font-extrabold text-slate-800 flex items-center justify-between">
+                                <span>🗺️ ปักหมุดแผนที่ตำแหน่งคลังสินค้า GPS (Pin Location) *</span>
+                                <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-md">
+                                  คลิกหรือลากหมุดบนแผนที่ได้เลย
+                                </span>
+                              </label>
                               <NateeWarehouseMap 
-                                lat={parseFloat(sellerSessionUser.lat || '13.7563')} 
-                                lng={parseFloat(sellerSessionUser.lng || '100.5018')} 
-                                readOnly={true}
+                                lat={sellerWarehouseEditLat} 
+                                lng={sellerWarehouseEditLng} 
+                                onChange={(lat, lng) => {
+                                  setSellerWarehouseEditLat(lat);
+                                  setSellerWarehouseEditLng(lng);
+                                }}
+                                address={sellerWarehouseEditAddress}
+                                onAddressChange={(addr) => {
+                                  if (!sellerWarehouseEditAddress) setSellerWarehouseEditAddress(addr);
+                                }}
                               />
                             </div>
                           </div>
-                        </div>
+                        </form>
                       </div>
                     )}
                   </div>
