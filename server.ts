@@ -4952,7 +4952,16 @@ app.post('/api/seller/product', async (req, res) => {
     return res.status(403).json({ success: false, message: "เฉพาะผู้ขายที่ผ่านการอนุมัติร้านค้าเท่านั้นที่เพิ่มสินค้าได้" });
   }
   
-  const newProductId = "prod_" + Math.random().toString(36).substr(2, 9).toUpperCase();
+  const sellerCode = member.sellerCode || ("S" + (member.userId || "000000").slice(-6).toUpperCase());
+  let seq = (db.sellerProducts || []).filter((p: any) => p.sellerId === userId).length + 1;
+  let newProductId = `${sellerCode}-P${seq.toString().padStart(3, '0')}`;
+  while (
+    (db.sellerProducts || []).some((p: any) => p.id === newProductId) || 
+    (db.products || []).some((p: any) => p.id === newProductId)
+  ) {
+    seq++;
+    newProductId = `${sellerCode}-P${seq.toString().padStart(3, '0')}`;
+  }
 
   let processedImages: string[] = [];
   if (Array.isArray(images) && images.length > 0) {

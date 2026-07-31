@@ -12805,6 +12805,109 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* SECURITY DEPOSIT & SALES/LISTING PRIVILEGE OVERVIEW CARD */}
+                  {(() => {
+                    const deposit = parseFloat(sellerSessionUser?.securityDeposit || 0);
+                    const maxListingCap = deposit * 10;
+                    const activeUnfulfilledSales = (sellerOrders || [])
+                      .filter((o: any) => o.status === 'Processing' || o.status === 'Paid')
+                      .reduce((sum: number, o: any) => sum + (parseFloat(o.totalPrice || o.price) || 0), 0);
+                    const salesLimitRemaining = Math.max(0, deposit - activeUnfulfilledSales);
+
+                    const currentListingValue = (sellerProducts || [])
+                      .filter((p: any) => p.isAvailable !== false)
+                      .reduce((sum: number, p: any) => {
+                        const pPrice = parseFloat(p.price) || 0;
+                        const pStock = p.stock !== undefined ? parseFloat(p.stock) : 100;
+                        return sum + (pPrice * Math.min(pStock, 50));
+                      }, 0);
+                    const listingCapRemaining = Math.max(0, maxListingCap - currentListingValue);
+
+                    return (
+                      <div className="bg-gradient-to-br from-amber-500 via-amber-600 to-amber-700 text-white rounded-3xl p-5 shadow-lg space-y-4 relative overflow-hidden border border-amber-400/40">
+                        <div className="absolute -top-6 -right-6 p-8 opacity-10 pointer-events-none">
+                          <ShieldCheck size={180} />
+                        </div>
+                        <div className="flex flex-wrap justify-between items-center gap-2 border-b border-amber-300/30 pb-3 relative z-10">
+                          <div>
+                            <h4 className="font-extrabold text-sm text-white flex items-center gap-2">
+                              <ShieldCheck size={20} className="text-amber-200" />
+                              <span>🛡️ เงินประกันร้านค้า & วงเงินสิทธิ์วางขายคงเหลือ (Security Deposit & Sales Limits)</span>
+                            </h4>
+                            <p className="text-[11px] text-amber-100 mt-0.5">
+                              วางเงินประกันเพื่อขยายวงเงินวางขายสินค้าบนหน้าร้าน 10 เท่า และประกันความเสี่ยงยอดขายรอดำเนินการส่ง
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSellerPortalSubTab('deposit');
+                              showNotif("เข้าสู่ระบบจัดการเงินประกันร้านค้า", "info");
+                            }}
+                            className="bg-white hover:bg-amber-50 text-amber-950 font-bold px-4 py-2 rounded-xl text-xs transition shadow cursor-pointer flex items-center gap-1.5 active:scale-95"
+                          >
+                            <span>ฝากเงินประกันเพิ่ม / จัดการ</span>
+                            <ArrowRight size={14} />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 relative z-10 font-sans">
+                          {/* Card 1: เงินประกันสะสมคงเหลือ */}
+                          <div className="bg-amber-950/40 border border-amber-300/30 rounded-2xl p-3.5 space-y-1 backdrop-blur-sm">
+                            <div className="text-[10px] text-amber-200 font-extrabold uppercase tracking-wider">
+                              1. เงินประกันสะสมคงเหลือ
+                            </div>
+                            <div className="text-xl font-black font-mono text-white">
+                              ฿{deposit.toLocaleString()} <span className="text-[10px] font-normal text-amber-200">บาท</span>
+                            </div>
+                            <p className="text-[9.5px] text-amber-200/90 leading-tight">
+                              ประกันความเสี่ยงยอดสั่งซื้อค้างส่ง
+                            </p>
+                          </div>
+
+                          {/* Card 2: วงเงินรับสั่งซื้อคงเหลือ */}
+                          <div className="bg-amber-950/40 border border-amber-300/30 rounded-2xl p-3.5 space-y-1 backdrop-blur-sm">
+                            <div className="text-[10px] text-amber-200 font-extrabold uppercase tracking-wider">
+                              2. วงเงินรับสั่งซื้อคงเหลือ
+                            </div>
+                            <div className="text-xl font-black font-mono text-emerald-300">
+                              ฿{salesLimitRemaining.toLocaleString()} <span className="text-[10px] font-normal text-emerald-200">บาท</span>
+                            </div>
+                            <p className="text-[9.5px] text-amber-200/90 leading-tight">
+                              (หักยอดค้างส่ง ฿{activeUnfulfilledSales.toLocaleString()})
+                            </p>
+                          </div>
+
+                          {/* Card 3: วงเงินลงขายสินค้า (10x) */}
+                          <div className="bg-amber-950/40 border border-amber-300/30 rounded-2xl p-3.5 space-y-1 backdrop-blur-sm">
+                            <div className="text-[10px] text-amber-200 font-extrabold uppercase tracking-wider">
+                              3. วงเงินวางขายสินค้าสูงสุด (10 เท่า)
+                            </div>
+                            <div className="text-xl font-black font-mono text-white">
+                              ฿{maxListingCap.toLocaleString()} <span className="text-[10px] font-normal text-amber-200">บาท</span>
+                            </div>
+                            <p className="text-[9.5px] text-amber-200/90 leading-tight">
+                              คำนวณจากเงินประกัน × 10 เท่า
+                            </p>
+                          </div>
+
+                          {/* Card 4: สิทธิ์ลงขายสินค้าคงเหลือ */}
+                          <div className="bg-amber-950/40 border border-amber-300/30 rounded-2xl p-3.5 space-y-1 backdrop-blur-sm">
+                            <div className="text-[10px] text-amber-200 font-extrabold uppercase tracking-wider">
+                              4. สิทธิ์วางขายสินค้าคงเหลือ
+                            </div>
+                            <div className="text-xl font-black font-mono text-amber-200">
+                              ฿{listingCapRemaining.toLocaleString()} <span className="text-[10px] font-normal text-amber-200">บาท</span>
+                            </div>
+                            <p className="text-[9.5px] text-amber-200/90 leading-tight">
+                              (มูลค่าสินค้าลงขายแล้ว ฿{currentListingValue.toLocaleString()})
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* ROW 1: REPORT BAR GRID (รอจัดส่ง , ลูกค้ายกเลิก , การคืนเงิน/คืนสินค้า , คะแนนร้าน) */}
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     {/* To Ship (รอจัดส่ง) */}
