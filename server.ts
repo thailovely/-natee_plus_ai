@@ -313,7 +313,15 @@ function setupServerRealTimeSync() {
     try {
       const unsub = onSnapshot(doc(dbFirestore, collectionName, key), (snapshot) => {
         if (snapshot.exists()) {
-          const incomingData = snapshot.data().data;
+          let incomingData = snapshot.data().data;
+          
+          // Filter out deleted ghost products from incoming Firestore real-time snapshots
+          if (key === 'products' && Array.isArray(incomingData)) {
+            incomingData = incomingData.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+          }
+          if (key === 'sellerProducts' && Array.isArray(incomingData)) {
+            incomingData = incomingData.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+          }
           
           if (cacheDb) {
             // CRITICAL SECURE FIX: Check if we are currently saving to Firestore or have a pending save.
@@ -511,7 +519,7 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
       if (prodData) {
         cacheDb = JSON.parse(JSON.stringify(prodData));
         fs.writeFileSync(DB_FILE_SANDBOX, JSON.stringify(cacheDb, null, 2), 'utf8');
-        await saveDbToFirestore(cacheDb);
+        await saveDbToFirestore(cacheDb, true);
         console.log("✅ Sandbox database successfully initialized with production snapshot.");
         return;
       }
@@ -845,7 +853,7 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
         // 4. Save back to Firestore and local backup immediately if changes occurred
         if (hasChanges || hasMergedChanges) {
           console.log("💾 Saving cleaned and self-healed database to Firestore...");
-          saveDbToFirestore(cacheDb).catch(err => console.error("❌ Failed to save self-healed DB to Firestore:", err));
+          saveDbToFirestore(cacheDb, true).catch(err => console.error("❌ Failed to save self-healed DB to Firestore:", err));
         }
       }
 
@@ -867,7 +875,7 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
       if (localDb) {
         cacheDb = localDb;
         console.log(`💾 Seeding empty Firestore with ${currentDbFile} data...`);
-        saveDbToFirestore(cacheDb).catch(err => console.error("❌ Failed to save seeded DB to Firestore:", err));
+        saveDbToFirestore(cacheDb, true).catch(err => console.error("❌ Failed to save seeded DB to Firestore:", err));
       } else {
         console.log(`⚠️ No local file ${currentDbFile} found to seed Firestore.`);
       }
@@ -904,9 +912,9 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
 }
 
 // Firestore Save Orchestration (Debounced to prevent Quota issues)
-async function saveDbToFirestore(data: any) {
+async function saveDbToFirestore(data: any, bypassLoadCheck: boolean = false) {
   if (!dbFirestore || isFirestoreQuotaExceeded) return;
-  if (!isDatabaseLoadedFromFirestore) {
+  if (!isDatabaseLoadedFromFirestore && !bypassLoadCheck) {
     console.warn("⚠️ [Firestore Save Blocked] Database was not successfully loaded from Firestore on startup. Refusing to write to prevent overwriting live data with stale fallback state!");
     return;
   }
