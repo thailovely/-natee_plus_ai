@@ -103,6 +103,8 @@ export default function App() {
 
   const profileFetchedAt = React.useRef<number>(0);
   const packageChoicesFetchedAt = React.useRef<number>(0);
+  const productsFetchedAt = React.useRef<number>(0);
+  const sellerProductsFetchedAt = React.useRef<number>(0);
 
   const [isUsingPollingFallback, setIsUsingPollingFallback] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>('shop');
@@ -1284,7 +1286,17 @@ export default function App() {
       .then(res => res.json())
       .then(d => {
         if (d.success && Array.isArray(d.products)) {
-          setProducts(d.products);
+          productsFetchedAt.current = Date.now();
+          setProducts(prev => {
+            if (!Array.isArray(prev) || prev.length === 0) return d.products;
+            const merged = [...d.products];
+            for (const p of prev) {
+              if (p && p.id !== undefined && !merged.some((item: any) => item.id === p.id)) {
+                merged.push(p);
+              }
+            }
+            return merged;
+          });
           if (prodParam) {
             const found = d.products.find((p: any) => p.id === prodParam || p.id === Number(prodParam));
             if (found) setSelectedMarketProduct(found);
@@ -1967,10 +1979,17 @@ export default function App() {
         safeSubscribe('products', (snapshot) => {
           if (snapshot.exists()) {
             const data = snapshot.data().data || [];
-            if (Array.isArray(data) && data.length > 0) {
+            if (Array.isArray(data)) {
               setProducts(prev => {
-                if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
-                return data;
+                if (!Array.isArray(prev) || prev.length === 0) return data;
+                const merged = [...data];
+                for (const p of prev) {
+                  if (p && p.id !== undefined && !merged.some((item: any) => item.id === p.id)) {
+                    merged.push(p);
+                  }
+                }
+                if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
+                return merged;
               });
             }
           }
@@ -1980,9 +1999,22 @@ export default function App() {
         safeSubscribe('sellerProducts', (snapshot) => {
           if (snapshot.exists()) {
             const data = snapshot.data().data || [];
-            setSellerProducts(data.filter((p: any) => currentUser && p.sellerId === currentUser.userId));
-            setAllSellerProducts(data);
-            setProdQueue(data.filter((p: any) => p.status === 'Pending'));
+            if (Array.isArray(data)) {
+              setAllSellerProducts(prev => {
+                const merged = Array.isArray(prev) && prev.length > 0 ? [...data] : data;
+                if (Array.isArray(prev)) {
+                  for (const p of prev) {
+                    if (p && p.id !== undefined && !merged.some((item: any) => item.id === p.id)) {
+                      merged.push(p);
+                    }
+                  }
+                }
+                setSellerProducts(merged.filter((p: any) => currentUser && p.sellerId === currentUser.userId));
+                setProdQueue(merged.filter((p: any) => p.status === 'Pending'));
+                if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
+                return merged;
+              });
+            }
           }
         });
 
@@ -2510,7 +2542,19 @@ export default function App() {
     try {
       const res = await fetch('/api/shop/products');
       const data = await res.json();
-      if (data.success) setProducts(data.products);
+      if (data.success && Array.isArray(data.products)) {
+        productsFetchedAt.current = Date.now();
+        setProducts(prev => {
+          if (!Array.isArray(prev) || prev.length === 0) return data.products;
+          const merged = [...data.products];
+          for (const p of prev) {
+            if (p && p.id !== undefined && !merged.some((item: any) => item.id === p.id)) {
+              merged.push(p);
+            }
+          }
+          return merged;
+        });
+      }
       
       const resChoices = await fetch('/api/shop/package-choices');
       const dChoices = await resChoices.json();
@@ -2637,7 +2681,19 @@ export default function App() {
       // Fetch all products for admin management
       const rProds = await fetch('/api/admin/all-products');
       const dProds = await rProds.json();
-      if (dProds.success) setAllSellerProducts(dProds.products || []);
+      if (dProds.success && Array.isArray(dProds.products)) {
+        sellerProductsFetchedAt.current = Date.now();
+        setAllSellerProducts(prev => {
+          if (!Array.isArray(prev) || prev.length === 0) return dProds.products;
+          const merged = [...dProds.products];
+          for (const p of prev) {
+            if (p && p.id !== undefined && !merged.some((item: any) => item.id === p.id)) {
+              merged.push(p);
+            }
+          }
+          return merged;
+        });
+      }
 
       // Fetch Pending Coupon PV data
       const r7 = await fetch('/api/admin/pending-coupon-pv');
