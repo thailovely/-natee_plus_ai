@@ -1293,6 +1293,7 @@ export default function App() {
                 merged.push(p);
               }
             }
+            if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
             return merged;
           });
           if (prodParam) {
@@ -1700,9 +1701,20 @@ export default function App() {
 
               // 5. Sync Seller Products
               const sellerProducts = data.sellerProducts || [];
-              setSellerProducts(sellerProducts.filter((p: any) => currentUser && p.sellerId === currentUser.userId));
-              setAllSellerProducts(sellerProducts);
-              setProdQueue(sellerProducts.filter((p: any) => p.status === 'Pending'));
+              setSellerProducts(prev => {
+                const filtered = sellerProducts.filter((p: any) => currentUser && p.sellerId === currentUser.userId);
+                if (JSON.stringify(prev) === JSON.stringify(filtered)) return prev;
+                return filtered;
+              });
+              setAllSellerProducts(prev => {
+                if (JSON.stringify(prev) === JSON.stringify(sellerProducts)) return prev;
+                return sellerProducts;
+              });
+              setProdQueue(prev => {
+                const pending = sellerProducts.filter((p: any) => p.status === 'Pending');
+                if (JSON.stringify(prev) === JSON.stringify(pending)) return prev;
+                return pending;
+              });
 
               // 6. Sync CSR Fund
               const csrFund = data.csrFund || { balance: 0, history: [] };
@@ -2007,8 +2019,16 @@ export default function App() {
                     }
                   }
                 }
-                setSellerProducts(merged.filter((p: any) => currentUser && p.sellerId === currentUser.userId));
-                setProdQueue(merged.filter((p: any) => p.status === 'Pending'));
+                setSellerProducts(prevSeller => {
+                  const filtered = merged.filter((p: any) => currentUser && p.sellerId === currentUser.userId);
+                  if (JSON.stringify(prevSeller) === JSON.stringify(filtered)) return prevSeller;
+                  return filtered;
+                });
+                setProdQueue(prevQueue => {
+                  const pending = merged.filter((p: any) => p.status === 'Pending');
+                  if (JSON.stringify(prevQueue) === JSON.stringify(pending)) return prevQueue;
+                  return pending;
+                });
                 if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
                 return merged;
               });
@@ -2550,6 +2570,7 @@ export default function App() {
               merged.push(p);
             }
           }
+          if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
           return merged;
         });
       }
@@ -2689,6 +2710,7 @@ export default function App() {
               merged.push(p);
             }
           }
+          if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
           return merged;
         });
       }
@@ -9598,10 +9620,12 @@ export default function App() {
                                   >
                                     <img 
                                       src={displayImage} 
+                                      loading="lazy"
+                                      decoding="async"
                                       onError={(e) => {
                                         (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80';
                                       }}
-                                      className={`w-full h-full object-cover group-hover:scale-108 transition-transform duration-500 ease-out ${isOutOfStock ? 'grayscale-30' : ''}`}
+                                      className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ease-out ${isOutOfStock ? 'grayscale-30' : ''}`}
                                       alt={p.name} 
                                     />
 
