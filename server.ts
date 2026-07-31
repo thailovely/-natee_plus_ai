@@ -520,6 +520,24 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
     if (hasData) {
       console.log(`✅ Successfully loaded all database sections from Firestore (${collectionName})`);
       
+      let hasFilteredGhostProducts = false;
+      if (Array.isArray(loadedData.products)) {
+        const initialLength = loadedData.products.length;
+        loadedData.products = loadedData.products.filter((p: any) => p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+        if (loadedData.products.length !== initialLength) {
+          hasFilteredGhostProducts = true;
+          console.log(`🧹 Filtered out ${initialLength - loadedData.products.length} deleted ghost product(s) from loaded products list.`);
+        }
+      }
+      if (Array.isArray(loadedData.sellerProducts)) {
+        const initialLength = loadedData.sellerProducts.length;
+        loadedData.sellerProducts = loadedData.sellerProducts.filter((p: any) => p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+        if (loadedData.sellerProducts.length !== initialLength) {
+          hasFilteredGhostProducts = true;
+          console.log(`🧹 Filtered out ${initialLength - loadedData.sellerProducts.length} deleted ghost product(s) from loaded sellerProducts list.`);
+        }
+      }
+
       // Load local db.json for safe merging of any unsaved members or transactions
       let localDb: any = null;
       try {
@@ -532,7 +550,7 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
 
       // Merge members (union by userId)
       const mergedMembers = [...(loadedData.members || [])];
-      let hasMergedChanges = false;
+      let hasMergedChanges = hasFilteredGhostProducts;
 
       if (localDb && Array.isArray(localDb.members)) {
         for (const localMember of localDb.members) {
