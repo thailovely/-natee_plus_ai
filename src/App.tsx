@@ -4349,15 +4349,20 @@ export default function App() {
   };
 
   const getProductSalesCount = (p: any): number => {
-    if (!p) return 100;
-    if (p?.salesCount) return parseInt(p.salesCount);
-    if (p?.isBestSeller) return 320;
-    const str = String(p?.id || 'prod');
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    if (!p) return 0;
+    if (p?.salesCount !== undefined && p?.salesCount !== null && !isNaN(Number(p.salesCount)) && Number(p.salesCount) > 0) {
+      return parseInt(p.salesCount);
     }
-    return 40 + Math.abs(hash % 260);
+    if (adminOrders && Array.isArray(adminOrders) && adminOrders.length > 0) {
+      const realSales = adminOrders.reduce((sum: number, o: any) => {
+        if ((o.productId === p.id || o.productName === p.name) && o.status !== 'Cancelled') {
+          return sum + (Number(o.quantity) || 1);
+        }
+        return sum;
+      }, 0);
+      return realSales;
+    }
+    return 0;
   };
 
   // Purchase Package or General Product
