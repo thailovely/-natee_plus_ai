@@ -332,9 +332,10 @@ export default function App() {
     setEmailStatus(null);
     setEmailMessage('');
 
-    if (keepSponsorId) {
-      setSponsorId(keepSponsorId);
-      verifySponsor(keepSponsorId);
+    const targetSponsor = keepSponsorId || localStorage.getItem('natee_ref') || '';
+    if (targetSponsor) {
+      setSponsorId(targetSponsor.toUpperCase());
+      verifySponsor(targetSponsor.toUpperCase());
     } else {
       setSponsorId('');
       setSponsorName('');
@@ -1257,23 +1258,20 @@ export default function App() {
       .catch(() => {});
 
     const params = new URLSearchParams(window.location.search);
-    const refParam = params.get('ref') || params.get('sponsor');
+    const refParam = params.get('ref') || params.get('sponsor') || params.get('rec') || params.get('u');
     const prodParam = params.get('productId');
     
     if (refParam) {
-      localStorage.setItem('natee_ref', refParam);
-      setSponsorId(refParam);
-      // Look up sponsor name
-      fetch(`/api/auth/sponsor/${refParam}`)
-        .then(res => res.json())
-        .then(d => {
-          if (d.success) {
-            setSponsorName(d.name);
-            setSponsorError('');
-            setCheckedSponsor(true);
-          }
-        })
-        .catch(() => {});
+      const cleanRef = refParam.toUpperCase().trim();
+      localStorage.setItem('natee_ref', cleanRef);
+      setSponsorId(cleanRef);
+      verifySponsor(cleanRef);
+    } else {
+      const savedRef = localStorage.getItem('natee_ref');
+      if (savedRef) {
+        setSponsorId(savedRef.toUpperCase());
+        verifySponsor(savedRef.toUpperCase());
+      }
     }
 
     if (window.location.pathname.includes('/join') || window.location.pathname.includes('/register')) {
@@ -7287,70 +7285,35 @@ export default function App() {
                 )}
               </div>
 
-              {/* Unified Navigation Toolbar (Aligned Right) */}
-              <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/60 shrink-0 ml-auto">
-                {/* 1. Shopping */}
+              {/* Guest Toolbar: Marketplace & Login/Register */}
+              <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/60 shrink-0 ml-auto">
+                {/* 1. Shopping Marketplace */}
                 <button 
                   onClick={() => {
                     setActiveTab('shop');
                     setShopPortalView('store');
                     setShopSubTab('shop');
                   }}
-                  className={`px-3 py-2 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer ${
+                  className={`px-3 py-2 rounded-xl text-xs font-black transition flex items-center gap-1 cursor-pointer ${
                     activeTab === 'shop' && shopPortalView === 'store' && shopSubTab === 'shop' ? 'bg-white text-orange-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
                   }`}
-                  title="สินค้าทั้งหมด (Shopping)"
+                  title="หน้าแรกสินค้า (Marketplace)"
                 >
-                  🛍️
+                  <span>🛍️</span>
+                  <span className="hidden sm:inline font-bold">สินค้า</span>
                 </button>
 
-                {/* 2. รายงาน */}
-                <button 
-                  onClick={() => {
-                    setActiveTab('shop');
-                    setShopPortalView('store');
-                    setShopSubTab('myOrders');
-                  }}
-                  className={`px-3 py-2 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer ${
-                    activeTab === 'shop' && shopPortalView === 'store' && shopSubTab === 'myOrders' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                  title="รายงาน / ประวัติสั่งซื้อ"
-                >
-                  🧾
-                </button>
-
-                {/* 3. ตะกร้า (ดูสินค้าที่สั่ง ติดต่อร้านค้า ติดตามการจัดส่ง) */}
-                <button 
-                  onClick={() => {
-                    setActiveTab('shop');
-                    setShopPortalView('store');
-                    if (checkoutMarketProduct) {
-                      setShowMarketCheckoutModal(true);
-                    } else {
-                      setShopSubTab('myOrders');
-                    }
-                  }}
-                  className={`px-3 py-2 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer relative ${
-                    activeTab === 'shop' && shopPortalView === 'store' && shopSubTab === 'myOrders' ? 'bg-white text-orange-600 shadow-sm border border-slate-200/40' : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                  title="ดูสินค้าที่สั่ง / ติดต่อร้านค้า / ติดตามการจัดส่ง"
-                >
-                  🛒
-                  {checkoutMarketProduct && (
-                    <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full animate-ping" />
-                  )}
-                </button>
-
-                {/* 4. ระบบสมาชิก */}
+                {/* 2. Login / Register Button */}
                 <button
                   onClick={() => {
                     setAuthMode('login');
                     setShowLoginModal(true);
                   }}
-                  className="px-3 py-2 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
+                  className="px-3.5 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 cursor-pointer bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-700 hover:to-sky-700 text-white shadow-sm"
                   title="ระบบสมาชิก (เข้าสู่ระบบ / สมัครสมาชิก)"
                 >
-                  👤
+                  <span>👤</span>
+                  <span>เข้าสู่ระบบ / สมัครสมาชิก</span>
                 </button>
               </div>
             </div>
