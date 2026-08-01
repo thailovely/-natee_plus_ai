@@ -315,12 +315,12 @@ function setupServerRealTimeSync() {
         if (snapshot.exists()) {
           let incomingData = snapshot.data().data;
           
-          // Filter out deleted ghost products from incoming Firestore real-time snapshots
+          // Pass through incoming Firestore real-time snapshots
           if (key === 'products' && Array.isArray(incomingData)) {
-            incomingData = incomingData.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+            incomingData = incomingData.filter((p: any) => p && p.id);
           }
           if (key === 'sellerProducts' && Array.isArray(incomingData)) {
-            incomingData = incomingData.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+            incomingData = incomingData.filter((p: any) => p && p.id);
           }
           
           if (cacheDb) {
@@ -528,22 +528,11 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
     if (hasData) {
       console.log(`✅ Successfully loaded all database sections from Firestore (${collectionName})`);
       
-      let hasFilteredGhostProducts = false;
       if (Array.isArray(loadedData.products)) {
-        const initialLength = loadedData.products.length;
-        loadedData.products = loadedData.products.filter((p: any) => p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
-        if (loadedData.products.length !== initialLength) {
-          hasFilteredGhostProducts = true;
-          console.log(`🧹 Filtered out ${initialLength - loadedData.products.length} deleted ghost product(s) from loaded products list.`);
-        }
+        loadedData.products = loadedData.products.filter((p: any) => p && p.id);
       }
       if (Array.isArray(loadedData.sellerProducts)) {
-        const initialLength = loadedData.sellerProducts.length;
-        loadedData.sellerProducts = loadedData.sellerProducts.filter((p: any) => p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
-        if (loadedData.sellerProducts.length !== initialLength) {
-          hasFilteredGhostProducts = true;
-          console.log(`🧹 Filtered out ${initialLength - loadedData.sellerProducts.length} deleted ghost product(s) from loaded sellerProducts list.`);
-        }
+        loadedData.sellerProducts = loadedData.sellerProducts.filter((p: any) => p && p.id);
       }
 
       // Load local db.json for safe merging of any unsaved members or transactions
@@ -1343,13 +1332,12 @@ function readDb() {
     }
   }
 
-  // FORCE CRITICAL REMOVAL of ghost products from memory reads
   if (db) {
     if (Array.isArray(db.products)) {
-      db.products = db.products.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+      db.products = db.products.filter((p: any) => p && p.id);
     }
     if (Array.isArray(db.sellerProducts)) {
-      db.sellerProducts = db.sellerProducts.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+      db.sellerProducts = db.sellerProducts.filter((p: any) => p && p.id);
     }
   }
 
@@ -1524,13 +1512,12 @@ function recalculateMemberEligibleRights(db: any, member: any) {
 }
 
 function writeDb(data) {
-  // FORCE CRITICAL REMOVAL of ghost products from memory writes
   if (data) {
     if (Array.isArray(data.products)) {
-      data.products = data.products.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+      data.products = data.products.filter((p: any) => p && p.id);
     }
     if (Array.isArray(data.sellerProducts)) {
-      data.sellerProducts = data.sellerProducts.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+      data.sellerProducts = data.sellerProducts.filter((p: any) => p && p.id);
     }
   }
 
@@ -5170,7 +5157,7 @@ app.post('/api/seller/product', async (req, res) => {
     });
   }
 
-  const isApproved = !!approveInstantly || member?.sellerStatus === 'Active' || member?.role === 'Admin' || userId === 'admin';
+  const isApproved = !!approveInstantly || member?.role === 'Admin' || userId === 'admin' || (typeof userId === 'string' && userId.startsWith('admin_'));
 
   const newProduct = {
     id: newProductId,
@@ -6446,7 +6433,7 @@ app.post('/api/seller/product/edit', async (req, res) => {
   prod.isAvailable = isAvailable !== false && isAvailable !== 'false';
   prod.netPayout = parseFloat(netPayout) || 0;
   
-  const isApproved = !!approveInstantly || isAdmin || prod.status === 'Approved' || member?.sellerStatus === 'Active';
+  const isApproved = !!approveInstantly || isAdmin;
 
   if (isApproved) {
     prod.status = "Approved";

@@ -2006,7 +2006,7 @@ export default function App() {
           if (snapshot.exists()) {
             const rawData = snapshot.data().data || [];
             if (Array.isArray(rawData)) {
-              const data = rawData.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+              const data = rawData.filter((p: any) => p && p.id);
               
               if (productsFetchedAt.current && (Date.now() - productsFetchedAt.current < 15000)) {
                 console.warn("⚠️ [Sync Bypass] Ignored Firestore products snapshot. HTTP state is newer (time-lock).");
@@ -2030,7 +2030,7 @@ export default function App() {
           if (snapshot.exists()) {
             const rawData = snapshot.data().data || [];
             if (Array.isArray(rawData)) {
-              const data = rawData.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+              const data = rawData.filter((p: any) => p && p.id);
 
               if (sellerProductsFetchedAt.current && (Date.now() - sellerProductsFetchedAt.current < 15000)) {
                 console.warn("⚠️ [Sync Bypass] Ignored Firestore sellerProducts snapshot. HTTP state is newer (time-lock).");
