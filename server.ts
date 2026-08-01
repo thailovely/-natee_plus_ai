@@ -710,6 +710,23 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
         }
       }
 
+      // Guarantee ALL products with sellerId exist in sellerProducts
+      if (Array.isArray(mergedProducts)) {
+        for (const mProd of mergedProducts) {
+          if (mProd && mProd.sellerId && mProd.id) {
+            const exists = mergedSellerProducts.some((sp: any) => sp.id === mProd.id);
+            if (!exists) {
+              console.log(`🛠️ [Self-Heal SellerProduct] Restoring missing seller product ${mProd.id} (${mProd.name}) from main products into sellerProducts.`);
+              mergedSellerProducts.push({
+                ...mProd,
+                status: mProd.status || 'Approved'
+              });
+              hasMergedChanges = true;
+            }
+          }
+        }
+      }
+
       cacheDb = {
         members: mergedMembers,
         products: mergedProducts,
@@ -1513,11 +1530,30 @@ function recalculateMemberEligibleRights(db: any, member: any) {
 
 function writeDb(data) {
   if (data) {
-    if (Array.isArray(data.products)) {
-      data.products = data.products.filter((p: any) => p && p.id);
+    if (!Array.isArray(data.products)) data.products = [];
+    if (!Array.isArray(data.sellerProducts)) data.sellerProducts = [];
+
+    data.products = data.products.filter((p: any) => p && p.id);
+    data.sellerProducts = data.sellerProducts.filter((p: any) => p && p.id);
+
+    // Sync any seller products in products into sellerProducts
+    for (const p of data.products) {
+      if (p && p.sellerId) {
+        const exists = data.sellerProducts.some((sp: any) => sp.id === p.id);
+        if (!exists) {
+          data.sellerProducts.push({ ...p, status: p.status || 'Approved' });
+        }
+      }
     }
-    if (Array.isArray(data.sellerProducts)) {
-      data.sellerProducts = data.sellerProducts.filter((p: any) => p && p.id);
+
+    // Safety: If current write is accidentally empty but cacheDb has valid items, merge back cacheDb items
+    if (data.products.length === 0 && cacheDb && Array.isArray(cacheDb.products) && cacheDb.products.length > 0) {
+      console.warn("⚠️ [writeDb Safety] Restoring products from cacheDb because incoming products array was empty.");
+      data.products = [...cacheDb.products];
+    }
+    if (data.sellerProducts.length === 0 && cacheDb && Array.isArray(cacheDb.sellerProducts) && cacheDb.sellerProducts.length > 0) {
+      console.warn("⚠️ [writeDb Safety] Restoring sellerProducts from cacheDb because incoming sellerProducts array was empty.");
+      data.sellerProducts = [...cacheDb.sellerProducts];
     }
   }
 

@@ -1705,7 +1705,8 @@ export default function App() {
               const orders = data.orders || [];
               setMemberOrders(orders.filter((o: any) => currentUser && o.userId === currentUser.userId));
               setAdminOrders(orders);
-              setSellerOrders(orders.filter((o: any) => currentUser && o.sellerId === currentUser.userId));
+              const activeSellerIdForOrders = sellerSessionUser?.userId || currentUser?.userId;
+              setSellerOrders(orders.filter((o: any) => activeSellerIdForOrders && o.sellerId === activeSellerIdForOrders));
 
               // 4. Sync Products
               if (Array.isArray(data.products) && data.products.length > 0) {
@@ -1718,7 +1719,8 @@ export default function App() {
               // 5. Sync Seller Products
               const sellerProducts = data.sellerProducts || [];
               setSellerProducts(prev => {
-                const filtered = sellerProducts.filter((p: any) => currentUser && p.sellerId === currentUser.userId);
+                const activeSellerId = sellerSessionUser?.userId || currentUser?.userId;
+                const filtered = sellerProducts.filter((p: any) => activeSellerId && p.sellerId === activeSellerId);
                 if (JSON.stringify(prev) === JSON.stringify(filtered)) return prev;
                 return filtered;
               });
@@ -1997,7 +1999,8 @@ export default function App() {
             const data = snapshot.data().data || [];
             setMemberOrders(data.filter((o: any) => currentUser && o.userId === currentUser.userId));
             setAdminOrders(data);
-            setSellerOrders(data.filter((o: any) => currentUser && o.sellerId === currentUser.userId));
+            const activeSellerIdForOrders = sellerSessionUser?.userId || currentUser?.userId;
+            setSellerOrders(data.filter((o: any) => activeSellerIdForOrders && o.sellerId === activeSellerIdForOrders));
           }
         });
 
@@ -2046,7 +2049,8 @@ export default function App() {
                 return data;
               });
               setSellerProducts(prevSeller => {
-                const filtered = data.filter((p: any) => currentUser && p.sellerId === currentUser.userId);
+                const activeSellerId = sellerSessionUser?.userId || currentUser?.userId;
+                const filtered = data.filter((p: any) => activeSellerId && p.sellerId === activeSellerId);
                 if (prevSeller.length > 0 && filtered.length === 0 && data.length === 0) {
                   console.warn("⚠️ [Sync Bypass] Blocked Firestore sellerProducts snapshot from clearing sellerProducts.");
                   return prevSeller;
