@@ -5316,6 +5316,51 @@ export default function App() {
     }
   };
 
+  const handleClearSellerHistory = async (targetSellerId?: string) => {
+    const sellerId = targetSellerId || sellerSessionUser?.userId || currentUser?.userId;
+    if (!sellerId) {
+      showNotif("ไม่พบรหัสร้านค้าสำหรับลบประวัติ", "error");
+      return;
+    }
+
+    const requesterId = currentUser?.userId || originalAdmin?.userId || sellerSessionUser?.userId;
+    const isUserAdminOrManager = currentUser?.role === 'Admin' || currentUser?.role === 'Manager' || originalAdmin?.role === 'Admin' || sellerSessionUser?.role === 'Admin' || currentUser?.username === 'admin';
+
+    if (!isUserAdminOrManager) {
+      showNotif("🚫 ไม่อนุญาตให้สมาชิกลบประวัติการขายเอง เพื่อป้องกันปัญหาในระบบบัญชีและภาษี (เฉพาะ Admin เท่านั้น)", "error");
+      return;
+    }
+
+    const confirmReset = window.confirm(
+      "⚠️ [สิทธิ์เฉพาะแอดมิน/ผู้จัดการ] ยืนยันการล้างประวัติร้านค้านี้?\n\nการดำเนินการนี้จะลบประวัติการขาย ออเดอร์การสั่งซื้อ ยอดเข้าชม และรีวิวทั้งหมดของร้านค้านี้เพื่อรีเซ็ตทดสอบระบบ\n\nต้องการดำเนินการต่อหรือไม่?"
+    );
+    if (!confirmReset) return;
+
+    try {
+      const res = await fetch('/api/seller/clear-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId: sellerId,
+          requesterUserId: requesterId
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(data.message || "ลบประวัติการขายสินค้าและการเข้าชมเรียบร้อยแล้วค่ะ", "success");
+        fetchSellerData(sellerId);
+        fetchProducts();
+        if (currentUser?.role === 'Admin' || currentUser?.role === 'Manager') {
+          fetchAdminQueues();
+        }
+      } else {
+        showNotif(data.message || "เกิดข้อผิดพลาดในการลบประวัติร้านค้า", "error");
+      }
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+    }
+  };
+
   const fetchSellerRegulationsText = async () => {
     try {
       const res = await fetch('/api/seller/regulations');
@@ -14399,6 +14444,7 @@ export default function App() {
                             >
                               <RefreshCw size={12} /> รีเฟรชข้อมูล
                             </button>
+
                           </div>
                         </div>
 
@@ -15029,6 +15075,8 @@ export default function App() {
                         <div className="bg-slate-50 border border-slate-150 p-4 rounded-2xl text-xs text-slate-600 leading-relaxed">
                           <strong>💡 คำแนะนำระบบอัตโนมัติ:</strong> ช่วงเวลานาทีทองของร้านท่านคือช่วงเวลา 19:00 - 22:00 น. แนะนำให้เพิ่มช่วงสต็อกในสต็อกผลิตภัณฑ์บำรุงผิว เพื่อรองรับออเดอร์ปันยอดส่งที่สูงขึ้นในช่วงวันหยุดเสาร์-อาทิตย์นี้ค่ะ
                         </div>
+
+
                       </div>
                     )}
 
@@ -17028,6 +17076,71 @@ export default function App() {
                               <p className="text-slate-400 text-center py-8">ไม่มีรายการใบสมัครขอเปิดร้านค้าผู้ขายรายใหม่ค้างอนุมัติในขณะนี้</p>
                             )}
                           </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Approved Partner Stores Management Section (Admin Control Only) */}
+                  <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div>
+                        <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
+                          🏪 รายชื่อร้านค้าพาร์ทเนอร์ที่ได้รับอนุมัติในระบบ (Approved Partner Stores)
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          เฉพาะแอดมินผู้ดูแลระบบเท่านั้นที่มีสิทธิ์รีเซ็ตประวัติร้านค้ากรณีการทดสอบระบบ เพื่อรักษาความถูกต้องของรายงานบัญชีและภาษี
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto text-xs text-slate-700 border border-slate-100 rounded-2xl">
+                      {(() => {
+                        const approvedSellers = adminMembersList.filter((m: any) => m.sellerStatus === 'Approved' || m.sellerStoreName);
+                        return approvedSellers.length > 0 ? (
+                          <table className="w-full text-left border-collapse">
+                            <thead className="bg-slate-50 text-[10px] text-slate-500 font-bold uppercase">
+                              <tr>
+                                <th className="py-2.5 px-3">รหัสร้าน / รหัสสมาชิก</th>
+                                <th className="py-2.5 px-3">เจ้าของร้าน</th>
+                                <th className="py-2.5 px-3">ชื่อร้านค้า (Store Name)</th>
+                                <th className="py-2.5 px-3 text-center">ยอดผู้เข้าชมร้าน</th>
+                                <th className="py-2.5 px-3 text-right">สิทธิ์ผู้ดูแลระบบ (Admin Control)</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 bg-white">
+                              {approvedSellers.map((m: any) => (
+                                <tr key={m.userId} className="hover:bg-slate-50/50 transition">
+                                  <td className="py-3 px-3">
+                                    <span className="text-indigo-600 block font-mono font-bold">{m.sellerCode || m.userId}</span>
+                                    <span className="text-slate-400 block font-mono text-[10px]">{m.userId}</span>
+                                  </td>
+                                  <td className="py-3 px-3">
+                                    <span className="font-bold text-slate-800">{m.name} {m.surname}</span>
+                                    <span className="block text-slate-400 text-[10px]">เบอร์โทร: {m.phone || '-'}</span>
+                                  </td>
+                                  <td className="py-3 px-3 font-bold text-slate-900">
+                                    🏪 {m.sellerStoreName || 'ร้านค้าพาร์ทเนอร์'}
+                                  </td>
+                                  <td className="py-3 px-3 text-center font-mono text-indigo-600 font-bold">
+                                    {(m.storeViews || 0).toLocaleString()} ครั้ง
+                                  </td>
+                                  <td className="py-3 px-3 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleClearSellerHistory(m.userId)}
+                                      title="ล้างประวัติการขายสินค้า ออเดอร์ และผู้เข้าชมของร้านค้านี้โดยแอดมิน"
+                                      className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-1.5 rounded-xl text-[10px] font-bold cursor-pointer transition active:scale-95 inline-flex items-center gap-1"
+                                    >
+                                      <RotateCcw size={12} /> ล้างประวัติร้าน (แอดมิน)
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <p className="text-slate-400 text-center py-6 text-xs">ยังไม่มีร้านค้าพาร์ทเนอร์ที่อนุมัติแล้วในขณะนี้</p>
                         );
                       })()}
                     </div>

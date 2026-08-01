@@ -5242,6 +5242,83 @@ app.get('/api/seller/orders/:userId', (req, res) => {
   res.json({ success: true, orders });
 });
 
+// CLEAR SELLER SALES HISTORY, ORDERS, AND PRODUCT VIEWS (RESTRICTED TO ADMIN/MANAGER ONLY FOR ACCOUNTING COMPLIANCE)
+app.post('/api/seller/clear-history', (req, res) => {
+  const { userId, sellerId, requesterUserId, editorUserId } = req.body;
+  const targetId = userId || sellerId;
+  const adminId = requesterUserId || editorUserId;
+
+  if (!targetId) {
+    return res.status(400).json({ success: false, message: "กรุณาระบุรหัสผู้ขายหรือร้านค้า" });
+  }
+
+  const db = readDb();
+
+  // Strict check: Only Admin or Manager can perform clear history to maintain audit trail and accounting integrity
+  if (adminId) {
+    const requester = db.members?.find((m: any) => m.userId === adminId || m.username === adminId);
+    const roleUpper = (requester?.role || '').toUpperCase();
+    const isAllowed = roleUpper === 'ADMIN' || roleUpper === 'MANAGER' || requester?.username === 'admin' || requester?.userId === 'A260600001';
+    if (!isAllowed) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "🚫 ไม่อนุญาตให้สมาชิกลบประวัติเอง เพื่อป้องกันปัญหาบัญชีและภาษี (เฉพาะ Admin/Manager เท่านั้นที่ดำเนินการได้)" 
+      });
+    }
+  } else {
+    return res.status(403).json({ 
+      success: false, 
+      message: "🚫 ไม่อนุญาตให้สมาชิกลบประวัติเอง เพื่อความถูกต้องของระบบบัญชีและภาษี (เฉพาะ Admin เท่านั้น)" 
+    });
+  }
+
+  // 1. Clear seller orders from db.orders
+  if (Array.isArray(db.orders)) {
+    db.orders = db.orders.filter((o: any) => o.sellerId !== targetId && o.shopId !== targetId);
+  }
+
+  // 2. Reset product view counts and soldCounts for seller's products
+  if (Array.isArray(db.sellerProducts)) {
+    db.sellerProducts.forEach((p: any) => {
+      if (p.sellerId === targetId) {
+        p.views = 0;
+        p.soldCount = 0;
+        p.sales = 0;
+      }
+    });
+  }
+
+  if (Array.isArray(db.products)) {
+    db.products.forEach((p: any) => {
+      if (p.sellerId === targetId) {
+        p.views = 0;
+        p.soldCount = 0;
+        p.sales = 0;
+      }
+    });
+  }
+
+  // 3. Clear seller reviews
+  if (Array.isArray(db.reviews)) {
+    db.reviews = db.reviews.filter((r: any) => r.sellerId !== targetId && r.shopId !== targetId);
+  }
+
+  // 4. Reset store views/sales on member record if present
+  const member = db.members?.find((m: any) => m.userId === targetId);
+  if (member) {
+    member.storeViews = 0;
+    member.storeSales = 0;
+    member.storeTotalOrders = 0;
+  }
+
+  writeDb(db);
+
+  res.json({
+    success: true,
+    message: "ลบประวัติการขายสินค้า การเข้าชม และออเดอร์ของร้านค้า โดยแอดมินสำเร็จแล้วค่ะ! ✨"
+  });
+});
+
 // SELLER UPDATE ORDER TRACKING (Includes 15-day cutoff date calculation)
 app.post('/api/seller/order-ship', (req, res) => {
   const { orderId, sellerId, trackingCompany, trackingNo, shippingNote } = req.body;
