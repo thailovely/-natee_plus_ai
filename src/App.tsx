@@ -4846,6 +4846,12 @@ export default function App() {
       if (d.success) {
         showNotif(d.message, 'success');
         fetchAdminQueues();
+        fetch('/api/shop/products')
+          .then(r => r.json())
+          .then(data => { if (data.success && Array.isArray(data.products)) setProducts(data.products); });
+        fetch('/api/admin/all-products')
+          .then(r => r.json())
+          .then(data => { if (data.success && Array.isArray(data.products)) setAllSellerProducts(data.products); });
       } else {
         showNotif(d.message, 'error');
       }
@@ -5757,6 +5763,13 @@ export default function App() {
           width: '10', length: '10', height: '10' 
         });
         fetchSellerData(sellerId);
+        fetch('/api/shop/products')
+          .then(r => r.json())
+          .then(data => { if (data.success && Array.isArray(data.products)) setProducts(data.products); });
+        fetch('/api/admin/all-products')
+          .then(r => r.json())
+          .then(data => { if (data.success && Array.isArray(data.products)) setAllSellerProducts(data.products); });
+        fetchAdminQueues();
       } else {
         showNotif(d.message || "เกิดข้อผิดพลาดในการยื่นอนุมัติสินค้า", 'error');
       }
@@ -6162,6 +6175,11 @@ export default function App() {
 
                         {/* Name & Shop */}
                         <td className="py-3 px-2 max-w-[220px]">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="inline-block px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-mono text-[10px] font-extrabold border border-indigo-200">
+                              🆔 {item.id}
+                            </span>
+                          </div>
                           <h5 className="font-extrabold text-slate-900 line-clamp-1">{item.name}</h5>
                           <p className="text-[10px] text-indigo-700 font-bold mt-0.5">
                             🏪 {item.sellerStoreName || 'ร้านค้าพาร์ทเนอร์'} <span className="text-slate-400 font-mono">({item.sellerCode || item.sellerId})</span>
@@ -14347,7 +14365,12 @@ export default function App() {
                                       </div>
                                       <div className="flex-1 min-w-0">
                                         <div className="flex items-start justify-between gap-1">
-                                          <h5 className="text-xs font-bold text-slate-900 truncate">{p.name}</h5>
+                                          <div>
+                                            <span className="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px] font-extrabold border border-slate-200 mb-1">
+                                              🆔 {p.id}
+                                            </span>
+                                            <h5 className="text-xs font-bold text-slate-900 truncate">{p.name}</h5>
+                                          </div>
                                           <div className="flex items-center gap-1 shrink-0">
                                             <button
                                               type="button"
@@ -17251,9 +17274,26 @@ export default function App() {
                                         )}
                                       </td>
                                       <td className="px-4 py-3 font-semibold">
-                                        <span className="text-slate-400 block font-mono text-[9px]">{prod.id}</span>
-                                        <span className="text-slate-900 font-bold">{prod.name}</span>
+                                        <div className="flex items-center gap-1.5 mb-1">
+                                          <span className="inline-block px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-mono text-[11px] font-extrabold border border-indigo-200 shadow-2xs">
+                                            🆔 {prod.id}
+                                          </span>
+                                        </div>
+                                        <span className="text-slate-900 font-bold block">{prod.name}</span>
                                         <span className="block text-[10px] text-indigo-500">ร้านค้า: {prod.sellerStoreName || 'ไม่ระบุ'}</span>
+                                        {prod.status === 'Pending' ? (
+                                          <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                            ⏳ รอแอดมินอนุมัติ (Pending)
+                                          </span>
+                                        ) : prod.status === 'Rejected' ? (
+                                          <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                            ❌ ไม่อนุมัติ (Rejected)
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                            ✅ อนุมัติแล้ว (Approved)
+                                          </span>
+                                        )}
                                       </td>
                                       <td className="px-4 py-3 text-center font-bold text-slate-800">฿ {prod.price?.toLocaleString()}</td>
                                       <td className="px-4 py-3 text-center font-semibold text-indigo-600">{prod.pv} PV</td>
@@ -17269,6 +17309,14 @@ export default function App() {
                                         )}
                                       </td>
                                       <td className="px-4 py-3 text-center">
+                                        {prod.status === 'Pending' && (
+                                          <button
+                                            onClick={() => handleProductApprove(prod.id)}
+                                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-xl text-[10px] cursor-pointer transition shadow-sm mr-1.5"
+                                          >
+                                            ✨ อนุมัติเปิดขายทันที
+                                          </button>
+                                        )}
                                         <button
                                           onClick={() => {
                                             setEditingProduct({
@@ -17401,6 +17449,11 @@ export default function App() {
                               {order.userId}
                             </td>
                             <td className="px-4 py-3">
+                              {order.productId && (
+                                <span className="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px] font-bold border border-slate-200 mb-1">
+                                  🆔 {order.productId}
+                                </span>
+                              )}
                               <span className="font-bold block text-slate-900">{order.productName}</span>
                               {order.selectedChoiceName && (
                                 <span className="inline-block mt-1 bg-amber-50 text-amber-800 border border-amber-100 text-[9px] px-2 py-0.5 rounded font-bold">
@@ -21277,6 +21330,7 @@ export default function App() {
                       if (choice) {
                         return {
                           orderId: order.id,
+                          productId: order.productId || 'PACK_CHOICE',
                           userId: order.userId,
                           createdAt: order.createdAt,
                           packageName: order.productName || "Package Choices",
@@ -21311,6 +21365,7 @@ export default function App() {
 
                         return {
                           orderId: order.id,
+                          productId: order.productId || (isS ? 'pack_s' : 'pack_custom'),
                           userId: order.userId,
                           createdAt: order.createdAt,
                           packageName: order.productName || (isS ? "Package S" : "Package Custom"),
@@ -21583,7 +21638,7 @@ export default function App() {
                                 <tr className="bg-slate-50/75 text-slate-500 text-[10px] font-bold uppercase tracking-wider border-b border-slate-100">
                                   <th className="px-4 py-3.5">วันที่ทำรายการ</th>
                                   <th className="px-4 py-3.5 text-center">รหัสสมาชิก</th>
-                                  <th className="px-4 py-3.5">แพ็กเกจสมัคร</th>
+                                  <th className="px-4 py-3.5">รหัส / แพ็กเกจสมัคร</th>
                                   <th className="px-4 py-3.5">ชุดสินค้าเซ็ต</th>
                                   <th className="px-4 py-3.5 text-right text-indigo-700">ราคาตั้งขาย (บาท)</th>
                                   <th className="px-4 py-3.5 text-right text-rose-600">หัก PV (50%)</th>
@@ -21609,6 +21664,11 @@ export default function App() {
                                         {entry.userId}
                                       </td>
                                       <td className="px-4 py-3 font-bold text-indigo-950">
+                                        {entry.productId && (
+                                          <span className="inline-block font-mono text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 mr-1.5">
+                                            {entry.productId}
+                                          </span>
+                                        )}
                                         {entry.packageName}
                                       </td>
                                       <td className="px-4 py-3 text-slate-500 font-bold truncate max-w-[150px]" title={entry.choiceName}>
@@ -21879,17 +21939,19 @@ export default function App() {
                     const totalPvGenerated = adminOrders.reduce((sum, o) => sum + (o.pv || (o.totalPrice ? o.totalPrice * 0.5 : 0)), 0);
 
                     // Compute Top Selling Products
-                    const prodSalesMap: Record<string, { name: string; seller: string; qty: number; revenue: number }> = {};
+                    const prodSalesMap: Record<string, { id: string; name: string; seller: string; qty: number; revenue: number }> = {};
                     adminOrders.forEach(o => {
+                      const id = o.productId || '-';
                       const name = o.productName || 'สินค้าทั่วไป';
                       const seller = o.sellerName || 'Natee Market';
                       const qty = o.quantity || 1;
                       const rev = o.totalPrice || 0;
-                      if (!prodSalesMap[name]) {
-                        prodSalesMap[name] = { name, seller, qty: 0, revenue: 0 };
+                      const key = id !== '-' ? `${id}_${name}` : name;
+                      if (!prodSalesMap[key]) {
+                        prodSalesMap[key] = { id, name, seller, qty: 0, revenue: 0 };
                       }
-                      prodSalesMap[name].qty += qty;
-                      prodSalesMap[name].revenue += rev;
+                      prodSalesMap[key].qty += qty;
+                      prodSalesMap[key].revenue += rev;
                     });
                     const topProductsList = Object.values(prodSalesMap)
                       .sort((a, b) => b.revenue - a.revenue)
@@ -22021,6 +22083,11 @@ export default function App() {
                                       <div className="flex items-center gap-2.5">
                                         <span className="text-lg">{badges[index] || '📦'}</span>
                                         <div>
+                                          {item.id && item.id !== '-' && (
+                                            <span className="font-mono text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 inline-block mb-0.5">
+                                              {item.id}
+                                            </span>
+                                          )}
                                           <h5 className="font-bold text-xs text-slate-800 line-clamp-1">{item.name}</h5>
                                           <p className="text-[10px] text-slate-400">{item.seller}</p>
                                         </div>

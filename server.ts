@@ -5170,7 +5170,7 @@ app.post('/api/seller/product', async (req, res) => {
     });
   }
 
-  const isApproved = !!approveInstantly;
+  const isApproved = !!approveInstantly || member?.sellerStatus === 'Active' || member?.role === 'Admin' || userId === 'admin';
 
   const newProduct = {
     id: newProductId,
@@ -5186,7 +5186,7 @@ app.post('/api/seller/product', async (req, res) => {
     description,
     shortDescription: shortDescription || "",
     category,
-    status: isApproved ? "Approved" : "Pending", // Pending Admin approval unless approvedInstantly
+    status: isApproved ? "Approved" : "Pending", // Pending Admin approval unless approvedInstantly or active seller
     subcategory: subcategory || "",
     weight: parseFloat(weight) || 0,
     width: parseFloat(width) || 0,
@@ -5221,7 +5221,7 @@ app.post('/api/seller/product', async (req, res) => {
   res.json({ 
     success: true, 
     message: isApproved 
-      ? "แอดมินใช้สิทธิ์แทรกแซง: เพิ่มสินค้าและอนุมัติขึ้นหน้าร้านค้าทันทีสำเร็จ! ✨" 
+      ? "เพิ่มรายการสินค้าลงร้านค้าและอนุมัติขึ้นแสดงหน้าร้านทันทีสำเร็จ! ✨" 
       : "เพิ่มสินค้าเข้าร้านค้าสำเร็จ! อยู่ระหว่างรอแอดมินตรวจสอบก่อนแสดงผลบนช็อป" 
   });
 });
@@ -6446,7 +6446,7 @@ app.post('/api/seller/product/edit', async (req, res) => {
   prod.isAvailable = isAvailable !== false && isAvailable !== 'false';
   prod.netPayout = parseFloat(netPayout) || 0;
   
-  const isApproved = !!approveInstantly || isAdmin;
+  const isApproved = !!approveInstantly || isAdmin || prod.status === 'Approved' || member?.sellerStatus === 'Active';
 
   if (isApproved) {
     prod.status = "Approved";
