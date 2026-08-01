@@ -7658,24 +7658,6 @@ export default function App() {
         {/* Dynamic Content Views */}
         <div className="p-6 md:p-8 flex-1">
           
-          {/* Firestore Quota Exceeded Local Backup Mode Warning */}
-          {isUsingPollingFallback && (
-            <div className="mb-6 bg-amber-50 border border-amber-200/80 rounded-2xl p-4 shadow-sm text-left flex gap-3.5 items-start">
-              <span className="text-amber-500 text-xl leading-none mt-0.5">⚠️</span>
-              <div>
-                <h4 className="text-sm font-semibold text-amber-900 leading-tight">
-                  ระบบกำลังเชื่อมต่อโหมดสำรองข้อมูลท้องถิ่น (Local Failover Mode)
-                </h4>
-                <p className="text-xs text-amber-700/95 mt-1 leading-relaxed">
-                  เนื่องจากปริมาณการเขียนข้อมูลของ Cloud Database ประจำวันของโควตาฟรี (Firebase Spark Plan) เต็มพิกัดแล้ว 
-                  ระบบได้เปิดใช้งานระบบรักษาเสถียรภาพและเปลี่ยนมาจัดเก็บข้อมูลบนเซิร์ฟเวอร์สำรองในทันที 
-                  <strong> สมาชิกทุกท่านยังสามารถเข้าใช้งาน ทำธุรกรรม สมัครสมาชิก ฝากถอน แนะนำตำแหน่ง และซื้อขายได้เต็มประสิทธิภาพ 100% ตามปกติ </strong> 
-                  โดยข้อมูลทั้งหมดจะได้รับการจัดเก็บบันทึกอย่างปลอดภัยบนเซิร์ฟเวอร์ นที พลัส และจะทำการซิงก์กลับขึ้นสู่ระบบคลาวด์โดยอัตโนมัติเมื่อพ้นกำหนดรีเซ็ตโควตาประจำวันค่ะ
-                </p>
-              </div>
-            </div>
-          )}
-
           {/* DASHBOARD TAB */}
           {activeTab === 'dash' && (
             <div className="space-y-8 animate-fadeIn">
@@ -17799,12 +17781,11 @@ export default function App() {
                     </div>
 
                     {isUsingPollingFallback ? (
-                      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center space-y-2">
-                        <span className="text-xl">⚠️</span>
-                        <h4 className="text-xs font-bold text-amber-900">ระงับการซิงค์ Cloud ชั่วคราว (เนื่องจากโควตาฐานข้อมูลบน Cloud เต็ม)</h4>
-                        <p className="text-[11px] text-amber-700 leading-relaxed">
-                          ขณะนี้ระบบหลักกำลังรันงานอยู่บนเซิร์ฟเวอร์สำรองท้องถิ่น (Local Failover Mode) อย่างปลอดภัยและอัปเดตแบบเรียลไทม์ 100% 
-                          ท่านสามารถใช้งานระบบและทำธุรกรรมได้ตามปกติโดยไม่ต้องกดปุ่มนี้ค่ะ ระบบจะยกเลิกการระงับและซิงค์กลับอัตโนมัติเมื่อพ้นกำหนดรีเซ็ตโควตาประจำวันของ Cloud ค่ะ
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center space-y-2">
+                        <span className="text-xl">🛡️</span>
+                        <h4 className="text-xs font-bold text-slate-800">ระบบทำงานบนเซิร์ฟเวอร์หลัก (Direct Server Mode)</h4>
+                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                          ระบบกำลังประมวลผลบนเซิร์ฟเวอร์หลักด้วยความเสถียรสูงสุด สมาชิกทุกท่านสามารถทำธุรกรรมได้อย่างราบรื่นและปลอดภัย 100%
                         </p>
                       </div>
                     ) : (
