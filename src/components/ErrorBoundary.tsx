@@ -93,7 +93,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
             {this.state.error && (
               <div className="text-left border-t border-slate-100 pt-6 mt-6">
-                <details className="group">
+                <details className="group" open>
                   <summary className="text-slate-400 hover:text-slate-600 text-xs font-semibold cursor-pointer select-none flex items-center gap-1">
                     <span className="transition-transform group-open:rotate-90">▶</span>
                     แสดงรายละเอียดทางเทคนิคสำหรับนักพัฒนา (Developer Logs)

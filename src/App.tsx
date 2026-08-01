@@ -15201,7 +15201,7 @@ export default function App() {
                                     <span>💬 <strong>LINE:</strong> <strong className="text-emerald-700">{sellerSessionUser.sellerLine || sellerWarehouseEditLine || 'ยังไม่ได้ระบุ'}</strong></span>
                                   </div>
                                   <div className="font-mono text-indigo-700 font-bold bg-indigo-50/50 p-1.5 rounded-lg border border-indigo-100/50">
-                                    📍 พิกัด GPS คลังสินค้าที่ปักหมุดปัจจุบัน: Latitude {sellerWarehouseEditLat.toFixed(6)}, Longitude {sellerWarehouseEditLng.toFixed(6)}
+                                    📍 พิกัด GPS คลังสินค้าที่ปักหมุดปัจจุบัน: Latitude {Number(sellerWarehouseEditLat || 0).toFixed(6)}, Longitude {Number(sellerWarehouseEditLng || 0).toFixed(6)}
                                   </div>
                                 </div>
                               </div>
@@ -16485,10 +16485,10 @@ export default function App() {
                                 <div className="text-[11px] text-slate-600 bg-white p-3 rounded-xl border border-slate-100 space-y-1">
                                   <p><b>ที่อยู่จัดส่งปัจจุบัน:</b> {m.shippingAddress || m.idAddress || "ไม่มีข้อมูล"}</p>
                                   <p className="font-mono text-[10px] text-indigo-600">
-                                    📍 พิกัดปัจจุบัน: {m.shippingLat ? `${m.shippingLat.toFixed(6)}, ${m.shippingLng?.toFixed(6)}` : "ยังไม่เคยปักหมุด"}
+                                    📍 พิกัดปัจจุบัน: {m.shippingLat ? `${Number(m.shippingLat).toFixed(6)}, ${Number(m.shippingLng || 0).toFixed(6)}` : "ยังไม่เคยปักหมุด"}
                                   </p>
                                   <p className="font-mono text-[10px] text-rose-600 bg-rose-50/50 p-1.5 rounded border border-rose-100/50 mt-1">
-                                    <b>📍 พิกัดใหม่ที่ต้องการขอแก้ไข:</b> {m.pendingShippingLat?.toFixed(6)}, {m.pendingShippingLng?.toFixed(6)}
+                                    <b>📍 พิกัดใหม่ที่ต้องการขอแก้ไข:</b> {m.pendingShippingLat ? `${Number(m.pendingShippingLat).toFixed(6)}, ${Number(m.pendingShippingLng || 0).toFixed(6)}` : 'ยังไม่มีข้อมูล'}
                                   </p>
                                 </div>
                                 <div className="rounded-xl overflow-hidden border border-slate-200">
@@ -16998,7 +16998,7 @@ export default function App() {
                                                 readOnly={true}
                                               />
                                               <span className="text-[9px] text-slate-400 font-mono block mt-0.5">
-                                                📍 {m.warehouseLat.toFixed(5)}, {m.warehouseLng.toFixed(5)}
+                                                📍 {Number(m.warehouseLat || 0).toFixed(5)}, {Number(m.warehouseLng || 0).toFixed(5)}
                                               </span>
                                             </div>
                                           )}
@@ -24894,7 +24894,7 @@ export default function App() {
                         <div className="flex items-center gap-1.5 text-slate-800 font-bold">
                           <span>🏪 ร้านค้า: {selectedMarketProduct.sellerStoreName || 'นที พลัส มาร์เก็ต'}</span>
                         </div>
-                        {selectedMarketProduct.sellerLine && (
+                        {typeof selectedMarketProduct.sellerLine === 'string' && selectedMarketProduct.sellerLine.trim() !== '' && (
                           <a 
                             href={selectedMarketProduct.sellerLine.startsWith('http') ? selectedMarketProduct.sellerLine : `https://line.me/ti/p/~${selectedMarketProduct.sellerLine.replace('@','')}`} 
                             target="_blank" 
