@@ -2387,12 +2387,12 @@ app.post('/api/auth/check-idcard', (req, res) => {
 
 // CHECK PHONE DUPLICATE
 app.post('/api/auth/check-phone', (req, res) => {
-  const { phone } = req.body;
+  const { phone, userId } = req.body;
   const db = readDb();
   if (!phone || !/^\d{10}$/.test(phone)) {
-    return res.json({ success: false, isFormatError: true, message: "เบอร์โทรศัพท์ต้องครบ 10 หลัก" });
+    return res.json({ success: false, isFormatError: true, message: "เบอร์โทรศัพท์ต้องครบ 10 หลัก (ตัวเลข)" });
   }
-  const existingPhone = db.members.find(m => m.phone === phone);
+  const existingPhone = db.members.find(m => m.phone === phone && m.userId !== userId);
   if (existingPhone) {
     res.json({ success: false, message: "เบอร์โทรศัพท์นี้ถูกใช้สมัครสมาชิกแล้ว" });
   } else {
@@ -2402,12 +2402,12 @@ app.post('/api/auth/check-phone', (req, res) => {
 
 // CHECK EMAIL DUPLICATE
 app.post('/api/auth/check-email', (req, res) => {
-  const { email } = req.body;
+  const { email, userId } = req.body;
   const db = readDb();
   if (!email || !email.includes('@')) {
     return res.json({ success: false, isFormatError: true, message: "อีเมลต้องมีเครื่องหมาย @ ในข้อความ" });
   }
-  const existingEmail = db.members.find(m => m.email && m.email.toLowerCase() === email.toLowerCase());
+  const existingEmail = db.members.find(m => m.email && m.email.toLowerCase() === email.toLowerCase().trim() && m.userId !== userId);
   if (existingEmail) {
     res.json({ success: false, message: "อีเมลนี้ถูกใช้สมัครสมาชิกแล้ว" });
   } else {
@@ -3019,10 +3019,19 @@ app.post('/api/member/transfer-e-cash', (req, res) => {
 
 // VERIFY RECIPIENT
 app.post('/api/member/verify-recipient', (req, res) => {
-  const { receiverPhoneOrUser, senderId } = req.body;
+  const { receiverPhoneOrUser, senderId, query } = req.body;
+  const target = (receiverPhoneOrUser || query || '').toString().trim();
   const db = readDb();
   
-  const receiver = db.members.find(m => m.phone === receiverPhoneOrUser || m.username.toLowerCase() === receiverPhoneOrUser.toLowerCase() || m.userId === receiverPhoneOrUser);
+  if (!target) {
+    return res.status(400).json({ success: false, message: "กรุณาระบุรหัสผู้ใช้ เบอร์โทรศัพท์ หรือ Username ผู้รับ" });
+  }
+  
+  const receiver = db.members.find(m => 
+    m.phone === target || 
+    (m.username && m.username.toLowerCase() === target.toLowerCase()) || 
+    m.userId === target
+  );
   if (!receiver) {
     return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกผู้รับปลายทาง กรุณาตรวจสอบเบอร์โทรหรือไอดีอีกครั้งค่ะ" });
   }
@@ -3031,14 +3040,17 @@ app.post('/api/member/verify-recipient', (req, res) => {
     return res.status(400).json({ success: false, message: "ไม่สามารถทำรายการโดยใช้บัญชีตนเองเป็นผู้รับได้ค่ะ" });
   }
   
+  const recipientData = {
+    userId: receiver.userId,
+    name: `${receiver.name || ''} ${receiver.surname || ''}`.trim() || receiver.username || receiver.userId,
+    phone: receiver.phone,
+    username: receiver.username
+  };
+
   res.json({
     success: true,
-    recipient: {
-      userId: receiver.userId,
-      name: `${receiver.name} ${receiver.surname}`,
-      phone: receiver.phone,
-      username: receiver.username
-    }
+    recipient: recipientData,
+    member: recipientData
   });
 });
 
@@ -3255,24 +3267,57 @@ app.post('/api/member/withdraw', (req, res) => {
     return res.status(400).json({ success: false, message: "ยอดเงิน E-Money ของคุณไม่เพียงพอสำหรับการถอนเงิน" });
   }
   
-  // Deductions: 20% Auto-reserve (per plan conditions), and 5% fee (which is 3% withholding tax + 2% company fee on the 80% remaining)
-  const autoReserve = amt * 0.20;
-  const taxableAmount = amt - autoReserve; // remaining 80%
-  const withholdingTax = taxableAmount * 0.03; // 3% withholding tax
-  const platformCharge = taxableAmount * 0.02; // 2% company service/handling fee
-  const netReceived = taxableAmount - withholdingTax - platformCharge; // net amount to transfer (amt * 0.76)
+  // Deductions: 15% System reserve + 5% Tax (3% Withholding tax + 2%) = 20% Total deduction
+  // Plus fixed transaction transfer fee of 25 Baht
+  // Internal breakdown of 15% system reserve:
+  // - 5% goes to E-Coupon (added to member's balanceECoupon)
+  // - 5% goes to All-Share pool (distributed via processEShareDistribution)
+  // - 5% goes to Company profit (added to db.systemStats.totalCompanyProfits)
+  const systemReserve = amt * 0.15; // 15% หักเข้าระบบ
+  const couponPart = amt * 0.05; // 5% ไปที่ คูปอง
+  const allSharePart = amt * 0.05; // 5% ไปที่ All-Share
+  const companyPart = amt * 0.05; // 5% เป็นของบริษัท
+
+  const withholdingTax = amt * 0.05; // 5% ภาษี (3% หัก ณ ที่จ่าย + 2%)
+  const totalDeduction20 = amt * 0.20; // หัก 20%
+  const afterDeductionAmount = amt - totalDeduction20; // 160 บาทสำหรับยอด 200
+  const transferFee = 25; // ค่าธรรมเนียมการโอน 25 บาท
+  const netReceived = Math.max(0, afterDeductionAmount - transferFee); // 135 บาทสำหรับยอด 200
   
+  // Deduct full withdrawal amount from member E-Money
   member.balanceEMoney = parseFloat(((member.balanceEMoney || 0) - amt).toFixed(4));
   
+  // 1. Credit 5% coupon to member balanceECoupon
+  member.balanceECoupon = parseFloat(((member.balanceECoupon || 0) + couponPart).toFixed(4));
+  
+  // Create E-Coupon transaction record
+  db.transactions.push({
+    id: "CPN_WITH_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+    userId: member.userId,
+    type: "Deposit",
+    amount: couponPart,
+    currency: "E-Coupon",
+    details: `รับ E-Coupon 5% จากการหักค่าบริการถอนเงิน (฿${couponPart.toFixed(2)})`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+
+  // 2. Distribute 5% to All-Share pool
+  processEShareDistribution(db, allSharePart, member.userId);
+
+  // 3. Record main withdrawal request transaction
   db.transactions.push({
     id: "WITH_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
     userId: member.userId,
     type: "WithdrawalRequest",
     amount: amt,
-    autoReserve: autoReserve,
-    taxableAmount: taxableAmount,
+    autoReserve: systemReserve,
+    couponPart: couponPart,
+    allSharePart: allSharePart,
+    companyFee: companyPart,
+    taxableAmount: afterDeductionAmount,
     withholdingTax: withholdingTax,
-    companyFee: platformCharge,
+    transferFee: transferFee,
     netAmount: netReceived,
     currency: "E-Money",
     details: `ถอนเงินออกบัญชีธนาคาร ${member.bankName} เลขที่ ${member.bankAccount}`,
@@ -3280,8 +3325,10 @@ app.post('/api/member/withdraw', (req, res) => {
     createdAt: new Date().toISOString()
   });
   
+  if (!db.systemStats.totalTaxReserves) db.systemStats.totalTaxReserves = 0;
+  if (!db.systemStats.totalCompanyProfits) db.systemStats.totalCompanyProfits = 0;
   db.systemStats.totalTaxReserves = parseFloat((db.systemStats.totalTaxReserves + withholdingTax).toFixed(4));
-  db.systemStats.totalCompanyProfits = parseFloat((db.systemStats.totalCompanyProfits + platformCharge).toFixed(4));
+  db.systemStats.totalCompanyProfits = parseFloat((db.systemStats.totalCompanyProfits + companyPart + transferFee).toFixed(4));
   
   writeDb(db);
   sendSystemNotification('withdrawal', `💸 มีคำขอถอนเงิน e-Money ใหม่!\nสมาชิก: ${member.name || ''} (${member.userId})\nยอดถอน: ฿${amt.toLocaleString('th-TH')}\nยอดโอนสุทธิ: ฿${netReceived.toLocaleString('th-TH')}\nธนาคาร: ${member.bankName || '-'} (${member.bankAccount || '-'})`);
@@ -3359,9 +3406,54 @@ app.get('/api/mlm/binary-members/:userId', (req, res) => {
   res.json({ success: true, members: descendants });
 });
 
+// REQUEST CHANGE EMAIL OTP
+app.post('/api/member/request-email-otp', async (req, res) => {
+  const { userId, newEmail } = req.body;
+  const db = readDb();
+  const member = db.members.find(m => m.userId === userId);
+  if (!member) {
+    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
+  }
+
+  const oldEmail = member.email;
+  if (!oldEmail || !oldEmail.includes('@')) {
+    return res.status(400).json({ success: false, message: "ไม่พบบัญชีอีเมลเดิมของสมาชิกในการรับ OTP" });
+  }
+
+  if (newEmail) {
+    const existingEmail = db.members.find(m => m.email && m.email.toLowerCase() === newEmail.toLowerCase().trim() && m.userId !== userId);
+    if (existingEmail) {
+      return res.status(400).json({ success: false, message: "อีเมลใหม่นี้มีผู้ใช้งานแล้วในระบบ" });
+    }
+  }
+
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  if (!db.otps) db.otps = {};
+  db.otps['CHANGE_EMAIL_' + userId] = otpCode;
+  writeDb(db);
+
+  try {
+    await sendSystemEmail({
+      to: oldEmail,
+      subject: '[NaTee Plus] รหัส OTP ยืนยันการเปลี่ยนอีเมลสมาชิก',
+      title: 'รหัส OTP ยืนยันการเปลี่ยนแปลงอีเมล',
+      otpCode: otpCode,
+      bodyText: `ท่านได้ยื่นขอเปลี่ยนอีเมลจาก ${oldEmail} เป็น ${newEmail || 'อีเมลใหม่'}\nกรุณานำรหัส OTP นี้ไปกรอกในระบบเพื่อยืนยันการเปลี่ยนอีเมล`
+    });
+  } catch (err) {
+    console.error('Failed to send change email OTP email:', err);
+  }
+
+  res.json({
+    success: true,
+    otpSimulated: otpCode,
+    message: `ส่งรหัส OTP 6 หลักไปยังอีเมลเดิม (${oldEmail}) เรียบร้อยแล้วค่ะ`
+  });
+});
+
 // UPDATE MEMBER PROFILE BY MEMBER THEMSELF
 app.post('/api/member/update-profile', (req, res) => {
-  const { userId, username, email, phone, bankName, bankAccount, idAddress, shippingAddress, useSameAddress } = req.body;
+  const { userId, username, email, phone, bankName, bankAccount, bankAccountName, idAddress, shippingAddress, useSameAddress, emailOtp } = req.body;
   const db = readDb();
   
   const member = db.members.find(m => m.userId === userId);
@@ -3371,40 +3463,56 @@ app.post('/api/member/update-profile', (req, res) => {
 
   // If username changed, check if it already exists
   if (username && username.toLowerCase().trim() !== member.username.toLowerCase()) {
-    const existing = db.members.find(m => m.username.toLowerCase() === username.toLowerCase().trim());
+    const existing = db.members.find(m => m.username.toLowerCase() === username.toLowerCase().trim() && m.userId !== userId);
     if (existing) {
       return res.status(400).json({ success: false, message: "ชื่อผู้ใช้นี้ถูกใช้ไปแล้ว" });
     }
     member.username = username.toLowerCase().trim();
   }
 
-  // Update bank account info safely:
-  // 1. If KYC is Active, lock bankName and bankAccount unless member doesn't have one set yet
-  // 2. Never overwrite existing non-empty bankName/bankAccount with empty strings!
-  if (bankName !== undefined && typeof bankName === 'string' && bankName.trim() !== '') {
-    if (member.statusKyc !== 'Active' || !member.bankName) {
-      member.bankName = bankName.trim();
-      member.kycBankName = bankName.trim();
-    }
+  // Update bank account info (unlocked for editing)
+  if (bankName !== undefined && typeof bankName === 'string') {
+    member.bankName = bankName.trim();
+    member.kycBankName = bankName.trim();
   }
-  if (bankAccount !== undefined && typeof bankAccount === 'string' && bankAccount.trim() !== '') {
-    if (member.statusKyc !== 'Active' || !member.bankAccount) {
-      member.bankAccount = bankAccount.trim();
-      member.kycBankAccount = bankAccount.trim();
-    }
+  if (bankAccount !== undefined && typeof bankAccount === 'string') {
+    member.bankAccount = bankAccount.trim();
+    member.kycBankAccount = bankAccount.trim();
+  }
+  if (bankAccountName !== undefined && typeof bankAccountName === 'string') {
+    member.bankAccountName = bankAccountName.trim();
   }
 
-  // Update email and phone
-  if (email !== undefined) member.email = email;
+  // Update phone with duplicate check
   if (phone !== undefined) {
-    // Check if phone changed and if it exists
-    if (phone !== member.phone) {
-      const existingPhone = db.members.find(m => m.phone === phone);
+    const cleanPhone = phone.replace(/\D/g, '').trim();
+    if (cleanPhone !== member.phone) {
+      const existingPhone = db.members.find(m => m.phone === cleanPhone && m.userId !== member.userId);
       if (existingPhone) {
-        return res.status(400).json({ success: false, message: "เบอร์โทรศัพท์นี้ถูกใช้ไปแล้ว" });
+        return res.status(400).json({ success: false, message: "เบอร์โทรศัพท์นี้ถูกใช้สมัครสมาชิกแล้วในระบบ" });
       }
     }
-    member.phone = phone;
+    member.phone = cleanPhone;
+  }
+
+  // Update email with OTP verification if changed
+  if (email !== undefined && email.toLowerCase().trim() !== (member.email || '').toLowerCase().trim()) {
+    const cleanNewEmail = email.toLowerCase().trim();
+    const existingEmail = db.members.find(m => m.email && m.email.toLowerCase() === cleanNewEmail && m.userId !== member.userId);
+    if (existingEmail) {
+      return res.status(400).json({ success: false, message: "อีเมลใหม่นี้ถูกใช้งานแล้วในระบบ" });
+    }
+
+    const activeOtp = db.otps ? db.otps['CHANGE_EMAIL_' + userId] : null;
+    if (!emailOtp || emailOtp.trim() !== activeOtp) {
+      return res.status(400).json({
+        success: false,
+        message: "รหัส OTP ยืนยันการเปลี่ยนอีเมลไม่ถูกต้อง กรุณาตรวจสอบหรือกดขอรับรหัส OTP อีกครั้งค่ะ"
+      });
+    }
+
+    delete db.otps['CHANGE_EMAIL_' + userId];
+    member.email = cleanNewEmail;
   }
 
   // Update address info safely
@@ -4681,7 +4789,7 @@ app.post('/api/seller/send-warehouse-otp', async (req, res) => {
 
 // Confirm Seller Warehouse Update with Email OTP
 app.post('/api/seller/update-warehouse', (req, res) => {
-  const { userId, sellerAddress, warehouseLat, warehouseLng, otp } = req.body;
+  const { userId, sellerAddress, warehouseLat, warehouseLng, sellerLine, otp } = req.body;
   const db = readDb();
   
   if (!userId || !sellerAddress || !otp) {
@@ -4700,6 +4808,7 @@ app.post('/api/seller/update-warehouse', (req, res) => {
   const parsedLng = warehouseLng ? parseFloat(warehouseLng) : (member.warehouseLng || 100.5018);
 
   member.sellerAddress = sellerAddress;
+  if (sellerLine !== undefined) member.sellerLine = sellerLine;
   member.warehouseLat = parsedLat;
   member.warehouseLng = parsedLng;
   member.lat = parsedLat;
@@ -4710,14 +4819,14 @@ app.post('/api/seller/update-warehouse', (req, res) => {
 
   res.json({
     success: true,
-    message: "📍 บันทึกและล็อกพิกัดคลังสินค้าปลายทางเรียบร้อยแล้วค่ะ! ข้อมูลอัพเดทไปยังระบบของแอดมินโดยสมบูรณ์",
+    message: "📍 บันทึกข้อมูลร้านค้าและล็อกพิกัดคลังสินค้าปลายทางเรียบร้อยแล้วค่ะ! ข้อมูลอัพเดทไปยังระบบเรียบร้อย",
     member
   });
 });
 
 // 3. Confirm Seller Application with OTP and transaction PIN
 app.post('/api/seller/apply-with-otp', (req, res) => {
-  const { username, storeName, storeAddress, warehouseLat, warehouseLng, otp, pin } = req.body;
+  const { username, storeName, storeAddress, warehouseLat, warehouseLng, sellerLine, otp, pin } = req.body;
   const db = readDb();
   
   if (!username || !storeName || !storeAddress || !otp || !pin) {
@@ -4786,6 +4895,7 @@ app.post('/api/seller/apply-with-otp', (req, res) => {
   member.sellerCode = code;
   member.sellerStoreName = storeName;
   member.sellerAddress = storeAddress;
+  if (sellerLine !== undefined) member.sellerLine = sellerLine;
   member.warehouseLat = warehouseLat ? parseFloat(warehouseLat) : null;
   member.warehouseLng = warehouseLng ? parseFloat(warehouseLng) : null;
   member.sellerFirstLoginShown = false; // reset for the approved welcome popup
@@ -4920,7 +5030,7 @@ app.post('/api/seller/regulations', (req, res) => {
 
 // Admin Update Seller Profile Directly
 app.post('/api/admin/seller-update-profile', (req, res) => {
-  const { userId, sellerCode, sellerStoreName, storeName, sellerStatus, name, surname, phone, email, rank, role, sellerAddress, storeAddress, warehouseLat, warehouseLng } = req.body;
+  const { userId, sellerCode, sellerStoreName, storeName, sellerStatus, name, surname, phone, email, rank, role, sellerAddress, storeAddress, warehouseLat, warehouseLng, sellerLine } = req.body;
   const db = readDb();
   
   const member = db.members.find((m: any) => m.userId === userId);
@@ -4950,6 +5060,7 @@ app.post('/api/admin/seller-update-profile', (req, res) => {
   if (sellerCode !== undefined) member.sellerCode = sellerCode;
   if (targetStoreName !== undefined) member.sellerStoreName = targetStoreName;
   if (targetAddress !== undefined) member.sellerAddress = targetAddress;
+  if (sellerLine !== undefined) member.sellerLine = sellerLine;
   if (warehouseLat !== undefined && warehouseLat !== null) {
     const pLat = parseFloat(warehouseLat);
     member.warehouseLat = pLat;
@@ -6590,8 +6701,10 @@ app.post('/api/admin/promo-config', async (req, res) => {
   const db = readDb();
 
   if (editorUserId) {
-    const editor = db.members.find(m => m.userId === editorUserId);
-    if (!editor || (editor.role !== 'Manager' && editor.role !== 'Admin')) {
+    const editor = db.members.find((m: any) => m.userId === editorUserId || m.username === editorUserId);
+    const roleUpper = (editor?.role || '').toUpperCase();
+    const isAllowed = roleUpper === 'ADMIN' || roleUpper === 'MANAGER' || editor?.username === 'admin' || editor?.userId === 'ADMIN001';
+    if (!isAllowed) {
       return res.status(403).json({ success: false, message: "ไม่มีสิทธิ์ในการแก้ไขตั้งค่าระบบ (เฉพาะสิทธิ์ Manager หรือ Admin เท่านั้น)" });
     }
   }

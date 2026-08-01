@@ -107,6 +107,9 @@ export default function App() {
   const sellerProductsFetchedAt = React.useRef<number>(0);
 
   const [isUsingPollingFallback, setIsUsingPollingFallback] = useState<boolean>(false);
+  const [taxType, setTaxType] = useState<'personal' | 'corporate'>('personal');
+  const [salesReportStartDate, setSalesReportStartDate] = useState<string>('');
+  const [salesReportEndDate, setSalesReportEndDate] = useState<string>('');
   const [activeTab, setActiveTab] = useState<string>('shop');
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(true);
@@ -212,6 +215,8 @@ export default function App() {
 
   // Seller Warehouse Edit & OTP States
   const [sellerWarehouseEditAddress, setSellerWarehouseEditAddress] = useState('');
+  const [sellerWarehouseEditLine, setSellerWarehouseEditLine] = useState('');
+  const [sellerRegLine, setSellerRegLine] = useState('');
   const [sellerWarehouseEditLat, setSellerWarehouseEditLat] = useState<number>(13.7563);
   const [sellerWarehouseEditLng, setSellerWarehouseEditLng] = useState<number>(100.5018);
   const [sellerWarehouseOtp, setSellerWarehouseOtp] = useState('');
@@ -528,6 +533,16 @@ export default function App() {
   const [editUsernameStatus, setEditUsernameStatus] = useState<'avail' | 'taken' | null>(null);
   const [checkedEditUsername, setCheckedEditUsername] = useState(true);
 
+  // Phone check and email check & OTP states
+  const [checkedEditPhone, setCheckedEditPhone] = useState(true);
+  const [editPhoneStatus, setEditPhoneStatus] = useState<'avail' | 'taken' | null>(null);
+  const [checkedEditEmail, setCheckedEditEmail] = useState(true);
+  const [editEmailStatus, setEditEmailStatus] = useState<'avail' | 'taken' | null>(null);
+  const [emailOtpInput, setEmailOtpInput] = useState('');
+  const [isSendingEmailOtp, setIsSendingEmailOtp] = useState(false);
+  const [emailOtpSent, setEmailOtpSent] = useState(false);
+  const [simulatedEmailOtp, setSimulatedEmailOtp] = useState('');
+
   // Member shipping map pin states
   const [memberShippingLat, setMemberShippingLat] = useState<number | null>(null);
   const [memberShippingLng, setMemberShippingLng] = useState<number | null>(null);
@@ -747,6 +762,9 @@ export default function App() {
   const [transferUser, setTransferUser] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
   const [transferPin, setTransferPin] = useState('');
+  const [transferRecipientInfo, setTransferRecipientInfo] = useState<{ userId: string; name: string; username?: string; phone?: string } | null>(null);
+  const [transferRecipientChecked, setTransferRecipientChecked] = useState(false);
+  const [transferRecipientError, setTransferRecipientError] = useState<string | null>(null);
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawPin, setWithdrawPin] = useState('');
   const [exchangeAmount, setExchangeAmount] = useState('');
@@ -774,7 +792,7 @@ export default function App() {
   const [treeScale, setTreeScale] = useState<number>(0.85);
   const [maxTreeDepth, setMaxTreeDepth] = useState<number>(3);
   const [planBSubTab, setPlanBSubTab] = useState<'b1' | 'b2'>('b1');
-  const [adminSubTab, setAdminSubTab] = useState<'queues' | 'members' | 'couponPv' | 'systemReset' | 'memberApprovals' | 'shippingApprove' | 'manageShops' | 'productApprovals' | 'orderStatus' | 'bankSettings' | 'depositApprove' | 'packageChoices' | 'companyAccountingReport' | 'maintenance' | 'analytics'>('queues');
+  const [adminSubTab, setAdminSubTab] = useState<'queues' | 'members' | 'couponPv' | 'systemReset' | 'memberApprovals' | 'shippingApprove' | 'manageShops' | 'productApprovals' | 'orderStatus' | 'bankSettings' | 'depositApprove' | 'packageChoices' | 'companyAccountingReport' | 'maintenance' | 'analytics' | 'promoPopupConfig' | 'manageRegulations' | 'systemConditions' | 'memberShopInfo'>('queues');
   const [adminSection, setAdminSection] = useState<'members_system' | 'seller_system' | 'admin_console'>('members_system');
   const [allSellerProducts, setAllSellerProducts] = useState<any[]>([]);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
@@ -1087,6 +1105,11 @@ export default function App() {
     pin: string;
     recipientIdOrPhone?: string;
     recipientName?: string;
+    autoReserve?: number;
+    taxableAmount?: number;
+    withholdingTax?: number;
+    companyFee?: number;
+    transferFee?: number;
     feeAmount?: number;
     netAmount?: number;
   } | null>(null);
@@ -1437,6 +1460,7 @@ export default function App() {
 
   // Fetch initial profile & dashboard data on login
   useEffect(() => {
+    fetchBankSettings();
     if (currentUser) {
       fetchNotifications();
       fetchProfile(true);
@@ -1445,7 +1469,6 @@ export default function App() {
       fetchMlmTrees();
       fetchCsrFeed();
       fetchReports();
-      fetchBankSettings();
       if (currentUser.role === 'Admin' || currentUser.role === 'Manager') {
         fetchAdminQueues();
       }
@@ -2236,6 +2259,116 @@ export default function App() {
     }
   };
 
+  // Handle checking edit phone
+  const checkEditPhone = async (phoneVal: string) => {
+    const pVal = phoneVal.replace(/\D/g, '').trim();
+    if (!pVal) {
+      showNotif('กรุณาระบุเบอร์โทรศัพท์มือถือ', 'error');
+      return;
+    }
+    if (pVal === profile?.phone) {
+      setEditPhoneStatus('avail');
+      setCheckedEditPhone(true);
+      showNotif('เบอร์โทรศัพท์นี้เป็นเบอร์ปัจจุบันของคุณอยู่แล้วค่ะ', 'success');
+      return;
+    }
+    if (!/^\d{10}$/.test(pVal)) {
+      showNotif('เบอร์โทรศัพท์ต้องครบ 10 หลัก (ตัวเลข)', 'error');
+      setEditPhoneStatus('taken');
+      setCheckedEditPhone(false);
+      return;
+    }
+    try {
+      const res = await fetch('/api/auth/check-phone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: pVal, userId: profile?.userId })
+      });
+      const d = await res.json();
+      if (d.success) {
+        setEditPhoneStatus('avail');
+        setCheckedEditPhone(true);
+        showNotif(d.message || 'เบอร์โทรศัพท์นี้สามารถใช้งานได้!', 'success');
+      } else {
+        setEditPhoneStatus('taken');
+        setCheckedEditPhone(false);
+        showNotif(d.message || 'เบอร์โทรศัพท์นี้ถูกใช้ไปแล้ว', 'error');
+      }
+    } catch (err) {
+      setCheckedEditPhone(false);
+      showNotif('เกิดข้อผิดพลาดในการตรวจสอบเบอร์โทรศัพท์', 'error');
+    }
+  };
+
+  // Handle checking edit email
+  const checkEditEmail = async (emailVal: string) => {
+    const eVal = emailVal.trim().toLowerCase();
+    if (!eVal) {
+      showNotif('กรุณาระบุอีเมล', 'error');
+      return;
+    }
+    if (eVal === (profile?.email || '').toLowerCase().trim()) {
+      setEditEmailStatus('avail');
+      setCheckedEditEmail(true);
+      showNotif('อีเมลนี้เป็นอีเมลปัจจุบันของคุณอยู่แล้วค่ะ', 'success');
+      return;
+    }
+    if (!eVal.includes('@')) {
+      showNotif('อีเมลต้องมีเครื่องหมาย @ ในข้อความ', 'error');
+      setEditEmailStatus('taken');
+      setCheckedEditEmail(false);
+      return;
+    }
+    try {
+      const res = await fetch('/api/auth/check-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: eVal, userId: profile?.userId })
+      });
+      const d = await res.json();
+      if (d.success) {
+        setEditEmailStatus('avail');
+        setCheckedEditEmail(true);
+        showNotif(d.message || 'อีเมลนี้สามารถใช้งานได้!', 'success');
+      } else {
+        setEditEmailStatus('taken');
+        setCheckedEditEmail(false);
+        showNotif(d.message || 'อีเมลนี้ถูกใช้ไปแล้ว', 'error');
+      }
+    } catch (err) {
+      setCheckedEditEmail(false);
+      showNotif('เกิดข้อผิดพลาดในการตรวจสอบอีเมล', 'error');
+    }
+  };
+
+  // Handle requesting email change OTP
+  const requestEmailChangeOtp = async () => {
+    if (!profile?.email) {
+      showNotif('ไม่พบบัญชีอีเมลเดิมในระบบในการรับ OTP', 'error');
+      return;
+    }
+    setIsSendingEmailOtp(true);
+    try {
+      const res = await fetch('/api/member/request-email-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: profile?.userId, newEmail: editEmail })
+      });
+      const d = await res.json();
+      if (d.success) {
+        setEmailOtpSent(true);
+        if (d.otpSimulated) setSimulatedEmailOtp(d.otpSimulated);
+        showNotif(d.message || `ส่งรหัส OTP ไปยังอีเมลเดิม (${profile?.email}) เรียบร้อยแล้ว`, 'success');
+      } else {
+        showNotif(d.message || 'ไม่สามารถส่งรหัส OTP ได้', 'error');
+      }
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการขอรับ OTP', 'error');
+    } finally {
+      setIsSendingEmailOtp(false);
+    }
+  };
+
   // Save/Update user profile
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2246,6 +2379,20 @@ export default function App() {
     if (!checkedEditUsername && editUsername !== profile?.username) {
       showNotif('กรุณากดปุ่มตรวจสอบชื่อผู้ใช้และตรวจสอบให้ผ่านก่อนทำการบันทึกค่ะ', 'error');
       return;
+    }
+    if (!checkedEditPhone && editPhone !== profile?.phone) {
+      showNotif('กรุณากดปุ่มตรวจสอบเบอร์โทรศัพท์และตรวจสอบให้ผ่านก่อนทำการบันทึกค่ะ', 'error');
+      return;
+    }
+    if (!checkedEditEmail && editEmail.toLowerCase().trim() !== (profile?.email || '').toLowerCase().trim()) {
+      showNotif('กรุณากดปุ่มตรวจสอบอีเมลและตรวจสอบให้ผ่านก่อนทำการบันทึกค่ะ', 'error');
+      return;
+    }
+    if (editEmail.toLowerCase().trim() !== (profile?.email || '').toLowerCase().trim()) {
+      if (!emailOtpSent || !emailOtpInput.trim()) {
+        showNotif('กรณีเปลี่ยนอีเมล กรุณากดขอรับ OTP และกรอกรหัส OTP ที่ส่งไปยังอีเมลเดิมก่อนบันทึกค่ะ', 'error');
+        return;
+      }
     }
     try {
       const res = await fetch('/api/member/update-profile', {
@@ -2258,6 +2405,7 @@ export default function App() {
           phone: editPhone,
           bankName: editBankName || profile?.bankName || '',
           bankAccount: editBankAccount || profile?.bankAccount || '',
+          emailOtp: emailOtpInput.trim(),
           idAddress: {
             province: idProv,
             district: idDist,
@@ -4014,10 +4162,46 @@ export default function App() {
     }
   };
 
+  // Check recipient info for E-Cash transfer
+  const handleCheckTransferRecipient = async () => {
+    const target = transferUser.trim();
+    if (!target) {
+      showNotif('กรุณากรอกรหัสผู้ใช้ เบอร์โทรศัพท์ หรือ Username ผู้รับ', 'error');
+      return;
+    }
+    setIsVerifyingRecipient(true);
+    setTransferRecipientError(null);
+    setTransferRecipientInfo(null);
+    try {
+      const res = await fetch('/api/member/verify-recipient', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ receiverPhoneOrUser: target, senderId: currentUser?.userId })
+      });
+      const d = await res.json();
+      if (d.success && (d.recipient || d.member)) {
+        const rec = d.recipient || d.member;
+        setTransferRecipientInfo(rec);
+        setTransferRecipientChecked(true);
+        showNotif(`พบข้อมูลผู้รับ: ${rec.name} (รหัส: ${rec.userId})`, 'success');
+      } else {
+        setTransferRecipientChecked(false);
+        setTransferRecipientError(d.message || 'ไม่พบข้อมูลสมาชิกผู้รับปลายทาง');
+        showNotif(d.message || 'ไม่พบข้อมูลสมาชิกผู้รับปลายทาง', 'error');
+      }
+    } catch (err) {
+      setTransferRecipientChecked(false);
+      setTransferRecipientError('เกิดข้อผิดพลาดในการตรวจสอบผู้รับ');
+      showNotif('เกิดข้อผิดพลาดในการตรวจสอบผู้รับ', 'error');
+    } finally {
+      setIsVerifyingRecipient(false);
+    }
+  };
+
   // Transfer E-Cash to another member (Initiate confirmation)
   const initiateTransferECashMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!transferUser || !transferAmount || parseFloat(transferAmount) <= 0) {
+    if (!transferUser.trim() || !transferAmount || parseFloat(transferAmount) <= 0) {
       showNotif('กรุณากรอกข้อมูลรหัสผู้รับและจำนวนเงินให้ถูกต้อง', 'error');
       return;
     }
@@ -4026,31 +4210,46 @@ export default function App() {
       return;
     }
 
-    setIsVerifyingRecipient(true);
-    try {
-      const res = await fetch('/api/member/verify-recipient', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: transferUser })
-      });
-      const d = await res.json();
-      if (d.success && d.member) {
-        setTxnConfirm({
-          type: 'transfer_ecash_member',
-          amount: parseFloat(transferAmount),
-          pin: transferPin,
-          recipientIdOrPhone: d.member.userId,
-          recipientName: `${d.member.name} ${d.member.surname}`,
-          feeAmount: 0,
-          netAmount: parseFloat(transferAmount)
+    // If recipient not checked yet, run verification automatically or prompt
+    let recipientData = transferRecipientInfo;
+    if (!transferRecipientChecked || !recipientData) {
+      const target = transferUser.trim();
+      setIsVerifyingRecipient(true);
+      try {
+        const res = await fetch('/api/member/verify-recipient', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ receiverPhoneOrUser: target, senderId: currentUser?.userId })
         });
-      } else {
-        showNotif(d.message || 'ไม่พบสมาชิกปลายทาง กรุณาตรวจสอบรหัสผู้ใช้หรือเบอร์โทรศัพท์อีกครั้ง', 'error');
+        const d = await res.json();
+        if (d.success && (d.recipient || d.member)) {
+          recipientData = d.recipient || d.member;
+          setTransferRecipientInfo(recipientData);
+          setTransferRecipientChecked(true);
+        } else {
+          showNotif(d.message || 'ไม่พบสมาชิกปลายทาง กรุณาตรวจสอบอีกครั้งค่ะ', 'error');
+          setIsVerifyingRecipient(false);
+          return;
+        }
+      } catch (err) {
+        showNotif('เกิดข้อผิดพลาดในการตรวจสอบผู้รับ', 'error');
+        setIsVerifyingRecipient(false);
+        return;
+      } finally {
+        setIsVerifyingRecipient(false);
       }
-    } catch (err) {
-      showNotif('เกิดข้อผิดพลาดในการตรวจสอบผู้รับ', 'error');
-    } finally {
-      setIsVerifyingRecipient(false);
+    }
+
+    if (recipientData) {
+      setTxnConfirm({
+        type: 'transfer_ecash_member',
+        amount: parseFloat(transferAmount),
+        pin: transferPin,
+        recipientIdOrPhone: recipientData.userId,
+        recipientName: recipientData.name,
+        feeAmount: 0,
+        netAmount: parseFloat(transferAmount)
+      });
     }
   };
 
@@ -4113,24 +4312,26 @@ export default function App() {
       showNotif('กรุณากรอกรหัส PIN 6 หลัก', 'error');
       return;
     }
-    const autoReserve = amt * 0.20;
-    const remaining = amt - autoReserve;
-    const tax = remaining * 0.03;
-    const companyFee = remaining * 0.02;
-    const totalFeeAndTax = tax + companyFee;
-    const net = remaining - totalFeeAndTax;
+    const systemReserve = amt * 0.15; // หักเข้าระบบ 15%
+    const taxDeduction = amt * 0.05; // ภาษี 5% (หัก ณ ที่จ่าย 3% + 2%)
+    const totalDeduction20 = amt * 0.20; // รวมหัก 20%
+    const remaining20 = amt - totalDeduction20; // 160 บาท
+    const transferFee = 25; // ค่าธรรมเนียมการโอน 25 บาท
+    const netReceived = Math.max(0, remaining20 - transferFee); // 135 บาทสำหรับยอด 200
+
     setTxnConfirm({
       type: 'withdraw_emoney',
       amount: amt,
       pin: withdrawPin,
       recipientIdOrPhone: currentUser.userId,
-      recipientName: `บัญชีธนาคารของคุณ: ${profile?.bankName} (เลขที่: ${profile?.bankAccount})`,
-      autoReserve: autoReserve,
-      taxableAmount: remaining,
-      withholdingTax: tax,
-      companyFee: companyFee,
-      feeAmount: totalFeeAndTax,
-      netAmount: net
+      recipientName: `บัญชีธนาคารของคุณ: ${profile?.bankName || '-'} (เลขที่: ${profile?.bankAccount || '-'})`,
+      autoReserve: systemReserve,
+      taxableAmount: remaining20,
+      withholdingTax: taxDeduction,
+      companyFee: systemReserve,
+      transferFee: transferFee,
+      feeAmount: totalDeduction20 + transferFee,
+      netAmount: netReceived
     });
   };
 
@@ -5061,6 +5262,7 @@ export default function App() {
           username: sellerRegUsername,
           storeName: sellerStoreName,
           storeAddress: sellerAddress,
+          sellerLine: sellerRegLine,
           warehouseLat,
           warehouseLng,
           otp: sellerRegOtp,
@@ -5127,12 +5329,13 @@ export default function App() {
   useEffect(() => {
     if (sellerSessionUser) {
       if (sellerSessionUser.sellerAddress) setSellerWarehouseEditAddress(sellerSessionUser.sellerAddress);
+      if (sellerSessionUser.sellerLine) setSellerWarehouseEditLine(sellerSessionUser.sellerLine);
       const latVal = sellerSessionUser.warehouseLat || sellerSessionUser.lat;
       const lngVal = sellerSessionUser.warehouseLng || sellerSessionUser.lng;
       if (latVal) setSellerWarehouseEditLat(parseFloat(latVal));
       if (lngVal) setSellerWarehouseEditLng(parseFloat(lngVal));
     }
-  }, [sellerSessionUser?.userId, sellerSessionUser?.sellerAddress, sellerSessionUser?.warehouseLat, sellerSessionUser?.warehouseLng, sellerSessionUser?.lat, sellerSessionUser?.lng]);
+  }, [sellerSessionUser?.userId, sellerSessionUser?.sellerAddress, sellerSessionUser?.sellerLine, sellerSessionUser?.warehouseLat, sellerSessionUser?.warehouseLng, sellerSessionUser?.lat, sellerSessionUser?.lng]);
 
   const handleSendWarehouseOtp = async () => {
     if (!sellerSessionUser?.userId) return;
@@ -5174,6 +5377,7 @@ export default function App() {
         body: JSON.stringify({
           userId: sellerSessionUser.userId,
           sellerAddress: sellerWarehouseEditAddress,
+          sellerLine: sellerWarehouseEditLine,
           warehouseLat: sellerWarehouseEditLat,
           warehouseLng: sellerWarehouseEditLng,
           otp: sellerWarehouseOtp
@@ -7193,6 +7397,31 @@ export default function App() {
                     ) : null;
                   })()}
                 </button>
+
+                {/* Promo Pop-Up Settings */}
+                <button 
+                  onClick={() => { 
+                    setActiveTab('admin'); 
+                    setAdminSection('admin_console');
+                    setAdminSubTab('promoPopupConfig'); 
+                    setSidebarOpen(false); 
+                  }}
+                  title="ตั้งค่า Pop-Up ส่วนลดพิเศษ"
+                  className={`w-full flex items-center transition-all duration-200 cursor-pointer relative rounded-xl ${
+                    isSidebarCollapsed 
+                      ? 'justify-center p-2.5 text-center' 
+                      : 'justify-between px-3.5 py-2.5 text-left text-xs font-semibold'
+                  } ${
+                    activeTab === 'admin' && adminSubTab === 'promoPopupConfig' && adminSection === 'admin_console' 
+                      ? 'bg-gradient-to-r from-amber-500/25 to-yellow-500/15 text-amber-300 font-bold border-l-4 border-amber-400 shadow-sm' 
+                      : 'text-amber-300/80 hover:bg-slate-800/60 hover:text-amber-200'
+                  }`}
+                >
+                  <span className="flex items-center gap-3">
+                    <Sparkles size={18} className="shrink-0 text-amber-400" />
+                    {(!isSidebarCollapsed || sidebarOpen) && <span>ตั้งค่า Pop-Up ส่วนลด</span>}
+                  </span>
+                </button>
               </div>
             )}
           </nav>
@@ -8215,66 +8444,157 @@ export default function App() {
 
                         <div>
                           <label className="block text-slate-700 text-xs font-bold mb-1">เบอร์โทรศัพท์มือถือ *</label>
-                          <input 
-                            type="text" 
-                            required
-                            value={editPhone} 
-                            onChange={(e) => setEditPhone(e.target.value)}
-                            placeholder="เช่น 0812345678"
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-700 text-xs font-bold mb-1">อีเมลหลัก *</label>
-                          <input 
-                            type="email" 
-                            required
-                            value={editEmail} 
-                            onChange={(e) => setEditEmail(e.target.value)}
-                            placeholder="เช่น name@example.com"
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none"
-                          />
-                        </div>
-
-                        {profile?.statusKyc === 'Active' ? (
-                          <div className="md:col-span-2 bg-emerald-50 border border-emerald-200 p-4 rounded-2xl space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
-                                <Lock size={14} className="text-emerald-600" />
-                                ธนาคารปลายทางรับคอมมิชชัน (อนุมัติ KYC แล้ว - ล็อกข้อมูล)
-                              </span>
-                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-0.5 rounded-full">
-                                🔒 ล็อกเรียบร้อยแล้ว
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3 text-xs bg-white/80 p-3 rounded-xl border border-emerald-100/60">
-                              <div>
-                                <span className="text-slate-400 text-[10px] block">ธนาคาร:</span>
-                                <span className="font-bold text-slate-800">{profile?.bankName || 'ไม่ระบุ'}</span>
-                              </div>
-                              <div>
-                                <span className="text-slate-400 text-[10px] block">เลขที่บัญชี:</span>
-                                <span className="font-mono font-bold text-indigo-700">{profile?.bankAccount || 'ไม่ระบุ'}</span>
-                              </div>
-                            </div>
+                          <div className="flex gap-2">
+                            <input 
+                              type="text" 
+                              required
+                              value={editPhone} 
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditPhone(val);
+                                if (val === profile?.phone) {
+                                  setCheckedEditPhone(true);
+                                  setEditPhoneStatus(null);
+                                } else {
+                                  setCheckedEditPhone(false);
+                                  setEditPhoneStatus(null);
+                                }
+                              }}
+                              placeholder="เช่น 0812345678"
+                              className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-indigo-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => checkEditPhone(editPhone)}
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold px-3 py-2 rounded-xl transition shadow-sm cursor-pointer"
+                            >
+                              ตรวจสอบ
+                            </button>
                           </div>
-                        ) : (
-                          <>
+                          {editPhoneStatus === 'avail' && <p className="text-emerald-600 text-[10px] font-bold mt-1">✓ เบอร์โทรศัพท์นี้สามารถใช้งานได้</p>}
+                          {editPhoneStatus === 'taken' && <p className="text-rose-600 text-[10px] font-bold mt-1">✗ เบอร์โทรศัพท์นี้ถูกใช้ไปแล้ว</p>}
+                          {!checkedEditPhone && editPhone !== profile?.phone && (
+                            <p className="text-amber-600 text-[9px] mt-1">⚠ กรุณากดปุ่ม ตรวจสอบ ก่อนบันทึกค่ะ</p>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="block text-slate-700 text-xs font-bold mb-1">อีเมลหลัก *</label>
+                          <div className="flex gap-2">
+                            <input 
+                              type="email" 
+                              required
+                              value={editEmail} 
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditEmail(val);
+                                if (val.toLowerCase().trim() === (profile?.email || '').toLowerCase().trim()) {
+                                  setCheckedEditEmail(true);
+                                  setEditEmailStatus(null);
+                                } else {
+                                  setCheckedEditEmail(false);
+                                  setEditEmailStatus(null);
+                                  setEmailOtpSent(false);
+                                  setEmailOtpInput('');
+                                }
+                              }}
+                              placeholder="เช่น name@example.com"
+                              className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-indigo-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => checkEditEmail(editEmail)}
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold px-3 py-2 rounded-xl transition shadow-sm cursor-pointer"
+                            >
+                              ตรวจสอบ
+                            </button>
+                          </div>
+                          {editEmailStatus === 'avail' && <p className="text-emerald-600 text-[10px] font-bold mt-1">✓ อีเมลนี้สามารถใช้งานได้</p>}
+                          {editEmailStatus === 'taken' && <p className="text-rose-600 text-[10px] font-bold mt-1">✗ อีเมลนี้ถูกใช้สมัครสมาชิกแล้ว</p>}
+                          {!checkedEditEmail && editEmail.toLowerCase().trim() !== (profile?.email || '').toLowerCase().trim() && (
+                            <p className="text-amber-600 text-[9px] mt-1">⚠ กรุณากดปุ่ม ตรวจสอบ ก่อนบันทึกค่ะ</p>
+                          )}
+
+                          {/* Email change OTP verification card */}
+                          {editEmail.toLowerCase().trim() !== (profile?.email || '').toLowerCase().trim() && checkedEditEmail && editEmailStatus === 'avail' && (
+                            <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-3 space-y-2 text-xs text-amber-900 mt-2 shadow-xs">
+                              <div className="flex flex-wrap justify-between items-center gap-2">
+                                <span className="font-bold text-[11px] flex items-center gap-1">
+                                  ✉️ ยืนยันตัวตนเพื่อเปลี่ยนอีเมล
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={isSendingEmailOtp}
+                                  onClick={requestEmailChangeOtp}
+                                  className="bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-xl transition cursor-pointer shadow-sm disabled:bg-slate-300"
+                                >
+                                  {isSendingEmailOtp ? 'กำลังส่ง OTP...' : emailOtpSent ? 'ส่ง OTP อีกครั้ง' : `ขอรับ OTP (ส่งไปที่ ${profile?.email})`}
+                                </button>
+                              </div>
+                              <p className="text-[10px] text-amber-800 leading-relaxed">
+                                กรณีแก้ไขอีเมล ระบบจะส่งรหัส OTP ยืนยันไปยังอีเมลเดิม (<strong className="text-amber-950 font-bold">{profile?.email}</strong>) เพื่อความปลอดภัย กรุณานำรหัส OTP กลับมากรอกด้านล่างนี้จึงจะเปลี่ยนอีเมลได้ค่ะ
+                              </p>
+
+                              {emailOtpSent && (
+                                <div className="pt-2 border-t border-amber-200/80 space-y-1.5">
+                                  {simulatedEmailOtp && (
+                                    <p className="text-[10px] font-mono text-indigo-700 bg-indigo-50 p-2 rounded-lg border border-indigo-100">
+                                      💡 [DEMO Simulated OTP]: <strong className="text-indigo-900 font-bold tracking-widest">{simulatedEmailOtp}</strong>
+                                    </p>
+                                  )}
+                                  <label className="block text-[10px] font-bold text-amber-900">กรอกรหัส OTP 6 หลักที่ได้รับจากอีเมลเดิม *</label>
+                                  <input
+                                    type="text"
+                                    maxLength={6}
+                                    value={emailOtpInput}
+                                    onChange={(e) => setEmailOtpInput(e.target.value.replace(/\D/g, ''))}
+                                    placeholder="กรอกรหัส OTP 6 หลัก"
+                                    className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 font-mono text-center text-sm font-bold tracking-widest focus:outline-none focus:border-amber-500"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Unlocked Bank Details with warning message */}
+                        <div className="md:col-span-2 bg-indigo-50/50 border border-indigo-100 p-4 rounded-2xl space-y-3">
+                          <div className="flex items-center justify-between border-b border-indigo-100 pb-2">
+                            <span className="text-xs font-extrabold text-indigo-900 flex items-center gap-1.5">
+                              🏦 ข้อมูลธนาคารปลายทางรับคอมมิชชัน
+                            </span>
+                            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100/80 px-2.5 py-0.5 rounded-full">
+                              🔓 สามารถแก้ไขได้
+                            </span>
+                          </div>
+
+                          <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-2.5 text-[11px] text-rose-600 font-bold flex items-center gap-2">
+                            <span>⚠️</span>
+                            <span>ชื่อบัญชีธนาคารต้องตรงกับชื่อสมาชิกเท่านั้น</span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
                               <label className="block text-slate-700 text-xs font-bold mb-1">ธนาคารปลายทาง *</label>
                               <select
                                 value={editBankName}
                                 onChange={(e) => setEditBankName(e.target.value)}
-                                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none"
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-indigo-500"
                               >
-                                <option value="">-- ไม่ระบุ --</option>
+                                <option value="">-- เลือกธนาคาร --</option>
                                 <option value="ธนาคารกสิกรไทย">กสิกรไทย (KBank)</option>
                                 <option value="ธนาคารไทยพาณิชย์">ไทยพาณิชย์ (SCB)</option>
                                 <option value="ธนาคารกรุงเทพ">กรุงเทพ (BBL)</option>
                                 <option value="ธนาคารกรุงไทย">กรุงไทย (KTB)</option>
                                 <option value="ธนาคารออมสิน">ออมสิน (GSB)</option>
                                 <option value="ธนาคารกรุงศรีอยุธยา">กรุงศรีอยุธยา (BAY)</option>
+                                <option value="ธนาคารทหารไทยธนชาต">ทหารไทยธนชาต (TTB)</option>
+                                <option value="ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร">ธ.ก.ส. (BAAC)</option>
+                                <option value="ธนาคารอาคารสงเคราะห์">อาคารสงเคราะห์ (GHB)</option>
+                                <option value="ธนาคารเกียรตินาคินภัทร">เกียรตินาคินภัทร (KKP)</option>
+                                <option value="ธนาคารซีไอเอ็มบีไทย">ซีไอเอ็มบี ไทย (CIMBT)</option>
+                                <option value="ธนาคาร ยูโอบี">ยูโอบี (UOB)</option>
+                                <option value="ธนาคารแลนด์ แอนด์ เฮ้าส์">แลนด์ แอนด์ เฮ้าส์ (LHBANK)</option>
                               </select>
                             </div>
 
@@ -8285,11 +8605,11 @@ export default function App() {
                                 value={editBankAccount} 
                                 onChange={(e) => setEditBankAccount(e.target.value.replace(/\D/g, ''))}
                                 placeholder="ระบุเลขบัญชีธนาคารเฉพาะตัวเลข"
-                                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none"
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:border-indigo-500"
                               />
                             </div>
-                          </>
-                        )}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -8583,145 +8903,7 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Pinned Shipping Map Coordinates Section - Only visible to registered/approved sellers */}
-                      {profile?.sellerStatus === 'Active' && (
-                        <div className="mt-4 border-t border-slate-100 pt-4 space-y-3">
-                          <span className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider block flex items-center gap-1">
-                            📍 ปักหมุดแผนที่พิกัดที่อยู่จัดส่งคลังสินค้าปลายทาง (สำหรับร้านค้า)
-                          </span>
 
-                          {profile?.shippingPinStatus === 'Confirmed' && !isEditingMemberShippingPin && (
-                            <div className="space-y-2">
-                              <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-3 text-emerald-800 text-[11px] flex justify-between items-center">
-                                <div>
-                                  <p className="font-bold">✓ พิกัดได้รับการยืนยันและล็อกเรียบร้อยแล้ว (ภาพนิ่ง)</p>
-                                  <p className="font-mono text-[10px] mt-0.5 text-slate-500">พิกัดปัจจุบัน: {profile?.shippingLat?.toFixed(6)}, {profile?.shippingLng?.toFixed(6)}</p>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setMemberShippingLat(profile?.shippingLat || 13.7563);
-                                    setMemberShippingLng(profile?.shippingLng || 100.5018);
-                                    setIsEditingMemberShippingPin(true);
-                                  }}
-                                  className="bg-white hover:bg-slate-50 text-indigo-600 border border-indigo-200 px-3 py-1 rounded-xl text-[10px] font-bold transition shadow-sm cursor-pointer"
-                                >
-                                  ✏️ แก้ไขพิกัดปักหมุด
-                                </button>
-                              </div>
-                              <NateeWarehouseMap 
-                                lat={profile?.shippingLat || 13.7563} 
-                                lng={profile?.shippingLng || 100.5018} 
-                                readOnly={true}
-                              />
-                            </div>
-                          )}
-
-                          {profile?.shippingPinStatus === 'PendingApproval' && !isEditingMemberShippingPin && (
-                            <div className="space-y-2">
-                              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3 text-amber-800 text-[11px] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                                <div>
-                                  <p className="font-bold">⏳ สัญญาณเตือน: อยู่ระหว่างแอดมิน (Admin Market) ตรวจสอบอนุมัติพิกัดใหม่</p>
-                                  <p className="font-mono text-[10px] mt-0.5 text-slate-500">พิกัดใหม่ที่ส่งขอ: {profile?.pendingShippingLat?.toFixed(6)}, {profile?.pendingShippingLng?.toFixed(6)}</p>
-                                </div>
-                                <button
-                                  type="button"
-                                  disabled
-                                  className="bg-slate-100 text-slate-400 border border-slate-200 px-3 py-1 rounded-xl text-[10px] font-bold cursor-not-allowed shrink-0"
-                                >
-                                  รอแอดมินอนุมัติ...
-                                </button>
-                              </div>
-                              <NateeWarehouseMap 
-                                lat={profile?.pendingShippingLat || 13.7563} 
-                                lng={profile?.pendingShippingLng || 100.5018} 
-                                readOnly={true}
-                              />
-                            </div>
-                          )}
-
-                          {(!profile?.shippingPinStatus || profile?.shippingPinStatus === 'NotPinned' || isEditingMemberShippingPin) && (
-                            <div className="space-y-3">
-                              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-slate-700 text-[11px] flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                                <div>
-                                  <p className="font-bold text-slate-800">
-                                    {isEditingMemberShippingPin ? "🛠️ กำลังแก้ไขหมุดพิกัดเดิม" : "📍 กรุณาเลือกสถานที่และปักหมุดคลังจัดส่งของคุณ"}
-                                  </p>
-                                  <p className="text-slate-500 leading-normal mt-0.5">
-                                    เลื่อนแผนที่หรือปักตำแหน่งที่แม่นยำเพื่อความสะดวกในการจัดส่งสินค้าของระบบโลจิสติกส์ในอนาคตค่ะ
-                                  </p>
-                                </div>
-                                <div className="flex gap-1.5 shrink-0">
-                                  {isEditingMemberShippingPin && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setIsEditingMemberShippingPin(false)}
-                                      className="bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 px-3 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer"
-                                    >
-                                      ยกเลิก
-                                    </button>
-                                  )}
-                                  <button
-                                    type="button"
-                                    disabled={isSavingShippingPin}
-                                    onClick={async () => {
-                                      const targetLat = memberShippingLat || profile?.shippingLat;
-                                      const targetLng = memberShippingLng || profile?.shippingLng;
-                                      if (!targetLat || !targetLng) {
-                                        showNotif("กรุณาปักหมุดตำแหน่งในแผนที่ก่อนค่ะ", "warning");
-                                        return;
-                                      }
-                                      if (!window.confirm("คุณต้องการยืนยันพิกัดจุดจัดส่งนี้ใช่หรือไม่? เมื่อกดยืนยันแล้ว พิกัดจะถูกล็อกเป็นภาพนิ่งทันที")) {
-                                        return;
-                                      }
-                                      setIsSavingShippingPin(true);
-                                      try {
-                                        const res = await fetch('/api/member/update-shipping-pin', {
-                                          method: 'POST',
-                                          headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({
-                                            userId: profile?.userId,
-                                            lat: targetLat,
-                                            lng: targetLng
-                                          })
-                                        });
-                                        const resData = await res.json();
-                                        if (resData.success) {
-                                          showNotif(resData.message, 'success');
-                                          setIsEditingMemberShippingPin(false);
-                                          if (resData.profile) {
-                                            setProfile(resData.profile);
-                                          } else {
-                                            fetchProfile(true);
-                                          }
-                                        } else {
-                                          showNotif(resData.message || 'เกิดข้อผิดพลาดในการบันทึกพิกัด', 'error');
-                                        }
-                                      } catch (err) {
-                                        showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
-                                      } finally {
-                                        setIsSavingShippingPin(false);
-                                      }
-                                    }}
-                                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-xl text-[10px] font-bold transition shadow shadow-indigo-200 cursor-pointer disabled:bg-slate-400"
-                                  >
-                                    {isSavingShippingPin ? 'กำลังบันทึก...' : '💾 ยืนยันพิกัดจัดส่ง'}
-                                  </button>
-                                </div>
-                              </div>
-                              <NateeWarehouseMap 
-                                lat={memberShippingLat || profile?.shippingLat || 13.7563} 
-                                lng={memberShippingLng || profile?.shippingLng || 100.5018} 
-                                readOnly={false}
-                                onChange={(lat, lng) => {
-                                  setMemberShippingLat(lat);
-                                  setMemberShippingLng(lng);
-                                }}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </div>
 
                   </div>
@@ -10641,42 +10823,100 @@ export default function App() {
                     <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
                       <UserCheck size={16} className="text-indigo-600" /> โอนเงิน E-Cash ระหว่างสมาชิก 💸
                     </h4>
-                    <form onSubmit={initiateTransferECashMember} className="grid grid-cols-2 gap-3 text-xs">
-                      <div>
-                        <label className="block text-slate-700 font-semibold mb-1">รหัสผู้ใช้ / เบอร์โทรศัพท์ปลายทาง</label>
-                        <input 
-                          type="text" 
-                          required
-                          value={transferUser}
-                          onChange={(e) => setTransferUser(e.target.value)}
-                          placeholder="ไอดีผู้รับปลายทาง"
-                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                        />
+                    <form onSubmit={initiateTransferECashMember} className="space-y-4 text-xs">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {/* Recipient Input with Check Button */}
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">รหัสผู้ใช้ / เบอร์โทรศัพท์ปลายทาง *</label>
+                          <div className="flex gap-2">
+                            <input 
+                              type="text" 
+                              required
+                              value={transferUser}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setTransferUser(val);
+                                setTransferRecipientInfo(null);
+                                setTransferRecipientChecked(false);
+                                setTransferRecipientError(null);
+                              }}
+                              placeholder="ไอดีผู้รับ หรือ เบอร์โทรศัพท์"
+                              className="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleCheckTransferRecipient}
+                              disabled={isVerifyingRecipient}
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold px-3.5 py-2 rounded-xl transition shadow-sm cursor-pointer disabled:bg-slate-300 flex items-center gap-1 shrink-0"
+                            >
+                              {isVerifyingRecipient ? 'กำลังตรวจสอบ...' : 'ตรวจสอบ'}
+                            </button>
+                          </div>
+
+                          {/* Recipient Status Messages */}
+                          {transferRecipientChecked && transferRecipientInfo && (
+                            <div className="mt-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-[11px] font-medium flex items-center justify-between">
+                              <span className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-emerald-700 font-bold">✓ ผู้รับเงิน:</span>
+                                <strong className="font-bold text-slate-900">{transferRecipientInfo.name}</strong>
+                                <span className="text-slate-500 font-mono text-[10px]">({transferRecipientInfo.userId})</span>
+                              </span>
+                              <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
+                                ยืนยันแล้ว
+                              </span>
+                            </div>
+                          )}
+
+                          {transferRecipientError && (
+                            <p className="text-rose-600 text-[10px] font-bold mt-1.5 flex items-center gap-1">
+                              <span>✗</span> {transferRecipientError}
+                            </p>
+                          )}
+
+                          {!transferRecipientChecked && transferUser.trim() && !transferRecipientError && (
+                            <p className="text-amber-600 text-[9px] mt-1">
+                              ⚠ กรุณากดปุ่ม "ตรวจสอบ" เพื่อยืนยันชื่อผู้รับโอนเงินก่อนค่ะ
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Amount Input */}
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">จำนวนยอดเงิน (E-Cash) *</label>
+                          <input 
+                            type="number" 
+                            required
+                            value={transferAmount}
+                            onChange={(e) => setTransferAmount(e.target.value)}
+                            placeholder="ระบุจำนวนเงินที่ต้องการโอน"
+                            className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-slate-700 font-semibold mb-1">จำนวนยอดเงิน (E-Cash)</label>
-                        <input 
-                          type="number" 
-                          required
-                          value={transferAmount}
-                          onChange={(e) => setTransferAmount(e.target.value)}
-                          placeholder="จำนวนเงิน"
-                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                        />
-                      </div>
-                      <div className="col-span-2 flex gap-2">
-                        <input 
-                          type="password" 
-                          required
-                          maxLength={6}
-                          value={transferPin}
-                          onChange={(e) => setTransferPin(e.target.value.replace(/\D/g, ''))}
-                          placeholder="ใส่รหัสธุรกรรม PIN 6 หลัก"
-                          className="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs text-center font-mono tracking-widest focus:border-indigo-500"
-                        />
-                        <button type="submit" disabled={isVerifyingRecipient} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 rounded-xl text-xs font-bold disabled:bg-slate-300 cursor-pointer">
-                          {isVerifyingRecipient ? 'กำลังตรวจสอบ...' : 'ยืนยันการโอนเงิน'}
-                        </button>
+
+                      {/* PIN and Submit */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">รหัส PIN 6 หลัก *</label>
+                          <input 
+                            type="password" 
+                            required
+                            maxLength={6}
+                            value={transferPin}
+                            onChange={(e) => setTransferPin(e.target.value.replace(/\D/g, ''))}
+                            placeholder="ใส่รหัสธุรกรรม PIN 6 หลัก"
+                            className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs text-center font-mono tracking-widest focus:border-indigo-500 focus:outline-none"
+                          />
+                        </div>
+                        <div className="flex items-end">
+                          <button 
+                            type="submit" 
+                            disabled={isVerifyingRecipient} 
+                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 px-6 rounded-xl text-xs font-bold transition shadow-sm disabled:bg-slate-300 cursor-pointer"
+                          >
+                            ยืนยันการโอนเงิน
+                          </button>
+                        </div>
                       </div>
                     </form>
                   </div>
@@ -10854,11 +11094,11 @@ export default function App() {
                       <div className="col-span-2 bg-slate-50 border border-slate-200 p-3.5 rounded-2xl text-[10px] space-y-1 text-slate-500">
                         <p>ชื่อผู้รับโอนเงินปลายทาง: <b>{profile?.name} {profile?.surname}</b></p>
                         <p>ธนาคาร: <b>{profile?.bankName} (เลขที่: {profile?.bankAccount})</b></p>
-                        <p className="text-rose-500 font-bold">✓ หักค่าบริการระบบหลังบ้าน 15% และหักภาษี ณ ที่จ่าย 5% รวมหักทั้งสิ้น 20% เพื่อรักษาเสถียรภาพ</p>
-                        {withdrawAmount && (
+                        <p className="text-rose-600 font-bold">✓ หักเข้าระบบ 15% และภาษี 5% (3%+2%) รวมหัก 20% และมีค่าธรรมเนียมการโอน 25 บาท</p>
+                        {withdrawAmount && parseFloat(withdrawAmount) >= 200 && (
                           <div className="mt-2 pt-2 border-t border-slate-200 text-xs font-bold text-slate-800 flex justify-between">
                             <span>ยอดเงินที่จะเข้าบัญชีจริง:</span>
-                            <span className="text-emerald-600">฿ {(parseFloat(withdrawAmount) * 0.80).toFixed(2)} บาท</span>
+                            <span className="text-emerald-600 font-mono">฿ {Math.max(0, parseFloat(withdrawAmount) * 0.80 - 25).toFixed(2)} บาท</span>
                           </div>
                         )}
                       </div>
@@ -12399,6 +12639,17 @@ export default function App() {
                                 onChange={(e) => setSellerStoreName(e.target.value)}
                                 placeholder="เช่น ร้านนทีเครื่องแกงใต้"
                                 className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                              />
+                            </div>
+
+                            <div className="space-y-1.5 md:col-span-2">
+                              <label className="block text-slate-700 font-bold">💬 LINE ID / LINE Official Account ร้านค้า (ถ้ามี)</label>
+                              <input 
+                                type="text"
+                                value={sellerRegLine}
+                                onChange={(e) => setSellerRegLine(e.target.value)}
+                                placeholder="เช่น @nateeplus หรือ https://line.me/ti/p/..."
+                                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono"
                               />
                             </div>
                           </div>
@@ -14550,7 +14801,7 @@ export default function App() {
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-400 block">ชื่อบัญชี:</span>
-                              <strong className="text-slate-800 font-semibold">{sellerSessionUser.sellerStoreName || "บริษัท นที พลัส มาร์เก็ต จำกัด"}</strong>
+                              <strong className="text-slate-800 font-semibold">{sellerSessionUser?.sellerStoreName || "บริษัท นที พลัส มาร์เก็ต จำกัด"}</strong>
                             </div>
                             <div>
                               <span className="text-[10px] text-slate-400 block">รอบโอนอัตโนมัติ:</span>
@@ -14578,11 +14829,11 @@ export default function App() {
 
                         {/* Stats overview */}
                         {(() => {
-                          const deposit = parseFloat(sellerSessionUser.securityDeposit || 0);
+                          const deposit = parseFloat(sellerSessionUser?.securityDeposit || 0);
                           const maxCap = deposit * 10;
-                          const activeSales = sellerOrders
-                            .filter((o: any) => o.status === 'Processing' || o.status === 'Paid')
-                            .reduce((sum: number, o: any) => sum + (parseFloat(o.totalPrice) || 0), 0);
+                          const activeSales = (sellerOrders || [])
+                            .filter((o: any) => o?.status === 'Processing' || o?.status === 'Paid')
+                            .reduce((sum: number, o: any) => sum + (parseFloat(o?.totalPrice) || 0), 0);
                           
                           return (
                             <div className="space-y-6">
@@ -14615,7 +14866,7 @@ export default function App() {
                                       <span>➕ ฝากเงินประกันเพิ่ม (จากกระเป๋า E-Cash)</span>
                                     </h5>
                                     <span className="text-[10px] text-emerald-700 bg-white px-2 py-0.5 rounded font-mono border border-emerald-200">
-                                      E-Cash พร้อมใช้: ฿{(sellerSessionUser.balanceECash || 0).toLocaleString()}
+                                      E-Cash พร้อมใช้: ฿{(sellerSessionUser?.balanceECash || 0).toLocaleString()}
                                     </span>
                                   </div>
                                   <p className="text-[11px] text-slate-600">โอนเงินฝากประกันเพื่อขยายวงเงินการลงขายสินค้าเพิ่ม 10 เท่าทันที</p>
@@ -14927,10 +15178,27 @@ export default function App() {
                                   />
                                 </div>
 
+                                <div className="space-y-1.5">
+                                  <label className="block text-xs font-extrabold text-slate-800 flex items-center gap-1">
+                                    💬 LINE ID / LINE Official Account (ช่องทางติดต่อ LINE ของร้านค้า)
+                                  </label>
+                                  <p className="text-[10px] text-slate-400">
+                                    * ระบุ LINE ID หรือลิงก์ LINE Official Account (เช่น @nateeplus หรือ https://line.me/ti/p/...) เพื่อให้ลูกค้าติดต่อสอบถามเกี่ยวกับสินค้า
+                                  </p>
+                                  <input 
+                                    type="text"
+                                    value={sellerWarehouseEditLine}
+                                    onChange={(e) => setSellerWarehouseEditLine(e.target.value)}
+                                    placeholder="เช่น @nateeplus หรือ https://line.me/ti/p/..."
+                                    className="w-full border border-slate-200 bg-slate-50/50 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:bg-white outline-none transition font-mono"
+                                  />
+                                </div>
+
                                 <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1.5 text-slate-600 text-[11px]">
-                                  <div className="flex justify-between">
+                                  <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
                                     <span>📞 <strong>ผู้ดูแลคลัง:</strong> {sellerSessionUser.sellerPhone || sellerSessionUser.phone || '08x-xxx-xxxx'}</span>
                                     <span>✉️ <strong>อีเมล:</strong> {sellerSessionUser.email || '-'}</span>
+                                    <span>💬 <strong>LINE:</strong> <strong className="text-emerald-700">{sellerSessionUser.sellerLine || sellerWarehouseEditLine || 'ยังไม่ได้ระบุ'}</strong></span>
                                   </div>
                                   <div className="font-mono text-indigo-700 font-bold bg-indigo-50/50 p-1.5 rounded-lg border border-indigo-100/50">
                                     📍 พิกัด GPS คลังสินค้าที่ปักหมุดปัจจุบัน: Latitude {sellerWarehouseEditLat.toFixed(6)}, Longitude {sellerWarehouseEditLng.toFixed(6)}
@@ -23852,12 +24120,24 @@ export default function App() {
                 {txnConfirm.type === 'withdraw_emoney' ? (
                   <>
                     <div className="flex justify-between border-t border-slate-100 pt-2">
-                      <span className="text-slate-500 font-semibold">ยอดรายได้สุทธิ (บาท):</span>
-                      <span className="font-mono font-bold text-slate-900">฿ {txnConfirm.taxableAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+                      <span className="text-slate-500 font-semibold">ยอดถอนเงินตั้งต้น (E-Money):</span>
+                      <span className="font-mono font-bold text-slate-900">฿ {txnConfirm.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
                     </div>
                     <div className="flex justify-between text-rose-600">
-                      <span className="font-semibold">ภาษีหัก ณ.ที่จ่ายสะสม (บาท):</span>
-                      <span className="font-mono font-bold">- ฿ {txnConfirm.withholdingTax?.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+                      <span className="font-semibold">หักเข้าระบบ (15%):</span>
+                      <span className="font-mono font-bold">- ฿ {(txnConfirm.autoReserve || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+                    </div>
+                    <div className="flex justify-between text-rose-600">
+                      <span className="font-semibold">หักภาษี 5% (3%+2%):</span>
+                      <span className="font-mono font-bold">- ฿ {(txnConfirm.withholdingTax || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+                    </div>
+                    <div className="flex justify-between border-t border-slate-100 pt-1 text-slate-700">
+                      <span className="font-semibold">ยอดคงเหลือหลังหัก 20%:</span>
+                      <span className="font-mono font-bold">฿ {(txnConfirm.taxableAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+                    </div>
+                    <div className="flex justify-between text-rose-600">
+                      <span className="font-semibold">หักค่าธรรมเนียมธุรกรรม:</span>
+                      <span className="font-mono font-bold">- ฿ {(txnConfirm.transferFee || 25).toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
                     </div>
                   </>
                 ) : (
@@ -24608,6 +24888,23 @@ export default function App() {
                       <p className="text-xs text-indigo-600 font-bold">
                         🏷️ แบรนด์สินค้า (Brand): <span className="text-slate-800">{selectedMarketProduct.brand || selectedMarketProduct.brandName}</span>
                       </p>
+                    )}
+                    {(selectedMarketProduct.sellerStoreName || selectedMarketProduct.sellerLine) && (
+                      <div className="bg-emerald-50/80 border border-emerald-200/80 rounded-xl p-2.5 text-xs flex flex-wrap items-center justify-between gap-2 mt-2">
+                        <div className="flex items-center gap-1.5 text-slate-800 font-bold">
+                          <span>🏪 ร้านค้า: {selectedMarketProduct.sellerStoreName || 'นที พลัส มาร์เก็ต'}</span>
+                        </div>
+                        {selectedMarketProduct.sellerLine && (
+                          <a 
+                            href={selectedMarketProduct.sellerLine.startsWith('http') ? selectedMarketProduct.sellerLine : `https://line.me/ti/p/~${selectedMarketProduct.sellerLine.replace('@','')}`} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold px-2.5 py-1 rounded-lg text-[11px] flex items-center gap-1 shadow-xs transition cursor-pointer"
+                          >
+                            💬 ติดต่อร้านค้า LINE: {selectedMarketProduct.sellerLine}
+                          </a>
+                        )}
+                      </div>
                     )}
                   </div>
 
