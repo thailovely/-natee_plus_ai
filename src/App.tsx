@@ -2004,9 +2004,20 @@ export default function App() {
         // 4. Products document listener
         safeSubscribe('products', (snapshot) => {
           if (snapshot.exists()) {
-            const data = snapshot.data().data || [];
-            if (Array.isArray(data)) {
+            const rawData = snapshot.data().data || [];
+            if (Array.isArray(rawData)) {
+              const data = rawData.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+              
+              if (productsFetchedAt.current && (Date.now() - productsFetchedAt.current < 15000)) {
+                console.warn("⚠️ [Sync Bypass] Ignored Firestore products snapshot. HTTP state is newer (time-lock).");
+                return;
+              }
+
               setProducts(prev => {
+                if (prev.length > 0 && data.length === 0) {
+                  console.warn("⚠️ [Sync Bypass] Blocked Firestore products snapshot from clearing local products array.");
+                  return prev;
+                }
                 if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
                 return data;
               });
@@ -2017,14 +2028,29 @@ export default function App() {
         // 5. Seller Products document listener
         safeSubscribe('sellerProducts', (snapshot) => {
           if (snapshot.exists()) {
-            const data = snapshot.data().data || [];
-            if (Array.isArray(data)) {
+            const rawData = snapshot.data().data || [];
+            if (Array.isArray(rawData)) {
+              const data = rawData.filter((p: any) => p && p.id !== 'prod_XLB9PELBA' && p.id !== 'prod_KB7JEDORQ');
+
+              if (sellerProductsFetchedAt.current && (Date.now() - sellerProductsFetchedAt.current < 15000)) {
+                console.warn("⚠️ [Sync Bypass] Ignored Firestore sellerProducts snapshot. HTTP state is newer (time-lock).");
+                return;
+              }
+
               setAllSellerProducts(prev => {
+                if (prev.length > 0 && data.length === 0) {
+                  console.warn("⚠️ [Sync Bypass] Blocked Firestore sellerProducts snapshot from clearing allSellerProducts.");
+                  return prev;
+                }
                 if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
                 return data;
               });
               setSellerProducts(prevSeller => {
                 const filtered = data.filter((p: any) => currentUser && p.sellerId === currentUser.userId);
+                if (prevSeller.length > 0 && filtered.length === 0 && data.length === 0) {
+                  console.warn("⚠️ [Sync Bypass] Blocked Firestore sellerProducts snapshot from clearing sellerProducts.");
+                  return prevSeller;
+                }
                 if (JSON.stringify(prevSeller) === JSON.stringify(filtered)) return prevSeller;
                 return filtered;
               });
@@ -2056,12 +2082,19 @@ export default function App() {
         // 8. Package product choices document listener
         safeSubscribe('packageProductChoices', (snapshot) => {
           if (snapshot.exists()) {
-            if (packageChoicesFetchedAt.current && (Date.now() - packageChoicesFetchedAt.current < 4000)) {
+            if (packageChoicesFetchedAt.current && (Date.now() - packageChoicesFetchedAt.current < 15000)) {
               console.warn("⚠️ [Sync Bypass] Ignored Firestore packageProductChoices snapshot. HTTP state is newer (time-lock).");
               return;
             }
             const data = snapshot.data().data || [];
-            setPackageChoices(data);
+            setPackageChoices(prev => {
+              if (prev.length > 0 && data.length === 0) {
+                console.warn("⚠️ [Sync Bypass] Blocked Firestore packageChoices snapshot from clearing packageChoices.");
+                return prev;
+              }
+              if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
+              return data;
+            });
           }
         });
 
@@ -2670,6 +2703,7 @@ export default function App() {
       const resProds = await fetch(`/api/seller/products/${userId}`);
       const dataProds = await resProds.json();
       if (dataProds.success) {
+        sellerProductsFetchedAt.current = Date.now();
         setSellerProducts(dataProds.products || []);
       }
       const resOrders = await fetch(`/api/seller/orders/${userId}`);
