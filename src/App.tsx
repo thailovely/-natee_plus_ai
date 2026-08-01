@@ -8,7 +8,7 @@ import {
   Eye, EyeOff, X, ClipboardList, Printer, Lock, Key, FileSpreadsheet,
   Coins, FileText, Store, Bell, Truck, UserX, RotateCcw, 
   MessageSquare, BookOpen, BarChart2, Home, ShoppingCart, ChevronRight,
-  Binary, Award, Heart, ArrowLeftRight, Receipt, Calculator, Database
+  Binary, Award, Heart, ArrowLeftRight, Receipt, Calculator, Database, Sparkles
 } from 'lucide-react';
 import { thaiAddressData, searchThaiAddress } from './thaiAddressData';
 import { NateeWarehouseMap } from './components/NateeWarehouseMap';
