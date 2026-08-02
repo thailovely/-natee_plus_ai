@@ -7609,6 +7609,31 @@ export default function App() {
                     {(!isSidebarCollapsed || sidebarOpen) && <span>ศูนย์วิเคราะห์ข้อมูล & สถิติ</span>}
                   </span>
                 </button>
+
+                {/* Bank & System Notification Settings */}
+                <button 
+                  onClick={() => { 
+                    setActiveTab('admin'); 
+                    setAdminSection('admin_console');
+                    setAdminSubTab('bankSettings'); 
+                    setSidebarOpen(false); 
+                  }}
+                  title="ตั้งค่าธนาคาร & ระบบแจ้งเตือน LINE"
+                  className={`w-full flex items-center transition-all duration-200 cursor-pointer relative rounded-xl ${
+                    isSidebarCollapsed 
+                      ? 'justify-center p-2.5 text-center' 
+                      : 'justify-between px-3.5 py-2.5 text-left text-xs font-semibold'
+                  } ${
+                    activeTab === 'admin' && adminSubTab === 'bankSettings' 
+                      ? 'bg-gradient-to-r from-emerald-500/25 to-teal-500/15 text-emerald-300 font-bold border-l-4 border-emerald-400 shadow-sm' 
+                      : 'text-emerald-300/80 hover:bg-slate-800/60 hover:text-emerald-200'
+                  }`}
+                >
+                  <span className="flex items-center gap-3">
+                    <CreditCard size={18} className="shrink-0 text-emerald-400" />
+                    {(!isSidebarCollapsed || sidebarOpen) && <span>ตั้งค่าธนาคาร/ระบบแจ้งเตือน</span>}
+                  </span>
+                </button>
               </div>
             )}
           </nav>
@@ -16274,7 +16299,7 @@ export default function App() {
                              adminSubTab === 'bankSettings' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
                            }`}
                          >
-                           🏦 ตั้งค่าธนาคาร & QR Code (Manager)
+                           🏦 ตั้งค่าธนาคาร / ระบบแจ้งเตือน (LINE)
                          </button>
                          <button 
                            onClick={() => setAdminSubTab('maintenance')} 
@@ -21187,8 +21212,8 @@ export default function App() {
                     <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-rose-50 text-rose-600 mb-2 border border-rose-100">
                       <CreditCard size={24} />
                     </div>
-                    <h3 className="text-lg font-black text-slate-800">🏦 ตั้งค่าบัญชีธนาคารและ QR Code (Manager เท่านั้น)</h3>
-                    <p className="text-xs text-slate-400">ระบุรายละเอียดบัญชีปลายทางและรูปภาพ QR Code ที่จะนำไปแสดงให้สมาชิกสแกนเมื่อแจ้งฝากเงิน</p>
+                    <h3 className="text-lg font-black text-slate-800">🏦 ตั้งค่าบัญชีธนาคาร & ระบบแจ้งเตือน LINE / Webhook</h3>
+                    <p className="text-xs text-slate-500">ระบุรายละเอียดบัญชีปลายทาง และตั้งค่าระบบแจ้งเตือนอัตโนมัติผ่าน LINE Messaging API & Webhook</p>
                   </div>
 
                   <form onSubmit={handleSaveBankSettings} className="space-y-4">
