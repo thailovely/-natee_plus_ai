@@ -6933,58 +6933,14 @@ app.post('/api/report-quota-exceeded', (req, res) => {
 // GET LIVE STREAMS & BANNER STATUS
 app.get('/api/live-streams', (req, res) => {
   const db = readDb();
-  if (!Array.isArray(db.liveStreams) || db.liveStreams.length === 0) {
-    db.liveStreams = [
-      {
-        id: "live_001",
-        sellerId: "A260600001",
-        sellerStoreName: "บริษัท นที พลัส มาร์เก็ต",
-        title: "🔴 นทีพลัส มาร์เก็ต LIVE: แนะนำสินค้าเด็ด & แพ็กเกจสุดคุ้มประจำวัน!",
-        streamUrl: "https://www.youtube.com/embed/jfKfPfyJRdk",
-        coverImage: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80",
-        status: "LIVE",
-        viewersCount: 342,
-        pinnedProductIds: ["pack_m", "pack_l"],
-        createdAt: new Date().toISOString(),
-        warningBanner: null,
-        chatMessages: [
-          { id: 'c1', sender: 'คุณวิชัย', text: 'สวัสดีครับ สนใจชุด M ครับ', time: '21:00', aiBlocked: false },
-          { id: 'c2', sender: 'คุณณภัชดา', text: 'โปรนี้จัดส่งฟรีกี่วันคะ', time: '21:02', aiBlocked: false }
-        ]
-      },
-      {
-        id: "live_002",
-        sellerId: "A260700002",
-        sellerStoreName: "ร้านณภัชดา บิวตี้ ช็อป",
-        title: "💄 ไลฟ์สดแจกโค้ดส่วนลดเครื่องสำอางและครีมบำรุงผิวเกาหลี 100%",
-        streamUrl: "https://www.youtube.com/embed/5qap5aO4i9A",
-        coverImage: "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80",
-        status: "LIVE",
-        viewersCount: 189,
-        pinnedProductIds: ["pack_s"],
-        createdAt: new Date().toISOString(),
-        warningBanner: null,
-        chatMessages: [
-          { id: 'c1', sender: 'คุณกิริยากรณ์', text: 'สีสวยมากค่ะ สั่งซื้อแล้วน้า', time: '21:05', aiBlocked: false }
-        ]
-      },
-      {
-        id: "live_003",
-        sellerId: "A260700006",
-        sellerStoreName: "กฤศวัฒน์ ไอที มอลล์",
-        title: "⚡ แนะนำอุปกรณ์แกดเจ็ต สมาร์ทโฮม ราคาส่งส่งตรงจากโรงงาน",
-        streamUrl: "https://www.youtube.com/embed/2g811Ko7F28",
-        coverImage: "https://images.unsplash.com/photo-1550009158-9ebf69173e03?auto=format&fit=crop&w=800&q=80",
-        status: "LIVE",
-        viewersCount: 95,
-        pinnedProductIds: ["pack_xl"],
-        createdAt: new Date().toISOString(),
-        warningBanner: null,
-        chatMessages: []
-      }
-    ];
-    writeDb(db);
+  if (!Array.isArray(db.liveStreams)) {
+    db.liveStreams = [];
+  } else {
+    // Filter out legacy mock live streams so only actual user-created live streams appear
+    db.liveStreams = db.liveStreams.filter((s: any) => s && !['live_001', 'live_002', 'live_003'].includes(s.id) && s.status === 'LIVE');
   }
+  writeDb(db);
+
   res.json({
     success: true,
     bannerVisible: db.bannerVisible !== false,
@@ -7000,12 +6956,38 @@ app.post('/api/live-streams/create', (req, res) => {
   }
 
   const db = readDb();
+  if (!Array.isArray(db.members)) db.members = [];
+
+  // Find seller member record
+  const member = db.members.find((m: any) => m.userId === sellerId || m.id === sellerId || m.username === sellerId);
+  
+  // 1. Check Admin Approval Status (Must be Active seller or Admin/Manager)
+  const isApprovedSeller = member ? (member.sellerStatus === 'Active' || member.role === 'Admin' || member.role === 'Manager') : false;
+  if (!isApprovedSeller) {
+    return res.status(403).json({
+      success: false,
+      message: `ท่านยังไม่ได้เป็นร้านค้าที่ผ่านการอนุมัติจาก Admin (สถานะปัจจุบัน: ${member?.sellerStatus || 'ยังไม่ได้เปิดร้านค้า'}) กรุณาสมัครเปิดร้านและรอแอดมินอนุมัติก่อนเปิดไลฟ์สดค่ะ`
+    });
+  }
+
+  // 2. Check Valid Store Name
+  const verifiedStoreName = member?.sellerStoreName || member?.storeName || (member?.role === 'Admin' || member?.role === 'Manager' ? 'ร้านค้าส่วนกลาง นทีพลัส มาร์เก็ต' : sellerStoreName);
+  if (!verifiedStoreName || verifiedStoreName.trim() === '' || verifiedStoreName === 'ร้านค้าสมาชิก นทีพลัส' || verifiedStoreName === 'ร้านค้าพาร์ทเนอร์') {
+    if (!member?.sellerStoreName && member?.role !== 'Admin' && member?.role !== 'Manager') {
+      return res.status(400).json({
+        success: false,
+        message: "ไม่พบชื่อร้านค้าที่ได้รับการอนุมัติของคุณ กรุณาตั้งชื่อร้านค้าในหน้าโปรไฟล์และรับการอนุมัติจาก Admin ก่อนเริ่มไลฟ์สดค่ะ"
+      });
+    }
+  }
+
   if (!Array.isArray(db.liveStreams)) db.liveStreams = [];
 
   const newLive = {
     id: `live_${Date.now()}`,
-    sellerId,
-    sellerStoreName: sellerStoreName || "ร้านค้าสมาชิก นทีพลัส",
+    sellerId: member?.userId || sellerId,
+    sellerStoreName: verifiedStoreName || "ร้านค้าพาร์ทเนอร์นทีพลัส",
+    sellerCode: member?.sellerCode || member?.userId || sellerId,
     title,
     streamUrl: streamUrl || "https://www.youtube.com/embed/jfKfPfyJRdk",
     coverImage: coverImage || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80",
@@ -7015,7 +6997,7 @@ app.post('/api/live-streams/create', (req, res) => {
     createdAt: new Date().toISOString(),
     warningBanner: null,
     chatMessages: [
-      { id: 'init', sender: 'ระบบอัตโนมัติ', text: '🔴 เริ่มต้นการถ่ายทอดสดแล้ว ยินดีต้อนรับผู้เข้าชมทุกท่านค่ะ', time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }), aiBlocked: false }
+      { id: 'init', sender: 'ระบบอัตโนมัติ', text: `🔴 เริ่มต้นการถ่ายทอดสดโดยร้าน ${verifiedStoreName} ยินดีต้อนรับผู้เข้าชมทุกท่านค่ะ`, time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }), aiBlocked: false }
     ]
   };
 

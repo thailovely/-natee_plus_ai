@@ -393,6 +393,7 @@ export default function App() {
       localStorage.removeItem('natee_user');
       localStorage.removeItem('natee_original_admin');
     } catch (e) {}
+    setSidebarOpen(false);
     setCurrentUser(null);
     setOriginalAdmin(null);
     setUsername('');
@@ -7223,11 +7224,20 @@ export default function App() {
 
       {/* Sidebar Navigation */}
       {currentUser && (
-        <aside className={`fixed md:relative inset-y-0 left-0 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border-r border-slate-800/80 text-white z-40 transition-all duration-300 flex flex-col shadow-2xl select-none ${
-          isSidebarCollapsed ? 'w-64 md:w-20 p-3' : 'w-64 p-4'
-        } ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-0 md:translate-x-0 hidden md:flex'
-        }`}>
+        <>
+          {/* Mobile Overlay Backdrop */}
+          {sidebarOpen && (
+            <div 
+              onClick={() => setSidebarOpen(false)} 
+              className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-[1000] md:hidden transition-opacity animate-fadeIn cursor-pointer"
+            />
+          )}
+
+          <aside className={`fixed md:relative inset-y-0 left-0 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border-r border-slate-800/80 text-white z-[1001] transition-all duration-300 flex flex-col shadow-2xl select-none ${
+            isSidebarCollapsed ? 'w-64 md:w-20 p-3' : 'w-64 p-4'
+          } ${
+            sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0 hidden md:flex'
+          }`}>
           {/* Sidebar Header & Expand/Collapse Toggle */}
           <div className={`flex items-center justify-between pb-4 mb-3 border-b border-slate-800/60 ${isSidebarCollapsed ? 'md:flex-col md:gap-3 md:items-center' : ''}`}>
             <div className="flex items-center gap-2.5 min-w-0">
@@ -7555,7 +7565,7 @@ export default function App() {
           </nav>
 
           {/* Bottom User Card */}
-          <div className="border-t border-slate-800/80 pt-3 mt-2 space-y-2.5">
+          <div className="border-t border-slate-800/80 pt-3 mt-2 space-y-2.5 pb-20 md:pb-2">
             <div 
               className={`flex items-center p-2 rounded-2xl bg-slate-850/60 border border-slate-800 ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`} 
               title={`${profile?.name || currentUser?.name || 'สมาชิก'} (${profile?.userId || currentUser?.userId})`}
@@ -7590,6 +7600,7 @@ export default function App() {
             </button>
           </div>
         </aside>
+        </>
       )}
 
       {/* Main Content Area */}
@@ -9942,7 +9953,20 @@ export default function App() {
                         {(profile?.sellerStatus === 'Active' || profile?.role === 'Admin' || profile?.role === 'Manager') && (
                           <button
                             type="button"
-                            onClick={() => setShowCreateLiveModal(true)}
+                            onClick={() => {
+                              const isApproved = profile?.sellerStatus === 'Active' || profile?.role === 'Admin' || profile?.role === 'Manager' || currentUser?.sellerStatus === 'Active';
+                              const store = (profile?.sellerStoreName || profile?.storeName || currentUser?.sellerStoreName || (profile?.role === 'Admin' || profile?.role === 'Manager' ? 'ร้านค้าส่วนกลาง นทีพลัส มาร์เก็ต' : '')).trim();
+
+                              if (!isApproved) {
+                                showNotif('เฉพาะพาร์ทเนอร์ที่ได้รับการอนุมัติ (Active) จาก Admin แล้วเท่านั้น จึงจะสามารถเปิดไลฟ์สดได้ค่ะ', 'error');
+                                return;
+                              }
+                              if (!store) {
+                                showNotif('กรุณาลงทะเบียนตั้งชื่อร้านค้าในเมนูร้านค้าของคุณ และรับการอนุมัติจาก Admin ก่อนเริ่มไลฟ์สดค่ะ', 'error');
+                                return;
+                              }
+                              setShowCreateLiveModal(true);
+                            }}
                             className="bg-rose-600 hover:bg-rose-500 text-white font-bold px-2.5 py-1 rounded-lg text-[10px] transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer"
                           >
                             <span>🎥</span>
@@ -9964,8 +9988,19 @@ export default function App() {
 
                       if (filteredLives.length === 0) {
                         return (
-                          <div className="py-4 text-center text-slate-400 text-[11px]">
-                            ไม่พบห้องไลฟ์สดในขณะนี้ค่ะ
+                          <div className="py-4 px-3 bg-slate-950/60 border border-slate-800 rounded-xl text-center space-y-2">
+                            <div className="inline-flex items-center gap-2 text-rose-400 font-bold text-xs">
+                              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                              <span>ขณะนี้ยังไม่มีการถ่ายทอดสดจากร้านค้า</span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 max-w-md mx-auto leading-relaxed">
+                              ระบบแสดงห้องไลฟ์สดเฉพาะเมื่อพาร์ทเนอร์เปิดสตรีมไลฟ์สดจริงเท่านั้น
+                              {(profile?.sellerStatus === 'Active' || profile?.role === 'Admin' || profile?.role === 'Manager') && (
+                                <span className="block mt-1.5 text-rose-300 font-medium">
+                                  💡 คุณเป็นพาร์ทเนอร์ร้านค้า สามารถกดปุ่ม <strong className="text-white bg-rose-700/80 px-2 py-0.5 rounded text-[10px]">🎥 เริ่มไลฟ์</strong> ด้านบนเพื่อสร้างห้องไลฟ์สดของคุณได้ทันทีค่ะ
+                                </span>
+                              )}
+                            </p>
                           </div>
                         );
                       }
@@ -26569,6 +26604,25 @@ export default function App() {
               </div>
 
               <div className="space-y-3 text-xs">
+                {/* STORE & APPROVAL VERIFICATION BADGE */}
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-medium">ร้านค้าผู้ถ่ายทอดสด:</span>
+                    <span className="font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full text-[10px] flex items-center gap-1">
+                      <span>✓</span>
+                      <span>ผ่านการอนุมัติโดย Admin</span>
+                    </span>
+                  </div>
+                  <div className="font-black text-slate-900 text-sm flex items-center gap-1.5">
+                    <span>🏪</span>
+                    <span>{profile?.sellerStoreName || profile?.storeName || currentUser?.sellerStoreName || (profile?.role === 'Admin' || profile?.role === 'Manager' ? 'ร้านค้าส่วนกลาง นทีพลัส มาร์เก็ต' : 'ยังไม่ระบุชื่อร้านค้า')}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-500 flex justify-between">
+                    <span>รหัสผู้ขาย: <strong className="font-mono text-slate-700 font-bold">{profile?.sellerCode || profile?.userId || currentUser?.userId || '-'}</strong></span>
+                    <span>สถานะร้านค้า: <strong className="text-emerald-700 font-bold">{profile?.sellerStatus || 'Active'}</strong></span>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-slate-700 font-bold mb-1">หัวข้อการถ่ายทอดสด *</label>
                   <input
@@ -26639,7 +26693,7 @@ export default function App() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                           sellerId: profile?.userId || currentUser?.userId,
-                          sellerStoreName: profile?.sellerStoreName || profile?.name || 'ร้านค้าสมาชิก นทีพลัส',
+                          sellerStoreName: profile?.sellerStoreName || profile?.storeName || currentUser?.sellerStoreName || '',
                           title: liveCreateTitle,
                           streamUrl: liveCreateStreamUrl,
                           coverImage: liveCreateCoverImage
