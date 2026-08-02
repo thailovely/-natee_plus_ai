@@ -15485,10 +15485,94 @@ export default function App() {
                     {sellerPortalSubTab === 'learning' && (
                       <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
                         <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                          <h4 className="text-sm font-bold text-slate-800">📖 ศูนย์การเรียนรู้สำหรับพาร์ทเนอร์ (Partner Learning Centre)</h4>
-                          <span className="text-xs text-slate-400">บทเรียนอัพเดทใหม่ล่าสุด</span>
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                              📖 ศูนย์การเรียนรู้และคู่มือผู้ขาย (Partner Learning Centre)
+                            </h4>
+                            <p className="text-xs text-slate-400 mt-0.5">รวมคู่มือการใช้งานระบบ บทเรียนการตลาด และวิธีการไลฟ์สดขายสินค้า</p>
+                          </div>
+                          <span className="text-xs text-indigo-600 font-bold bg-indigo-50 px-3 py-1 rounded-xl font-mono shrink-0">
+                            อัปเดตคู่มือใหม่ 📑
+                          </span>
                         </div>
 
+                        {/* FEATURED: LIVE STREAMING SELLER GUIDE */}
+                        <div className="bg-gradient-to-br from-rose-900 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 border border-rose-500/30 shadow-xl space-y-5 relative overflow-hidden">
+                          <div className="absolute top-0 right-0 w-80 h-80 bg-rose-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
+                          
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4 relative z-10">
+                            <div className="space-y-1">
+                              <div className="inline-flex items-center gap-1.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full animate-pulse">
+                                <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                                คู่มือการใช้งานระบบ: Live Shopping
+                              </div>
+                              <h5 className="text-base font-extrabold text-white flex items-center gap-2">
+                                🎥 ขั้นตอนการไลฟ์สดขายสินค้า และเชื่อมต่อ TikTok Live / YouTube / Facebook
+                              </h5>
+                              <p className="text-xs text-slate-300">
+                                วิธีสร้างห้องไลฟ์สด นำลิงก์วิดีโอจากแพลตฟอร์มต่างๆ มาวางเพื่อดึงสัญญาณสด พร้อมปักตะกร้าสินค้าในร้านค้าของคุณ
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('shop');
+                                showNotif("นำท่านไปยังหน้าตลาดเพื่อทดลองเปิดห้องไลฟ์สด", "info");
+                              }}
+                              className="bg-rose-600 hover:bg-rose-500 text-white font-extrabold px-4 py-2.5 rounded-2xl text-xs transition shadow-lg flex items-center gap-2 shrink-0 cursor-pointer active:scale-95"
+                            >
+                              <Video size={16} />
+                              <span>ไปที่หน้าตลาด เพื่อเปิดไลฟ์สด</span>
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10 font-sans text-xs">
+                            {/* STEP 1 */}
+                            <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="w-6 h-6 rounded-lg bg-rose-500 text-white font-black text-xs flex items-center justify-center shrink-0">1</span>
+                                <h6 className="font-extrabold text-rose-200">เริ่มสร้างห้องไลฟ์สด</h6>
+                              </div>
+                              <p className="text-slate-300 text-[11px] leading-relaxed">
+                                กดปุ่ม <strong className="text-white">"🎥 เริ่มไลฟ์สด"</strong> บนแถบห้องไลฟ์สดหน้ามาร์เก็ต ใส่หัวข้อเรื่องที่น่าสนใจ และอัปโหลดภาพปกห้องไลฟ์ (Cover Image) เพื่อดึงดูดผู้เข้าชม
+                              </p>
+                            </div>
+
+                            {/* STEP 2 */}
+                            <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="w-6 h-6 rounded-lg bg-indigo-500 text-white font-black text-xs flex items-center justify-center shrink-0">2</span>
+                                <h6 className="font-extrabold text-indigo-200">คัดลอกลิงก์สตรีมไลฟ์สด</h6>
+                              </div>
+                              <div className="space-y-1.5 text-slate-300 text-[11px] leading-relaxed">
+                                <div><strong className="text-white">🎵 TikTok Live:</strong> เปิด TikTok บนมือถือ -&gt; Go LIVE -&gt; คัดลอกลิงก์สตรีม เช่น <code className="text-amber-300 text-[10px]">https://www.tiktok.com/@yourname/live</code></div>
+                                <div><strong className="text-white">▶️ YouTube Live:</strong> คัดลอก URL วิดีโอไลฟ์สด เช่น <code className="text-amber-300 text-[10px]">https://youtu.be/xxx</code></div>
+                                <div><strong className="text-white">📘 Facebook Live:</strong> คัดลอกลิงก์วิดีโอถ่ายทอดสดบนเพจของคุณ</div>
+                              </div>
+                            </div>
+
+                            {/* STEP 3 */}
+                            <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="w-6 h-6 rounded-lg bg-emerald-500 text-white font-black text-xs flex items-center justify-center shrink-0">3</span>
+                                <h6 className="font-extrabold text-emerald-200">ปักตะกร้าสินค้า & รับออเดอร์</h6>
+                              </div>
+                              <p className="text-slate-300 text-[11px] leading-relaxed">
+                                เลือกสินค้าในร้านของคุณที่ต้องการปักตะกร้า ลูกค้าที่เข้าชมไลฟ์สดสามารถคลิกดูสินค้า ปักตะกร้า และกดสั่งซื้อพร้อมสะสมคะแนน PV ได้ทันทีขณะรับชม
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="bg-slate-900/90 border border-slate-750 rounded-2xl p-3.5 text-[11px] text-slate-300 flex flex-wrap items-center justify-between gap-2 relative z-10">
+                            <div className="flex items-center gap-2">
+                              <span className="text-amber-400 font-bold">💡 เคล็ดลับเพิ่มยอดขาย:</span>
+                              <span>แชทโต้ตอบกับลูกค้าแบบ Real-time และมอบโค้ดส่วนลดพิเศษสำหรับผู้เข้าชมไลฟ์สดเท่านั้น</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono">ระบบรองรับ Live Embed อัตโนมัติ</span>
+                          </div>
+                        </div>
+
+                        {/* OTHER LEARNING LESSONS GRID */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
                             <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded-full">ยอดนิยม 🔥</span>
@@ -26170,33 +26254,66 @@ export default function App() {
                     }
 
                     if (isTikTok) {
-                      // Check if it's already an embed URL or standard TikTok profile live link
+                      const isShortLink = rawUrl.includes('vt.tiktok.com') || rawUrl.includes('vm.tiktok.com');
                       let tiktokEmbed = rawUrl;
-                      if (!rawUrl.includes('/embed/')) {
-                        // Extract username if format is https://www.tiktok.com/@username/live
-                        const match = rawUrl.match(/@([^/]+)/);
-                        if (match && match[1]) {
-                          tiktokEmbed = `https://www.tiktok.com/embed/v2/live?author_id=${match[1]}`;
-                        }
+                      let username = '';
+                      const match = rawUrl.match(/@([^/?#]+)/);
+                      if (match && match[1]) {
+                        username = match[1];
+                        tiktokEmbed = `https://www.tiktok.com/embed/v2/live?author_id=${username}`;
                       }
 
                       return (
                         <div className="relative w-full h-full bg-slate-950 flex flex-col items-center justify-center p-4">
-                          <iframe
-                            src={tiktokEmbed}
-                            title={activeLiveRoom.title}
-                            className="w-full h-full border-0 rounded-lg min-h-[300px]"
-                            allow="autoplay; encrypted-media"
-                            allowFullScreen
-                          />
+                          {!isShortLink && username ? (
+                            <iframe
+                              src={tiktokEmbed}
+                              title={activeLiveRoom.title}
+                              className="w-full h-full border-0 rounded-lg min-h-[300px]"
+                              allow="autoplay; encrypted-media"
+                              allowFullScreen
+                            />
+                          ) : (
+                            <div className="relative w-full h-full flex flex-col items-center justify-center p-6 text-center space-y-4">
+                              <img
+                                src={activeLiveRoom.coverImage}
+                                alt={activeLiveRoom.title}
+                                className="absolute inset-0 w-full h-full object-cover opacity-30"
+                              />
+                              <div className="relative z-10 space-y-3 max-w-sm">
+                                <div className="w-14 h-14 mx-auto rounded-2xl bg-black border border-rose-500/40 flex items-center justify-center shadow-lg animate-pulse">
+                                  <span className="text-2xl">🎵</span>
+                                </div>
+                                <div>
+                                  <h4 className="text-sm font-extrabold text-white">ถ่ายทอดสดบน TikTok Live</h4>
+                                  <p className="text-[11px] text-slate-300 mt-1">
+                                    {isShortLink
+                                      ? 'ลิงก์ย่อ TikTok (vt.tiktok.com) เป็นสตรีมแชร์ตรงจากแอป กดปุ่มด้านล่างเพื่อรับชมการถ่ายทอดสดบน TikTok App ได้ทันที'
+                                      : 'คลิกปุ่มเปิดชมสตรีมสดบน TikTok App หรือเว็บไซต์ TikTok'}
+                                  </p>
+                                </div>
+                                <a
+                                  href={rawUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-2 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-extrabold px-5 py-2.5 rounded-2xl text-xs shadow-lg transition transform active:scale-95 cursor-pointer border border-rose-400/30"
+                                >
+                                  <span>📱</span>
+                                  <span>เปิดถ่ายทอดสดบน TikTok</span>
+                                  <span>➔</span>
+                                </a>
+                              </div>
+                            </div>
+                          )}
+
                           <a
                             href={rawUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="absolute bottom-4 right-4 bg-black/80 hover:bg-black text-white text-xs font-bold px-3 py-1.5 rounded-full border border-rose-500/50 shadow flex items-center gap-1.5 z-20"
+                            className="absolute bottom-3 right-3 bg-black/80 hover:bg-black text-white text-[11px] font-bold px-3 py-1.5 rounded-full border border-rose-500/50 shadow-md flex items-center gap-1.5 z-20 transition"
                           >
                             <span>🎵</span>
-                            <span>เปิดดูบน TikTok App</span>
+                            <span>เปิดแอป TikTok</span>
                           </a>
                         </div>
                       );
@@ -26467,12 +26584,26 @@ export default function App() {
                   <label className="block text-slate-700 font-bold mb-1">ลิงก์วิดีโอถ่ายทอดสด (TikTok Live / YouTube / Facebook)</label>
                   <input
                     type="text"
-                    placeholder="เช่น https://www.tiktok.com/@username/live หรือ https://www.youtube.com/watch?v=xxx"
+                    placeholder="เช่น https://vt.tiktok.com/ZS9hkmm... หรือ https://www.tiktok.com/@username/live"
                     value={liveCreateStreamUrl}
                     onChange={(e) => setLiveCreateStreamUrl(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-medium focus:outline-none focus:border-rose-500 font-mono text-[11px]"
                   />
-                  <p className="text-[10px] text-slate-500 mt-1 font-medium">รองรับลิงก์ TikTok Live (เช่น https://www.tiktok.com/@ชื่อช่อง/live), YouTube Live และ Facebook Live ค่ะ</p>
+                  <p className="text-[10px] text-slate-500 mt-1 font-medium">รองรับลิงก์แชร์ TikTok (เช่น vt.tiktok.com), TikTok Live (@ชื่อช่อง/live), YouTube Live และ Facebook Live ค่ะ</p>
+
+                  {liveCreateStreamUrl.includes('tiktok') && (
+                    <div className="mt-2 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-[10px] text-rose-900 space-y-0.5 animate-fadeIn">
+                      <div className="font-bold flex items-center gap-1.5 text-rose-700">
+                        <span>🎵</span>
+                        <span>ตรวจพบลิงก์ TikTok Live สตรีมสด!</span>
+                      </div>
+                      <p className="text-slate-600 leading-tight">
+                        {liveCreateStreamUrl.includes('vt.tiktok.com') || liveCreateStreamUrl.includes('vm.tiktok.com')
+                          ? '✅ ลิงก์ย่อ vt.tiktok.com ถูกต้องเรียบร้อยค่ะ! เมื่อผู้เข้าชมเปิดห้องไลฟ์จะมีปุ่มให้เปิดรับชมใน TikTok App/Web ทันที'
+                          : '✅ เชื่อมต่อลิงก์ TikTok Live เรียบร้อยแล้วค่ะ'}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div>
