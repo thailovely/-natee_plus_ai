@@ -2073,8 +2073,19 @@ export default function App() {
                   console.warn("⚠️ [Sync Bypass] Blocked Firestore products snapshot from clearing local products array.");
                   return prev;
                 }
-                if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
-                return data;
+                const prevNonPackages = prev.filter((p: any) => p && p.category !== 'Package');
+                const dataNonPackages = data.filter((p: any) => p && p.category !== 'Package');
+                let merged = [...data];
+                if (prevNonPackages.length > 0 && dataNonPackages.length === 0) {
+                  console.warn("⚠️ [Sync Safeguard] Preserving local non-package products during Firestore snapshot update.");
+                  for (const localP of prevNonPackages) {
+                    if (!merged.some((p: any) => p.id === localP.id)) {
+                      merged.push(localP);
+                    }
+                  }
+                }
+                if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
+                return merged;
               });
             }
           }
@@ -4912,6 +4923,26 @@ export default function App() {
         showNotif(d.message, 'error');
       }
     } catch (err) {}
+  };
+
+  const handleRestoreProducts = async () => {
+    try {
+      const res = await fetch('/api/admin/restore-products', { method: 'POST' });
+      const d = await res.json();
+      if (d.success) {
+        showNotif(d.message, 'success');
+        fetch('/api/shop/products')
+          .then(r => r.json())
+          .then(data => { if (data.success && Array.isArray(data.products)) setProducts(data.products); });
+        fetch('/api/admin/all-products')
+          .then(r => r.json())
+          .then(data => { if (data.success && Array.isArray(data.products)) setAllSellerProducts(data.products); });
+      } else {
+        showNotif(d.message || "เกิดข้อผิดพลาดในการฟื้นฟูสินค้า", 'error');
+      }
+    } catch (err) {
+      showNotif("ไม่สามารถเชื่อมต่อระบบคืนค่าสินค้าได้", 'error');
+    }
   };
 
   const handleStoreApprove = async (userId: string) => {
@@ -17751,17 +17782,28 @@ export default function App() {
                           ค้นหา ปรับปรุงแก้ไขราคาสินค้า หรือลบรูปภาพสินค้าของผู้ขายที่ไม่เหมาะสมออกได้ทันที
                         </p>
                       </div>
-                      <div className="relative max-w-xs w-full">
-                        <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 pointer-events-none">
-                          <Search size={14} />
-                        </span>
-                        <input 
-                          type="text" 
-                          placeholder="ค้นหาชื่อสินค้า / รหัสสินค้า..."
-                          value={prodSearchQuery}
-                          onChange={(e) => setProdSearchQuery(e.target.value)}
-                          className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                        />
+                      <div className="flex flex-wrap items-center gap-2 max-w-md w-full justify-end">
+                        <button
+                          type="button"
+                          onClick={handleRestoreProducts}
+                          className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer active:scale-95 flex items-center gap-1.5 shadow-xs"
+                          title="ฟื้นฟูสินค้าตัวอย่าง (พาวเวอร์แบงค์, เสื้อคาร์ดิแกน, เซรั่ม, เครื่องชงกาแฟ, บะหมี่) และซิงค์สินค้าทั้งหมดกลับสู่ระบบ"
+                        >
+                          <RefreshCw size={13} className="text-indigo-600" />
+                          <span>ฟื้นฟูสินค้าตัวอย่าง & ซิงค์สินค้า</span>
+                        </button>
+                        <div className="relative max-w-xs w-full sm:w-auto flex-1">
+                          <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 pointer-events-none">
+                            <Search size={14} />
+                          </span>
+                          <input 
+                            type="text" 
+                            placeholder="ค้นหาชื่อสินค้า / รหัสสินค้า..."
+                            value={prodSearchQuery}
+                            onChange={(e) => setProdSearchQuery(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                          />
+                        </div>
                       </div>
                     </div>
 
