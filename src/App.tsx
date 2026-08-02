@@ -783,6 +783,8 @@ export default function App() {
   const [editingBankQrPreview, setEditingBankQrPreview] = useState<string | null>(null);
   const [isSavingBankSettings, setIsSavingBankSettings] = useState(false);
   const [notifySettings, setNotifySettings] = useState({
+    lineChannelAccessToken: '',
+    lineTargetId: '',
     lineNotifyToken: '',
     webhookUrl: '',
     notifyWithdrawal: true,
@@ -21618,38 +21620,110 @@ export default function App() {
                     </ul>
                   </div>
 
-                  {/* LINE NOTIFY & WEBHOOK AUTOMATED NOTIFICATION SETTINGS */}
+                  {/* LINE DEVELOPERS MESSAGING API & WEBHOOK AUTOMATED NOTIFICATION SETTINGS */}
                   <div className="bg-emerald-50/50 border border-emerald-200/80 p-5 rounded-2xl space-y-4">
                     <div className="flex items-center justify-between border-b border-emerald-100 pb-3">
                       <div className="flex items-center gap-2 text-emerald-950 font-extrabold text-sm">
                         <span className="text-lg">🔔</span>
-                        <span>การตั้งค่าแจ้งเตือนอัตโนมัติ (LINE Notify / Webhook)</span>
+                        <span>การตั้งค่าแจ้งเตือนอัตโนมัติ (LINE Messaging API & Webhook)</span>
                       </div>
                       <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-bold">
-                        Real-time Integration
+                        LINE Developers Standard API
                       </span>
+                    </div>
+
+                    <div className="bg-amber-50/90 border border-amber-200/90 p-3.5 rounded-xl text-xs space-y-1.5 text-amber-900">
+                      <div className="font-bold flex items-center gap-1.5 text-amber-950">
+                        <span>ℹ️</span>
+                        <span>หมายเหตุเกี่ยวกับการใช้งานระบบแจ้งเตือน LINE:</span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-amber-800">
+                        บริการ <strong>LINE Notify</strong> ได้ถูกทาง LINE ยุติบริการลงแล้ว ระบบได้อัปเกรดเป็นมาตรฐาน <strong>LINE Messaging API (LINE Developers)</strong> แทน เพื่อความเสถียรและยั่งยืน
+                      </p>
+                      <details className="mt-2 text-[11px] cursor-pointer">
+                        <summary className="font-bold text-emerald-700 hover:underline">📖 คลิกดูขั้นตอนการขอ Channel Access Token จาก LINE Developers</summary>
+                        <ol className="list-decimal list-inside space-y-1 mt-2 p-2.5 bg-white/80 rounded-lg border border-amber-200/50 font-sans text-slate-700">
+                          <li>เข้าสู่เว็บไซต์ <a href="https://developers.line.biz" target="_blank" rel="noreferrer" className="text-emerald-600 underline font-semibold">developers.line.biz</a> แล้วเข้าสู่ระบบด้วยบัญชี LINE</li>
+                          <li>สร้าง <strong>Provider</strong> และสร้าง <strong>Channel (Messaging API)</strong></li>
+                          <li>ไปที่แท็บ <strong>Messaging API</strong> เลื่อนลงล่างสุดแล้วกดออก <strong>Channel access token (long-lived)</strong></li>
+                          <li>คัดลอก Token มาวางในช่อง <strong>LINE Channel Access Token</strong> ด้านล่าง</li>
+                          <li>(ตัวเลือกเสริม) หากต้องการส่งเข้ากลุ่มแอดมินหรือ User Specific ให้ใส่ Group ID / User ID ในช่อง <strong>LINE Target ID</strong> (หากไม่ใส่ ระบบจะ Broadcast ไปยังทุกคน)</li>
+                        </ol>
+                      </details>
                     </div>
 
                     <div className="space-y-3 text-xs">
                       <div>
                         <label className="block text-slate-700 font-bold mb-1">
-                          🟢 LINE Notify Token (สำหรับส่งแจ้งเตือนเข้ากลุ่ม LINE)
+                          🟢 LINE Channel Access Token (จาก LINE Developers Console)
                         </label>
                         <input
                           type="password"
-                          value={notifySettings.lineNotifyToken}
-                          onChange={(e) => setNotifySettings(prev => ({ ...prev, lineNotifyToken: e.target.value }))}
-                          placeholder="วาง LINE Notify Token ของท่านที่นี่..."
+                          value={notifySettings.lineChannelAccessToken || notifySettings.lineNotifyToken || ''}
+                          onChange={(e) => setNotifySettings(prev => ({ ...prev, lineChannelAccessToken: e.target.value, lineNotifyToken: e.target.value }))}
+                          placeholder="วาง LINE Channel Access Token (long-lived) ของท่านที่นี่..."
                           className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 font-mono text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
                         />
                         <p className="text-[10px] text-slate-400 mt-1">
-                          ขอรับ Token ได้ฟรีจาก notify-bot.line.me แล้วเชิญ LINE Notify เข้ากลุ่มแอดมิน
+                           token ยาวที่ออกดิเรกจาก Messaging API tab ใน LINE Developers Console
                         </p>
                       </div>
 
                       <div>
                         <label className="block text-slate-700 font-bold mb-1">
-                          🌐 Webhook URL (สำหรับส่งข้อมูลเข้า Discord / Slack / Custom Server)
+                          🎯 LINE Target ID / Group ID / User ID (ระบุผู้รับหรือกลุ่มแอดมิน)
+                        </label>
+                        <input
+                          type="text"
+                          value={notifySettings.lineTargetId || ''}
+                          onChange={(e) => setNotifySettings(prev => ({ ...prev, lineTargetId: e.target.value }))}
+                          placeholder="เช่น Group ID (C...) หรือ User ID (U...) (เว้นว่างไว้หากต้องการส่งแบบ Broadcast)"
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 font-mono text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          * หากระบุ Group ID ระบบจะ Push ข้อความเข้ากลุ่มนั้นโดยตรง / หากเว้นว่างจะ Broadcast ไปยังผู้ติดตามทุกคน
+                        </p>
+                      </div>
+
+                      {/* WEBHOOK URL FOR LINE DEVELOPERS CONSOLE */}
+                      <div className="bg-emerald-100/60 border border-emerald-300/80 p-3.5 rounded-xl space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-emerald-950 font-bold text-xs">
+                            🔗 Webhook URL สำหรับกรอกใน LINE Developers Console:
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const url = "https://ais-pre-rcamsswka546kl3a6qu7xn-278828207165.asia-southeast1.run.app/api/line/webhook";
+                                navigator.clipboard.writeText(url);
+                                showNotif('คัดลอก Public Webhook URL เรียบร้อยแล้วค่ะ', 'success');
+                              }}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-3 py-1 rounded-lg transition-all shadow-sm cursor-pointer"
+                            >
+                              📋 คัดลอก Public Webhook URL
+                            </button>
+                          </div>
+                        </div>
+                        <div className="bg-white border border-emerald-200 rounded-lg p-2 font-mono text-xs text-emerald-900 break-all select-all font-bold">
+                          https://ais-pre-rcamsswka546kl3a6qu7xn-278828207165.asia-southeast1.run.app/api/line/webhook
+                        </div>
+                        <div className="text-[10px] text-emerald-900 leading-relaxed bg-emerald-50/80 p-2 rounded-lg border border-emerald-200/60 space-y-1">
+                          <p>
+                            💡 <strong>วิธีแก้ปัญหา Error 302 Found จาก LINE Console:</strong>
+                          </p>
+                          <p className="text-slate-700">
+                            หากใช้ URL โหมด Dev (ais-dev) ทาง LINE จะติดระบบยืนยันตัวตนของสภาพแวดล้อมพัฒนาระบบ ทำให้ตอบกลับเป็น <code>302 Found</code> Redirect
+                          </p>
+                          <p className="font-semibold text-emerald-800">
+                            ✅ ให้ใช้ Public / Shared URL ด้านบนนี้กรอกในช่อง Webhook URL ใน LINE Console แล้วกดปุ่ม <strong>Verify</strong> จะผ่านฉลุยและขึ้น <strong>Success (200 OK)</strong> ทันที!
+                          </p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-700 font-bold mb-1">
+                          🌐 External Webhook URL (สำหรับส่งข้อมูลเข้า Discord / Slack / Custom Server)
                         </label>
                         <input
                           type="url"
@@ -21703,7 +21777,7 @@ export default function App() {
                               const res = await fetch('/api/admin/test-notify', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ message: '🧪 ทดสอบระบบส่งแจ้งเตือนอัตโนมัติจาก Natee Plus Market สำเร็จแล้วค่ะ!' })
+                                body: JSON.stringify({ message: '🧪 ทดสอบระบบส่งแจ้งเตือนอัตโนมัติจาก Natee Plus Market ผ่าน LINE Developers Messaging API สำเร็จแล้วค่ะ!' })
                               });
                               const data = await res.json();
                               showNotif(data.message, data.success ? 'success' : 'error');

@@ -96,6 +96,13 @@ const appDir = getAppDir();
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// LINE DEVELOPERS WEBHOOK ENDPOINT (Fast 200 OK for LINE Console 'Verify' & Webhook events)
+app.all(['/api/line/webhook', '/api/line/webhook/'], (req, res) => {
+  console.log('📬 LINE Webhook Event Received:', req.method, JSON.stringify(req.body || {}));
+  res.status(200).send('OK');
+});
 
 // Test Email Endpoint
 app.post('/api/admin/test-email', async (req, res) => {
@@ -190,52 +197,78 @@ async function uploadImageToFirebaseOrKeepBase64(dataUrlOrPath: string, folderNa
   return dataUrlOrPath;
 }
 
-// SYSTEM NOTIFICATION HELPER (LINE NOTIFY & WEBHOOK)
+// SYSTEM NOTIFICATION HELPER (LINE DEVELOPERS MESSAGING API & WEBHOOK)
 async function sendSystemNotification(eventType: 'withdrawal' | 'new_shop' | 'new_order', messageText: string) {
   try {
     const db = readDb();
     const settings = db.bankSettings?.notifySettings || {};
     
     // Check if event notification is enabled
-    if (eventType === 'withdrawal' && settings.notifyWithdrawal === false) return;
-    if (eventType === 'new_shop' && settings.notifyNewShop === false) return;
-    if (eventType === 'new_order' && settings.notifyNewOrder === false) return;
+    if (eventType === 'withdrawal' && settings.notifyWithdrawal === false) return { success: false, message: 'การแจ้งเตือนรายการถอนเงินถูกปิดไว้' };
+    if (eventType === 'new_shop' && settings.notifyNewShop === false) return { success: false, message: 'การแจ้งเตือนเปิดร้านใหม่ถูกปิดไว้' };
+    if (eventType === 'new_order' && settings.notifyNewOrder === false) return { success: false, message: 'การแจ้งเตือนคำสั่งซื้อถูกปิดไว้' };
 
-    const token = settings.lineNotifyToken || process.env.LINE_NOTIFY_TOKEN;
-    const webhook = settings.webhookUrl || process.env.WEBHOOK_URL;
+    const channelToken = (settings.lineChannelAccessToken || settings.lineNotifyToken || process.env.LINE_CHANNEL_ACCESS_TOKEN || process.env.LINE_NOTIFY_TOKEN || "").trim();
+    const targetId = (settings.lineTargetId || process.env.LINE_TARGET_ID || "").trim();
+    const webhook = (settings.webhookUrl || process.env.WEBHOOK_URL || "").trim();
 
-    // Send to LINE Notify if token exists
-    if (token) {
+    const safeMessage = (messageText || "").trim() || "🔔 แจ้งเตือนจากระบบ Natee Plus Market";
+    let result = { success: true, message: "ส่งแจ้งเตือนสำเร็จ" };
+
+    // 1. Send via LINE Messaging API (LINE Developers)
+    if (channelToken) {
       try {
-        const formData = new URLSearchParams();
-        formData.append('message', '\n' + messageText);
-        await fetch('https://notify-api.line.me/api/notify', {
+        const isPush = !!targetId;
+        const lineUrl = isPush 
+          ? 'https://api.line.me/v2/bot/message/push'
+          : 'https://api.line.me/v2/bot/message/broadcast';
+
+        const linePayload = isPush
+          ? { to: targetId, messages: [{ type: 'text', text: safeMessage }] }
+          : { messages: [{ type: 'text', text: safeMessage }] };
+
+        const resp = await fetch(lineUrl, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/x-www-form-urlencoded'
+            'Authorization': `Bearer ${channelToken}`,
+            'Content-Type': 'application/json'
           },
-          body: formData.toString()
+          body: JSON.stringify(linePayload)
         });
-      } catch (err) {
-        console.error('LINE Notify Error:', err);
+
+        const respData = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          console.error('❌ LINE Messaging API Error:', respData);
+          const detailMsg = respData.message || (respData.details && respData.details[0]?.message) || JSON.stringify(respData);
+          result = { success: false, message: `LINE API Error (${resp.status}): ${detailMsg}` };
+        } else {
+          result = { success: true, message: "ส่งแจ้งเตือนผ่าน LINE Messaging API สำเร็จแล้วค่ะ" };
+        }
+      } catch (err: any) {
+        console.error('❌ LINE Messaging API Exception:', err);
+        result = { success: false, message: `ไม่สามารถเชื่อมต่อ LINE API ได้: ${err.message}` };
       }
+    } else {
+      result = { success: false, message: "ยังไม่ได้ระบุ LINE Channel Access Token" };
     }
 
-    // Send to Webhook if URL exists
+    // 2. Send via Webhook
     if (webhook) {
       try {
         await fetch(webhook, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: messageText, text: messageText, event: eventType, timestamp: new Date().toISOString() })
+          body: JSON.stringify({ content: safeMessage, text: safeMessage, event: eventType, timestamp: new Date().toISOString() })
         });
       } catch (err) {
         console.error('Webhook Error:', err);
       }
     }
-  } catch (err) {
+
+    return result;
+  } catch (err: any) {
     console.error('sendSystemNotification error:', err);
+    return { success: false, message: err.message || 'เกิดข้อผิดพลาดภายในระบบ' };
   }
 }
 
@@ -6834,10 +6867,12 @@ app.post('/api/admin/promo-config', async (req, res) => {
   res.json({ success: true, message: "บันทึกข้อมูล Pop-Up โปรโมชั่นเรียบร้อยแล้วค่ะ", promoConfig: db.bankSettings.promoConfig });
 });
 
-// GET & SAVE LINE NOTIFY & WEBHOOK SETTINGS
+// GET & SAVE LINE DEVELOPERS MESSAGING API & WEBHOOK SETTINGS
 app.get('/api/admin/notify-settings', (req, res) => {
   const db = readDb();
   const settings = db.bankSettings?.notifySettings || {
+    lineChannelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || process.env.LINE_NOTIFY_TOKEN || "",
+    lineTargetId: process.env.LINE_TARGET_ID || "",
     lineNotifyToken: process.env.LINE_NOTIFY_TOKEN || "",
     webhookUrl: process.env.WEBHOOK_URL || "",
     notifyWithdrawal: true,
@@ -6848,7 +6883,7 @@ app.get('/api/admin/notify-settings', (req, res) => {
 });
 
 app.post('/api/admin/notify-settings', (req, res) => {
-  const { lineNotifyToken, webhookUrl, notifyWithdrawal, notifyNewShop, notifyNewOrder, editorUserId } = req.body;
+  const { lineChannelAccessToken, lineTargetId, lineNotifyToken, webhookUrl, notifyWithdrawal, notifyNewShop, notifyNewOrder, editorUserId } = req.body;
   const db = readDb();
 
   if (editorUserId) {
@@ -6867,6 +6902,8 @@ app.post('/api/admin/notify-settings', (req, res) => {
   }
 
   db.bankSettings.notifySettings = {
+    lineChannelAccessToken: lineChannelAccessToken !== undefined ? lineChannelAccessToken.trim() : (db.bankSettings.notifySettings?.lineChannelAccessToken || ""),
+    lineTargetId: lineTargetId !== undefined ? lineTargetId.trim() : (db.bankSettings.notifySettings?.lineTargetId || ""),
     lineNotifyToken: lineNotifyToken !== undefined ? lineNotifyToken.trim() : (db.bankSettings.notifySettings?.lineNotifyToken || ""),
     webhookUrl: webhookUrl !== undefined ? webhookUrl.trim() : (db.bankSettings.notifySettings?.webhookUrl || ""),
     notifyWithdrawal: notifyWithdrawal !== undefined ? !!notifyWithdrawal : true,
@@ -6875,15 +6912,15 @@ app.post('/api/admin/notify-settings', (req, res) => {
   };
 
   writeDb(db);
-  res.json({ success: true, message: "บันทึกการตั้งค่าระบบแจ้งเตือนเรียบร้อยแล้วค่ะ", settings: db.bankSettings.notifySettings });
+  res.json({ success: true, message: "บันทึกการตั้งค่าระบบแจ้งเตือน LINE Developers เรียบร้อยแล้วค่ะ", settings: db.bankSettings.notifySettings });
 });
 
 // TEST SEND NOTIFICATION
 app.post('/api/admin/test-notify', async (req, res) => {
   const { message } = req.body;
-  const msg = message || "🧪 ทดสอบการส่งแจ้งเตือนจากระบบ Natee Plus Market สำเร็จสมบูรณ์!";
-  await sendSystemNotification('withdrawal', msg);
-  res.json({ success: true, message: "ส่งข้อความทดสอบแจ้งเตือนเรียบร้อยแล้วค่ะ" });
+  const msg = (message || "").trim() || "🧪 ทดสอบการส่งแจ้งเตือนจากระบบ Natee Plus Market สำเร็จสมบูรณ์!";
+  const resObj = await sendSystemNotification('withdrawal', msg);
+  res.json(resObj);
 });
 
 // GET FIREBASE CLIENT CONFIG FOR REAL-TIME SYNC
