@@ -402,14 +402,6 @@ function setupServerRealTimeSync() {
                       hasLocalOnlyItems = true;
                     }
                   }
-                  if (key === 'products' && !merged.some((p: any) => p && p.category !== 'Package')) {
-                    for (const defProd of DEFAULT_GENERAL_PRODUCTS) {
-                      if (!merged.some((p: any) => p && p.id === defProd.id)) {
-                        merged.push({ ...defProd });
-                        hasLocalOnlyItems = true;
-                      }
-                    }
-                  }
                   cacheDb[key] = merged;
                 } else {
                   cacheDb[key] = incomingData;
@@ -449,73 +441,7 @@ function setupServerRealTimeSync() {
   }
 }
 
-const DEFAULT_GENERAL_PRODUCTS = [
-  {
-    id: "shopee_elec_01",
-    name: "🔋 พาวเวอร์แบงค์ชาร์จเร็ว Ultra-Charge 20000mAh",
-    price: 690,
-    pv: 345,
-    cost: 200,
-    image: "https://images.unsplash.com/photo-1609592424085-f55a02f3a61d?auto=format&fit=crop&q=80&w=300",
-    description: "พาวเวอร์แบงค์ดีไซน์บางเฉียบ รองรับระบบชาร์จไว 22.5W มีหน้าจอ LED บอกเปอร์เซ็นต์แบต ปลอดภัยพกพาสะดวกผ่านเกณฑ์ขึ้นเครื่องบิน มั่นใจตลอดทริปเดินทางของคุณ",
-    shortDescription: "พาวเวอร์แบงค์ชาร์จเร็วความจุสูง 20000mAh มีหน้าจอ LED",
-    category: "Electronics",
-    status: "Approved",
-    isAvailable: true
-  },
-  {
-    id: "shopee_fashion_01",
-    name: "🧥 เสื้อคาร์ดิแกนสไตล์มินิมอลเกาหลี Soft-Cotton",
-    price: 390,
-    pv: 195,
-    cost: 120,
-    image: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=300",
-    description: "เสื้อคาร์ดิแกนถักอย่างดีจากเส้นใยฝ้ายพรีเมียม ผ้านุ่ม ใส่สบาย ระบายอากาศได้ยอดเยี่ยม เหมาะสำหรับใส่เที่ยว ใส่ทำงานออฟฟิศ หรือใส่ในห้องแอร์เย็นๆ",
-    shortDescription: "เสื้อกันหนาวคาร์ดิแกนถักผ้าฝ้าย สไตล์มินิมอลเกาหลี นุ่มอุ่นสบาย",
-    category: "Fashion",
-    status: "Approved",
-    isAvailable: true
-  },
-  {
-    id: "shopee_beauty_01",
-    name: "🧴 เซรั่มกู้หน้าใสหน้าเด็กไฮยาลูรอนเข้มข้น Gliss-Serum",
-    price: 890,
-    pv: 445,
-    cost: 260,
-    image: "https://images.unsplash.com/photo-1608248597481-496100c80836?auto=format&fit=crop&q=80&w=300",
-    description: "เซรั่มบำรุงผิวหน้าสูตรล้ำลึก อุดมด้วยไฮยาลูรอนิก 8 โมเลกุล และวิตามินบี 3 ช่วยลดเลือนริ้วรอย จุดด่างดำ กระชับรูขุมขน เผยผิวโกลว์กระจ่างใสเปล่งปลั่งใน 7 วัน",
-    shortDescription: "เซรั่มบำรุงล้ำลึก เพื่อผิวหน้าขาวกระจ่างใส ไร้สิว ฝ้า กระ",
-    category: "Beauty",
-    status: "Approved",
-    isAvailable: true
-  },
-  {
-    id: "shopee_home_01",
-    name: "☕ เครื่องชงกาแฟเอสเพรสโซ่แรงดันสูง Espresso Home-Cafe",
-    price: 2490,
-    pv: 1245,
-    cost: 750,
-    image: "https://images.unsplash.com/photo-1517701604599-bb29b565090c?auto=format&fit=crop&q=80&w=300",
-    description: "เครื่องชงกาแฟระบบแรงดัน 20 บาร์ ให้ฟองครีมม่าหนานุ่มหอมกรุ่น ปรับสตรีมฟองนมได้ตามใจชอบ เหมาะสำหรับคอกาแฟสดทำเองได้ง่ายๆ ที่บ้าน",
-    shortDescription: "เครื่องชงกาแฟสดแรงดัน 20 บาร์ ครีมม่าโฟมแน่นหนานุ่มแบบคาเฟ่",
-    category: "Home",
-    status: "Approved",
-    isAvailable: true
-  },
-  {
-    id: "shopee_food_01",
-    name: "🍜 เซ็ทบะหมี่แห้งทรงเครื่องพรีเมียม นทีพลัสราเมน (10 ซอง)",
-    price: 250,
-    pv: 125,
-    cost: 75,
-    image: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&q=80&w=300",
-    description: "บะหมี่เส้นสดอบแห้งไม่ทอดน้ำมัน ปรุงรสด้วยซอสสูตรลับนที รสชาติกลมกล่อมเผ็ดจัดจ้าน อร่อยฟินระดับภัตตาคาร พร้อมด้วยผักอบแห้งและเห็ดหอมจุใจ",
-    shortDescription: "บะหมี่เส้นสดอบแห้งพรีเมียม อร่อยเข้มข้น ไม่ทอดน้ำมัน สุขภาพดี",
-    category: "Food",
-    status: "Approved",
-    isAvailable: true
-  }
-];
+const DEFAULT_GENERAL_PRODUCTS: any[] = [];
 
 async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
   if (!dbFirestore) {
@@ -1299,61 +1225,6 @@ function initDb() {
         description: "สิทธิ์รับรายได้สูงสุด 20 ชั้น และสินค้าครบวงจรสำหรับเปิดจุดกระจายสินค้า",
         shortDescription: "แพ็กเกจ VIP สูงสุด รับรายได้เต็มพิกัด พร้อมคลังสินค้าพกพา",
         category: "Package"
-      },
-      {
-        id: "shopee_elec_01",
-        name: "🔋 พาวเวอร์แบงค์ชาร์จเร็ว Ultra-Charge 20000mAh",
-        price: 690,
-        pv: 345,
-        cost: 200,
-        image: "https://images.unsplash.com/photo-1609592424085-f55a02f3a61d?auto=format&fit=crop&q=80&w=300",
-        description: "พาวเวอร์แบงค์ดีไซน์บางเฉียบ รองรับระบบชาร์จไว 22.5W มีหน้าจอ LED บอกเปอร์เซ็นต์แบต ปลอดภัยพกพาสะดวกผ่านเกณฑ์ขึ้นเครื่องบิน มั่นใจตลอดทริปเดินทางของคุณ",
-        shortDescription: "พาวเวอร์แบงค์ชาร์จเร็วความจุสูง 20000mAh มีหน้าจอ LED",
-        category: "Electronics"
-      },
-      {
-        id: "shopee_fashion_01",
-        name: "🧥 เสื้อคาร์ดิแกนสไตล์มินิมอลเกาหลี Soft-Cotton",
-        price: 390,
-        pv: 195,
-        cost: 120,
-        image: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=300",
-        description: "เสื้อคาร์ดิแกนถักอย่างดีจากเส้นใยฝ้ายพรีเมียม ผ้านุ่ม ใส่สบาย ระบายอากาศได้ยอดเยี่ยม เหมาะสำหรับใส่เที่ยว ใส่ทำงานออฟฟิศ หรือใส่ในห้องแอร์เย็นๆ",
-        shortDescription: "เสื้อกันหนาวคาร์ดิแกนถักผ้าฝ้าย สไตล์มินิมอลเกาหลี นุ่มอุ่นสบาย",
-        category: "Fashion"
-      },
-      {
-        id: "shopee_beauty_01",
-        name: "🧴 เซรั่มกู้หน้าใสหน้าเด็กไฮยาลูรอนเข้มข้น Gliss-Serum",
-        price: 890,
-        pv: 445,
-        cost: 260,
-        image: "https://images.unsplash.com/photo-1608248597481-496100c80836?auto=format&fit=crop&q=80&w=300",
-        description: "เซรั่มบำรุงผิวหน้าสูตรล้ำลึก อุดมด้วยไฮยาลูรอนิก 8 โมเลกุล และวิตามินบี 3 ช่วยลดเลือนริ้วรอย จุดด่างดำ กระชับรูขุมขน เผยผิวโกลว์กระจ่างใสเปล่งปลั่งใน 7 วัน",
-        shortDescription: "เซรั่มบำรุงล้ำลึก เพื่อผิวหน้าขาวกระจ่างใส ไร้สิว ฝ้า กระ",
-        category: "Beauty"
-      },
-      {
-        id: "shopee_home_01",
-        name: "☕ เครื่องชงกาแฟเอสเพรสโซ่แรงดันสูง Espresso Home-Cafe",
-        price: 2490,
-        pv: 1245,
-        cost: 750,
-        image: "https://images.unsplash.com/photo-1517701604599-bb29b565090c?auto=format&fit=crop&q=80&w=300",
-        description: "เครื่องชงกาแฟระบบแรงดัน 20 บาร์ ให้ฟองครีมม่าหนานุ่มหอมกรุ่น ปรับสตรีมฟองนมได้ตามใจชอบ เหมาะสำหรับคอกาแฟสดทำเองได้ง่ายๆ ที่บ้าน",
-        shortDescription: "เครื่องชงกาแฟสดแรงดัน 20 บาร์ ครีมม่าโฟมแน่นหนานุ่มแบบคาเฟ่",
-        category: "Home"
-      },
-      {
-        id: "shopee_food_01",
-        name: "🍜 เซ็ทบะหมี่แห้งทรงเครื่องพรีเมียม นทีพลัสราเมน (10 ซอง)",
-        price: 250,
-        pv: 125,
-        cost: 75,
-        image: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&q=80&w=300",
-        description: "บะหมี่เส้นสดอบแห้งไม่ทอดน้ำมัน ปรุงรสด้วยซอสสูตรลับนที รสชาติกลมกล่อมเผ็ดจัดจ้าน อร่อยฟินระดับภัตตาคาร พร้อมด้วยผักอบแห้งและเห็ดหอมจุใจ",
-        shortDescription: "บะหมี่เส้นสดอบแห้งพรีเมียม อร่อยเข้มข้น ไม่ทอดน้ำมัน สุขภาพดี",
-        category: "Food"
       }
     ],
     sellerProducts: [],
@@ -6490,12 +6361,9 @@ app.post('/api/admin/restore-products', async (req, res) => {
   if (!Array.isArray(db.products)) db.products = [];
   if (!Array.isArray(db.sellerProducts)) db.sellerProducts = [];
 
-  // 1. Re-inject default general products if missing
-  for (const defProd of DEFAULT_GENERAL_PRODUCTS) {
-    if (!db.products.some((p: any) => p && p.id === defProd.id)) {
-      db.products.push({ ...defProd });
-    }
-  }
+  // 1. Purge all sample shopee_ products from products and sellerProducts
+  db.products = db.products.filter((p: any) => p && p.id && !String(p.id).startsWith('shopee_'));
+  db.sellerProducts = db.sellerProducts.filter((p: any) => p && p.id && !String(p.id).startsWith('shopee_'));
 
   // 2. Re-inject approved seller products into main store
   for (const sp of db.sellerProducts) {
@@ -6533,7 +6401,7 @@ app.post('/api/admin/restore-products', async (req, res) => {
 
   res.json({
     success: true,
-    message: "ฟื้นฟูรายการสินค้าตัวอย่างและซิงค์สินค้าทั้งหมดกลับสู่ระบบเรียบร้อยแล้ว!",
+    message: "ลบสินค้าตัวอย่างและซิงค์สินค้าจริงของร้านค้าเข้าสู่ระบบเรียบร้อยแล้วค่ะ!",
     products: db.products,
     sellerProducts: db.sellerProducts
   });

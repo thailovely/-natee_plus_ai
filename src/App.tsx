@@ -17787,10 +17787,10 @@ export default function App() {
                           type="button"
                           onClick={handleRestoreProducts}
                           className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer active:scale-95 flex items-center gap-1.5 shadow-xs"
-                          title="ฟื้นฟูสินค้าตัวอย่าง (พาวเวอร์แบงค์, เสื้อคาร์ดิแกน, เซรั่ม, เครื่องชงกาแฟ, บะหมี่) และซิงค์สินค้าทั้งหมดกลับสู่ระบบ"
+                          title="ล้างสินค้าตัวอย่างและซิงค์สินค้าของร้านค้าทั้งหมด"
                         >
                           <RefreshCw size={13} className="text-indigo-600" />
-                          <span>ฟื้นฟูสินค้าตัวอย่าง & ซิงค์สินค้า</span>
+                          <span>ซิงค์สินค้าของร้านค้า</span>
                         </button>
                         <div className="relative max-w-xs w-full sm:w-auto flex-1">
                           <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 pointer-events-none">
