@@ -26565,11 +26565,20 @@ export default function App() {
 
                     if (isYouTube) {
                       let embedUrl = rawUrl;
-                      if (rawUrl.includes('watch?v=')) {
-                        const vid = rawUrl.split('watch?v=')[1]?.split('&')[0];
-                        embedUrl = `https://www.youtube.com/embed/${vid}`;
+                      let vid = '';
+                      if (rawUrl.includes('live/')) {
+                        vid = rawUrl.split('live/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0];
+                      } else if (rawUrl.includes('watch?v=')) {
+                        vid = rawUrl.split('watch?v=')[1]?.split('&')[0]?.split('#')[0]?.split('?')[0];
                       } else if (rawUrl.includes('youtu.be/')) {
-                        const vid = rawUrl.split('youtu.be/')[1]?.split('?')[0];
+                        vid = rawUrl.split('youtu.be/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0];
+                      } else if (rawUrl.includes('shorts/')) {
+                        vid = rawUrl.split('shorts/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0];
+                      } else if (rawUrl.includes('embed/')) {
+                        vid = rawUrl.split('embed/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0];
+                      }
+
+                      if (vid) {
                         embedUrl = `https://www.youtube.com/embed/${vid}`;
                       }
 
@@ -26939,7 +26948,19 @@ export default function App() {
                     onChange={(e) => setLiveCreateStreamUrl(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-medium focus:outline-none focus:border-rose-500 font-mono text-[11px]"
                   />
-                  <p className="text-[10px] text-slate-500 mt-1 font-medium">รองรับลิงก์แชร์ TikTok (เช่น vt.tiktok.com), TikTok Live (@ชื่อช่อง/live), YouTube Live และ Facebook Live ค่ะ</p>
+                  <p className="text-[10px] text-slate-500 mt-1 font-medium">รองรับลิงก์ YouTube Live (youtube.com/live/...), watch?v=, youtu.be, TikTok Live และ Facebook Live ค่ะ</p>
+
+                  {(liveCreateStreamUrl.includes('youtube.com') || liveCreateStreamUrl.includes('youtu.be')) && (
+                    <div className="mt-2 p-2.5 bg-red-50 border border-red-200 rounded-xl text-[10px] text-red-900 space-y-0.5 animate-fadeIn">
+                      <div className="font-bold flex items-center gap-1.5 text-red-700">
+                        <span>▶️</span>
+                        <span>ตรวจพบลิงก์ YouTube Live สตรีมสด!</span>
+                      </div>
+                      <p className="text-slate-600 leading-tight">
+                        ✅ ระบบแปลงลิงก์ YouTube Live (youtube.com/live/...) เป็นสตรีมวิดีโอเล่นสดอัตโนมัติเรียบร้อยค่ะ!
+                      </p>
+                    </div>
+                  )}
 
                   {liveCreateStreamUrl.includes('tiktok') && (
                     <div className="mt-2 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-[10px] text-rose-900 space-y-0.5 animate-fadeIn">

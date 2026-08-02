@@ -7177,13 +7177,33 @@ app.post('/api/live-streams/create', (req, res) => {
 
   if (!Array.isArray(db.liveStreams)) db.liveStreams = [];
 
+  // Helper to format YouTube URLs into iframe embed format (supports /live/, watch?v=, youtu.be/, /shorts/, /embed/)
+  let normalizedStreamUrl = streamUrl || "https://www.youtube.com/embed/jfKfPfyJRdk";
+  if (typeof normalizedStreamUrl === 'string' && (normalizedStreamUrl.includes('youtube.com') || normalizedStreamUrl.includes('youtu.be'))) {
+    let vid = '';
+    if (normalizedStreamUrl.includes('live/')) {
+      vid = normalizedStreamUrl.split('live/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0];
+    } else if (normalizedStreamUrl.includes('watch?v=')) {
+      vid = normalizedStreamUrl.split('watch?v=')[1]?.split('&')[0]?.split('#')[0]?.split('?')[0];
+    } else if (normalizedStreamUrl.includes('youtu.be/')) {
+      vid = normalizedStreamUrl.split('youtu.be/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0];
+    } else if (normalizedStreamUrl.includes('shorts/')) {
+      vid = normalizedStreamUrl.split('shorts/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0];
+    } else if (normalizedStreamUrl.includes('embed/')) {
+      vid = normalizedStreamUrl.split('embed/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0];
+    }
+    if (vid) {
+      normalizedStreamUrl = `https://www.youtube.com/embed/${vid}`;
+    }
+  }
+
   const newLive = {
     id: `live_${Date.now()}`,
     sellerId: member?.userId || sellerId,
     sellerStoreName: verifiedStoreName || "ร้านค้าพาร์ทเนอร์นทีพลัส",
     sellerCode: member?.sellerCode || member?.userId || sellerId,
     title,
-    streamUrl: streamUrl || "https://www.youtube.com/embed/jfKfPfyJRdk",
+    streamUrl: normalizedStreamUrl,
     coverImage: coverImage || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80",
     status: "LIVE",
     viewersCount: Math.floor(15 + Math.random() * 50),
