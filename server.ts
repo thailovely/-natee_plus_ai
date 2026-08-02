@@ -5109,7 +5109,8 @@ app.post('/api/seller/product', async (req, res) => {
     userId, productName, price, pv, imageFile, images, description, shortDescription, category, cost,
     subcategory, weight, width, length, height, volumetricWeight, chargeableWeight,
     baseShippingCost, sellerCoPay, customerShippingFee, netPayout, approveInstantly,
-    discountPercent, shippingFeeBase, shippingDiscount, affiliateCommission, isAffiliateEnabled, extraPv, isAvailable
+    discountPercent, shippingFeeBase, shippingDiscount, affiliateCommission, isAffiliateEnabled, extraPv, isAvailable,
+    stock
   } = req.body;
   const db = readDb();
   
@@ -5166,10 +5167,11 @@ app.post('/api/seller/product', async (req, res) => {
   const primaryImage = processedImages[0];
   const priceVal = parseFloat(price) || 0;
   const costVal = cost !== undefined && cost !== "" ? parseFloat(cost) : Math.floor(priceVal * 0.30);
+  const stockVal = stock !== undefined && stock !== "" ? parseFloat(stock) : 5;
 
   // Validate Security Deposit Listing Cap (10x rule)
   const depositStats = getSellerDepositStats(db, userId);
-  const addedListingValue = priceVal * 10; // estimate listing impact
+  const addedListingValue = priceVal * Math.min(stockVal, 50); // calculate actual stock listing value impact
   if (depositStats.securityDeposit > 0 && (depositStats.currentListingValue + addedListingValue) > depositStats.maxListingCap) {
     return res.status(400).json({
       success: false,
@@ -5177,7 +5179,7 @@ app.post('/api/seller/product', async (req, res) => {
     });
   }
 
-  const isApproved = !!approveInstantly || member?.role === 'Admin' || userId === 'admin' || (typeof userId === 'string' && userId.startsWith('admin_'));
+  const isApproved = !!approveInstantly || member?.role === 'Admin' || member?.sellerStatus === 'Active' || userId === 'admin' || (typeof userId === 'string' && userId.startsWith('admin_'));
 
   const newProduct = {
     id: newProductId,
@@ -5186,6 +5188,7 @@ app.post('/api/seller/product', async (req, res) => {
     sellerStoreName: member.sellerStoreName,
     name: productName,
     price: priceVal,
+    stock: stockVal,
     pv: parseFloat(pv) || 0,
     cost: costVal,
     image: primaryImage,
@@ -5525,7 +5528,7 @@ function getSellerDepositStats(db: any, sellerUserId: string) {
   const sellerProds = (db.sellerProducts || []).filter((p: any) => p.sellerId === sellerUserId && p.isAvailable !== false);
   const currentListingValue = sellerProds.reduce((sum: number, p: any) => {
     const pPrice = parseFloat(p.price) || 0;
-    const pStock = p.stock !== undefined ? parseFloat(p.stock) : 100;
+    const pStock = p.stock !== undefined ? parseFloat(p.stock) : 5;
     return sum + (pPrice * Math.min(pStock, 50)); // capped calculation for listing value active
   }, 0);
 
@@ -6413,7 +6416,7 @@ app.post('/api/seller/product/edit', async (req, res) => {
     userId, productId, productName, price, discountPercent, shippingFeeBase, shippingDiscount, pv, imageFile, images, description, shortDescription, category, cost,
     subcategory, weight, width, length, height, volumetricWeight, chargeableWeight,
     baseShippingCost, sellerCoPay, customerShippingFee, netPayout, approveInstantly,
-    affiliateCommission, isAffiliateEnabled, extraPv, isAvailable
+    affiliateCommission, isAffiliateEnabled, extraPv, isAvailable, stock
   } = req.body;
   const db = readDb();
   
@@ -6504,8 +6507,11 @@ app.post('/api/seller/product/edit', async (req, res) => {
   prod.extraPv = parseFloat(extraPv) || 0;
   prod.isAvailable = isAvailable !== false && isAvailable !== 'false';
   prod.netPayout = parseFloat(netPayout) || 0;
+  if (stock !== undefined && stock !== "") {
+    prod.stock = parseFloat(stock);
+  }
   
-  const isApproved = !!approveInstantly || isAdmin;
+  const isApproved = !!approveInstantly || isAdmin || member?.sellerStatus === 'Active';
 
   if (isApproved) {
     prod.status = "Approved";

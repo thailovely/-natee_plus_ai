@@ -5812,6 +5812,7 @@ export default function App() {
           userId: sellerId,
           productName: newProd.name,
           price: newProd.price,
+          stock: newProd.stock || '5',
           discountPercent: newProd.discountPercent,
           shippingFeeBase: newProd.shippingFeeBase,
           shippingDiscount: newProd.shippingDiscount,
@@ -5893,6 +5894,7 @@ export default function App() {
           productId: editingProduct.id,
           productName: editingProduct.name,
           price: editingProduct.price,
+          stock: editingProduct.stock || '5',
           discountPercent: editingProduct.discountPercent,
           shippingFeeBase: editingProduct.shippingFeeBase,
           shippingDiscount: editingProduct.shippingDiscount,
@@ -13611,7 +13613,7 @@ export default function App() {
                       .filter((p: any) => p.isAvailable !== false)
                       .reduce((sum: number, p: any) => {
                         const pPrice = parseFloat(p.price) || 0;
-                        const pStock = p.stock !== undefined ? parseFloat(p.stock) : 100;
+                        const pStock = p.stock !== undefined ? parseFloat(p.stock) : 5;
                         return sum + (pPrice * Math.min(pStock, 50));
                       }, 0);
                     const listingCapRemaining = Math.max(0, maxListingCap - currentListingValue);
