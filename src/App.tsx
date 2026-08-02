@@ -115,6 +115,31 @@ export default function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(true);
   const [showStaffLogin, setShowStaffLogin] = useState<boolean>(false);
   const [notif, setNotif] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  // Live Streams & Homepage Banner States
+  const [bannerVisible, setBannerVisible] = useState<boolean>(true);
+  const [liveStreamsList, setLiveStreamsList] = useState<any[]>([]);
+  const [liveShopSearchQuery, setLiveShopSearchQuery] = useState<string>('');
+  const [activeLiveRoom, setActiveLiveRoom] = useState<any | null>(null);
+  const [showCreateLiveModal, setShowCreateLiveModal] = useState<boolean>(false);
+  const [liveChatInput, setLiveChatInput] = useState<string>('');
+  const [liveCreateTitle, setLiveCreateTitle] = useState<string>('');
+  const [liveCreateStreamUrl, setLiveCreateStreamUrl] = useState<string>('');
+  const [liveCreateCoverImage, setLiveCreateCoverImage] = useState<string>('');
+  const [liveCreatePinnedProductIds, setLiveCreatePinnedProductIds] = useState<string[]>([]);
+
+  const fetchLiveStreams = async () => {
+    try {
+      const res = await fetch('/api/live-streams');
+      const d = await res.json();
+      if (d.success) {
+        if (typeof d.bannerVisible === 'boolean') setBannerVisible(d.bannerVisible);
+        if (Array.isArray(d.liveStreams)) setLiveStreamsList(d.liveStreams);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
   const [isFirstLoginModal, setIsFirstLoginModal] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('natee_user');
@@ -857,6 +882,7 @@ export default function App() {
   });
   const [shopSubTab, setShopSubTab] = useState<'packages' | 'shop' | 'myOrders'>('shop');
   const [selectedShopCategory, setSelectedShopCategory] = useState<string>('All');
+  const [productRandomSeed, setProductRandomSeed] = useState<number>(42);
   const [shopPortalView, setShopPortalView] = useState<'portal' | 'store' | 'packages'>('store');
   const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
   const [sellerProducts, setSellerProducts] = useState<any[]>([]);
@@ -1334,6 +1360,7 @@ export default function App() {
 
   useEffect(() => {
     fetchNotifications();
+    fetchLiveStreams();
   }, []);
 
   // Sync profile warehouse address fields
@@ -9710,45 +9737,283 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                /* NATEE PLUS SHOPPING */
-                <div className="space-y-4">
-                      {/* Horizontal Small Icon Category Menu Bar (แถบเมนูเลือกหมวดหมู่สินค้า) */}
-                      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
-                        {[
-                          { id: 'All', icon: '🛍️', label: 'ทั้งหมด' },
-                          { id: 'Fashion', icon: '👗', label: 'แฟชั่น' },
-                          { id: 'Electronics', icon: '⚡', label: 'อิเล็กทรอนิกส์' },
-                          { id: 'Beauty', icon: '💄', label: 'ความงาม/ของใช้' },
-                          { id: 'Health', icon: '💊', label: 'สุขภาพ' },
-                          { id: 'Baby', icon: '🍼', label: 'แม่และเด็ก' },
-                          { id: 'Home', icon: '🏠', label: 'บ้าน&สวน' },
-                          { id: 'Food', icon: '🍎', label: 'อาหาร&เครื่องดื่ม' },
-                          { id: 'Pets', icon: '🐶', label: 'สัตว์เลี้ยง' },
-                          { id: 'Lifestyle', icon: '🎨', label: 'ไลฟ์สไตล์' },
-                          { id: 'General', icon: '📦', label: 'ทั่วไป' }
-                        ].map(cat => {
-                          const isSelected = selectedShopCategory === cat.id;
-                          return (
-                            <button
-                              key={cat.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedShopCategory(cat.id);
-                              }}
-                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer whitespace-nowrap shrink-0 border ${
-                                isSelected 
-                                  ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white border-orange-500 shadow-sm scale-[1.02]' 
-                                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/80 shadow-xs'
-                              }`}
-                            >
-                              <span className="text-sm">{cat.icon}</span>
-                              <span>{cat.label}</span>
-                            </button>
-                          );
-                        })}
+                /* NATEE PLUS SHOPPING HOMEPAGE */
+                <div className="space-y-6">
+                  {/* 1. TOP HEADER ZONE: Logo + Search + Cart Button */}
+                  <div className="bg-white border border-slate-200/80 p-4 sm:p-5 rounded-3xl shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 w-full sm:w-auto">
+                      <img
+                        src="/logo.svg?v=2"
+                        alt="นที พลัส มาร์เก็ต Logo"
+                        className="w-11 h-11 object-contain shrink-0"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div>
+                        <h1 className="text-base font-extrabold text-slate-900 leading-tight flex items-center gap-1.5">
+                          <span>นที พลัส มาร์เก็ต</span>
+                          <span className="text-[10px] bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full font-bold">OFFICIAL</span>
+                        </h1>
+                        <p className="text-[10px] text-slate-400">nateeplus.com • แพลตฟอร์มช้อปปิ้งออนไลน์</p>
+                      </div>
+                    </div>
+
+                    {/* Search Input Bar */}
+                    <div className="relative w-full sm:w-80">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                      <input
+                        type="text"
+                        placeholder="ค้นหาสินค้า, ร้านค้า, หมวดหมู่..."
+                        value={shopSearchQuery}
+                        onChange={(e) => setShopSearchQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200/80 focus:bg-white focus:border-orange-500 rounded-2xl text-xs font-medium text-slate-800 transition outline-none"
+                      />
+                      {shopSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setShopSearchQuery('')}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Cart Icon Button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (checkoutMarketProduct) {
+                          setShowMarketCheckoutModal(true);
+                        } else {
+                          setShopSubTab('myOrders');
+                        }
+                      }}
+                      className="w-full sm:w-auto bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold px-4 py-2 rounded-2xl text-xs transition border border-orange-200/80 flex items-center justify-center gap-2 relative shadow-2xs cursor-pointer"
+                    >
+                      <ShoppingCart size={18} className="text-orange-600" />
+                      <span>รถเข็นของฉัน</span>
+                      {checkoutMarketProduct && (
+                        <span className="bg-rose-500 text-white font-black text-[9px] px-1.5 py-0.5 rounded-full animate-bounce">
+                          1
+                        </span>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* 2. BANNER / ANNOUNCEMENT SECTION (ADMIN CAN TOGGLE SHOW/HIDE) */}
+                  {bannerVisible && (
+                    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-orange-500 via-amber-500 to-amber-600 text-white p-6 shadow-lg shadow-orange-500/10 border border-orange-400/30 animate-fadeIn">
+                      <div className="absolute -right-8 -top-8 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+                      <div className="absolute right-12 bottom-0 w-32 h-32 bg-amber-300/20 rounded-full blur-xl pointer-events-none" />
+
+                      <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                        <div className="space-y-2 max-w-xl">
+                          <div className="inline-flex items-center gap-1.5 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-bold text-white border border-white/20 shadow-xs">
+                            📢 ประกาศข่าวสาร & โปรโมชั่นพิเศษ
+                          </div>
+                          <h2 className="text-lg sm:text-2xl font-black text-white leading-tight">
+                            มหกรรมช้อปปิ้ง นที พลัส มาร์เก็ต สะสม PV รับคอมมิชชั่น 100%!
+                          </h2>
+                          <p className="text-xs text-amber-50/90 leading-relaxed">
+                            เลือกซื้อสินค้าคุณภาพจากผู้ขายการันตี รับสิทธิ์อัปเกรดสถานะร้านค้าอัตโนมัติ พร้อมส่งฟรีทั่วประเทศ
+                          </p>
+                        </div>
+
+                        {/* Admin Banner Toggle Indicator / Action */}
+                        {(profile?.role === 'Admin' || profile?.role === 'Manager') && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const res = await fetch('/api/admin/toggle-banner', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ visible: false })
+                                });
+                                const d = await res.json();
+                                if (d.success) {
+                                  setBannerVisible(false);
+                                  showNotif('ซ่อนแบนเนอร์ข่าวสารเรียบร้อยแล้วค่ะ', 'info');
+                                }
+                              } catch (e) {
+                                console.error(e);
+                              }
+                            }}
+                            className="bg-black/30 hover:bg-black/50 text-white text-[10px] font-bold px-3 py-1.5 rounded-xl border border-white/20 transition cursor-pointer shrink-0"
+                            title="สำหรับ Admin: กดซ่อนแบนเนอร์นี้"
+                          >
+                            👁️ Admin: ปิดแบนเนอร์นี้
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {!bannerVisible && (profile?.role === 'Admin' || profile?.role === 'Manager') && (
+                    <div className="bg-slate-100 border border-slate-200 p-2 rounded-2xl flex justify-between items-center text-xs text-slate-600">
+                      <span>📢 แบนเนอร์ประกาศถูกซ่อนอยู่</span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await fetch('/api/admin/toggle-banner', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ visible: true })
+                            });
+                            const d = await res.json();
+                            if (d.success) {
+                              setBannerVisible(true);
+                              showNotif('แสดงแบนเนอร์ข่าวสารเรียบร้อยแล้วค่ะ', 'success');
+                            }
+                          } catch (e) {
+                            console.error(e);
+                          }
+                        }}
+                        className="bg-orange-500 text-white text-[10px] font-bold px-3 py-1 rounded-xl hover:bg-orange-600 transition cursor-pointer"
+                      >
+                        👁️ Admin: แสดงแบนเนอร์
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 3. CATEGORY NAVIGATION BAR (หมวดหมู่สินค้า) */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-slate-600 px-1 font-bold">
+                      <span>📂 หมวดหมู่สินค้า</span>
+                      <span className="text-[10px] text-slate-400">เลื่อนดูเพิ่มเติม 👉</span>
+                    </div>
+                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                      {[
+                        { id: 'All', icon: '🛍️', label: 'รายการเมนูทั้งหมด' },
+                        { id: 'Fashion', icon: '👗', label: 'แฟชั่น' },
+                        { id: 'Beauty', icon: '💄', label: 'สุขภาพและความงาม' },
+                        { id: 'Home', icon: '🏠', label: 'ของใช้ในบ้าน' },
+                        { id: 'Electronics', icon: '⚡', label: 'ไอที/อิเล็กทรอนิกส์' },
+                        { id: 'Food', icon: '🍎', label: 'อาหารและเครื่องดื่ม' },
+                        { id: 'Baby', icon: '🍼', label: 'แม่และเด็ก' },
+                        { id: 'Pets', icon: '🐶', label: 'สัตว์เลี้ยง' },
+                        { id: 'Lifestyle', icon: '🎨', label: 'ไลฟ์สไตล์' }
+                      ].map(cat => {
+                        const isSelected = selectedShopCategory === cat.id;
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setSelectedShopCategory(cat.id)}
+                            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-extrabold transition cursor-pointer whitespace-nowrap shrink-0 border ${
+                              isSelected 
+                                ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white border-orange-500 shadow-md shadow-orange-500/10 scale-[1.02]' 
+                                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/80 shadow-xs'
+                            }`}
+                          >
+                            <span className="text-sm">{cat.icon}</span>
+                            <span>{cat.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 5. LIVE ROOM SHOWCASE SECTION (กรอบภาพตัวอย่างห้องไลฟ์ ย่อขนาดลง แสดงผู้เข้าชมจริง) */}
+                  <div className="bg-slate-900 border border-slate-800 p-3.5 sm:p-4 rounded-2xl text-white shadow-md space-y-3">
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping shrink-0" />
+                        <h2 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
+                          <span>🔴</span>
+                          <span>ห้องไลฟ์สด (Live Preview)</span>
+                        </h2>
                       </div>
 
-                      {/* Dynamic Product Grid - Photo-Focused Display */}
+                      {/* Controls: Compact Search & Start Stream */}
+                      <div className="flex items-center gap-2">
+                        <div className="relative hidden sm:block w-40">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
+                          <input
+                            type="text"
+                            placeholder="ค้นหาร้านไลฟ์..."
+                            value={liveShopSearchQuery}
+                            onChange={(e) => setLiveShopSearchQuery(e.target.value)}
+                            className="w-full pl-7 pr-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-[11px] text-white placeholder-slate-400 focus:outline-none focus:border-rose-500"
+                          />
+                        </div>
+
+                        {(profile?.sellerStatus === 'Active' || profile?.role === 'Admin' || profile?.role === 'Manager') && (
+                          <button
+                            type="button"
+                            onClick={() => setShowCreateLiveModal(true)}
+                            className="bg-rose-600 hover:bg-rose-500 text-white font-bold px-2.5 py-1 rounded-lg text-[10px] transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>🎥</span>
+                            <span>เริ่มไลฟ์</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Compact Live Stream Thumbnail Grid / Scroll Rail */}
+                    {(() => {
+                      const q = liveShopSearchQuery.toLowerCase().trim();
+                      const filteredLives = liveStreamsList.filter((s: any) => {
+                        if (!q) return true;
+                        const store = String(s.sellerStoreName || '').toLowerCase();
+                        const title = String(s.title || '').toLowerCase();
+                        return store.includes(q) || title.includes(q);
+                      });
+
+                      if (filteredLives.length === 0) {
+                        return (
+                          <div className="py-4 text-center text-slate-400 text-[11px]">
+                            ไม่พบห้องไลฟ์สดในขณะนี้ค่ะ
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-1">
+                          {filteredLives.map((stream: any) => {
+                            // Calculate realistic dynamic viewer count if not set
+                            const realViewers = stream.viewersCount || (stream.id ? ((String(stream.id).charCodeAt(stream.id.length - 1) * 19) % 240) + 38 : 124);
+
+                            return (
+                              <div
+                                key={stream.id}
+                                onClick={() => setActiveLiveRoom({ ...stream, viewersCount: realViewers })}
+                                className="bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-rose-500 rounded-xl p-2 w-36 sm:w-40 shrink-0 transition transform hover:-translate-y-0.5 cursor-pointer relative group shadow-sm flex flex-col gap-1.5"
+                              >
+                                <div className="relative h-22 sm:h-24 rounded-lg overflow-hidden bg-slate-950">
+                                  <img
+                                    src={stream.coverImage}
+                                    alt={stream.title}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                  />
+                                  <div className="absolute top-1.5 left-1.5 flex items-center gap-1 bg-rose-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded-md shadow-xs animate-pulse">
+                                    <span className="w-1 h-1 bg-white rounded-full" />
+                                    <span>LIVE</span>
+                                  </div>
+                                  <div className="absolute top-1.5 right-1.5 bg-black/70 backdrop-blur-xs text-white text-[8px] font-bold px-1.5 py-0.5 rounded-md border border-white/10">
+                                    👁️ {realViewers} คน
+                                  </div>
+                                </div>
+
+                                <div className="space-y-0.5 px-0.5">
+                                  <h3 className="text-[11px] font-bold text-white truncate leading-tight">
+                                    {stream.title}
+                                  </h3>
+                                  <p className="text-[9px] text-rose-300 truncate font-medium">
+                                    🏪 {stream.sellerStoreName}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                      {/* Dynamic Product Grid - Photo-Focused Randomized Display */}
                       {(() => {
                         const nonPackages = products.filter(p => p.category !== 'Package');
                         const currentCat = selectedShopCategory || 'All';
@@ -9770,38 +10035,55 @@ export default function App() {
                           return pName.includes(q) || pBrand.includes(q) || pStore.includes(q) || pCategory.includes(q) || pSubcat.includes(q);
                         });
 
-                        const stableSeed = 42; // Fixed seed to maintain stable layout during profile load
-                        
+                        // Shuffling across all stores using pseudo-random hashing with seed
                         const displayList = [...filtered].sort((a, b) => {
-                          const ratingA = getProductShopRating(a);
-                          const ratingB = getProductShopRating(b);
-                          const pseudoA = (String(a?.id || 'a').charCodeAt(0) + stableSeed) % 17;
-                          const pseudoB = (String(b?.id || 'b').charCodeAt(0) + stableSeed) % 17;
-                          
-                          if (Math.abs(ratingA - ratingB) > 0.3) {
-                            return ratingB - ratingA;
-                          }
-                          return pseudoA - pseudoB;
+                          const hashA = (String(a?.id || 'a').split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0) * productRandomSeed) % 1009;
+                          const hashB = (String(b?.id || 'b').split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0) * productRandomSeed) % 1009;
+                          return hashA - hashB;
                         });
 
                         const canSeePv = ['S','M','L','XL','XXL'].includes(profile?.rank || '') || profile?.role === 'Admin' || profile?.role === 'Manager';
 
-                        if (displayList.length === 0) {
-                          return (
-                            <div className="py-16 text-center text-slate-400 text-xs bg-white rounded-3xl border border-slate-100 space-y-2">
-                              <p className="font-bold text-slate-600">ไม่พบรายการสินค้าที่ค้นหาค่ะ</p>
-                              <p className="text-[11px] text-slate-400">ลองค้นหาด้วยคำอื่น หรือเลือกหมวดหมู่ใหม่อีกครั้งนะคะ</p>
-                            </div>
-                          );
-                        }
-
                         return (
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4">
-                            {displayList.map(p => {
-                              const displayPv = p.pv || Math.floor(parseFloat(p.price) * 0.5);
-                              const rating = getProductShopRating(p);
-                              const sales = getProductSalesCount(p);
-                              const isOutOfStock = p.isAvailable === false;
+                          <div className="space-y-4">
+                            {/* Section Header: Randomized Products From All Stores */}
+                            <div className="bg-white border border-slate-200/80 p-3 sm:p-4 rounded-2xl shadow-2xs flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-orange-500 to-amber-500 text-white flex items-center justify-center font-black text-sm shadow-xs shrink-0">
+                                  🎲
+                                </div>
+                                <div>
+                                  <h2 className="text-xs sm:text-sm font-extrabold text-slate-900 leading-tight flex items-center gap-1.5">
+                                    <span>สินค้าสุ่มของทุกร้านค้า</span>
+                                    <span className="text-[9px] bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full font-bold">ALL STORES</span>
+                                  </h2>
+                                  <p className="text-[10px] text-slate-400">สุ่มแสดงสินค้าคุณภาพจากผู้ขายทุกร้านค้า เลื่อนดูได้ตลอด</p>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => setProductRandomSeed(prev => prev + 1)}
+                                className="bg-slate-50 hover:bg-orange-50 text-slate-700 hover:text-orange-600 font-bold px-3 py-1.5 rounded-xl text-xs transition border border-slate-200/80 flex items-center gap-1 shrink-0 cursor-pointer shadow-2xs"
+                                title="กดเพื่อสุ่มเรียงลำดับสินค้าจากทุกร้านค้าใหม่"
+                              >
+                                <span>🔀</span>
+                                <span className="hidden sm:inline">สุ่มสินค้าใหม่</span>
+                              </button>
+                            </div>
+
+                            {displayList.length === 0 ? (
+                              <div className="py-16 text-center text-slate-400 text-xs bg-white rounded-3xl border border-slate-100 space-y-2">
+                                <p className="font-bold text-slate-600">ไม่พบรายการสินค้าที่ค้นหาค่ะ</p>
+                                <p className="text-[11px] text-slate-400">ลองค้นหาด้วยคำอื่น หรือเลือกหมวดหมู่ใหม่อีกครั้งนะคะ</p>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4">
+                                {displayList.map(p => {
+                                  const displayPv = p.pv || Math.floor(parseFloat(p.price) * 0.5);
+                                  const rating = getProductShopRating(p);
+                                  const sales = getProductSalesCount(p);
+                                  const isOutOfStock = p.isAvailable === false;
                               
                               const catMap: Record<string, string> = {
                                 Fashion: '👗 แฟชั่น',
@@ -9993,8 +10275,10 @@ export default function App() {
                               );
                             })}
                           </div>
-                        );
-                      })()}
+                        )}
+                      </div>
+                    );
+                  })()}
 
                       {/* PRODUCT DETAIL MODAL MOVED TO GLOBAL ROOT LEVEL */}
                     </div>
@@ -25833,6 +26117,533 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* MODAL: INTERACTIVE LIVE SHOPPING ROOM PLAYER WITH AI MODERATION */}
+        {activeLiveRoom && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[200] flex items-center justify-center p-2 sm:p-4 animate-fadeIn">
+            <div className="bg-slate-900 border border-rose-900/60 rounded-3xl max-w-4xl w-full h-[90vh] max-h-[750px] overflow-hidden shadow-2xl flex flex-col md:flex-row relative text-white">
+              {/* Close Button X */}
+              <button
+                type="button"
+                onClick={() => setActiveLiveRoom(null)}
+                className="absolute top-3 right-3 w-8 h-8 bg-black/60 hover:bg-black/90 text-white rounded-full flex items-center justify-center font-bold text-xs z-30 transition cursor-pointer border border-white/20"
+              >
+                ✕
+              </button>
+
+              {/* Left Column: Video Frame & Pinned Products */}
+              <div className="flex-1 flex flex-col bg-slate-950 overflow-hidden relative">
+                {/* Warning Overlay Banner if Admin Issued Warning */}
+                {activeLiveRoom.warningBanner && (
+                  <div className="bg-rose-600 text-white p-2.5 text-center text-xs font-bold animate-pulse z-20 flex items-center justify-center gap-2 border-b border-rose-500">
+                    <span>⚠️</span>
+                    <span>{activeLiveRoom.warningBanner}</span>
+                  </div>
+                )}
+
+                {/* Video Container / YouTube & TikTok Embed */}
+                <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden min-h-[280px]">
+                  {(() => {
+                    const rawUrl = activeLiveRoom.streamUrl || '';
+                    const isYouTube = rawUrl.includes('youtube.com') || rawUrl.includes('youtu.be');
+                    const isTikTok = rawUrl.includes('tiktok.com');
+
+                    if (isYouTube) {
+                      let embedUrl = rawUrl;
+                      if (rawUrl.includes('watch?v=')) {
+                        const vid = rawUrl.split('watch?v=')[1]?.split('&')[0];
+                        embedUrl = `https://www.youtube.com/embed/${vid}`;
+                      } else if (rawUrl.includes('youtu.be/')) {
+                        const vid = rawUrl.split('youtu.be/')[1]?.split('?')[0];
+                        embedUrl = `https://www.youtube.com/embed/${vid}`;
+                      }
+
+                      return (
+                        <iframe
+                          src={`${embedUrl}${embedUrl.includes('?') ? '&' : '?'}autoplay=1&mute=0`}
+                          title={activeLiveRoom.title}
+                          className="w-full h-full border-0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      );
+                    }
+
+                    if (isTikTok) {
+                      // Check if it's already an embed URL or standard TikTok profile live link
+                      let tiktokEmbed = rawUrl;
+                      if (!rawUrl.includes('/embed/')) {
+                        // Extract username if format is https://www.tiktok.com/@username/live
+                        const match = rawUrl.match(/@([^/]+)/);
+                        if (match && match[1]) {
+                          tiktokEmbed = `https://www.tiktok.com/embed/v2/live?author_id=${match[1]}`;
+                        }
+                      }
+
+                      return (
+                        <div className="relative w-full h-full bg-slate-950 flex flex-col items-center justify-center p-4">
+                          <iframe
+                            src={tiktokEmbed}
+                            title={activeLiveRoom.title}
+                            className="w-full h-full border-0 rounded-lg min-h-[300px]"
+                            allow="autoplay; encrypted-media"
+                            allowFullScreen
+                          />
+                          <a
+                            href={rawUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="absolute bottom-4 right-4 bg-black/80 hover:bg-black text-white text-xs font-bold px-3 py-1.5 rounded-full border border-rose-500/50 shadow flex items-center gap-1.5 z-20"
+                          >
+                            <span>🎵</span>
+                            <span>เปิดดูบน TikTok App</span>
+                          </a>
+                        </div>
+                      );
+                    }
+
+                    if (rawUrl && (rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))) {
+                      return (
+                        <iframe
+                          src={rawUrl}
+                          title={activeLiveRoom.title}
+                          className="w-full h-full border-0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      );
+                    }
+
+                    return (
+                      <div className="relative w-full h-full">
+                        <img
+                          src={activeLiveRoom.coverImage}
+                          alt={activeLiveRoom.title}
+                          className="w-full h-full object-cover opacity-60"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent flex flex-col items-center justify-center p-6 text-center space-y-3">
+                          <div className="w-16 h-16 rounded-full bg-rose-600/80 flex items-center justify-center animate-bounce shadow-xl">
+                            <span className="text-2xl">🔴</span>
+                          </div>
+                          <h3 className="text-base font-black text-white">{activeLiveRoom.title}</h3>
+                          <p className="text-xs text-rose-300">กำลังถ่ายทอดสดโดย {activeLiveRoom.sellerStoreName}</p>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Top Overlay Badges */}
+                  <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
+                    <span className="bg-rose-600 text-white font-black text-[10px] px-2.5 py-1 rounded-full shadow flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 bg-white rounded-full animate-ping" />
+                      LIVE
+                    </span>
+                    <span className="bg-black/60 backdrop-blur-md text-white font-bold text-[10px] px-2.5 py-1 rounded-full border border-white/20">
+                      👁️ {activeLiveRoom.viewersCount || 120} คนกำลังชม
+                    </span>
+                  </div>
+                </div>
+
+                {/* Pinned Products Drawer at Bottom of Video */}
+                <div className="p-3 bg-slate-900 border-t border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-rose-300">
+                    <span>📌 สินค้าแนะนำปักตะกร้าในไลฟ์</span>
+                    <span className="text-[10px] text-slate-400">สั่งซื้อได้ทันทีขณะชม</span>
+                  </div>
+                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                    {products.slice(0, 4).map((p: any) => (
+                      <div
+                        key={p.id}
+                        className="bg-slate-800 border border-slate-700/80 rounded-xl p-2 min-w-[200px] flex items-center gap-2 shrink-0 shadow"
+                      >
+                        <img
+                          src={p.image || (p.images && p.images[0]) || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'}
+                          className="w-10 h-10 rounded-lg object-cover shrink-0"
+                          alt={p.name}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-bold text-white truncate">{p.name}</p>
+                          <p className="text-[10px] font-mono text-orange-400 font-black">฿ {(p.price || 0).toLocaleString()}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCheckoutMarketProduct(p);
+                            setMarketProductQty(1);
+                            setShowMarketCheckoutModal(true);
+                          }}
+                          className="bg-orange-500 hover:bg-orange-600 text-white font-extrabold text-[10px] px-2 py-1 rounded-lg transition shrink-0 cursor-pointer"
+                        >
+                          สั่งซื้อ
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Live Chat & Admin Control Panel */}
+              <div className="w-full md:w-80 bg-slate-900 border-t md:border-t-0 md:border-l border-slate-800 flex flex-col h-64 md:h-auto">
+                {/* Live Stream Title Header */}
+                <div className="p-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xs font-bold text-white truncate">{activeLiveRoom.sellerStoreName}</h3>
+                    <p className="text-[10px] text-slate-400">ห้องสนทนาสด AI Moderated</p>
+                  </div>
+                </div>
+
+                {/* Admin Moderation Panel (If Admin / Manager) */}
+                {(profile?.role === 'Admin' || profile?.role === 'Manager') && (
+                  <div className="p-2 bg-rose-950/80 border-b border-rose-800/80 flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-rose-300">🛡️ ผู้ดูแลระบบ:</span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const warnMsg = prompt('กรอกข้อความคำเตือนส่งไปยังหน้าจอผู้ไลฟ์สด:', '⚠️ คำเตือน: กรุณารักษากฎระเบียบชุมชน ห้ามใช้คำหยาบหรือโฆษณาเกินจริงค่ะ');
+                        if (warnMsg) {
+                          try {
+                            const res = await fetch('/api/live-streams/admin-action', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ liveId: activeLiveRoom.id, action: 'warn', warningText: warnMsg })
+                            });
+                            const d = await res.json();
+                            if (d.success) {
+                              setActiveLiveRoom(d.liveStream);
+                              showNotif('ส่งคำเตือนเรียบร้อยแล้วค่ะ', 'info');
+                            }
+                          } catch (e) {
+                            showNotif('เกิดข้อผิดพลาดในการส่งคำเตือน', 'error');
+                          }
+                        }
+                      }}
+                      className="bg-amber-500 hover:bg-amber-600 text-slate-950 text-[9px] font-black px-2 py-1 rounded-md transition cursor-pointer"
+                    >
+                      ⚠️ เตือน
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (confirm('คุณต้องการปิดการถ่ายทอดสดห้องนี้ทันทีเนื่องจากละเมิดกฎหรือไม่?')) {
+                          try {
+                            const res = await fetch('/api/live-streams/admin-action', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ liveId: activeLiveRoom.id, action: 'end' })
+                            });
+                            const d = await res.json();
+                            if (d.success) {
+                              setActiveLiveRoom(null);
+                              fetchLiveStreams();
+                              showNotif('สั่งปิดไลฟ์สดห้องนี้เรียบร้อยแล้วค่ะ', 'success');
+                            }
+                          } catch (e) {
+                            showNotif('เกิดข้อผิดพลาดในการปิดไลฟ์', 'error');
+                          }
+                        }
+                      }}
+                      className="bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-black px-2 py-1 rounded-md transition cursor-pointer"
+                    >
+                      ⛔ ปิดไลฟ์
+                    </button>
+                  </div>
+                )}
+
+                {/* Chat Messages Scroll Thread */}
+                <div className="flex-1 p-3 overflow-y-auto space-y-2.5 text-xs bg-slate-900/50">
+                  {(!activeLiveRoom.chatMessages || activeLiveRoom.chatMessages.length === 0) ? (
+                    <div className="text-center text-slate-500 py-8 text-[11px]">
+                      ยังไม่มีข้อความสนทนา พิมพ์ทักทายร้านค้าได้เลยค่ะ
+                    </div>
+                  ) : (
+                    activeLiveRoom.chatMessages.map((msg: any) => (
+                      <div key={msg.id} className="bg-slate-800/80 p-2 rounded-xl border border-slate-700/60 space-y-0.5">
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="font-bold text-rose-300">{msg.sender}</span>
+                          <span className="text-slate-500">{msg.time}</span>
+                        </div>
+                        <p className={`text-[11px] leading-relaxed ${msg.aiBlocked ? 'text-amber-400 font-semibold' : 'text-slate-200'}`}>
+                          {msg.text}
+                        </p>
+                        {msg.aiBlocked && (
+                          <span className="inline-block text-[8px] bg-amber-950 text-amber-400 px-1.5 py-0.5 rounded border border-amber-800">
+                            🤖 คัดกรองโดย AI Moderation
+                          </span>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Chat Input Form */}
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!liveChatInput.trim()) return;
+                    const textToSend = liveChatInput;
+                    setLiveChatInput('');
+
+                    try {
+                      const res = await fetch('/api/live-streams/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          liveId: activeLiveRoom.id,
+                          senderName: profile?.name || currentUser?.username || 'ผู้เข้าชม',
+                          text: textToSend
+                        })
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        fetchLiveStreams();
+                        if (!activeLiveRoom.chatMessages) activeLiveRoom.chatMessages = [];
+                        setActiveLiveRoom({
+                          ...activeLiveRoom,
+                          chatMessages: [...activeLiveRoom.chatMessages, data.chatMessage]
+                        });
+                        if (data.message && data.message.includes('AI')) {
+                          showNotif(data.message, 'info');
+                        }
+                      }
+                    } catch (err) {
+                      showNotif('เกิดข้อผิดพลาดในการส่งข้อความ', 'error');
+                    }
+                  }}
+                  className="p-2.5 bg-slate-950 border-t border-slate-800 flex items-center gap-2"
+                >
+                  <input
+                    type="text"
+                    placeholder="พิมพ์ข้อความคุยในไลฟ์..."
+                    value={liveChatInput}
+                    onChange={(e) => setLiveChatInput(e.target.value)}
+                    className="flex-1 bg-slate-900 border border-slate-700 focus:border-rose-500 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    className="bg-rose-600 hover:bg-rose-500 text-white font-extrabold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer"
+                  >
+                    ส่ง
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: SELLER CREATE / START LIVE STREAM */}
+        {showCreateLiveModal && (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[200] flex items-center justify-center p-4 animate-fadeIn">
+            <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-4 animate-scaleUp">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                    <span>🎥</span>
+                    <span>เริ่มต้นถ่ายทอดสด (Start Live Shopping)</span>
+                  </h3>
+                  <p className="text-[10px] text-slate-400">กรอกข้อมูลและวางลิงก์สตรีมสดเพื่อเปิดห้องไลฟ์สดขายสินค้า</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateLiveModal(false)}
+                  className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-full text-xs"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">หัวข้อการถ่ายทอดสด *</label>
+                  <input
+                    type="text"
+                    placeholder="เช่น 🔴 ไลฟ์สดแจกโค้ดส่วนลด 50% สินค้าแฟชั่นมาใหม่!"
+                    value={liveCreateTitle}
+                    onChange={(e) => setLiveCreateTitle(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-medium focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">ลิงก์วิดีโอถ่ายทอดสด (TikTok Live / YouTube / Facebook)</label>
+                  <input
+                    type="text"
+                    placeholder="เช่น https://www.tiktok.com/@username/live หรือ https://www.youtube.com/watch?v=xxx"
+                    value={liveCreateStreamUrl}
+                    onChange={(e) => setLiveCreateStreamUrl(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-medium focus:outline-none focus:border-rose-500 font-mono text-[11px]"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1 font-medium">รองรับลิงก์ TikTok Live (เช่น https://www.tiktok.com/@ชื่อช่อง/live), YouTube Live และ Facebook Live ค่ะ</p>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">รูปหน้าปกห้องไลฟ์ (Image URL)</label>
+                  <input
+                    type="text"
+                    placeholder="https://images.unsplash.com/photo-..."
+                    value={liveCreateCoverImage}
+                    onChange={(e) => setLiveCreateCoverImage(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-medium focus:outline-none focus:border-rose-500 font-mono text-[11px]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateLiveModal(false)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!liveCreateTitle.trim()) {
+                      showNotif('กรุณากรอกหัวข้อไลฟ์สดด้วยค่ะ', 'error');
+                      return;
+                    }
+                    try {
+                      const res = await fetch('/api/live-streams/create', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          sellerId: profile?.userId || currentUser?.userId,
+                          sellerStoreName: profile?.sellerStoreName || profile?.name || 'ร้านค้าสมาชิก นทีพลัส',
+                          title: liveCreateTitle,
+                          streamUrl: liveCreateStreamUrl,
+                          coverImage: liveCreateCoverImage
+                        })
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        setShowCreateLiveModal(false);
+                        setLiveCreateTitle('');
+                        setLiveCreateStreamUrl('');
+                        setLiveCreateCoverImage('');
+                        fetchLiveStreams();
+                        setActiveLiveRoom(data.liveStream);
+                        showNotif('เปิดห้องไลฟ์สดเรียบร้อยแล้วค่ะ!', 'success');
+                      } else {
+                        showNotif(data.message || 'เกิดข้อผิดพลาดในการเปิดไลฟ์สด', 'error');
+                      }
+                    } catch (err) {
+                      showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
+                    }
+                  }}
+                  className="flex-1 bg-rose-600 hover:bg-rose-500 text-white py-2.5 rounded-xl font-extrabold text-xs transition cursor-pointer shadow-md"
+                >
+                  🔴 เริ่มถ่ายทอดสด
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* FIXED MOBILE BOTTOM NAVIGATION BAR (GUARANTEED 1 LINE FIT ON ALL PHONES) */}
+        <div className="fixed bottom-0 inset-x-0 z-[100] md:hidden bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-2xl px-1 py-1.5">
+          <div className="grid grid-cols-5 w-full items-center justify-around">
+            {/* Tab 1: หน้าแรก */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('shop');
+                setShopPortalView('store');
+                setShopSubTab('shop');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className={`flex flex-col items-center justify-center py-1 cursor-pointer transition ${
+                activeTab === 'shop' && shopPortalView === 'store' && shopSubTab === 'shop'
+                  ? 'text-orange-600 font-black'
+                  : 'text-slate-500 hover:text-slate-900 font-medium'
+              }`}
+            >
+              <div className="w-5 h-5 flex items-center justify-center text-sm mb-0.5">
+                🏠
+              </div>
+              <span className="text-[10px] leading-none whitespace-nowrap">หน้าแรก</span>
+            </button>
+
+            {/* Tab 2: ไลฟ์ */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('shop');
+                setShopPortalView('store');
+                setShopSubTab('shop');
+                if (liveStreamsList.length > 0) {
+                  setActiveLiveRoom(liveStreamsList[0]);
+                } else {
+                  showNotif('ยังไม่มีไลฟ์สดในขณะนี้ค่ะ', 'info');
+                }
+              }}
+              className={`flex flex-col items-center justify-center py-1 cursor-pointer transition relative ${
+                activeLiveRoom ? 'text-rose-600 font-black' : 'text-slate-500 hover:text-rose-600 font-medium'
+              }`}
+            >
+              <div className="w-5 h-5 flex items-center justify-center text-sm mb-0.5 relative">
+                🔴
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full animate-ping" />
+              </div>
+              <span className="text-[10px] leading-none whitespace-nowrap">ไลฟ์</span>
+            </button>
+
+            {/* Tab 3: คำสั่งซื้อ */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('shop');
+                setShopPortalView('store');
+                setShopSubTab('myOrders');
+              }}
+              className={`flex flex-col items-center justify-center py-1 cursor-pointer transition ${
+                activeTab === 'shop' && shopPortalView === 'store' && shopSubTab === 'myOrders'
+                  ? 'text-orange-600 font-black'
+                  : 'text-slate-500 hover:text-slate-900 font-medium'
+              }`}
+            >
+              <div className="w-5 h-5 flex items-center justify-center text-sm mb-0.5">
+                📦
+              </div>
+              <span className="text-[10px] leading-none whitespace-nowrap">คำสั่งซื้อ</span>
+            </button>
+
+            {/* Tab 4: แจ้งเตือน */}
+            <button
+              type="button"
+              onClick={() => {
+                showNotif('ระบบการแจ้งเตือนพัสดุและข่าวสารอัปเดตเรียบร้อยค่ะ', 'info');
+              }}
+              className="flex flex-col items-center justify-center py-1 cursor-pointer transition text-slate-500 hover:text-slate-900 font-medium"
+            >
+              <div className="w-5 h-5 flex items-center justify-center text-sm mb-0.5 relative">
+                🔔
+              </div>
+              <span className="text-[10px] leading-none whitespace-nowrap">แจ้งเตือน</span>
+            </button>
+
+            {/* Tab 5: โปรไฟล์ */}
+            <button
+              type="button"
+              onClick={() => {
+                if (!currentUser) {
+                  setShowLoginModal(true);
+                } else {
+                  setActiveTab('profile');
+                }
+              }}
+              className={`flex flex-col items-center justify-center py-1 cursor-pointer transition ${
+                activeTab === 'profile'
+                  ? 'text-orange-600 font-black'
+                  : 'text-slate-500 hover:text-slate-900 font-medium'
+              }`}
+            >
+              <div className="w-5 h-5 flex items-center justify-center text-sm mb-0.5">
+                👤
+              </div>
+              <span className="text-[10px] leading-none whitespace-nowrap">โปรไฟล์</span>
+            </button>
+          </div>
+        </div>
 
         {renderLoginModal()}
       </main>

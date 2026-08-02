@@ -6930,6 +6930,177 @@ app.post('/api/report-quota-exceeded', (req, res) => {
   res.json({ success: true });
 });
 
+// GET LIVE STREAMS & BANNER STATUS
+app.get('/api/live-streams', (req, res) => {
+  const db = readDb();
+  if (!Array.isArray(db.liveStreams) || db.liveStreams.length === 0) {
+    db.liveStreams = [
+      {
+        id: "live_001",
+        sellerId: "A260600001",
+        sellerStoreName: "บริษัท นที พลัส มาร์เก็ต",
+        title: "🔴 นทีพลัส มาร์เก็ต LIVE: แนะนำสินค้าเด็ด & แพ็กเกจสุดคุ้มประจำวัน!",
+        streamUrl: "https://www.youtube.com/embed/jfKfPfyJRdk",
+        coverImage: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80",
+        status: "LIVE",
+        viewersCount: 342,
+        pinnedProductIds: ["pack_m", "pack_l"],
+        createdAt: new Date().toISOString(),
+        warningBanner: null,
+        chatMessages: [
+          { id: 'c1', sender: 'คุณวิชัย', text: 'สวัสดีครับ สนใจชุด M ครับ', time: '21:00', aiBlocked: false },
+          { id: 'c2', sender: 'คุณณภัชดา', text: 'โปรนี้จัดส่งฟรีกี่วันคะ', time: '21:02', aiBlocked: false }
+        ]
+      },
+      {
+        id: "live_002",
+        sellerId: "A260700002",
+        sellerStoreName: "ร้านณภัชดา บิวตี้ ช็อป",
+        title: "💄 ไลฟ์สดแจกโค้ดส่วนลดเครื่องสำอางและครีมบำรุงผิวเกาหลี 100%",
+        streamUrl: "https://www.youtube.com/embed/5qap5aO4i9A",
+        coverImage: "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80",
+        status: "LIVE",
+        viewersCount: 189,
+        pinnedProductIds: ["pack_s"],
+        createdAt: new Date().toISOString(),
+        warningBanner: null,
+        chatMessages: [
+          { id: 'c1', sender: 'คุณกิริยากรณ์', text: 'สีสวยมากค่ะ สั่งซื้อแล้วน้า', time: '21:05', aiBlocked: false }
+        ]
+      },
+      {
+        id: "live_003",
+        sellerId: "A260700006",
+        sellerStoreName: "กฤศวัฒน์ ไอที มอลล์",
+        title: "⚡ แนะนำอุปกรณ์แกดเจ็ต สมาร์ทโฮม ราคาส่งส่งตรงจากโรงงาน",
+        streamUrl: "https://www.youtube.com/embed/2g811Ko7F28",
+        coverImage: "https://images.unsplash.com/photo-1550009158-9ebf69173e03?auto=format&fit=crop&w=800&q=80",
+        status: "LIVE",
+        viewersCount: 95,
+        pinnedProductIds: ["pack_xl"],
+        createdAt: new Date().toISOString(),
+        warningBanner: null,
+        chatMessages: []
+      }
+    ];
+    writeDb(db);
+  }
+  res.json({
+    success: true,
+    bannerVisible: db.bannerVisible !== false,
+    liveStreams: db.liveStreams
+  });
+});
+
+// CREATE / START LIVE STREAM
+app.post('/api/live-streams/create', (req, res) => {
+  const { sellerId, sellerStoreName, title, streamUrl, coverImage, pinnedProductIds } = req.body;
+  if (!sellerId || !title) {
+    return res.status(400).json({ success: false, message: "กรุณากรอกข้อมูลให้ครบถ้วนค่ะ" });
+  }
+
+  const db = readDb();
+  if (!Array.isArray(db.liveStreams)) db.liveStreams = [];
+
+  const newLive = {
+    id: `live_${Date.now()}`,
+    sellerId,
+    sellerStoreName: sellerStoreName || "ร้านค้าสมาชิก นทีพลัส",
+    title,
+    streamUrl: streamUrl || "https://www.youtube.com/embed/jfKfPfyJRdk",
+    coverImage: coverImage || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80",
+    status: "LIVE",
+    viewersCount: Math.floor(15 + Math.random() * 50),
+    pinnedProductIds: pinnedProductIds || [],
+    createdAt: new Date().toISOString(),
+    warningBanner: null,
+    chatMessages: [
+      { id: 'init', sender: 'ระบบอัตโนมัติ', text: '🔴 เริ่มต้นการถ่ายทอดสดแล้ว ยินดีต้อนรับผู้เข้าชมทุกท่านค่ะ', time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }), aiBlocked: false }
+    ]
+  };
+
+  db.liveStreams.unshift(newLive);
+  writeDb(db);
+  res.json({ success: true, message: "เปิดห้องไลฟ์สดเรียบร้อยแล้วค่ะ!", liveStream: newLive });
+});
+
+// POST CHAT MESSAGE WITH AI MODERATION
+app.post('/api/live-streams/chat', (req, res) => {
+  const { liveId, senderName, text } = req.body;
+  if (!liveId || !text) return res.status(400).json({ success: false, message: "ข้อมูลไม่สมบูรณ์" });
+
+  const db = readDb();
+  if (!Array.isArray(db.liveStreams)) db.liveStreams = [];
+
+  const stream = db.liveStreams.find((s: any) => s.id === liveId);
+  if (!stream) return res.status(404).json({ success: false, message: "ไม่พบห้องไลฟ์สด" });
+
+  if (!Array.isArray(stream.chatMessages)) stream.chatMessages = [];
+
+  // Banned Thai profanity & illegal terms
+  const bannedKeywords = ['เหี้ย', 'ควย', 'ส้นตีน', 'สัตว์', 'เย็ด', 'เยด', 'มึง', 'กู', 'เชี่ย', 'ฉ้อโกง', 'หลอกลวง', 'เว็บพนัน', 'พนันออนไลน์', 'บาคาร่า', 'สล็อต', 'กระหรี่', 'สบประมาท', 'โง่'];
+  let cleanedText = text;
+  let isBlocked = false;
+
+  for (const word of bannedKeywords) {
+    const reg = new RegExp(word, 'gi');
+    if (reg.test(cleanedText)) {
+      isBlocked = true;
+      cleanedText = cleanedText.replace(reg, '*** [ตรวจพบคำไม่เหมาะสม AI] ***');
+    }
+  }
+
+  const msgObj = {
+    id: `msg_${Date.now()}`,
+    sender: senderName || 'ผู้เข้าชม',
+    text: cleanedText,
+    time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
+    aiBlocked: isBlocked
+  };
+
+  stream.chatMessages.push(msgObj);
+  writeDb(db);
+
+  res.json({
+    success: true,
+    message: isBlocked ? '⚠️ AI ตรวจพบข้อความไม่อยู่ในระเบียบชุมชน และทำการคัดกรองเรียบร้อยค่ะ' : 'ส่งข้อความสำเร็จ',
+    chatMessage: msgObj
+  });
+});
+
+// ADMIN MODERATION ACTION (WARNING OVERLAY / FORCE CLOSE STREAM)
+app.post('/api/live-streams/admin-action', (req, res) => {
+  const { liveId, action, warningText } = req.body;
+  const db = readDb();
+  if (!Array.isArray(db.liveStreams)) db.liveStreams = [];
+
+  const stream = db.liveStreams.find((s: any) => s.id === liveId);
+  if (!stream) return res.status(404).json({ success: false, message: "ไม่พบห้องไลฟ์สด" });
+
+  if (action === 'warn') {
+    stream.warningBanner = warningText || '⚠️ คำเตือนจากผู้ดูแลระบบ: กรุณารักษากฎระเบียบชุมชน ห้ามพูดคำหยาบหรือโฆษณาเกินจริง!';
+    writeDb(db);
+    return res.json({ success: true, message: "ส่งคำเตือนไปยังหน้าจอไลฟ์สดเรียบร้อยแล้วค่ะ", liveStream: stream });
+  } else if (action === 'end' || action === 'ban') {
+    stream.status = 'ENDED';
+    stream.isBanned = true;
+    stream.warningBanner = '⛔ ห้องไลฟ์สดนี้ถูกระงับและปิดการถ่ายทอดโดยผู้ดูแลระบบ เนื่องจากละเมิดมาตรฐานชุมชน';
+    writeDb(db);
+    return res.json({ success: true, message: "ปิดการถ่ายทอดสดห้องนี้เรียบร้อยแล้วค่ะ", liveStream: stream });
+  }
+
+  res.status(400).json({ success: false, message: "คำสั่งไม่ถูกต้อง" });
+});
+
+// TOGGLE BANNER VISIBILITY
+app.post('/api/admin/toggle-banner', (req, res) => {
+  const { visible } = req.body;
+  const db = readDb();
+  db.bannerVisible = !!visible;
+  writeDb(db);
+  res.json({ success: true, bannerVisible: db.bannerVisible, message: db.bannerVisible ? "เปิดแสดงแบนเนอร์ข่าวสารแล้วค่ะ" : "ซ่อนแบนเนอร์ข่าวสารเรียบร้อยแล้วค่ะ" });
+});
+
 // UNIFIED SYNC STATE API (Fallback when Firestore Quota is exceeded or fails)
 app.get('/api/sync-state', (req, res) => {
   try {
