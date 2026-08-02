@@ -5002,27 +5002,22 @@ app.post('/api/seller/mark-first-login', (req, res) => {
 // Get Seller Regulations text
 app.get('/api/seller/regulations', (req, res) => {
   const db = readDb();
-  let regulations = db.bankSettings?.sellerRegulations || `กฎระเบียบและข้อบังคับ Natee Plus Partner
+  const latestOfficialRegulations = `กฎระเบียบและข้อบังคับ Natee Plus Partner
 
-1. ผู้สมัครร้านค้าสามารถเข้าร่วมเป็น Partner ได้ตั้งแต่ตำแหน่ง Manager ขึ้นไป (หรือตามที่ผู้ดูแลระบบอนุมัติเป็นกรณีพิเศษ)
+1. ผู้สมัครร้านค้าสามารถเข้าร่วมเป็น Partner ได้ตั้งแต่ตำแหน่ง Member ขึ้นไป (หรือตามที่ผู้ดูแลระบบอนุมัติเป็นกรณีพิเศษ)
 2. ร้านค้าต้องระบุข้อมูลชื่อร้านและที่ตั้งคลังสินค้าจริงเพื่อใช้ในการบริการจัดการและรับส่งคืนสินค้า
 3. ห้ามตั้งชื่อร้านค้าที่ซ้ำกับแบรนด์อื่น หรือมีอักขระพิเศษ (@, #, $, %, ^, &, *)
 4. สินค้าที่จำหน่ายในร้านต้องเป็นสินค้าที่ถูกต้องตามกฎหมาย และไม่ละเมิดลิขสิทธิ์
-5. การหักค่าธรรมเนียมระบบ (GP) จะคำนวณที่อัตรา 20% โดย 50% ของ GP จะถูกปันผลกลับคืนสายงาน MLM ของท่าน
+5. การหักค่าธรรมเนียมระบบ (GP) จะคำนวณที่อัตรา 20% ของราคาก่อนภาษี โดย 50% ของ GP จะถูกนำไปคำนวนเป็น PV ของท่าน
 6. ปฏิบัติตามนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) อย่างเคร่งครัด
 7. สมาชิกทั่วไปที่ยังไม่ได้ลงทะเบียนเปิดร้านค้าจะไม่เห็นหมุดแผนที่คลังสินค้า และเมื่อได้รับการอนุมัติร้านค้าและยืนยันปักหมุดแล้ว หมุดแผนที่คลังสินค้าจะแสดงในหน้าหลักพอร์ทัลร้านค้า (Partner Portal)
 8. หมุดตำแหน่งคลังสินค้าและพิกัดจัดส่งจะถูกล็อกเป็นภาพนิ่งเมื่อยืนยันเรียบร้อยแล้ว หากต้องการย้ายหรือแก้ไขพิกัด ต้องยื่นขออนุมัติปรับเปลี่ยนพิกัดกับทางแอดมินระบบ`;
 
-  // Migration: If it contains the old term "ระดับ S/M ขึ้นไป" or "มีสถานะตั้งแต่ระดับ S/M ขึ้นไป", replace it or force update
-  if (regulations.includes("ระดับ S/M ขึ้นไป") || regulations.includes("มีสถานะตั้งแต่ระดับ S/M ขึ้นไป")) {
-    regulations = regulations.replace("มีสถานะตั้งแต่ระดับ S/M ขึ้นไป", "สามารถเข้าร่วมเป็น Partner ได้ตั้งแต่ตำแหน่ง Manager ขึ้นไป (หรือตามที่ผู้ดูแลระบบอนุมัติเป็นกรณีพิเศษ)")
-                             .replace("ระดับ S/M ขึ้นไป", "ตำแหน่ง Manager ขึ้นไป");
-    if (db.bankSettings) {
-      db.bankSettings.sellerRegulations = regulations;
-      writeDb(db);
-    }
-  }
-  res.json({ success: true, regulations });
+  if (!db.bankSettings) db.bankSettings = {};
+  db.bankSettings.sellerRegulations = latestOfficialRegulations;
+  writeDb(db);
+
+  res.json({ success: true, regulations: latestOfficialRegulations });
 });
 
 // Save Seller Regulations text (Admin with Manager/Admin role only)
@@ -6944,7 +6939,21 @@ app.get('/api/live-streams', (req, res) => {
   res.json({
     success: true,
     bannerVisible: db.bannerVisible !== false,
+    liveSystemEnabled: db.liveSystemEnabled !== false,
     liveStreams: db.liveStreams
+  });
+});
+
+// ADMIN TOGGLE LIVE SYSTEM GLOBAL SWITCH
+app.post('/api/admin/toggle-live-system', (req, res) => {
+  const { enabled } = req.body;
+  const db = readDb();
+  db.liveSystemEnabled = !!enabled;
+  writeDb(db);
+  res.json({
+    success: true,
+    liveSystemEnabled: db.liveSystemEnabled,
+    message: db.liveSystemEnabled ? "เปิดใช้งานระบบไลฟ์สดเรียบร้อยแล้วค่ะ" : "ปิดใช้งานระบบไลฟ์สดเรียบร้อยแล้วค่ะ"
   });
 });
 
@@ -6956,6 +6965,14 @@ app.post('/api/live-streams/create', (req, res) => {
   }
 
   const db = readDb();
+
+  // Check Global Live System Master Switch
+  if (db.liveSystemEnabled === false) {
+    return res.status(403).json({
+      success: false,
+      message: "ระบบไลฟ์สดถูกปิดใช้งานชั่วคราวโดยผู้ดูแลระบบ (Admin) ค่ะ"
+    });
+  }
   if (!Array.isArray(db.members)) db.members = [];
 
   // Find seller member record

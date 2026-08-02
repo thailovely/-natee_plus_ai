@@ -118,6 +118,7 @@ export default function App() {
 
   // Live Streams & Homepage Banner States
   const [bannerVisible, setBannerVisible] = useState<boolean>(true);
+  const [liveSystemEnabled, setLiveSystemEnabled] = useState<boolean>(true);
   const [liveStreamsList, setLiveStreamsList] = useState<any[]>([]);
   const [liveShopSearchQuery, setLiveShopSearchQuery] = useState<string>('');
   const [activeLiveRoom, setActiveLiveRoom] = useState<any | null>(null);
@@ -134,10 +135,31 @@ export default function App() {
       const d = await res.json();
       if (d.success) {
         if (typeof d.bannerVisible === 'boolean') setBannerVisible(d.bannerVisible);
+        if (typeof d.liveSystemEnabled === 'boolean') setLiveSystemEnabled(d.liveSystemEnabled);
         if (Array.isArray(d.liveStreams)) setLiveStreamsList(d.liveStreams);
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleAdminToggleLiveSystem = async () => {
+    try {
+      const newStatus = !liveSystemEnabled;
+      const res = await fetch('/api/admin/toggle-live-system', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: newStatus })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setLiveSystemEnabled(data.liveSystemEnabled);
+        showNotif(data.message, data.liveSystemEnabled ? 'success' : 'info');
+      } else {
+        showNotif(data.message || 'ไม่สามารถเปลี่ยนสถานะระบบไลฟ์ได้', 'error');
+      }
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการตั้งค่าระบบไลฟ์สดค่ะ', 'error');
     }
   };
   const [isFirstLoginModal, setIsFirstLoginModal] = useState<boolean>(() => {
@@ -7560,6 +7582,31 @@ export default function App() {
                     {(!isSidebarCollapsed || sidebarOpen) && <span>ตั้งค่า Pop-Up ส่วนลด</span>}
                   </span>
                 </button>
+
+                {/* Analytics Dashboard */}
+                <button 
+                  onClick={() => { 
+                    setActiveTab('admin'); 
+                    setAdminSection('admin_console');
+                    setAdminSubTab('analytics'); 
+                    setSidebarOpen(false); 
+                  }}
+                  title="ศูนย์วิเคราะห์ข้อมูลและกราฟสถิติ"
+                  className={`w-full flex items-center transition-all duration-200 cursor-pointer relative rounded-xl ${
+                    isSidebarCollapsed 
+                      ? 'justify-center p-2.5 text-center' 
+                      : 'justify-between px-3.5 py-2.5 text-left text-xs font-semibold'
+                  } ${
+                    activeTab === 'admin' && adminSubTab === 'analytics' 
+                      ? 'bg-gradient-to-r from-sky-500/25 to-indigo-500/15 text-sky-300 font-bold border-l-4 border-sky-400 shadow-sm' 
+                      : 'text-sky-300/80 hover:bg-slate-800/60 hover:text-sky-200'
+                  }`}
+                >
+                  <span className="flex items-center gap-3">
+                    <BarChart2 size={18} className="shrink-0 text-sky-400" />
+                    {(!isSidebarCollapsed || sidebarOpen) && <span>ศูนย์วิเคราะห์ข้อมูล & สถิติ</span>}
+                  </span>
+                </button>
               </div>
             )}
           </nav>
@@ -9793,11 +9840,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => {
-                        if (checkoutMarketProduct) {
-                          setShowMarketCheckoutModal(true);
-                        } else {
-                          setShopSubTab('myOrders');
-                        }
+                        setShowMarketCheckoutModal(true);
                       }}
                       className="w-full sm:w-auto bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold px-4 py-2 rounded-2xl text-xs transition border border-orange-200/80 flex items-center justify-center gap-2 relative shadow-2xs cursor-pointer"
                     >
@@ -9937,7 +9980,7 @@ export default function App() {
                         </h2>
                       </div>
 
-                      {/* Controls: Compact Search & Start Stream */}
+                      {/* Controls: Compact Search & Admin Master Toggle & Start Stream */}
                       <div className="flex items-center gap-2">
                         <div className="relative hidden sm:block w-40">
                           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
@@ -9950,10 +9993,31 @@ export default function App() {
                           />
                         </div>
 
+                        {/* Admin/Manager Toggle Live System Master Switch */}
+                        {(profile?.role === 'Admin' || profile?.role === 'Manager') && (
+                          <button
+                            type="button"
+                            onClick={handleAdminToggleLiveSystem}
+                            title="คลิกเพื่อเปิด/ปิดระบบการไลฟ์สดทั้งระบบ (เฉพาะ Admin/Manager)"
+                            className={`font-bold px-2.5 py-1 rounded-lg text-[10px] transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer border ${
+                              liveSystemEnabled
+                                ? 'bg-emerald-600/90 hover:bg-emerald-500 text-white border-emerald-400/40'
+                                : 'bg-slate-700 hover:bg-slate-600 text-rose-300 border-slate-600'
+                            }`}
+                          >
+                            <span>{liveSystemEnabled ? '🟢' : '🔴'}</span>
+                            <span>{liveSystemEnabled ? 'เปิดระบบไลฟ์' : 'ปิดระบบไลฟ์'}</span>
+                          </button>
+                        )}
+
                         {(profile?.sellerStatus === 'Active' || profile?.role === 'Admin' || profile?.role === 'Manager') && (
                           <button
                             type="button"
                             onClick={() => {
+                              if (!liveSystemEnabled) {
+                                showNotif('ระบบไลฟ์สดถูกปิดใช้งานชั่วคราวโดยผู้ดูแลระบบ (Admin) ค่ะ', 'warning');
+                                return;
+                              }
                               const isApproved = profile?.sellerStatus === 'Active' || profile?.role === 'Admin' || profile?.role === 'Manager' || currentUser?.sellerStatus === 'Active';
                               const store = (profile?.sellerStoreName || profile?.storeName || currentUser?.sellerStoreName || (profile?.role === 'Admin' || profile?.role === 'Manager' ? 'ร้านค้าส่วนกลาง นทีพลัส มาร์เก็ต' : '')).trim();
 
@@ -9967,7 +10031,11 @@ export default function App() {
                               }
                               setShowCreateLiveModal(true);
                             }}
-                            className="bg-rose-600 hover:bg-rose-500 text-white font-bold px-2.5 py-1 rounded-lg text-[10px] transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer"
+                            className={`font-bold px-2.5 py-1 rounded-lg text-[10px] transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer ${
+                              liveSystemEnabled
+                                ? 'bg-rose-600 hover:bg-rose-500 text-white'
+                                : 'bg-slate-800 text-slate-500 cursor-not-allowed opacity-60'
+                            }`}
                           >
                             <span>🎥</span>
                             <span>เริ่มไลฟ์</span>
@@ -9978,6 +10046,20 @@ export default function App() {
 
                     {/* Compact Live Stream Thumbnail Grid / Scroll Rail */}
                     {(() => {
+                      if (!liveSystemEnabled) {
+                        return (
+                          <div className="py-4 px-3 bg-amber-950/40 border border-amber-800/60 rounded-xl text-center space-y-1.5">
+                            <div className="inline-flex items-center gap-2 text-amber-400 font-bold text-xs">
+                              <span>⛔</span>
+                              <span>ระบบไลฟ์สดถูกปิดใช้งานชั่วคราวโดยผู้ดูแลระบบ (Admin)</span>
+                            </div>
+                            <p className="text-[11px] text-slate-300 max-w-md mx-auto leading-relaxed">
+                              ขณะนี้ผู้ดูแลระบบสั่งปิดใช้งานฟังก์ชันไลฟ์สดชั่วคราว เมื่อ Admin เปิดระบบอีกครั้ง คุณสามารถสตรีมไลฟ์สดและเลือกชมสินค้าจากร้านค้าต่างๆ ได้ตามปกติค่ะ
+                            </p>
+                          </div>
+                        );
+                      }
+
                       const q = liveShopSearchQuery.toLowerCase().trim();
                       const filteredLives = liveStreamsList.filter((s: any) => {
                         if (!q) return true;
@@ -16003,6 +16085,15 @@ export default function App() {
                         </span>
                       )}
                     </button>
+
+                    <button 
+                      onClick={() => setAdminSubTab('analytics')} 
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                        adminSubTab === 'analytics' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      📊 ศูนย์วิเคราะห์ข้อมูลและกราฟสถิติ
+                    </button>
                   </>
                 )}
 
@@ -16090,6 +16181,15 @@ export default function App() {
                       }`}
                     >
                       📝 Admin Console (ระเบียบผู้ขาย)
+                    </button>
+
+                    <button 
+                      onClick={() => setAdminSubTab('analytics')} 
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                        adminSubTab === 'analytics' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      📊 ศูนย์วิเคราะห์ข้อมูลและกราฟสถิติ
                     </button>
                   </>
                 )}
@@ -22370,15 +22470,16 @@ export default function App() {
                     const maxVal = Math.max(...monthValues, 100000);
 
                     // Member Package Distribution
+                    const validMembers = adminMembersList || [];
                     const packageDistribution = {
-                      Regular: membersList.filter(m => !m.rank || m.rank === 'Member' || m.rank === 'ทั่วไป').length,
-                      S: membersList.filter(m => m.rank === 'S').length,
-                      M: membersList.filter(m => m.rank === 'M').length,
-                      L: membersList.filter(m => m.rank === 'L').length,
-                      XL: membersList.filter(m => m.rank === 'XL').length,
-                      XXL: membersList.filter(m => m.rank === 'XXL').length
+                      Regular: validMembers.filter(m => !m.rank || m.rank === 'Member' || m.rank === 'ทั่วไป').length,
+                      S: validMembers.filter(m => m.rank === 'S').length,
+                      M: validMembers.filter(m => m.rank === 'M').length,
+                      L: validMembers.filter(m => m.rank === 'L').length,
+                      XL: validMembers.filter(m => m.rank === 'XL').length,
+                      XXL: validMembers.filter(m => m.rank === 'XXL').length
                     };
-                    const totalMembers = membersList.length || 1;
+                    const totalMembers = validMembers.length || 1;
 
                     return (
                       <div className="space-y-6">
@@ -22429,7 +22530,7 @@ export default function App() {
                               <span className="p-2 bg-sky-50 text-sky-600 rounded-xl">👥</span>
                             </div>
                             <div className="text-xl font-black text-slate-900 font-mono">
-                              {membersList.length.toLocaleString()} ท่าน
+                              {validMembers.length.toLocaleString()} ท่าน
                             </div>
                             <p className="text-[10px] text-sky-600 font-bold flex items-center gap-1">
                               🌐 เติบโตขยายองค์กร 20 ชั้น
@@ -25075,7 +25176,7 @@ export default function App() {
                       หมวดที่ 1: คุณสมบัติของผู้สมัครพาร์ทเนอร์ร้านค้า (Merchant Qualifications)
                     </h3>
                     <p className="pl-3">
-                      1.1 ผู้สมัครต้องเป็นสมาชิกของระบบ Natee Plus Market และมีสถานะคุณสมบัติตั้งแต่ตำแหน่ง <strong>Manager</strong> ขึ้นไป (หรือได้รับการอนุมัติแต่งตั้งพิเศษจากคณะผู้บริหารระบบ) <br/>
+                      1.1 ผู้สมัครต้องเป็นสมาชิกของระบบ Natee Plus Market และมีสถานะคุณสมบัติตั้งแต่ตำแหน่ง <strong>Member</strong> ขึ้นไป (หรือได้รับการอนุมัติแต่งตั้งพิเศษจากคณะผู้บริหารระบบ) <br/>
                       1.2 ผู้สมัครต้องผ่านกระบวนการยืนยันตัวตนทางกฎหมาย (KYC) ด้วยบัตรประจำตัวประชาชนหรือหนังสือเดินทางฉบับจริง พร้อมทั้งผูกบัญชีธนาคารเพื่อรับโอนเงินคอมมิชชั่นและยอดขายสุทธิ
                     </p>
                   </div>
@@ -25096,8 +25197,8 @@ export default function App() {
                       หมวดที่ 3: โครงสร้างค่าธรรมเนียมระบบ GP 20% และการจ่ายผลตอบแทน MLM
                     </h3>
                     <p className="pl-3">
-                      3.1 การวางขายสินค้าผ่านพอร์ทัลร้านค้า Natee Plus Partner จะมีการหักค่าธรรมเนียมบริหารจัดการระบบ (GP) ในอัตรา <strong>20%</strong> จากยอดขาย <br/>
-                      3.2 จำนวนเงิน <strong>50% ของค่า GP (คิดเป็น 10% ของยอดขายสุทธิ)</strong> จะถูกนำมาปันผลคำนวณโบนัสเข้าผังสายงาน MLM (ผังขยาย 2 ยูนิลีเวอร์ 20 ชั้น & Plan B) ให้แก่สมาชิกผู้แนะนำตามโครงสร้างสิทธิประโยชน์ <br/>
+                      3.1 การวางขายสินค้าผ่านพอร์ทัลร้านค้า Natee Plus Partner จะมีการหักค่าธรรมเนียมบริหารจัดการระบบ (GP) ในอัตรา <strong>20% ของราคาก่อนภาษี</strong> <br/>
+                      3.2 จำนวนเงิน <strong>50% ของ GP</strong> จะถูกนำไปคำนวนเป็น PV ของท่าน <br/>
                       3.3 ยอดเงินส่วนคงเหลือหลังหักค่าธรรมเนียม GP จะถูกโอนเข้ากระเป๋าเงินอิเล็กทรอนิกส์ E-Money ของร้านค้าโดยอัตโนมัติเมื่อคำสั่งซื้อสำเร็จเรียบร้อย
                     </p>
                   </div>
@@ -25791,153 +25892,207 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL: MARKET CHECKOUT SUMMARY WITH SEPARATE ITEM SHIPPING AND GUARANTEE */}
-        {showMarketCheckoutModal && checkoutMarketProduct && (
+        {/* MODAL: MARKET CHECKOUT / CART SUMMARY WITH CANCEL / CLEAR CART OPTION */}
+        {showMarketCheckoutModal && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto space-y-5 animate-fadeIn">
               <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <span className="text-xl">🛒</span>
                   <div>
-                    <h3 className="text-base font-extrabold text-slate-900">สรุปรายการสั่งซื้อสินค้า (Order Summary)</h3>
-                    <p className="text-[11px] text-slate-400">ร้านค้า: {checkoutMarketProduct.sellerStoreName || checkoutMarketProduct.sellerId || 'นที พลัส มาร์เก็ต'}</p>
+                    <h3 className="text-base font-extrabold text-slate-900">รถเข็นของฉัน (Order Summary)</h3>
+                    <p className="text-[11px] text-slate-400">
+                      {checkoutMarketProduct ? `ร้านค้า: ${checkoutMarketProduct.sellerStoreName || checkoutMarketProduct.sellerId || 'นที พลัส มาร์เก็ต'}` : 'นที พลัส มาร์เก็ต'}
+                    </p>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowMarketCheckoutModal(false)}
                   className="text-slate-400 hover:text-slate-600 font-bold p-1.5 rounded-full hover:bg-slate-100 text-sm cursor-pointer"
+                  title="ปิด"
                 >
                   ✕
                 </button>
               </div>
 
-              {/* Order Item Details & Financial Breakdown */}
-              {(() => {
-                const isSellerFreeShipping = 
-                  checkoutMarketProduct.isFreeShipping === true ||
-                  checkoutMarketProduct.sellerPaysShipping === true ||
-                  checkoutMarketProduct.freeShipping === true ||
-                  checkoutMarketProduct.shippingFee === 0 ||
-                  checkoutMarketProduct.shippingFee === '0' ||
-                  checkoutMarketProduct.shippingFeeBase === '0' ||
-                  checkoutMarketProduct.shippingFeeBase === 0;
-
-                const itemShippingFee = isSellerFreeShipping 
-                  ? 0 
-                  : (checkoutMarketProduct.shippingFee !== undefined && checkoutMarketProduct.shippingFee !== null 
-                      ? Number(checkoutMarketProduct.shippingFee) 
-                      : (checkoutMarketProduct.shippingFeeBase !== undefined && checkoutMarketProduct.shippingFeeBase !== null 
-                          ? Number(checkoutMarketProduct.shippingFeeBase) 
-                          : 35));
-
-                const totalShippingFee = itemShippingFee * marketProductQty;
-                const itemsTotalPrice = (checkoutMarketProduct.price || 0) * marketProductQty;
-                const grandTotal = itemsTotalPrice + totalShippingFee;
-
-                const productPv = checkoutMarketProduct.pv || Math.floor(parseFloat(checkoutMarketProduct.price || 0) * 0.5);
-                const totalPvEarned = productPv * marketProductQty;
-                const canSeePv = ['S','M','L','XL','XXL'].includes(profile?.rank || '') || profile?.role === 'Admin' || profile?.role === 'Manager';
-
-                return (
-                  <>
-                    <div className="flex gap-4 bg-slate-50 p-3.5 rounded-2xl border border-slate-100 items-center">
-                      <img
-                        src={checkoutMarketProduct.image}
-                        className="w-16 h-16 object-cover rounded-xl border border-slate-200 shrink-0"
-                        alt={checkoutMarketProduct.name}
-                        referrerPolicy="no-referrer"
-                      />
-                      <div className="flex-1 space-y-1">
-                        <h4 className="font-extrabold text-slate-900 text-xs leading-snug">{checkoutMarketProduct.name}</h4>
-                        <p className="text-[11px] text-slate-500 font-medium">ราคาต่อชิ้น: ฿{(checkoutMarketProduct.price || 0).toLocaleString()} | จำนวน: {marketProductQty} ชิ้น</p>
-                        <p className="text-[10px] text-emerald-700 font-bold">
-                          ค่าจัดส่งต่อชิ้น: {isSellerFreeShipping || itemShippingFee === 0 ? '฿0 (ร้านค้าออกค่าขนส่งให้ค่ะ)' : `฿${itemShippingFee}`}
-                        </p>
-                        {canSeePv && (
-                          <p className="text-[10px] text-indigo-600 font-bold">
-                            คะแนน PV ที่ได้รับ: +{totalPvEarned.toLocaleString()} PV
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Financial Breakdown */}
-                    <div className="bg-slate-900 text-white p-4 rounded-2xl space-y-2 font-sans text-xs">
-                      <div className="flex justify-between text-slate-300">
-                        <span>ราคาสินค้ารวม ({marketProductQty} ชิ้น):</span>
-                        <span className="font-mono font-bold">฿ {itemsTotalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="flex justify-between text-slate-300">
-                        <span>ค่าจัดส่งรวม:</span>
-                        <span className="font-mono font-bold text-emerald-400">
-                          {isSellerFreeShipping || itemShippingFee === 0 ? '฿ 0.00 (ร้านค้าออกค่าขนส่งให้)' : `฿ ${totalShippingFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                        </span>
-                      </div>
-                      {canSeePv && (
-                        <div className="flex justify-between text-emerald-300 pt-1 border-t border-slate-800 font-bold">
-                          <span>รวมคะแนน PV ที่จะได้รับ (ตำแหน่ง {profile?.rank || 'S'} ขึ้นไป):</span>
-                          <span className="font-mono font-extrabold">+{totalPvEarned.toLocaleString()} PV</span>
-                        </div>
-                      )}
-                      <div className="border-t border-slate-800 pt-2 flex justify-between items-baseline font-black">
-                        <span className="text-amber-400 text-sm">ยอดชำระสุทธิ (Total Amount):</span>
-                        <span className="text-emerald-400 text-lg font-mono">฿ {grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      </div>
-                    </div>
-                  </>
-                );
-              })()}
-
-              {/* 7-Day Money Back Guarantee Notice */}
-              <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl text-center space-y-1">
-                <span className="text-amber-800 font-extrabold text-xs block">🛡️ การรับประกันความพึงพอใจ 100%</span>
-                <p className="text-[11px] font-bold text-amber-900 leading-tight">
-                  สินค้ารับประกัน หากไม่พอใจยินดีคืนเงิน 7 วัน นับจากวันรับสินค้า
-                </p>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowMarketCheckoutModal(false)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-2xl font-bold text-xs transition cursor-pointer"
-                >
-                  ย้อนกลับ
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const res = await fetch('/api/shop/purchase', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          userId: currentUser?.userId || profile?.userId,
-                          productId: checkoutMarketProduct.id,
-                          quantity: marketProductQty
-                        })
-                      });
-                      const data = await res.json();
-                      if (data.success) {
+              {!checkoutMarketProduct ? (
+                <div className="text-center py-6 space-y-3">
+                  <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto text-3xl border border-amber-100">
+                    🛒
+                  </div>
+                  <h4 className="font-extrabold text-slate-800 text-sm">รถเข็นของคุณยังไม่มีสินค้า</h4>
+                  <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
+                    ขณะนี้ไม่มีรายการสินค้าค้างในรถเข็น คุณสามารถเลือกชมและกดสั่งซื้อสินค้าใน นที พลัส มาร์เก็ต ได้เลยค่ะ
+                  </p>
+                  <div className="flex gap-2 pt-2 justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setShowMarketCheckoutModal(false)}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-2xl font-bold text-xs transition cursor-pointer"
+                    >
+                      ยกเลิก / ปิด
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
                         setShowMarketCheckoutModal(false);
-                        playOrderAlertSound();
-                        showNotif(`สั่งซื้อสินค้าสำเร็จแล้ว! ${data.message || ''}`, 'success');
-                        if (currentUser) {
-                          fetchProfile(currentUser.userId);
+                        setShopSubTab('all');
+                      }}
+                      className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-2xl font-bold text-xs transition shadow-md cursor-pointer"
+                    >
+                      🛍️ เลือกดูสินค้า
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Order Item Details & Financial Breakdown */}
+                  {(() => {
+                    const isSellerFreeShipping = 
+                      checkoutMarketProduct.isFreeShipping === true ||
+                      checkoutMarketProduct.sellerPaysShipping === true ||
+                      checkoutMarketProduct.freeShipping === true ||
+                      checkoutMarketProduct.shippingFee === 0 ||
+                      checkoutMarketProduct.shippingFee === '0' ||
+                      checkoutMarketProduct.shippingFeeBase === '0' ||
+                      checkoutMarketProduct.shippingFeeBase === 0;
+
+                    const itemShippingFee = isSellerFreeShipping 
+                      ? 0 
+                      : (checkoutMarketProduct.shippingFee !== undefined && checkoutMarketProduct.shippingFee !== null 
+                          ? Number(checkoutMarketProduct.shippingFee) 
+                          : (checkoutMarketProduct.shippingFeeBase !== undefined && checkoutMarketProduct.shippingFeeBase !== null 
+                              ? Number(checkoutMarketProduct.shippingFeeBase) 
+                              : 35));
+
+                    const totalShippingFee = itemShippingFee * marketProductQty;
+                    const itemsTotalPrice = (checkoutMarketProduct.price || 0) * marketProductQty;
+                    const grandTotal = itemsTotalPrice + totalShippingFee;
+
+                    const productPv = checkoutMarketProduct.pv || Math.floor(parseFloat(checkoutMarketProduct.price || 0) * 0.5);
+                    const totalPvEarned = productPv * marketProductQty;
+                    const canSeePv = ['S','M','L','XL','XXL'].includes(profile?.rank || '') || profile?.role === 'Admin' || profile?.role === 'Manager';
+
+                    return (
+                      <>
+                        <div className="flex gap-4 bg-slate-50 p-3.5 rounded-2xl border border-slate-100 items-center">
+                          <img
+                            src={checkoutMarketProduct.image}
+                            className="w-16 h-16 object-cover rounded-xl border border-slate-200 shrink-0"
+                            alt={checkoutMarketProduct.name}
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="flex-1 space-y-1">
+                            <h4 className="font-extrabold text-slate-900 text-xs leading-snug">{checkoutMarketProduct.name}</h4>
+                            <p className="text-[11px] text-slate-500 font-medium">ราคาต่อชิ้น: ฿{(checkoutMarketProduct.price || 0).toLocaleString()} | จำนวน: {marketProductQty} ชิ้น</p>
+                            <p className="text-[10px] text-emerald-700 font-bold">
+                              ค่าจัดส่งต่อชิ้น: {isSellerFreeShipping || itemShippingFee === 0 ? '฿0 (ร้านค้าออกค่าขนส่งให้ค่ะ)' : `฿${itemShippingFee}`}
+                            </p>
+                            {canSeePv && (
+                              <p className="text-[10px] text-indigo-600 font-bold">
+                                คะแนน PV ที่ได้รับ: +{totalPvEarned.toLocaleString()} PV
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Financial Breakdown */}
+                        <div className="bg-slate-900 text-white p-4 rounded-2xl space-y-2 font-sans text-xs">
+                          <div className="flex justify-between text-slate-300">
+                            <span>ราคาสินค้ารวม ({marketProductQty} ชิ้น):</span>
+                            <span className="font-mono font-bold">฿ {itemsTotalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-300">
+                            <span>ค่าจัดส่งรวม:</span>
+                            <span className="font-mono font-bold text-emerald-400">
+                              {isSellerFreeShipping || itemShippingFee === 0 ? '฿ 0.00 (ร้านค้าออกค่าขนส่งให้)' : `฿ ${totalShippingFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                            </span>
+                          </div>
+                          {canSeePv && (
+                            <div className="flex justify-between text-emerald-300 pt-1 border-t border-slate-800 font-bold">
+                              <span>รวมคะแนน PV ที่จะได้รับ (ตำแหน่ง {profile?.rank || 'S'} ขึ้นไป):</span>
+                              <span className="font-mono font-extrabold">+{totalPvEarned.toLocaleString()} PV</span>
+                            </div>
+                          )}
+                          <div className="border-t border-slate-800 pt-2 flex justify-between items-baseline font-black">
+                            <span className="text-amber-400 text-sm">ยอดชำระสุทธิ (Total Amount):</span>
+                            <span className="text-emerald-400 text-lg font-mono">฿ {grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+
+                  {/* 7-Day Money Back Guarantee Notice */}
+                  <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl text-center space-y-1">
+                    <span className="text-amber-800 font-extrabold text-xs block">🛡️ การรับประกันความพึงพอใจ 100%</span>
+                    <p className="text-[11px] font-bold text-amber-900 leading-tight">
+                      สินค้ารับประกัน หากไม่พอใจยินดีคืนเงิน 7 วัน นับจากวันรับสินค้า
+                    </p>
+                  </div>
+
+                  {/* Action Buttons: Cancel/Clear, Back, Confirm */}
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCheckoutMarketProduct(null);
+                          setShowMarketCheckoutModal(false);
+                          showNotif('ยกเลิกรายการในรถเข็นเรียบร้อยแล้วค่ะ', 'info');
+                        }}
+                        className="flex-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 py-2.5 rounded-2xl font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <span>🗑️</span>
+                        <span>ยกเลิกสั่งซื้อ / ล้างรถเข็น</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowMarketCheckoutModal(false)}
+                        className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-2xl font-bold text-xs transition cursor-pointer"
+                      >
+                        ปิดหน้าต่าง (เลือกดูต่อ)
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('/api/shop/purchase', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              userId: currentUser?.userId || profile?.userId,
+                              productId: checkoutMarketProduct.id,
+                              quantity: marketProductQty
+                            })
+                          });
+                          const data = await res.json();
+                          if (data.success) {
+                            setCheckoutMarketProduct(null);
+                            setShowMarketCheckoutModal(false);
+                            playOrderAlertSound();
+                            showNotif(`สั่งซื้อสินค้าสำเร็จแล้ว! ${data.message || ''}`, 'success');
+                            if (currentUser) {
+                              fetchProfile(currentUser.userId);
+                            }
+                          } else {
+                            showNotif(data.message || 'เกิดข้อผิดพลาดในการสั่งซื้อสินค้า', 'error');
+                          }
+                        } catch (err) {
+                          showNotif('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์สั่งซื้อสินค้าได้', 'error');
                         }
-                      } else {
-                        showNotif(data.message || 'เกิดข้อผิดพลาดในการสั่งซื้อสินค้า', 'error');
-                      }
-                    } catch (err) {
-                      showNotif('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์สั่งซื้อสินค้าได้', 'error');
-                    }
-                  }}
-                  className="flex-2 bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-2xl font-black text-xs transition shadow-lg cursor-pointer"
-                >
-                  ✓ ยืนยันการสั่งซื้อสินค้า (สั่งกระจายไปยังร้านค้า)
-                </button>
-              </div>
+                      }}
+                      className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-2xl font-black text-xs transition shadow-lg cursor-pointer flex items-center justify-center gap-1"
+                    >
+                      <span>✓</span>
+                      <span>ยืนยันการสั่งซื้อสินค้า (ส่งคำสั่งซื้อไปยังร้านค้า)</span>
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
