@@ -1140,6 +1140,64 @@ export default function App() {
   const [adminEditingChoiceId, setAdminEditingChoiceId] = useState<string | null>(null);
   const [withDeductions, setWithDeductions] = useState<{[key: string]: string}>({});
 
+  // System Version & Force Update States
+  const APP_VERSION = "2.1.0";
+  const [serverVersion, setServerVersion] = useState<string | null>(null);
+  const [hasNewVersion, setHasNewVersion] = useState(false);
+
+  useEffect(() => {
+    const checkVersion = async () => {
+      try {
+        const res = await fetch('/api/version');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.version) {
+            setServerVersion(data.version);
+            if (data.version !== APP_VERSION) {
+              setHasNewVersion(true);
+            }
+          }
+        }
+      } catch (err) {
+        // Silently handle
+      }
+    };
+    checkVersion();
+    const timer = setInterval(checkVersion, 120000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleForceUpdateAndClearCache = async () => {
+    try {
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map(name => caches.delete(name)));
+      }
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+        }
+      }
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('natee_cache_') || key.startsWith('vite_') || key.includes('version'))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+      
+      showNotif('🔄 กำลังล้างแคชและโหลดข้อมูลระบบเป็นเวอร์ชั่นล่าสุด...', 'info');
+      setTimeout(() => {
+        window.location.href = window.location.pathname + '?v=' + Date.now();
+      }, 800);
+    } catch (err) {
+      console.error('Force update error:', err);
+      window.location.reload();
+    }
+  };
+
   // Google Sheets Export States
   const [googleSheetsToken, setGoogleSheetsToken] = useState<string | null>(null);
   const [googleSheetsUser, setGoogleSheetsUser] = useState<any | null>(null);
@@ -6571,10 +6629,18 @@ export default function App() {
           </div>
 
           {/* Important Action Notice Box */}
-          <div className="bg-rose-950/60 border border-rose-500/30 rounded-2xl p-4 text-left space-y-1.5">
+          <div className="bg-rose-950/60 border border-rose-500/30 rounded-2xl p-4 text-left space-y-3">
             <p className="text-xs text-rose-200 leading-relaxed font-bold">
-              ⚠️ เมื่อระบบกลับมา แล้วหน้าจอเป็นสีขาว ให้กดล้างแคส ในแอปพิเคชั่นของท่าน เพื่อกลับเข้าสู่ระบบได้ปกติ
+              ⚠️ หากต้องการอัปเดตระบบหรือพบหน้าจอค้างสีขาว ให้กดปุ่มล้างแคชด้านล่างนี้เพื่อรับเวอร์ชั่นล่าสุดทันที
             </p>
+            <button
+              type="button"
+              onClick={handleForceUpdateAndClearCache}
+              className="w-full bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs py-2.5 px-4 rounded-xl shadow-lg transition flex items-center justify-center gap-2 cursor-pointer border border-rose-400/30 active:scale-95"
+            >
+              <RefreshCw size={14} className="animate-spin" />
+              <span>🔄 กดปุ่มนี้เพื่อล้างแคช & อัปเดตเวอร์ชั่นล่าสุด</span>
+            </button>
           </div>
 
           {/* Admin / Manager Login Section */}
@@ -22492,6 +22558,38 @@ export default function App() {
                     </ul>
                   </div>
 
+                  {/* SYSTEM VERSION & FORCE CACHE CLEAR CONTROL */}
+                  <div className="bg-sky-50/60 border border-sky-200/80 p-5 rounded-2xl space-y-3">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-sky-100 pb-3">
+                      <div className="flex items-center gap-2 text-sky-950 font-extrabold text-sm">
+                        <span className="text-lg">🚀</span>
+                        <span>การจัดการเวอร์ชั่นและล้างแคชระบบ (System Version & Cache Control)</span>
+                      </div>
+                      <span className="text-[10px] bg-sky-200/80 text-sky-900 px-2.5 py-0.5 rounded-full font-black">
+                        Current Version: v{APP_VERSION}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-slate-600 space-y-2 leading-relaxed">
+                      <p>
+                        เมื่อผู้พัฒนาอัปเดตโค้ดหรือระบบเวอร์ชั่นใหม่ หากเบราว์เซอร์หรืออุปกรณ์ติดแคชเก่า สามารถกดปุ่มล้างแคชด้านล่างเพื่อดึงไฟล์โค้ดล่าสุดกลับมาใช้งานได้ทันทีโดยไม่เสียข้อมูล
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3 pt-1">
+                        <button
+                          type="button"
+                          onClick={handleForceUpdateAndClearCache}
+                          className="bg-sky-700 hover:bg-sky-600 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl transition shadow flex items-center gap-2 cursor-pointer active:scale-95"
+                        >
+                          <RefreshCw size={14} />
+                          <span>🔄 บังคับล้างแคชและอัปเดตเครื่องนี้เป็นเวอร์ชั่นล่าสุด</span>
+                        </button>
+                        <span className="text-[11px] text-slate-500 font-medium">
+                          (เซิร์ฟเวอร์ตอบกลับ: <strong className="text-sky-900 font-bold">{serverVersion || 'v' + APP_VERSION}</strong>)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* LINE DEVELOPERS MESSAGING API & WEBHOOK AUTOMATED NOTIFICATION SETTINGS */}
                   <div className="bg-emerald-50/50 border border-emerald-200/80 p-5 rounded-2xl space-y-4">
                     <div className="flex items-center justify-between border-b border-emerald-100 pb-3">
@@ -27277,9 +27375,44 @@ export default function App() {
           </div>
         )}
 
+        {/* New Version Floating Top Alert */}
+        {hasNewVersion && (
+          <div className="fixed bottom-4 right-4 z-[9999] bg-indigo-950 text-white p-4 rounded-2xl shadow-2xl border border-indigo-400 flex items-center gap-3 max-w-sm animate-bounce">
+            <div className="bg-indigo-600 p-2 rounded-xl text-white">
+              <RefreshCw size={20} className="animate-spin" />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-xs font-black text-amber-300">🚀 มีการอัปเดตระบบเวอร์ชั่นใหม่!</p>
+              <p className="text-[10px] text-slate-300">เวอร์ชั่นเซิร์ฟเวอร์ล่าสุด: {serverVersion || 'v2.1.0'}</p>
+            </div>
+            <button
+              onClick={handleForceUpdateAndClearCache}
+              className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] px-3 py-1.5 rounded-xl shadow transition cursor-pointer shrink-0"
+            >
+              อัปเดตเลย
+            </button>
+          </div>
+        )}
+
         {/* Global Footer */}
-        <footer className="bg-white border-t border-slate-100 px-6 py-4 text-center text-[10px] text-slate-400">
-          © {new Date().getFullYear()} บริษัท นที พลัส มาร์เก็ต จำกัด (Natee Plus Market Co., Ltd.) • โครงสร้างเครือข่ายธุรกิจร้านค้านวัตกรรมอย่างโปร่งใส มั่งคั่ง มั่นคง ยั่งยืน • <button onClick={() => setShowPdpaModal(true)} className="text-indigo-600 hover:underline cursor-pointer">นโยบายความเป็นส่วนตัว (PDPA)</button>
+        <footer className="bg-white border-t border-slate-100 px-6 py-4 text-center text-[10px] text-slate-400 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+          <span>© {new Date().getFullYear()} บริษัท นที พลัส มาร์เก็ต จำกัด (Natee Plus Market Co., Ltd.) • โครงสร้างเครือข่ายธุรกิจร้านค้านวัตกรรมอย่างโปร่งใส มั่งคั่ง มั่นคง ยั่งยืน</span>
+          <span>•</span>
+          <button onClick={() => setShowPdpaModal(true)} className="text-indigo-600 hover:underline cursor-pointer font-semibold">
+            นโยบายความเป็นส่วนตัว (PDPA)
+          </button>
+          <span>•</span>
+          <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold">
+            เวอร์ชั่นระบบ v{APP_VERSION}
+          </span>
+          <button
+            onClick={handleForceUpdateAndClearCache}
+            className="text-amber-600 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 px-2.5 py-0.5 rounded-full font-bold transition cursor-pointer border border-amber-200/80 flex items-center gap-1"
+            title="ล้างแคชเบราว์เซอร์และโหลดโค้ดเวอร์ชั่นล่าสุด"
+          >
+            <RefreshCw size={10} />
+            <span>ล้างแคช & อัปเดตเวอร์ชั่น</span>
+          </button>
         </footer>
 
         {/* Lazada/Shopee Style Admin Promo Pop-up Modal */}

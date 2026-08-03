@@ -7005,6 +7005,20 @@ app.post('/api/admin/test-notify', async (req, res) => {
   res.json(resObj);
 });
 
+const CURRENT_APP_VERSION = "2.1.0";
+const BUILD_TIMESTAMP = new Date().toISOString();
+
+// GET APP VERSION & SYSTEM UPDATE STATUS
+app.get('/api/version', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.json({
+    success: true,
+    version: CURRENT_APP_VERSION,
+    buildTimestamp: BUILD_TIMESTAMP,
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 // GET FIREBASE CLIENT CONFIG FOR REAL-TIME SYNC
 app.get('/api/firebase-config', (req, res) => {
   let fileConfig: any = {};
@@ -8012,7 +8026,7 @@ async function startServer() {
           res.setHeader('Pragma', 'no-cache');
           res.setHeader('Expires', '0');
         } else if (filePath.includes('/assets/') || filePath.endsWith('.js') || filePath.endsWith('.css')) {
-          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
         }
       }
     }));
