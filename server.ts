@@ -1535,6 +1535,16 @@ function writeDb(data) {
       }
     }
 
+    // Sync any approved seller products in sellerProducts into products
+    for (const sp of data.sellerProducts) {
+      if (sp && sp.id && (sp.status === 'Approved' || sp.status === 'Active')) {
+        const exists = data.products.some((p: any) => p.id === sp.id);
+        if (!exists) {
+          data.products.push({ ...sp, status: 'Approved' });
+        }
+      }
+    }
+
     // Safety: If current write is accidentally empty but cacheDb has valid items, merge back cacheDb items
     if (data.products.length === 0 && cacheDb && Array.isArray(cacheDb.products) && cacheDb.products.length > 0) {
       console.warn("⚠️ [writeDb Safety] Restoring products from cacheDb because incoming products array was empty.");
@@ -5247,9 +5257,11 @@ app.post('/api/seller/product', async (req, res) => {
   
   res.json({ 
     success: true, 
+    product: newProduct,
+    sellerProducts: db.sellerProducts.filter(p => p.sellerId === userId || (member?.sellerCode && p.sellerId === member.sellerCode)),
     message: isApproved 
       ? "เพิ่มรายการสินค้าลงร้านค้าและอนุมัติขึ้นแสดงหน้าร้านทันทีสำเร็จ! ✨" 
-      : "เพิ่มสินค้าเข้าร้านค้าสำเร็จ! อยู่ระหว่างรอแอดมินตรวจสอบก่อนแสดงผลบนช็อป" 
+      : "เพิ่มสินค้าเข้าร้านค้าสำเร็จ! อยู่ระหว่างรอแอดมินตรวจสอบและอนุมัติก่อนเปิดวางจำหน่ายหน้าร้าน" 
   });
 });
 
@@ -5257,7 +5269,17 @@ app.post('/api/seller/product', async (req, res) => {
 app.get('/api/seller/products/:userId', (req, res) => {
   const { userId } = req.params;
   const db = readDb();
-  const products = db.sellerProducts.filter(p => p.sellerId === userId);
+  const member = db.members.find(m => m.userId === userId || m.sellerCode === userId);
+  const sellerCode = member?.sellerCode;
+  const memberUserId = member?.userId || userId;
+
+  const products = db.sellerProducts.filter(p => 
+    p.sellerId === memberUserId || 
+    (sellerCode && p.sellerId === sellerCode) ||
+    (sellerCode && p.sellerCode === sellerCode) ||
+    p.sellerCode === memberUserId ||
+    (userId === 'admin' && p.sellerId === 'admin')
+  );
   res.json({ success: true, products });
 });
 
@@ -6388,16 +6410,13 @@ app.post('/api/admin/purge-sample-products', async (req, res) => {
     if (!p || !p.id) return false;
     if (officialPackages.includes(p.id) || p.category === 'Package') return true;
     if (String(p.id).startsWith('shopee_') || String(p.id).startsWith('demo_') || String(p.id).startsWith('sample_')) return false;
-    // Keep products if they belong to a real seller
-    if (p.sellerId && db.members.some((m: any) => m.userId === p.sellerId)) return true;
-    return false;
+    return true;
   });
 
   db.sellerProducts = db.sellerProducts.filter((sp: any) => {
     if (!sp || !sp.id) return false;
     if (String(sp.id).startsWith('shopee_') || String(sp.id).startsWith('demo_') || String(sp.id).startsWith('sample_')) return false;
-    if (sp.sellerId && db.members.some((m: any) => m.userId === sp.sellerId)) return true;
-    return false;
+    return true;
   });
 
   writeDb(db);

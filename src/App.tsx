@@ -6022,6 +6022,9 @@ export default function App() {
       const d = await res.json();
       if (d.success) {
         showNotif(d.message || "ยื่นอนุมัติเพิ่มรายการสินค้าเรียบร้อยแล้วค่ะ", 'success');
+        if (Array.isArray(d.sellerProducts)) {
+          setSellerProducts(d.sellerProducts);
+        }
         setNewProd({ 
           name: '', price: '100', discountPercent: '0', shippingFeeBase: '35', shippingDiscount: '0',
           affiliateCommission: '0', isAffiliateEnabled: true, extraPv: '0', isAvailable: true,
