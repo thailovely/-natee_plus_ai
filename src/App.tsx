@@ -2623,7 +2623,6 @@ export default function App() {
         setSentTxnOtp(d.otp);
         setIsTxnOtpSent(true);
         showNotif(d.message, 'success');
-        alert(`📧 [จำลองการส่งอีเมล] รหัส OTP สำหรับยืนยันการทำธุรกรรมของคุณคือ: ${d.otp}`);
       } else {
         showNotif(d.message || 'เกิดข้อผิดพลาดในการส่ง OTP', 'error');
       }
@@ -2670,7 +2669,6 @@ export default function App() {
         setSentPinOtp(generatedOtp);
         setIsPinOtpSent(true);
         showNotif(`ระบบได้ส่งรหัส OTP 6 หลักสำหรับยืนยันการเปลี่ยน PIN ไปที่เมล ${profile.email} แล้วค่ะ`, 'success');
-        alert(`📧 [จำลองการส่งอีเมล] รหัส OTP สำหรับเปลี่ยนรหัสธุรกรรม PIN ของคุณคือ: ${generatedOtp}`);
       } else {
         showNotif(data.message || 'เกิดข้อผิดพลาดในการส่ง OTP', 'error');
       }
@@ -3636,7 +3634,6 @@ export default function App() {
         setFirstLoginSentOtp(generatedOtp);
         setFirstLoginOtpSent(true);
         showNotif(`ระบบได้ส่งรหัส OTP ไปยังอีเมลเรียบร้อยแล้วค่ะ`, 'success');
-        alert(`📧 [จำลองการส่งอีเมล] รหัส OTP สำหรับยืนยันรหัสธุรกรรม PIN ของคุณคือ: ${generatedOtp}`);
       } else {
         showNotif(data.message || 'เกิดข้อผิดพลาดในการส่ง OTP', 'error');
       }
@@ -25063,7 +25060,7 @@ export default function App() {
                         {isSendingTxnOtp ? 'กำลังส่ง...' : 'ส่งอีกครั้ง'}
                       </button>
                     </div>
-                    <p className="text-[10px] text-emerald-600 font-semibold text-center">✓ ส่งรหัส OTP 6 หลักไปที่เมลของท่านแล้ว (กรณีจำลองรหัสจะแสดงในกล่อง Alert)</p>
+                    <p className="text-[10px] text-emerald-600 font-semibold text-center">✓ ส่งรหัส OTP 6 หลักไปที่อีเมลของท่านเรียบร้อยแล้วค่ะ</p>
                   </div>
                 )}
               </div>

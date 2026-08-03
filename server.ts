@@ -3710,7 +3710,6 @@ app.post('/api/member/send-transaction-otp', async (req, res) => {
 
   res.json({ 
     success: true, 
-    otp: otpCode,
     message: `ระบบได้ส่งรหัส OTP 6 หลักไปยังอีเมล ${member.email || 'ของท่าน'} เรียบร้อยแล้วค่ะ` 
   });
 });
