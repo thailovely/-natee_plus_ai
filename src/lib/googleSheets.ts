@@ -69,12 +69,19 @@ export const signInWithGoogleSheets = async (): Promise<{ user: User; accessToke
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
-      throw new Error('Failed to get access token from Google Auth');
+      throw new Error('ไม่ได้รับ Access Token จากการเข้าสู่ระบบ Google');
     }
     cachedAccessToken = credential.accessToken;
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     console.error('Google Sheets Sign In Error:', error);
+    if (error?.code === 'auth/popup-blocked') {
+      throw new Error('เบราว์เซอร์บล็อกป๊อปอัพเข้าสู่ระบบ Google (กรุณากดอนุญาต Pop-up บนแถบ URL แล้วลองอีกครั้ง)');
+    } else if (error?.code === 'auth/popup-closed-by-user') {
+      throw new Error('หน้าต่างเข้าสู่ระบบ Google ถูกปิดก่อนดำเนินการสำเร็จ');
+    } else if (error?.code === 'auth/unauthorized-domain') {
+      throw new Error('โดเมนเว็บไซต์ยังไม่ได้เพิ่มใน Google Auth Authorized Domains (สามารถกดดาวน์โหลด CSV/Excel ด้านข้างแทนได้ทันที)');
+    }
     throw error;
   } finally {
     isSigningIn = false;
@@ -216,4 +223,62 @@ export const exportMembersToGoogleSheets = async (
   }
 
   return { spreadsheetId, spreadsheetUrl };
+};
+
+export const downloadMembersCsv = (members: MemberExportData[]) => {
+  const headers = [
+    'วันที่สมัคร',
+    'รหัสสมาชิก (userId)',
+    'Username',
+    'ชื่อ-นามสกุล',
+    'เบอร์โทรศัพท์',
+    'อีเมล',
+    'ตำแหน่งธุรกิจ (Rank)',
+    'บทบาทสิทธิ์ (Role)',
+    'ยอดเงิน E-Cash คงเหลือ (฿)',
+    'คูปอง E-Coupon คงเหลือ (฿)',
+    'รายได้สะสม E-Cash (฿)',
+    'คูปองสะสม E-Coupon (฿)',
+    'รหัสผู้แนะนำ (SponsorId)'
+  ];
+
+  const rows = members.map(m => {
+    let dateStr = '-';
+    if (m.createdAt) {
+      try {
+        dateStr = new Date(m.createdAt).toLocaleString('th-TH');
+      } catch {
+        dateStr = m.createdAt;
+      }
+    }
+
+    const cleanField = (val: any) => `"${String(val || '').replace(/"/g, '""')}"`;
+
+    return [
+      cleanField(dateStr),
+      cleanField(m.userId),
+      cleanField(m.username),
+      cleanField(`${m.name || ''} ${m.surname || ''}`.trim()),
+      cleanField(m.phone),
+      cleanField(m.email),
+      cleanField(m.rank),
+      cleanField(m.role),
+      m.balanceECash || 0,
+      m.balanceECoupon || 0,
+      m.totalEarnings || 0,
+      m.totalCouponsEarned || 0,
+      cleanField(m.sponsorId)
+    ].join(',');
+  });
+
+  const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `NateePlus_Members_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 };

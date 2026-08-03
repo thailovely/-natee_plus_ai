@@ -16,6 +16,7 @@ import {
   initGoogleSheetsAuth,
   signInWithGoogleSheets,
   exportMembersToGoogleSheets,
+  downloadMembersCsv,
   logoutGoogleSheets
 } from './lib/googleSheets';
 import { initializeApp } from 'firebase/app';
@@ -509,6 +510,9 @@ export default function App() {
     } catch (e) {}
     setSidebarOpen(false);
     setCurrentUser(null);
+    setProfile(null);
+    setSellerSessionUser(null);
+    setActiveTab('home');
     setOriginalAdmin(null);
     setUsername('');
     setPassword('');
@@ -1211,6 +1215,32 @@ export default function App() {
     }
   };
 
+  const handleDownloadMembersCsv = () => {
+    try {
+      const dataToExport = adminMembersList.map((m: any) => ({
+        userId: m.userId || '',
+        username: m.username || '',
+        name: m.name || '',
+        surname: m.surname || '',
+        phone: m.phone || '',
+        email: m.email || '',
+        rank: m.rank || 'S',
+        role: m.role || 'Member',
+        balanceECash: m.balanceECash || 0,
+        balanceECoupon: m.balanceECoupon || 0,
+        totalEarnings: m.totalEarnings || 0,
+        totalCouponsEarned: m.totalCouponsEarned || 0,
+        sponsorId: m.sponsorId || '',
+        createdAt: m.createdAt || ''
+      }));
+      downloadMembersCsv(dataToExport);
+      showNotif('ดาวน์โหลดไฟล์ CSV/Excel รายชื่อสมาชิกสำเร็จเรียบร้อยแล้วค่ะ!', 'success');
+    } catch (err: any) {
+      console.error('CSV Export Error:', err);
+      showNotif('เกิดข้อผิดพลาดในการสร้างไฟล์ CSV', 'error');
+    }
+  };
+
   const handleDisconnectGoogleSheets = async () => {
     try {
       await logoutGoogleSheets();
@@ -1613,7 +1643,7 @@ export default function App() {
       fetchMlmTrees();
       fetchCsrFeed();
       fetchReports();
-      if (currentUser.role === 'Admin' || currentUser.role === 'Manager') {
+      if (currentUser?.role === 'Admin' || currentUser?.role === 'Manager') {
         fetchAdminQueues();
       }
     }
@@ -1696,9 +1726,9 @@ export default function App() {
   useEffect(() => {
     if (activeTab === 'seller' && !sellerSessionUser && !isRegisteringSeller) {
       const activeObj = (profile?.sellerStatus === 'Active' ? profile : currentUser?.sellerStatus === 'Active' ? currentUser : null);
-      if (activeObj && (activeObj.statusKyc === 'Active' || activeObj.role === 'Admin' || activeObj.role === 'Manager')) {
+      if (activeObj && (activeObj.statusKyc === 'Active' || activeObj?.role === 'Admin' || activeObj?.role === 'Manager')) {
         setSellerSessionUser(activeObj);
-      } else if (currentUser && (currentUser.role === 'Admin' || currentUser.role === 'Manager')) {
+      } else if (currentUser && (currentUser?.role === 'Admin' || currentUser?.role === 'Manager')) {
         const autoSeller = {
           ...currentUser,
           sellerStatus: 'Active',
@@ -6480,14 +6510,14 @@ export default function App() {
   };
 
   // MAINTENANCE MODE INTERCEPT
-  const isUserExemptFromMaintenance = currentUser && (
+  const isUserExemptFromMaintenance = Boolean(currentUser && (
     profile?.role === 'Manager' || 
     profile?.role === 'Admin' || 
-    currentUser.role === 'Manager' || 
-    currentUser.role === 'Admin' ||
-    currentUser.role?.toLowerCase() === 'admin' ||
-    currentUser.role?.toLowerCase() === 'manager'
-  );
+    currentUser?.role === 'Manager' || 
+    currentUser?.role === 'Admin' ||
+    currentUser?.role?.toLowerCase() === 'admin' ||
+    currentUser?.role?.toLowerCase() === 'manager'
+  ));
 
   const isMaintenanceActive = bankSettings?.maintenanceMode === true;
 
@@ -16748,7 +16778,7 @@ export default function App() {
           )}
 
           {/* ADMIN CONSOLE VIEW */}
-          {(activeTab === 'admin' && (currentUser.role === 'Admin' || currentUser.role === 'Manager')) && (
+          {(activeTab === 'admin' && (currentUser?.role === 'Admin' || currentUser?.role === 'Manager')) && (
             <div className="space-y-6 animate-fadeIn max-w-6xl">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4">
                 <div>
@@ -17303,7 +17333,7 @@ export default function App() {
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                  <div className="flex flex-wrap items-center gap-2 self-start sm:self-center shrink-0">
                     <button
                       type="button"
                       disabled={isExportingToSheets}
@@ -17321,6 +17351,15 @@ export default function App() {
                           <span>{googleSheetsUser ? 'บันทึก/อัปเดตไป Google Sheet' : 'เชื่อมต่อ & บันทึก Google Sheet'}</span>
                         </>
                       )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadMembersCsv}
+                      className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-[11px] px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                      title="ดาวน์โหลดไฟล์ CSV สามารถนำไปเปิดใน Excel หรือ Import เข้า Google Sheets ได้ทันที"
+                    >
+                      <FileText size={13} />
+                      <span>ดาวน์โหลด CSV / Excel</span>
                     </button>
                     {googleSheetsUser && (
                       <button
