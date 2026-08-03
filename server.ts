@@ -6038,7 +6038,7 @@ app.post('/api/ai/refine-description', async (req, res) => {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     console.warn("⚠️ GEMINI_API_KEY is not defined in environment variables. Falling back to simple simulated rewrite.");
-    const mockRefined = `🌿 ${targetText.slice(0, 300)} ✨ ปลอดภัย ได้มาตรฐานนทีพลัส 💯% (ปรับปรุงสรรพคุณตามข้อกำหนดกฎหมายเรียบร้อยแล้วค่ะ)`;
+    const mockRefined = `✨ ${targetText.slice(0, 200)} 🌿 ดูแลและบำรุงอย่างอ่อนโยน ปลอดภัย มั่นใจได้ค่ะ 💯%`;
     return res.json({ success: true, refinedText: mockRefined });
   }
 
@@ -6052,12 +6052,11 @@ app.post('/api/ai/refine-description', async (req, res) => {
       }
     });
 
-    const prompt = `คุณคือ AI ผู้ช่วยเขียนรายละเอียดสินค้าสำหรับร้านค้าบนระบบ Natee Plus
-หน้าที่ของคุณคือ นำข้อมูลสินค้าหรือข้อความสรรพคุณสินค้าต่อไปนี้ มาเขียนและเรียบเรียงใหม่ให้น่าอ่าน มีการใช้อิโมจิเล็กน้อยเพิ่มความดึงดูด และที่สำคัญที่สุดคือ ต้องปรับเปลี่ยนถ้อยคำให้ถูกต้องตามเกณฑ์ของกฎหมายไทย (เช่น พระราชบัญญัติอาหาร พ.ศ. 2522, พระราชบัญญัติเครื่องสำอาง พ.ศ. 2558, สมุนไพร ฯลฯ)
-- ต้องตัดหรือลดทอนคำอวดอ้างสรรพคุณเกินจริง คำโฆษณาต้องห้ามของ อย. (เช่น รักษาโรคหายขาด, ยาเทวดา, ดีที่สุดในโลก, ยับยั้งหรือป้องกันมะเร็ง, ขาวทันใจใน 3 วัน, ปลอดภัย 100%, เห็นผลทันที)
-- ปรับเปลี่ยนคำเหล่านั้นให้เป็นคำที่สุภาพ น่าเชื่อถือ ปลอดภัย และถูกกฎหมาย เช่น ช่วยบำรุง, ช่วยดูแลผิวพรรณ, สนับสนุนการทำงานของร่างกาย, อ่อนโยนต่อผิว
-- ความยาวของข้อความผลลัพธ์ห้ามเกิน 500 ตัวอักษรโดยเด็ดขาด
-- ให้ส่งกลับเฉพาะข้อความที่ปรับปรุงเสร็จแล้วเท่านั้น ไม่ต้องมีคำเกริ่นนำหรือคำอธิบายใดๆ ทั้งสิ้น
+    const prompt = `เขียนโปรโมทสั้นๆ น่าสนใจ น่าซื้อ ดึงดูดลูกค้า
+- ไม่ผิดกฎชุมชน TikTok และไม่ผิดกฎหมาย อย. (ห้ามใช้อักขระหรือคำอวดอ้างเกินจริง เช่น รักษาหายขาด, ดีที่สุด, ขาวทันที, ยาเทวดา)
+- ใส่เฉพาะตัวข้อความโปรโมทเท่านั้น ห้ามใส่คำเกริ่นนำ คำลงท้าย คำอธิบายการทำงานของคุณ หรือคำชี้แจงใดๆ ทั้งสิ้น
+- มีอิโมจิประกอบเพิ่มความน่าอ่านและสะดุดตา
+- ห้ามพูดถึงมาตรฐานของนทีพลัส หรือชื่อแบรนด์ระบบนทีพลัส
 
 ข้อมูลสินค้า: "${targetText}"`;
 
@@ -7151,6 +7150,8 @@ app.post('/api/live-streams/create', (req, res) => {
     status: "LIVE",
     viewersCount: Math.floor(15 + Math.random() * 50),
     pinnedProductIds: pinnedProductIds || [],
+    liveProductsCatalog: req.body.liveProductsCatalog || [], // Array of { id, name, price, image, skuCode }
+    activeSpotlightProduct: req.body.activeSpotlightProduct || null, // Currently pinned spotlight item
     createdAt: new Date().toISOString(),
     warningBanner: null,
     chatMessages: [
@@ -7163,7 +7164,44 @@ app.post('/api/live-streams/create', (req, res) => {
   res.json({ success: true, message: "เปิดห้องไลฟ์สดเรียบร้อยแล้วค่ะ!", liveStream: newLive });
 });
 
-// POST CHAT MESSAGE WITH AI MODERATION
+// UPDATE LIVE STREAM SPOTLIGHT ITEM (ปักตะกร้าแสดงเน้นเดี่ยว)
+app.post('/api/live-streams/spotlight', (req, res) => {
+  const { liveId, sellerId, activeSpotlightProduct } = req.body;
+  const db = readDb();
+  if (!Array.isArray(db.liveStreams)) db.liveStreams = [];
+
+  const stream = db.liveStreams.find((s: any) => s.id === liveId);
+  if (!stream) return res.status(404).json({ success: false, message: "ไม่พบห้องไลฟ์สด" });
+
+  stream.activeSpotlightProduct = activeSpotlightProduct;
+  writeDb(db);
+
+  res.json({
+    success: true,
+    message: activeSpotlightProduct 
+      ? `ปักตะกร้าสินค้า "${activeSpotlightProduct.name}" (รหัส ${activeSpotlightProduct.skuCode || 'A1'}) ขึ้นหน้าจอเรียบร้อยค่ะ` 
+      : "ปลดตะกร้าสินค้าแล้วค่ะ",
+    liveStream: stream
+  });
+});
+
+// END LIVE STREAM
+app.post('/api/live-streams/end', (req, res) => {
+  const { liveId, sellerId } = req.body;
+  const db = readDb();
+  if (!Array.isArray(db.liveStreams)) db.liveStreams = [];
+
+  const stream = db.liveStreams.find((s: any) => s.id === liveId);
+  if (!stream) return res.status(404).json({ success: false, message: "ไม่พบห้องไลฟ์สด" });
+
+  stream.status = 'ENDED';
+  stream.endedAt = new Date().toISOString();
+  writeDb(db);
+
+  res.json({ success: true, message: "ปิดการถ่ายทอดสดเรียบร้อยแล้วค่ะ", liveStream: stream });
+});
+
+// POST CHAT MESSAGE WITH AI MODERATION & SKU AUTO-MATCHING
 app.post('/api/live-streams/chat', (req, res) => {
   const { liveId, senderName, text } = req.body;
   if (!liveId || !text) return res.status(400).json({ success: false, message: "ข้อมูลไม่สมบูรณ์" });
@@ -7176,8 +7214,12 @@ app.post('/api/live-streams/chat', (req, res) => {
 
   if (!Array.isArray(stream.chatMessages)) stream.chatMessages = [];
 
-  // Banned Thai profanity & illegal terms
-  const bannedKeywords = ['เหี้ย', 'ควย', 'ส้นตีน', 'สัตว์', 'เย็ด', 'เยด', 'มึง', 'กู', 'เชี่ย', 'ฉ้อโกง', 'หลอกลวง', 'เว็บพนัน', 'พนันออนไลน์', 'บาคาร่า', 'สล็อต', 'กระหรี่', 'สบประมาท', 'โง่'];
+  // Extended Banned Thai profanity, illegal, & off-platform trade terms
+  const bannedKeywords = [
+    'เหี้ย', 'ควย', 'ส้นตีน', 'สัตว์', 'เย็ด', 'เยด', 'มึง', 'กู', 'เชี่ย', 'ฉ้อโกง', 'หลอกลวง',
+    'เว็บพนัน', 'พนันออนไลน์', 'บาคาร่า', 'สล็อต', 'กระหรี่', 'สบประมาท', 'โง่', 'โอนนอกระบบ',
+    'โอนตรงเข้าบัญชี', 'ทักไลน์ส่วนตัวนอกระบบ', 'โอนตรง', 'โกง', 'ส้นเท้า', 'แม่ง', 'ระยำ'
+  ];
   let cleanedText = text;
   let isBlocked = false;
 
@@ -7189,12 +7231,43 @@ app.post('/api/live-streams/chat', (req, res) => {
     }
   }
 
+  // SKU Code Auto-Matching Logic (e.g. buyer types "A1", "CF A1", "ขอ A1", "PROD-001")
+  let matchedProduct = null;
+  let matchedSkuCode = '';
+  const upperText = text.trim().toUpperCase();
+
+  const activeSpot = stream.activeSpotlightProduct;
+  const catalog = Array.isArray(stream.liveProductsCatalog) ? stream.liveProductsCatalog : [];
+
+  if (activeSpot && activeSpot.skuCode) {
+    const activeSku = String(activeSpot.skuCode).toUpperCase();
+    if (upperText.includes(activeSku) || upperText === activeSku || upperText === `CF ${activeSku}` || upperText === `ขอ ${activeSku}`) {
+      matchedProduct = activeSpot;
+      matchedSkuCode = activeSku;
+    }
+  }
+
+  if (!matchedProduct && catalog.length > 0) {
+    for (const prod of catalog) {
+      if (prod.skuCode) {
+        const prodSku = String(prod.skuCode).toUpperCase();
+        if (upperText.includes(prodSku) || upperText === prodSku || upperText === `CF ${prodSku}`) {
+          matchedProduct = prod;
+          matchedSkuCode = prodSku;
+          break;
+        }
+      }
+    }
+  }
+
   const msgObj = {
     id: `msg_${Date.now()}`,
     sender: senderName || 'ผู้เข้าชม',
     text: cleanedText,
     time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
-    aiBlocked: isBlocked
+    aiBlocked: isBlocked,
+    matchedSkuCode: matchedSkuCode || null,
+    matchedProduct: matchedProduct || null
   };
 
   stream.chatMessages.push(msgObj);
@@ -7203,7 +7276,9 @@ app.post('/api/live-streams/chat', (req, res) => {
   res.json({
     success: true,
     message: isBlocked ? '⚠️ AI ตรวจพบข้อความไม่อยู่ในระเบียบชุมชน และทำการคัดกรองเรียบร้อยค่ะ' : 'ส่งข้อความสำเร็จ',
-    chatMessage: msgObj
+    chatMessage: msgObj,
+    matchedProduct: matchedProduct,
+    matchedSkuCode: matchedSkuCode
   });
 });
 

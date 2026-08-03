@@ -129,6 +129,11 @@ export default function App() {
   const [liveCreateCoverImage, setLiveCreateCoverImage] = useState<string>('');
   const [liveCreatePinnedProductIds, setLiveCreatePinnedProductIds] = useState<string[]>([]);
 
+  // Studio Live Prep Room States
+  const [livePrepCatalog, setLivePrepCatalog] = useState<any[]>([]);
+  const [livePrepActiveSpotlight, setLivePrepActiveSpotlight] = useState<any | null>(null);
+  const [detectedSkuOrderModal, setDetectedSkuOrderModal] = useState<{ product: any; skuCode: string; liveStream?: any } | null>(null);
+
   const fetchLiveStreams = async () => {
     try {
       const res = await fetch('/api/live-streams');
@@ -140,6 +145,92 @@ export default function App() {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleCreateLiveStreamFromPrep = async () => {
+    if (!liveCreateTitle.trim()) {
+      showNotif('กรุณาระบุหัวข้อการถ่ายทอดสดก่อนค่ะ', 'error');
+      return;
+    }
+    const store = profile?.sellerStoreName || profile?.storeName || (profile?.role === 'Admin' || profile?.role === 'Manager' ? 'ร้านค้าส่วนกลาง นทีพลัส มาร์เก็ต' : '');
+    if (!store) {
+      showNotif('กรุณาตั้งชื่อร้านค้าของคุณในระบบก่อนเปิดไลฟ์สดค่ะ', 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/live-streams/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sellerId: currentUser?.userId || profile?.userId,
+          sellerStoreName: store,
+          title: liveCreateTitle,
+          streamUrl: liveCreateStreamUrl,
+          coverImage: liveCreateCoverImage || (livePrepCatalog[0]?.image) || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80",
+          liveProductsCatalog: livePrepCatalog,
+          activeSpotlightProduct: livePrepActiveSpotlight || livePrepCatalog[0] || null
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif('เปิดห้องไลฟ์สดเรียบร้อยแล้วค่ะ! เริ่มถ่ายทอดสดได้เลยค่ะ', 'success');
+        fetchLiveStreams();
+        if (data.liveStream) {
+          setActiveLiveRoom(data.liveStream);
+        }
+      } else {
+        showNotif(data.message || 'ไม่สามารถเปิดไลฟ์สดได้ค่ะ', 'error');
+      }
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
+    }
+  };
+
+  const handleSwitchSpotlightLive = async (product: any, currentLiveId: string) => {
+    try {
+      const res = await fetch('/api/live-streams/spotlight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          liveId: currentLiveId,
+          sellerId: currentUser?.userId || profile?.userId,
+          activeSpotlightProduct: product
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(data.message, 'success');
+        fetchLiveStreams();
+        if (activeLiveRoom && activeLiveRoom.id === currentLiveId) {
+          setActiveLiveRoom(data.liveStream);
+        }
+      }
+    } catch (e) {
+      showNotif('เกิดข้อผิดพลาดในการสลับสินค้าปักตะกร้า', 'error');
+    }
+  };
+
+  const handleEndLiveStream = async (liveId: string) => {
+    if (!confirm('คุณต้องการปิดการถ่ายทอดสดห้องนี้ใช่หรือไม่?')) return;
+    try {
+      const res = await fetch('/api/live-streams/end', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          liveId,
+          sellerId: currentUser?.userId || profile?.userId
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif('จบการถ่ายทอดสดเรียบร้อยแล้วค่ะ', 'info');
+        if (activeLiveRoom?.id === liveId) setActiveLiveRoom(null);
+        fetchLiveStreams();
+      }
+    } catch (e) {
+      showNotif('เกิดข้อผิดพลาดในการปิดสตรีม', 'error');
     }
   };
 
@@ -10104,7 +10195,9 @@ export default function App() {
                                 showNotif('กรุณาลงทะเบียนตั้งชื่อร้านค้าในเมนูร้านค้าของคุณ และรับการอนุมัติจาก Admin ก่อนเริ่มไลฟ์สดค่ะ', 'error');
                                 return;
                               }
-                              setShowCreateLiveModal(true);
+                              setActiveTab('seller');
+                              setSellerPortalSubTab('live');
+                              showNotif('นำคุณไปยัง "ห้องไลฟ์สด" ในศูนย์ร้านค้าเรียบร้อยแล้วค่ะ เตรียมสินค้าและเปิดไลฟ์ได้เลยค่ะ', 'info');
                             }}
                             className={`font-bold px-2.5 py-1 rounded-lg text-[10px] transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer ${
                               liveSystemEnabled
@@ -14169,6 +14262,32 @@ export default function App() {
                             <div className="text-[9px] text-slate-400 leading-none">ที่ตั้งคลังสินค้าและแผนที่ GPS</div>
                           </div>
                         </button>
+
+                        {/* ห้องไลฟ์สด */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSellerPortalSubTab('live');
+                          }}
+                          className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between h-24 relative overflow-hidden cursor-pointer col-span-2 sm:col-span-1 ${
+                            sellerPortalSubTab === 'live'
+                              ? 'bg-rose-600 border-rose-400 text-white shadow-lg shadow-rose-600/30 ring-2 ring-rose-400/50'
+                              : 'bg-slate-850 border-slate-800 hover:bg-slate-800 hover:border-slate-700 text-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <Video size={20} className={sellerPortalSubTab === 'live' ? 'text-white' : 'text-rose-400 animate-pulse'} />
+                            <span className="text-[8px] bg-rose-500 text-white px-1.5 py-0.5 rounded-md font-black tracking-wider uppercase animate-pulse">
+                              LIVE
+                            </span>
+                          </div>
+                          <div className="space-y-0.5">
+                            <div className="font-extrabold text-xs text-rose-300 flex items-center gap-1">
+                              <span>ห้องไลฟ์สด</span>
+                            </div>
+                            <div className="text-[9px] text-slate-400 leading-none">เตรียมสินค้า, ปักตะกร้า & ไลฟ์สด</div>
+                          </div>
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -16211,6 +16330,382 @@ export default function App() {
                         </form>
                       </div>
                     )}
+
+                    {sellerPortalSubTab === 'live' && (() => {
+                      const activeSellerId = sellerSessionUser?.userId || currentUser?.userId;
+                      const activeStoreName = sellerSessionUser?.sellerStoreName || profile?.sellerStoreName || profile?.storeName || 'ร้านค้าพาร์ทเนอร์';
+                      const sellerActiveLiveStream = liveStreamsList.find((s: any) => s.status === 'LIVE' && (s.sellerId === activeSellerId || s.sellerStoreName === activeStoreName));
+                      const myApprovedProducts = products.filter((p: any) => p.sellerId === activeSellerId || p.userId === activeSellerId);
+
+                      return (
+                        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-xl space-y-6 text-white animate-fadeIn">
+                          {/* Header */}
+                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-800 pb-4 gap-3">
+                            <div>
+                              <h4 className="text-base font-extrabold text-rose-400 flex items-center gap-2">
+                                <Video size={22} className="text-rose-500 animate-pulse" />
+                                <span>🎥 ห้องเตรียมไลฟ์สดร้านค้า (Live Studio & Stream Preparation Room)</span>
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-1">
+                                จัดการลิงก์สตรีม จัดหมวดหมู่สินค้าที่จะนำขึ้นไลฟ์สด กำหนดรหัสสินค้า (SKU) และเลือกสินค้าปักตะกร้าหน้าจอได้ก่อนเปิดไลฟ์สดจริง
+                              </p>
+                            </div>
+
+                            {/* Status Badge */}
+                            <div className="flex items-center gap-2 shrink-0">
+                              {sellerActiveLiveStream ? (
+                                <span className="bg-rose-600/90 text-white font-black text-xs px-3.5 py-1.5 rounded-xl border border-rose-400/50 animate-pulse flex items-center gap-1.5 shadow-md">
+                                  <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                                  <span>กำลังถ่ายทอดสดอยู่ (LIVE)</span>
+                                </span>
+                              ) : (
+                                <span className="bg-slate-800 text-slate-400 font-bold text-xs px-3 py-1.5 rounded-xl border border-slate-700 flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-slate-500" />
+                                  <span>โหมดเตรียมความพร้อม (OFFLINE)</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* IF SELLER IS NOT LIVE: PREPARATION SETUP */}
+                          {!sellerActiveLiveStream ? (
+                            <div className="space-y-6">
+                              {/* Step 1: Stream Information */}
+                              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-4">
+                                <h5 className="text-xs font-black text-rose-300 flex items-center gap-2 uppercase tracking-wider">
+                                  <span>1️⃣</span>
+                                  <span>ตั้งค่าหัวข้อและช่องทางถ่ายทอดสด (Live Stream Settings)</span>
+                                </h5>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                                  <div className="space-y-1.5">
+                                    <label className="block text-slate-300 font-bold">หัวข้อการถ่ายทอดสด *</label>
+                                    <input
+                                      type="text"
+                                      value={liveCreateTitle}
+                                      onChange={(e) => setLiveCreateTitle(e.target.value)}
+                                      placeholder={`เช่น เปิดกรุสินค้าฮิตจากร้าน ${activeStoreName} ลดพิเศษ 50%!`}
+                                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:border-rose-500 outline-none"
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <label className="block text-slate-300 font-bold">ลิงก์วิดีโอถ่ายทอดสด (YouTube / TikTok / Facebook / Embed URL) *</label>
+                                    <input
+                                      type="text"
+                                      value={liveCreateStreamUrl}
+                                      onChange={(e) => setLiveCreateStreamUrl(e.target.value)}
+                                      placeholder="https://www.youtube.com/watch?v=... หรือ https://vt.tiktok.com/..."
+                                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-mono focus:border-rose-500 outline-none"
+                                    />
+                                    <p className="text-[10px] text-slate-400">
+                                      💡 ระบบจะแปลงลิงก์ YouTube Live / Shorts หรือ TikTok Embed ให้แสดงผลในวิดีโอผู้เข้าชมโดยอัตโนมัติ
+                                    </p>
+                                  </div>
+                                  <div className="space-y-1.5 md:col-span-2">
+                                    <label className="block text-slate-300 font-bold">รูปภาพปกห้องไลฟ์ (Cover Image URL) - หากว่างไว้ระบบจะใช้รูปสินค้าหน้าแรก</label>
+                                    <input
+                                      type="text"
+                                      value={liveCreateCoverImage}
+                                      onChange={(e) => setLiveCreateCoverImage(e.target.value)}
+                                      placeholder="https://images.unsplash.com/photo-..."
+                                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-mono focus:border-rose-500 outline-none"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Step 2: Product Catalog & Custom SKU Codes */}
+                              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-4">
+                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                                  <div>
+                                    <h5 className="text-xs font-black text-rose-300 flex items-center gap-2 uppercase tracking-wider">
+                                      <span>2️⃣</span>
+                                      <span>เตรียมรายการสินค้าในร้านเพื่อนำขึ้นไลฟ์สด (Assign Live Products & SKU Codes)</span>
+                                    </h5>
+                                    <p className="text-[11px] text-slate-400 mt-0.5">
+                                      เลือกสินค้าที่จะเสนอขายในไลฟ์ และระบุรหัสสินค้าสั้น (เช่น A1, A2) ให้ผู้เข้าชมพิมพ์รหัสสั่งซื้อได้ทันที
+                                    </p>
+                                  </div>
+                                  <span className="text-xs font-extrabold text-amber-400 bg-amber-950/80 border border-amber-800 px-3 py-1 rounded-xl shrink-0">
+                                    เลือกแล้ว {livePrepCatalog.length} รายการ
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-80 overflow-y-auto pr-1">
+                                  {myApprovedProducts.length === 0 ? (
+                                    <div className="col-span-full py-8 text-center text-slate-500 text-xs bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
+                                      <p>ยังไม่พบสินค้าในคลังร้านค้าของคุณ ({activeStoreName})</p>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSellerPortalSubTab('products')}
+                                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition cursor-pointer"
+                                      >
+                                        ➕ ไปที่เมนู "สินค้าของฉัน" เพื่อเพิ่มสินค้า
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    myApprovedProducts.map((prod: any, idx: number) => {
+                                      const isSelected = livePrepCatalog.some((item: any) => item.id === prod.id);
+                                      const currentItem = livePrepCatalog.find((item: any) => item.id === prod.id);
+                                      const defaultSku = `A${idx + 1}`;
+
+                                      return (
+                                        <div
+                                          key={prod.id}
+                                          className={`p-3 rounded-2xl border transition flex flex-col justify-between space-y-2 ${
+                                            isSelected
+                                              ? 'bg-rose-950/40 border-rose-500/80 shadow-md'
+                                              : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-2.5">
+                                            <img
+                                              src={prod.image || (prod.images && prod.images[0]) || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'}
+                                              alt={prod.name}
+                                              className="w-12 h-12 rounded-xl object-cover shrink-0 border border-slate-700"
+                                            />
+                                            <div className="flex-1 min-w-0">
+                                              <h6 className="text-xs font-bold text-white truncate">{prod.name}</h6>
+                                              <p className="text-[11px] font-mono font-black text-rose-400">฿ {(prod.price || 0).toLocaleString()}</p>
+                                            </div>
+                                            <input
+                                              type="checkbox"
+                                              checked={isSelected}
+                                              onChange={(e) => {
+                                                if (e.target.checked) {
+                                                  setLivePrepCatalog((prev) => [
+                                                    ...prev,
+                                                    {
+                                                      id: prod.id,
+                                                      name: prod.name,
+                                                      price: prod.price,
+                                                      image: prod.image || (prod.images && prod.images[0]),
+                                                      skuCode: defaultSku
+                                                    }
+                                                  ]);
+                                                } else {
+                                                  setLivePrepCatalog((prev) => prev.filter((item: any) => item.id !== prod.id));
+                                                  if (livePrepActiveSpotlight?.id === prod.id) {
+                                                    setLivePrepActiveSpotlight(null);
+                                                  }
+                                                }
+                                              }}
+                                              className="w-5 h-5 accent-rose-600 rounded cursor-pointer shrink-0"
+                                            />
+                                          </div>
+
+                                          {isSelected && (
+                                            <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] gap-2">
+                                              <span className="text-slate-400 font-medium shrink-0">รหัสสั่งซื้อ (SKU):</span>
+                                              <input
+                                                type="text"
+                                                value={currentItem?.skuCode || defaultSku}
+                                                onChange={(e) => {
+                                                  const val = e.target.value.toUpperCase();
+                                                  setLivePrepCatalog((prev) =>
+                                                    prev.map((item: any) => (item.id === prod.id ? { ...item, skuCode: val } : item))
+                                                  );
+                                                }}
+                                                className="bg-black border border-rose-500/50 rounded-lg px-2 py-1 text-xs text-rose-300 font-mono font-bold w-20 text-center focus:outline-none"
+                                              />
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Step 3: Active Spotlight Item Picker */}
+                              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-3">
+                                <div>
+                                  <h5 className="text-xs font-black text-rose-300 flex items-center gap-2 uppercase tracking-wider">
+                                    <span>3️⃣</span>
+                                    <span>เลือกสินค้าปักตะกร้าเดี่ยวแสดงเน้นหน้าจอขณะเริ่มไลฟ์ (Active Spotlight Item)</span>
+                                  </h5>
+                                  <p className="text-[11px] text-slate-400 mt-0.5">
+                                    เลือกสินค้า 1 ชิ้นที่จะแสดงเด่นตรงมุมวิดีโอถ่ายทอดสด เมื่อเริ่มสตรีมแล้ว คุณจะสามารถกดสลับเปลี่ยนได้แบบเรียลไทม์
+                                  </p>
+                                </div>
+
+                                <div className="flex items-center gap-3 overflow-x-auto no-scrollbar py-1">
+                                  {livePrepCatalog.length === 0 ? (
+                                    <div className="text-xs text-slate-500 italic py-2">
+                                      กรุณาเลือกสินค้าในขั้นตอนที่ 2 ด้านบนก่อนค่ะ
+                                    </div>
+                                  ) : (
+                                    livePrepCatalog.map((item: any) => {
+                                      const isSpotlight = livePrepActiveSpotlight?.id === item.id;
+                                      return (
+                                        <button
+                                          key={item.id}
+                                          type="button"
+                                          onClick={() => setLivePrepActiveSpotlight(item)}
+                                          className={`p-2.5 rounded-2xl border text-left flex items-center gap-3 min-w-[220px] transition cursor-pointer shrink-0 ${
+                                            isSpotlight
+                                              ? 'bg-rose-600 border-rose-400 text-white shadow-lg shadow-rose-600/30 ring-2 ring-rose-400'
+                                              : 'bg-slate-900 border-slate-800 hover:bg-slate-850 text-slate-300'
+                                          }`}
+                                        >
+                                          <img
+                                            src={item.image || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'}
+                                            alt={item.name}
+                                            className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white/20"
+                                          />
+                                          <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-1">
+                                              <span className="text-[9px] bg-black/40 font-mono font-black px-1.5 py-0.5 rounded text-amber-300">
+                                                {item.skuCode}
+                                              </span>
+                                              <span className="text-[10px] font-bold truncate">{item.name}</span>
+                                            </div>
+                                            <p className="text-[10px] font-extrabold mt-0.5 text-white">฿ {(item.price || 0).toLocaleString()}</p>
+                                          </div>
+                                        </button>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Start Live Stream Button */}
+                              <div className="pt-2">
+                                <button
+                                  type="button"
+                                  onClick={handleCreateLiveStreamFromPrep}
+                                  className="w-full bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-black py-4 rounded-2xl text-sm transition shadow-xl transform active:scale-98 cursor-pointer flex items-center justify-center gap-2 border border-rose-400/40"
+                                >
+                                  <span className="text-xl">🔴</span>
+                                  <span>ยืนยันข้อมูลและเปิดห้องถ่ายทอดสดทันที (Go Live Now)</span>
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            /* IF SELLER IS CURRENTLY LIVE: LIVE CONTROL CENTER */
+                            <div className="space-y-6 animate-fadeIn">
+                              {/* Live Stream Status Control Card */}
+                              <div className="bg-rose-950/60 border border-rose-800/80 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-12 h-12 rounded-2xl bg-rose-600 flex items-center justify-center text-white text-2xl font-black shadow-lg animate-pulse">
+                                    🔴
+                                  </div>
+                                  <div>
+                                    <h5 className="text-sm font-black text-white">{sellerActiveLiveStream.title}</h5>
+                                    <div className="flex items-center gap-3 text-xs text-rose-300 mt-0.5">
+                                      <span>👁️ ผู้ชมขณะนี้: <strong>{sellerActiveLiveStream.viewersCount || 18} คน</strong></span>
+                                      <span>•</span>
+                                      <span>📌 สินค้าในคลังไลฟ์: <strong>{sellerActiveLiveStream.liveProductsCatalog?.length || 0} รายการ</strong></span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleEndLiveStream(sellerActiveLiveStream.id)}
+                                  className="bg-slate-800 hover:bg-rose-700 border border-rose-500/50 text-white font-extrabold px-5 py-2.5 rounded-xl text-xs transition shadow-md cursor-pointer flex items-center gap-2 shrink-0 active:scale-95"
+                                >
+                                  <span>⏹️</span>
+                                  <span>ปิดการถ่ายทอดสด (End Live Stream)</span>
+                                </button>
+                              </div>
+
+                              {/* Live Spotlight Switcher Panel */}
+                              <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <h6 className="text-xs font-black text-rose-300 flex items-center gap-2">
+                                    <span>📌</span>
+                                    <span>สลับสินค้าปักตะกร้าเดี่ยวบนหน้าจอผู้ชมแบบเรียลไทม์ (Live Spotlight Item Switcher)</span>
+                                  </h6>
+                                  <span className="text-[10px] text-slate-400">กดเพื่อสลับปักตะกร้าเดี่ยวขึ้นหน้าจอ</span>
+                                </div>
+
+                                <div className="flex items-center gap-3 overflow-x-auto no-scrollbar py-1">
+                                  {(!sellerActiveLiveStream.liveProductsCatalog || sellerActiveLiveStream.liveProductsCatalog.length === 0) ? (
+                                    <div className="text-xs text-slate-500 py-2">ยังไม่มีรายการสินค้าในคลังไลฟ์สด</div>
+                                  ) : (
+                                    sellerActiveLiveStream.liveProductsCatalog.map((item: any) => {
+                                      const isCurrentSpot = sellerActiveLiveStream.activeSpotlightProduct?.id === item.id;
+                                      return (
+                                        <button
+                                          key={item.id}
+                                          type="button"
+                                          onClick={() => handleSwitchSpotlightLive(item, sellerActiveLiveStream.id)}
+                                          className={`p-2.5 rounded-2xl border text-left flex items-center gap-2.5 min-w-[200px] transition cursor-pointer shrink-0 ${
+                                            isCurrentSpot
+                                              ? 'bg-rose-600 border-rose-300 text-white shadow-lg ring-2 ring-rose-400'
+                                              : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-300'
+                                          }`}
+                                        >
+                                          <img
+                                            src={item.image || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'}
+                                            alt={item.name}
+                                            className="w-10 h-10 rounded-xl object-cover shrink-0"
+                                          />
+                                          <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-1">
+                                              <span className="text-[9px] bg-black/50 font-mono font-bold px-1 rounded text-amber-300">
+                                                {item.skuCode}
+                                              </span>
+                                              <span className="text-[10px] font-bold truncate">{item.name}</span>
+                                            </div>
+                                            <p className="text-[10px] font-mono text-white mt-0.5">฿ {(item.price || 0).toLocaleString()}</p>
+                                          </div>
+                                        </button>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Real-time Studio Chat Feed */}
+                              <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+                                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                                  <h6 className="text-xs font-black text-slate-200 flex items-center gap-2">
+                                    <span>💬</span>
+                                    <span>แชทสดผู้ชม & AI Moderation Feed</span>
+                                  </h6>
+                                  <span className="text-[10px] text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800">
+                                    🤖 AI ช่วยตรวจจับรหัสสั่งซื้อและคัดกรองข้อความ
+                                  </span>
+                                </div>
+
+                                <div className="max-h-60 overflow-y-auto space-y-2 text-xs">
+                                  {(!sellerActiveLiveStream.chatMessages || sellerActiveLiveStream.chatMessages.length === 0) ? (
+                                    <div className="text-center text-slate-500 py-6">ยังไม่มีข้อความสนทนา</div>
+                                  ) : (
+                                    sellerActiveLiveStream.chatMessages.map((msg: any) => (
+                                      <div
+                                        key={msg.id}
+                                        className={`p-2.5 rounded-xl border flex items-start justify-between gap-3 ${
+                                          msg.matchedSkuCode
+                                            ? 'bg-emerald-950/50 border-emerald-500/60 text-emerald-200'
+                                            : msg.aiBlocked
+                                            ? 'bg-amber-950/50 border-amber-500/60 text-amber-200'
+                                            : 'bg-slate-900 border-slate-800 text-slate-200'
+                                        }`}
+                                      >
+                                        <div className="space-y-0.5 min-w-0 flex-1">
+                                          <div className="flex items-center gap-2 text-[10px]">
+                                            <span className="font-bold text-rose-300">{msg.sender}</span>
+                                            <span className="text-slate-500">{msg.time}</span>
+                                            {msg.matchedSkuCode && (
+                                              <span className="bg-emerald-500 text-slate-950 font-mono font-black text-[9px] px-1.5 py-0.2 rounded">
+                                                🛒 พิมพ์รหัสสั่งซื้อ: {msg.matchedSkuCode}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <p className="text-[11px] leading-relaxed">{msg.text}</p>
+                                        </div>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               ) : (
@@ -26987,40 +27482,90 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Pinned Products Drawer at Bottom of Video */}
-                <div className="p-3 bg-slate-900 border-t border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between text-xs font-bold text-rose-300">
-                    <span>📌 สินค้าแนะนำปักตะกร้าในไลฟ์</span>
-                    <span className="text-[10px] text-slate-400">สั่งซื้อได้ทันทีขณะชม</span>
-                  </div>
-                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-                    {products.slice(0, 4).map((p: any) => (
-                      <div
-                        key={p.id}
-                        className="bg-slate-800 border border-slate-700/80 rounded-xl p-2 min-w-[200px] flex items-center gap-2 shrink-0 shadow"
-                      >
+                {/* Spotlight Featured Product & Catalog Drawer at Bottom of Video */}
+                <div className="p-3 bg-slate-900 border-t border-slate-800 space-y-2.5">
+                  {/* Spotlight Banner if activeSpotlightProduct exists */}
+                  {activeLiveRoom.activeSpotlightProduct && (
+                    <div className="bg-gradient-to-r from-rose-950 via-slate-900 to-rose-950 border border-rose-500/80 p-2.5 rounded-2xl flex items-center justify-between gap-3 shadow-lg ring-1 ring-rose-500/50">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <img
-                          src={p.image || (p.images && p.images[0]) || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'}
-                          className="w-10 h-10 rounded-lg object-cover shrink-0"
-                          alt={p.name}
+                          src={activeLiveRoom.activeSpotlightProduct.image || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'}
+                          alt={activeLiveRoom.activeSpotlightProduct.name}
+                          className="w-12 h-12 rounded-xl object-cover shrink-0 border border-rose-400/50 shadow"
                         />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[11px] font-bold text-white truncate">{p.name}</p>
-                          <p className="text-[10px] font-mono text-orange-400 font-black">฿ {(p.price || 0).toLocaleString()}</p>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="bg-rose-600 text-white font-mono font-black text-[9px] px-2 py-0.5 rounded shadow">
+                              📌 ปักตะกร้า {activeLiveRoom.activeSpotlightProduct.skuCode || 'A1'}
+                            </span>
+                            <span className="text-[10px] text-rose-300 font-bold truncate">{activeLiveRoom.activeSpotlightProduct.name}</span>
+                          </div>
+                          <p className="text-sm font-mono font-black text-amber-300 mt-0.5">
+                            ฿ {(activeLiveRoom.activeSpotlightProduct.price || 0).toLocaleString()}
+                          </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCheckoutMarketProduct(p);
-                            setMarketProductQty(1);
-                            setShowMarketCheckoutModal(true);
-                          }}
-                          className="bg-orange-500 hover:bg-orange-600 text-white font-extrabold text-[10px] px-2 py-1 rounded-lg transition shrink-0 cursor-pointer"
-                        >
-                          สั่งซื้อ
-                        </button>
                       </div>
-                    ))}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCheckoutMarketProduct(activeLiveRoom.activeSpotlightProduct);
+                          setMarketProductQty(1);
+                          setShowMarketCheckoutModal(true);
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-4 py-2 rounded-xl transition shadow-lg shrink-0 cursor-pointer active:scale-95 border border-emerald-400/40"
+                      >
+                        🛒 สั่งซื้อทันที
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Catalog Carousel */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-300">
+                      <span>🛍️ รายการสินค้าทั้งหมดในไลฟ์ ({activeLiveRoom.liveProductsCatalog?.length || products.slice(0, 4).length} รายการ)</span>
+                      <span className="text-[10px] text-slate-400">พิมพ์รหัสสั่งซื้อในแชทได้ทันที</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+                      {((activeLiveRoom.liveProductsCatalog && activeLiveRoom.liveProductsCatalog.length > 0)
+                        ? activeLiveRoom.liveProductsCatalog
+                        : products.slice(0, 4)
+                      ).map((p: any, idx: number) => (
+                        <div
+                          key={p.id || idx}
+                          className="bg-slate-800 border border-slate-700/80 rounded-xl p-2 min-w-[190px] flex items-center gap-2 shrink-0 shadow"
+                        >
+                          <img
+                            src={p.image || (p.images && p.images[0]) || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'}
+                            className="w-10 h-10 rounded-lg object-cover shrink-0"
+                            alt={p.name}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1">
+                              {p.skuCode && (
+                                <span className="bg-black text-amber-300 font-mono font-bold text-[8px] px-1 rounded">
+                                  {p.skuCode}
+                                </span>
+                              )}
+                              <p className="text-[10px] font-bold text-white truncate">{p.name}</p>
+                            </div>
+                            <p className="text-[10px] font-mono text-rose-400 font-black mt-0.5">฿ {(p.price || 0).toLocaleString()}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCheckoutMarketProduct(p);
+                              setMarketProductQty(1);
+                              setShowMarketCheckoutModal(true);
+                            }}
+                            className="bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-[10px] px-2 py-1 rounded-lg transition shrink-0 cursor-pointer active:scale-95"
+                          >
+                            สั่งซื้อ
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -27144,7 +27689,13 @@ export default function App() {
                           ...activeLiveRoom,
                           chatMessages: [...activeLiveRoom.chatMessages, data.chatMessage]
                         });
-                        if (data.message && data.message.includes('AI')) {
+                        if (data.matchedProduct) {
+                          setDetectedSkuOrderModal({
+                            product: data.matchedProduct,
+                            skuCode: data.matchedSkuCode || 'CF',
+                            liveStream: activeLiveRoom
+                          });
+                        } else if (data.message && data.message.includes('AI')) {
                           showNotif(data.message, 'info');
                         }
                       }
@@ -27156,18 +27707,86 @@ export default function App() {
                 >
                   <input
                     type="text"
-                    placeholder="พิมพ์ข้อความคุยในไลฟ์..."
+                    placeholder="พิมพ์รหัสสินค้า (เช่น A1) หรือข้อความ..."
                     value={liveChatInput}
                     onChange={(e) => setLiveChatInput(e.target.value)}
                     className="flex-1 bg-slate-900 border border-slate-700 focus:border-rose-500 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
                   />
                   <button
                     type="submit"
-                    className="bg-rose-600 hover:bg-rose-500 text-white font-extrabold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer"
+                    className="bg-rose-600 hover:bg-rose-500 text-white font-extrabold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer shrink-0"
                   >
                     ส่ง
                   </button>
                 </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: DETECTED SKU ORDER PROMPT FROM LIVE CHAT */}
+        {detectedSkuOrderModal && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[250] flex items-center justify-center p-4 animate-fadeIn">
+            <div className="bg-slate-900 border border-emerald-500/80 rounded-3xl p-6 max-w-md w-full shadow-2xl text-white space-y-4 relative">
+              <button
+                type="button"
+                onClick={() => setDetectedSkuOrderModal(null)}
+                className="absolute top-4 right-4 w-8 h-8 bg-black/60 hover:bg-black/90 text-white rounded-full flex items-center justify-center font-bold text-xs cursor-pointer border border-white/20"
+              >
+                ✕
+              </button>
+
+              <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center text-xl font-black shadow-lg animate-bounce">
+                  🛒
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-emerald-300">พบการพิมพ์รหัสสั่งซื้อ [{detectedSkuOrderModal.skuCode}]</h4>
+                  <p className="text-[11px] text-slate-400">ระบบจับคู่รหัสสั่งซื้อกับรายการสินค้าในไลฟ์ให้คุณเรียบร้อยแล้วค่ะ</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 flex items-center gap-3">
+                <img
+                  src={detectedSkuOrderModal.product.image || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=800&q=80'}
+                  alt={detectedSkuOrderModal.product.name}
+                  className="w-16 h-16 rounded-xl object-cover shrink-0 border border-slate-700 shadow"
+                />
+                <div className="flex-1 min-w-0">
+                  <span className="bg-emerald-500 text-slate-950 font-mono font-black text-[10px] px-2 py-0.5 rounded shadow">
+                    SKU: {detectedSkuOrderModal.skuCode}
+                  </span>
+                  <h5 className="text-xs font-bold text-white truncate mt-1">{detectedSkuOrderModal.product.name}</h5>
+                  <p className="text-sm font-mono font-black text-rose-400 mt-0.5">
+                    ฿ {(detectedSkuOrderModal.product.price || 0).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCheckoutMarketProduct(detectedSkuOrderModal.product);
+                    setMarketProductQty(1);
+                    setShowMarketCheckoutModal(true);
+                    setDetectedSkuOrderModal(null);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-xl text-xs transition cursor-pointer shadow-lg flex items-center justify-center gap-1.5 active:scale-95 border border-emerald-400/40"
+                >
+                  <span>🛍️ ชำระเงินทันที</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSellerChatProduct(detectedSkuOrderModal.product);
+                    setShowSellerChatModal(true);
+                    setDetectedSkuOrderModal(null);
+                  }}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-extrabold py-3 rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                >
+                  <span>💬 ทักแชทร้านค้า</span>
+                </button>
               </div>
             </div>
           </div>
