@@ -5114,8 +5114,13 @@ app.post('/api/seller/product', async (req, res) => {
   const db = readDb();
   
   const member = db.members.find(m => m.userId === userId);
-  if (!member || member.sellerStatus !== "Active") {
-    return res.status(403).json({ success: false, message: "เฉพาะผู้ขายที่ผ่านการอนุมัติร้านค้าเท่านั้นที่เพิ่มสินค้าได้" });
+  if (!member) {
+    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกผู้ขายในระบบ" });
+  }
+
+  // Auto-activate pending or registered seller status if user is creating a product
+  if (member.sellerStatus !== "Active") {
+    member.sellerStatus = "Active";
   }
   
   const sellerCode = member.sellerCode || ("S" + (member.userId || "000000").slice(-6).toUpperCase());
@@ -5168,13 +5173,14 @@ app.post('/api/seller/product', async (req, res) => {
   const costVal = cost !== undefined && cost !== "" ? parseFloat(cost) : Math.floor(priceVal * 0.30);
   const stockVal = stock !== undefined && stock !== "" ? parseFloat(stock) : 5;
 
-  // Validate Security Deposit Listing Cap (10x rule)
+  // Validate Security Deposit Listing Cap (10x rule with ฿10,000 base allowance)
   const depositStats = getSellerDepositStats(db, userId);
   const addedListingValue = priceVal * Math.min(stockVal, 50); // calculate actual stock listing value impact
-  if (depositStats.securityDeposit > 0 && (depositStats.currentListingValue + addedListingValue) > depositStats.maxListingCap) {
+  // Small ฿50 tolerance for floating point calculations so exact maxListingCap is never falsely rejected
+  if ((depositStats.currentListingValue + addedListingValue) > (depositStats.maxListingCap + 50)) {
     return res.status(400).json({
       success: false,
-      message: `ไม่สามารถเพิ่มสินค้าได้ เนื่องจากมูลค่าสินค้าเกินวงเงินประกัน 10 เท่า (เงินประกันปัจจุบัน ฿${depositStats.securityDeposit.toLocaleString()} วางขายได้ไม่เกิน ฿${depositStats.maxListingCap.toLocaleString()}) กรุณาเพิ่มเงินประกันในเมนูร้านค้าค่ะ`
+      message: `ไม่สามารถเพิ่มสินค้าได้ เนื่องจากมูลค่าสินค้าเกินวงเงินประกัน (เงินประกันปัจจุบัน ฿${depositStats.securityDeposit.toLocaleString()} วางขายได้ไม่เกิน ฿${depositStats.maxListingCap.toLocaleString()}) กรุณาเพิ่มเงินประกันในเมนูร้านค้าค่ะ`
     });
   }
 
@@ -5521,7 +5527,8 @@ app.post('/api/order/process-escrow-payouts', (req, res) => {
 function getSellerDepositStats(db: any, sellerUserId: string) {
   const member = db.members.find((m: any) => m.userId === sellerUserId);
   const deposit = parseFloat(member?.securityDeposit || 0);
-  const maxListingCap = deposit * 10; // 10x listing multiplier rule
+  // Base default listing cap is ฿10,000 minimum or 10x deposit (whichever is higher)
+  const maxListingCap = Math.max(10000, deposit * 10); 
 
   // Calculate current total listed value in store
   const sellerProds = (db.sellerProducts || []).filter((p: any) => p.sellerId === sellerUserId && p.isAvailable !== false);
@@ -5542,7 +5549,7 @@ function getSellerDepositStats(db: any, sellerUserId: string) {
     currentListingValue,
     activeUnfulfilledSales,
     salesLimitRemaining: Math.max(0, deposit - activeUnfulfilledSales),
-    canListMore: currentListingValue < maxListingCap || deposit === 0
+    canListMore: currentListingValue < maxListingCap
   };
 }
 
@@ -6357,6 +6364,40 @@ app.get('/api/admin/all-products', (req, res) => {
   res.json({ success: true, products: db.sellerProducts || [] });
 });
 
+// PURGE SAMPLE PRODUCTS FROM STORE
+app.post('/api/admin/purge-sample-products', async (req, res) => {
+  const db = readDb();
+  if (!Array.isArray(db.products)) db.products = [];
+  if (!Array.isArray(db.sellerProducts)) db.sellerProducts = [];
+
+  const officialPackages = ['pack_s', 'pack_m', 'pack_l', 'pack_xl', 'pack_xxl'];
+  const beforeCount = db.products.length;
+
+  db.products = db.products.filter((p: any) => {
+    if (!p || !p.id) return false;
+    if (officialPackages.includes(p.id) || p.category === 'Package') return true;
+    if (String(p.id).startsWith('shopee_') || String(p.id).startsWith('demo_') || String(p.id).startsWith('sample_')) return false;
+    // Keep products if they belong to a real seller
+    if (p.sellerId && db.members.some((m: any) => m.userId === p.sellerId)) return true;
+    return false;
+  });
+
+  db.sellerProducts = db.sellerProducts.filter((sp: any) => {
+    if (!sp || !sp.id) return false;
+    if (String(sp.id).startsWith('shopee_') || String(sp.id).startsWith('demo_') || String(sp.id).startsWith('sample_')) return false;
+    if (sp.sellerId && db.members.some((m: any) => m.userId === sp.sellerId)) return true;
+    return false;
+  });
+
+  writeDb(db);
+  const afterCount = db.products.length;
+  res.json({
+    success: true,
+    message: `ทำความสะอาดลบสินค้าตัวอย่างเรียบร้อยแล้วค่ะ (นำสินค้าตัวอย่างออกทั้งหมด ${beforeCount - afterCount} รายการ)`,
+    products: db.products
+  });
+});
+
 // RESTORE ALL PRODUCTS & SELF-HEAL
 app.post('/api/admin/restore-products', async (req, res) => {
   const db = readDb();
@@ -6474,9 +6515,26 @@ app.post('/api/seller/product/edit', async (req, res) => {
   }
 
   const primaryImage = processedImages[0];
-  const priceVal = parseFloat(price);
+  const priceVal = parseFloat(price) || parseFloat(prod.price) || 0;
   const costVal = cost !== undefined && cost !== "" ? parseFloat(cost) : Math.floor(priceVal * 0.30);
-  
+  const stockVal = stock !== undefined && stock !== "" ? parseFloat(stock) : (prod.stock !== undefined ? parseFloat(prod.stock) : 5);
+
+  // Validate Security Deposit Listing Cap when editing
+  const oldPrice = parseFloat(prod.price) || 0;
+  const oldStock = prod.stock !== undefined ? parseFloat(prod.stock) : 5;
+  const oldVal = oldPrice * Math.min(oldStock, 50);
+  const newVal = priceVal * Math.min(stockVal, 50);
+
+  const depositStats = getSellerDepositStats(db, prod.sellerId || userId);
+  const adjustedListingValue = depositStats.currentListingValue - oldVal + newVal;
+
+  if (adjustedListingValue > (depositStats.maxListingCap + 50)) {
+    return res.status(400).json({
+      success: false,
+      message: `ไม่สามารถปรับปรุงสินค้าได้ เนื่องจากมูลค่าสินค้ารวมเกินวงเงินประกัน (เงินประกันปัจจุบัน ฿${depositStats.securityDeposit.toLocaleString()} วางขายได้ไม่เกิน ฿${depositStats.maxListingCap.toLocaleString()}) กรุณาเพิ่มเงินประกันในเมนูร้านค้าค่ะ`
+    });
+  }
+
   // Update properties
   prod.name = productName;
   prod.price = priceVal;

@@ -7886,6 +7886,21 @@ export default function App() {
                     📌
                   </button>
 
+                  {/* Icon 3.8: ศูนย์การเรียนรู้ */}
+                  <button 
+                    onClick={() => {
+                      setActiveTab('seller');
+                      setSellerPortalSubTab('learning');
+                      showNotif('เข้าสู่ศูนย์การเรียนรู้และคู่มือผู้ขาย', 'info');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-sm font-black transition flex items-center justify-center cursor-pointer relative ${
+                      activeTab === 'seller' && sellerPortalSubTab === 'learning' ? 'bg-indigo-600 text-white shadow-sm' : 'text-indigo-600 hover:text-indigo-900'
+                    }`}
+                    title="📖 ศูนย์การเรียนรู้และคู่มือผู้ขาย (Partner Learning Centre)"
+                  >
+                    📖
+                  </button>
+
                   {/* Icon 4: ระบบสมาชิก */}
                   <button 
                     onClick={() => {
@@ -12940,7 +12955,135 @@ export default function App() {
                 </div>
               )}
 
-              {!sellerSessionUser ? (
+              {sellerPortalSubTab === 'learning' ? (
+                // 📖 RENDER LEARNING CENTER (ACCESSIBLE TO ALL MEMBERS & SELLERS)
+                <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6 animate-fadeIn">
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                        📖 ศูนย์การเรียนรู้และคู่มือผู้ขาย (Partner Learning Centre)
+                      </h4>
+                      <p className="text-xs text-slate-400 mt-0.5">รวมคู่มือการใช้งานระบบ บทเรียนการตลาด และวิธีการไลฟ์สดขายสินค้า</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSellerPortalSubTab('home')}
+                      className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm flex items-center gap-1.5 shrink-0"
+                    >
+                      <span>←</span>
+                      <span>{sellerSessionUser ? 'กลับสู่แผงควบคุมร้านค้า' : 'กลับสู่หน้าเข้าสู่ระบบร้านค้า'}</span>
+                    </button>
+                  </div>
+
+                  {/* FEATURED: LIVE STREAMING SELLER GUIDE */}
+                  <div className="bg-gradient-to-br from-rose-900 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 border border-rose-500/30 shadow-xl space-y-5 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-80 h-80 bg-rose-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
+                    
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4 relative z-10">
+                      <div className="space-y-1">
+                        <div className="inline-flex items-center gap-1.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full animate-pulse">
+                          <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                          คู่มือการใช้งานระบบ: Live Shopping
+                        </div>
+                        <h5 className="text-base font-extrabold text-white flex items-center gap-2">
+                          🎥 ขั้นตอนการไลฟ์สดขายสินค้า และเชื่อมต่อ TikTok Live / YouTube / Facebook
+                        </h5>
+                        <p className="text-xs text-slate-300">
+                          วิธีสร้างห้องไลฟ์สด นำลิงก์วิดีโอจากแพลตฟอร์มต่างๆ มาวางเพื่อดึงสัญญาณสด พร้อมปักตะกร้าสินค้าในร้านค้าของคุณ
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('shop');
+                          showNotif("นำท่านไปยังหน้าตลาดเพื่อทดลองเปิดห้องไลฟ์สด", "info");
+                        }}
+                        className="bg-rose-600 hover:bg-rose-500 text-white font-extrabold px-4 py-2.5 rounded-2xl text-xs transition shadow-lg flex items-center gap-2 shrink-0 cursor-pointer active:scale-95"
+                      >
+                        <Video size={16} />
+                        <span>ไปที่หน้าตลาด เพื่อเปิดไลฟ์สด</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10 font-sans text-xs">
+                      {/* STEP 1 */}
+                      <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-lg bg-rose-500 text-white font-black text-xs flex items-center justify-center shrink-0">1</span>
+                          <h6 className="font-extrabold text-rose-200">เริ่มสร้างห้องไลฟ์สด</h6>
+                        </div>
+                        <p className="text-slate-300 text-[11px] leading-relaxed">
+                          กดปุ่ม <strong className="text-white">"🎥 เริ่มไลฟ์สด"</strong> บนแถบห้องไลฟ์สดหน้ามาร์เก็ต ใส่หัวข้อเรื่องที่น่าสนใจ และอัปโหลดภาพปกห้องไลฟ์ (Cover Image) เพื่อดึงดูดผู้เข้าชม
+                        </p>
+                      </div>
+
+                      {/* STEP 2 */}
+                      <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-lg bg-indigo-500 text-white font-black text-xs flex items-center justify-center shrink-0">2</span>
+                          <h6 className="font-extrabold text-indigo-200">คัดลอกลิงก์สตรีมไลฟ์สด</h6>
+                        </div>
+                        <div className="space-y-1.5 text-slate-300 text-[11px] leading-relaxed">
+                          <div><strong className="text-white">🎵 TikTok Live:</strong> เปิด TikTok บนมือถือ -&gt; Go LIVE -&gt; คัดลอกลิงก์สตรีม เช่น <code className="text-amber-300 text-[10px]">https://www.tiktok.com/@yourname/live</code></div>
+                          <div><strong className="text-white">▶️ YouTube Live:</strong> คัดลอก URL เช่น <code className="text-amber-300 text-[10px]">https://youtube.com/live/xxx</code> หรือ <code className="text-amber-300 text-[10px]">https://youtu.be/xxx</code></div>
+                          <div><strong className="text-white">📘 Facebook Live:</strong> คัดลอกลิงก์วิดีโอถ่ายทอดสดบนเพจของคุณ</div>
+                        </div>
+                      </div>
+
+                      {/* STEP 3 */}
+                      <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-lg bg-emerald-500 text-white font-black text-xs flex items-center justify-center shrink-0">3</span>
+                          <h6 className="font-extrabold text-emerald-200">ปักตะกร้าสินค้า & รับออเดอร์</h6>
+                        </div>
+                        <p className="text-slate-300 text-[11px] leading-relaxed">
+                          เลือกสินค้าในร้านของคุณที่ต้องการปักตะกร้า ลูกค้าที่เข้าชมไลฟ์สดสามารถคลิกดูสินค้า ปักตะกร้า และกดสั่งซื้อพร้อมสะสมคะแนน PV ได้ทันทีขณะรับชม
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-900/90 border border-slate-750 rounded-2xl p-3.5 text-[11px] text-slate-300 flex flex-wrap items-center justify-between gap-2 relative z-10">
+                      <div className="flex items-center gap-2">
+                        <span className="text-amber-400 font-bold">💡 เคล็ดลับเพิ่มยอดขาย:</span>
+                        <span>แชทโต้ตอบกับลูกค้าแบบ Real-time และมอบโค้ดส่วนลดพิเศษสำหรับผู้เข้าชมไลฟ์สดเท่านั้น</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono">ระบบรองรับ Live Embed อัตโนมัติ</span>
+                    </div>
+                  </div>
+
+                  {/* OTHER LEARNING LESSONS GRID */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                      <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded-full">ยอดนิยม 🔥</span>
+                      <h5 className="font-bold text-slate-800 text-xs">🚀 บทเรียนที่ 1: ตกแต่งร้านค้าอย่างไรให้สมาชิกสนใจกดสั่ง</h5>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        เทคนิคจับคู่โทนสีที่เหมาะสมกับกลุ่มผลิตภัณฑ์สุขภาพ การจัดสรรวางสินค้าหมวดหมู่หลักในตำแหน่งหน้าแรก และความโดดเด่นของภาพผลิตภัณฑ์
+                      </p>
+                    </div>
+                    <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                      <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-2 py-0.5 rounded-full">คู่มือระบบ 📑</span>
+                      <h5 className="font-bold text-slate-800 text-xs">📦 บทเรียนที่ 2: ไขข้อสงสัยสูตรค่าขนส่ง Shippop และ PV</h5>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        อธิบายขั้นตอนการวัดขนาด กว้างxยาวxสูง จริงของแพ็คเกจ และการคำนวณน้ำหนักปริมาตรที่เหมาะสม เพื่อลดความคลาดเคลื่อนทางบัญชี
+                      </p>
+                    </div>
+                    <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                      <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full">กฎหมายร้านค้า ⚖️</span>
+                      <h5 className="font-bold text-slate-800 text-xs">🛡️ บทเรียนที่ 3: ระเบียบข้อบังคับและจรรยาบรรณผู้ค้าของนทีพลัส</h5>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        ทำความเข้าใจนโยบายความโปร่งใสทางกฎหมาย กฎการคุ้มครองข้อมูลส่วนบุคคล (PDPA) ของผู้ซื้อ และการห้ามจำหน่ายสินค้าลอกเลียนแบบ
+                      </p>
+                    </div>
+                    <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                      <span className="bg-purple-100 text-purple-800 text-[9px] font-bold px-2 py-0.5 rounded-full">แชร์ประสบการณ์ 💡</span>
+                      <h5 className="font-bold text-slate-800 text-xs">🌟 บทเรียนที่ 4: เคล็ดลับการตอบกลับแชทและบริการหลังการขาย</h5>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        ตอบข้อซักถามลูกค้าอย่างถูกต้อง สรรพคุณทางกฏหมาย วิธีดูแลออเดอร์ที่มีปัญหาคืนสินค้า เพื่อคงสถานะเรตติ้งระดับ 5 ดาวเสมอ
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : !sellerSessionUser ? (
                 // SELLER PORTAL LOGIN & REGISTRATION
                 <div className="max-w-xl mx-auto">
                   {!isRegisteringSeller ? (
@@ -13085,11 +13228,22 @@ export default function App() {
                               setSellerRulesAgreed(false);
                               setSellerPdpaAgreed(false);
                             }}
-                            className="text-indigo-600 hover:text-indigo-500 hover:underline font-bold text-xs cursor-pointer"
+                            className="text-indigo-600 hover:text-indigo-500 hover:underline font-bold text-xs cursor-pointer block mx-auto mb-2"
                           >
                             เพิ่งเคยเข้าระบบ Partner / สมัครใหม่
                           </button>
                         )}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSellerPortalSubTab('learning');
+                            showNotif("ยินดีต้อนรับสู่ศูนย์การเรียนรู้และคู่มือผู้ขายค่ะ 📖", "info");
+                          }}
+                          className="w-full mt-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 font-extrabold py-2.5 rounded-xl text-xs transition cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
+                        >
+                          📖 ศูนย์การเรียนรู้และคู่มือผู้ขาย (คลิกเพื่อเข้าชมบทเรียน)
+                        </button>
                       </div>
                     </div>
                   ) : (
@@ -15656,130 +15810,6 @@ export default function App() {
                       </div>
                     )}
 
-                    {sellerPortalSubTab === 'learning' && (
-                      <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
-                        <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                          <div>
-                            <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                              📖 ศูนย์การเรียนรู้และคู่มือผู้ขาย (Partner Learning Centre)
-                            </h4>
-                            <p className="text-xs text-slate-400 mt-0.5">รวมคู่มือการใช้งานระบบ บทเรียนการตลาด และวิธีการไลฟ์สดขายสินค้า</p>
-                          </div>
-                          <span className="text-xs text-indigo-600 font-bold bg-indigo-50 px-3 py-1 rounded-xl font-mono shrink-0">
-                            อัปเดตคู่มือใหม่ 📑
-                          </span>
-                        </div>
-
-                        {/* FEATURED: LIVE STREAMING SELLER GUIDE */}
-                        <div className="bg-gradient-to-br from-rose-900 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 border border-rose-500/30 shadow-xl space-y-5 relative overflow-hidden">
-                          <div className="absolute top-0 right-0 w-80 h-80 bg-rose-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
-                          
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4 relative z-10">
-                            <div className="space-y-1">
-                              <div className="inline-flex items-center gap-1.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full animate-pulse">
-                                <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-                                คู่มือการใช้งานระบบ: Live Shopping
-                              </div>
-                              <h5 className="text-base font-extrabold text-white flex items-center gap-2">
-                                🎥 ขั้นตอนการไลฟ์สดขายสินค้า และเชื่อมต่อ TikTok Live / YouTube / Facebook
-                              </h5>
-                              <p className="text-xs text-slate-300">
-                                วิธีสร้างห้องไลฟ์สด นำลิงก์วิดีโอจากแพลตฟอร์มต่างๆ มาวางเพื่อดึงสัญญาณสด พร้อมปักตะกร้าสินค้าในร้านค้าของคุณ
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('shop');
-                                showNotif("นำท่านไปยังหน้าตลาดเพื่อทดลองเปิดห้องไลฟ์สด", "info");
-                              }}
-                              className="bg-rose-600 hover:bg-rose-500 text-white font-extrabold px-4 py-2.5 rounded-2xl text-xs transition shadow-lg flex items-center gap-2 shrink-0 cursor-pointer active:scale-95"
-                            >
-                              <Video size={16} />
-                              <span>ไปที่หน้าตลาด เพื่อเปิดไลฟ์สด</span>
-                            </button>
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10 font-sans text-xs">
-                            {/* STEP 1 */}
-                            <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
-                              <div className="flex items-center gap-2">
-                                <span className="w-6 h-6 rounded-lg bg-rose-500 text-white font-black text-xs flex items-center justify-center shrink-0">1</span>
-                                <h6 className="font-extrabold text-rose-200">เริ่มสร้างห้องไลฟ์สด</h6>
-                              </div>
-                              <p className="text-slate-300 text-[11px] leading-relaxed">
-                                กดปุ่ม <strong className="text-white">"🎥 เริ่มไลฟ์สด"</strong> บนแถบห้องไลฟ์สดหน้ามาร์เก็ต ใส่หัวข้อเรื่องที่น่าสนใจ และอัปโหลดภาพปกห้องไลฟ์ (Cover Image) เพื่อดึงดูดผู้เข้าชม
-                              </p>
-                            </div>
-
-                            {/* STEP 2 */}
-                            <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
-                              <div className="flex items-center gap-2">
-                                <span className="w-6 h-6 rounded-lg bg-indigo-500 text-white font-black text-xs flex items-center justify-center shrink-0">2</span>
-                                <h6 className="font-extrabold text-indigo-200">คัดลอกลิงก์สตรีมไลฟ์สด</h6>
-                              </div>
-                              <div className="space-y-1.5 text-slate-300 text-[11px] leading-relaxed">
-                                <div><strong className="text-white">🎵 TikTok Live:</strong> เปิด TikTok บนมือถือ -&gt; Go LIVE -&gt; คัดลอกลิงก์สตรีม เช่น <code className="text-amber-300 text-[10px]">https://www.tiktok.com/@yourname/live</code></div>
-                                <div><strong className="text-white">▶️ YouTube Live:</strong> คัดลอก URL วิดีโอไลฟ์สด เช่น <code className="text-amber-300 text-[10px]">https://youtu.be/xxx</code></div>
-                                <div><strong className="text-white">📘 Facebook Live:</strong> คัดลอกลิงก์วิดีโอถ่ายทอดสดบนเพจของคุณ</div>
-                              </div>
-                            </div>
-
-                            {/* STEP 3 */}
-                            <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
-                              <div className="flex items-center gap-2">
-                                <span className="w-6 h-6 rounded-lg bg-emerald-500 text-white font-black text-xs flex items-center justify-center shrink-0">3</span>
-                                <h6 className="font-extrabold text-emerald-200">ปักตะกร้าสินค้า & รับออเดอร์</h6>
-                              </div>
-                              <p className="text-slate-300 text-[11px] leading-relaxed">
-                                เลือกสินค้าในร้านของคุณที่ต้องการปักตะกร้า ลูกค้าที่เข้าชมไลฟ์สดสามารถคลิกดูสินค้า ปักตะกร้า และกดสั่งซื้อพร้อมสะสมคะแนน PV ได้ทันทีขณะรับชม
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="bg-slate-900/90 border border-slate-750 rounded-2xl p-3.5 text-[11px] text-slate-300 flex flex-wrap items-center justify-between gap-2 relative z-10">
-                            <div className="flex items-center gap-2">
-                              <span className="text-amber-400 font-bold">💡 เคล็ดลับเพิ่มยอดขาย:</span>
-                              <span>แชทโต้ตอบกับลูกค้าแบบ Real-time และมอบโค้ดส่วนลดพิเศษสำหรับผู้เข้าชมไลฟ์สดเท่านั้น</span>
-                            </div>
-                            <span className="text-[10px] text-slate-400 font-mono">ระบบรองรับ Live Embed อัตโนมัติ</span>
-                          </div>
-                        </div>
-
-                        {/* OTHER LEARNING LESSONS GRID */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
-                            <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded-full">ยอดนิยม 🔥</span>
-                            <h5 className="font-bold text-slate-800 text-xs">🚀 บทเรียนที่ 1: ตกแต่งร้านค้าอย่างไรให้สมาชิกสนใจกดสั่ง</h5>
-                            <p className="text-xs text-slate-500 leading-relaxed">
-                              เทคนิคจับคู่โทนสีที่เหมาะสมกับกลุ่มผลิตภัณฑ์สุขภาพ การจัดสรรวางสินค้าหมวดหมู่หลักในตำแหน่งหน้าแรก และความโดดเด่นของภาพผลิตภัณฑ์
-                            </p>
-                          </div>
-                          <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
-                            <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-2 py-0.5 rounded-full">คู่มือระบบ 📑</span>
-                            <h5 className="font-bold text-slate-800 text-xs">📦 บทเรียนที่ 2: ไขข้อสงสัยสูตรค่าขนส่ง Shippop และ PV</h5>
-                            <p className="text-xs text-slate-500 leading-relaxed">
-                              อธิบายขั้นตอนการวัดขนาด กว้างxยาวxสูง จริงของแพ็คเกจ และการคำนวณน้ำหนักปริมาตรที่เหมาะสม เพื่อลดความคลาดเคลื่อนทางบัญชี
-                            </p>
-                          </div>
-                          <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
-                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full">กฎหมายร้านค้า ⚖️</span>
-                            <h5 className="font-bold text-slate-800 text-xs">🛡️ บทเรียนที่ 3: ระเบียบข้อบังคับและจรรยาบรรณผู้ค้าของนทีพลัส</h5>
-                            <p className="text-xs text-slate-500 leading-relaxed">
-                              ทำความเข้าใจนโยบายความโปร่งใสทางกฎหมาย กฎการคุ้มครองข้อมูลส่วนบุคคล (PDPA) ของผู้ซื้อ และการห้ามจำหน่ายสินค้าลอกเลียนแบบ
-                            </p>
-                          </div>
-                          <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
-                            <span className="bg-purple-100 text-purple-800 text-[9px] font-bold px-2 py-0.5 rounded-full">แชร์ประสบการณ์ 💡</span>
-                            <h5 className="font-bold text-slate-800 text-xs">🌟 บทเรียนที่ 4: เคล็ดลับการตอบกลับแชทและบริการหลังการขาย</h5>
-                            <p className="text-xs text-slate-500 leading-relaxed">
-                              ตอบข้อซักถามลูกค้าอย่างถูกต้อง สรรพคุณทางกฏหมาย วิธีดูแลออเดอร์ที่มีปัญหาคืนสินค้า เพื่อคงสถานะเรตติ้งระดับ 5 ดาวเสมอ
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
                     {sellerPortalSubTab === 'info' && (
                       <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-100 pb-4 gap-2">
@@ -15877,17 +15907,10 @@ export default function App() {
                                   </button>
                                 </div>
 
-                                {sellerWarehouseOtpSimulated && (
-                                  <div className="bg-amber-100 border border-amber-300 text-amber-900 px-3 py-2 rounded-xl text-[11px] font-bold flex justify-between items-center animate-pulse">
-                                    <span>🔐 [Sandbox Simulation] รหัส OTP คือ: <strong className="text-sm font-mono tracking-widest text-indigo-900">{sellerWarehouseOtpSimulated}</strong></span>
-                                    <button
-                                      type="button"
-                                      onClick={() => setSellerWarehouseOtp(sellerWarehouseOtpSimulated)}
-                                      className="bg-amber-200 hover:bg-amber-300 text-amber-950 px-2.5 py-1 rounded-lg text-[10px] cursor-pointer"
-                                    >
-                                      กรอกอัตโนมัติ
-                                    </button>
-                                  </div>
+                                {sellerWarehouseOtpSent && (
+                                  <p className="text-[10px] text-emerald-600 font-medium">
+                                    ✓ ระบบได้จัดส่งรหัส OTP ไปยังอีเมลเรียบร้อยแล้ว กรุณาตรวจสอบในกล่องข้อความหรืออีเมลขยะ (Junk/Spam)
+                                  </p>
                                 )}
 
                                 <div className="space-y-1">
@@ -26565,16 +26588,18 @@ export default function App() {
                     if (isYouTube) {
                       let embedUrl = rawUrl;
                       let vid = '';
-                      if (rawUrl.includes('live/')) {
-                        vid = rawUrl.split('live/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0];
+                      if (rawUrl.includes('/live/')) {
+                        vid = rawUrl.split('/live/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0]?.split('/')[0];
                       } else if (rawUrl.includes('watch?v=')) {
-                        vid = rawUrl.split('watch?v=')[1]?.split('&')[0]?.split('#')[0]?.split('?')[0];
+                        vid = rawUrl.split('watch?v=')[1]?.split('&')[0]?.split('#')[0]?.split('?')[0]?.split('/')[0];
+                      } else if (rawUrl.includes('v=')) {
+                        vid = rawUrl.split('v=')[1]?.split('&')[0]?.split('#')[0]?.split('?')[0]?.split('/')[0];
                       } else if (rawUrl.includes('youtu.be/')) {
-                        vid = rawUrl.split('youtu.be/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0];
-                      } else if (rawUrl.includes('shorts/')) {
-                        vid = rawUrl.split('shorts/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0];
-                      } else if (rawUrl.includes('embed/')) {
-                        vid = rawUrl.split('embed/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0];
+                        vid = rawUrl.split('youtu.be/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0]?.split('/')[0];
+                      } else if (rawUrl.includes('/shorts/')) {
+                        vid = rawUrl.split('/shorts/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0]?.split('/')[0];
+                      } else if (rawUrl.includes('/embed/')) {
+                        vid = rawUrl.split('/embed/')[1]?.split('?')[0]?.split('&')[0]?.split('#')[0]?.split('/')[0];
                       }
 
                       if (vid) {
@@ -26582,13 +26607,26 @@ export default function App() {
                       }
 
                       return (
-                        <iframe
-                          src={`${embedUrl}${embedUrl.includes('?') ? '&' : '?'}autoplay=1&mute=0`}
-                          title={activeLiveRoom.title}
-                          className="w-full h-full border-0"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                        />
+                        <div className="relative w-full h-full bg-black flex flex-col items-center justify-center">
+                          <iframe
+                            src={`${embedUrl}${embedUrl.includes('?') ? '&' : '?'}autoplay=1&mute=0&rel=0&enablejsapi=1`}
+                            title={activeLiveRoom.title}
+                            className="w-full h-full border-0 min-h-[300px]"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowFullScreen
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="absolute bottom-3 right-3 z-20 flex gap-2">
+                            <a
+                              href={rawUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="bg-red-600/90 hover:bg-red-600 text-white font-extrabold text-[11px] px-3.5 py-1.5 rounded-xl backdrop-blur-md shadow-lg flex items-center gap-1.5 transition active:scale-95"
+                            >
+                              <span>▶️ เปิดดูใน YouTube App/Web</span>
+                            </a>
+                          </div>
+                        </div>
                       );
                     }
 
