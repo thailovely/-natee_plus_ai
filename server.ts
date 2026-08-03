@@ -4807,23 +4807,35 @@ app.post('/api/seller/update-warehouse', (req, res) => {
     return res.status(400).json({ success: false, message: "กรุณากรอกข้อมูลที่อยู่คลังสินค้าและรหัส OTP ให้ครบถ้วนค่ะ" });
   }
   
-  const member = db.members.find((m: any) => m.userId === userId);
+  const searchKey = String(userId).trim();
+  const member = db.members.find((m: any) => 
+    m.userId === searchKey || (m.username && m.username.toLowerCase() === searchKey.toLowerCase()) || m.sellerCode === searchKey
+  );
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกในระบบ" });
 
   const savedOtp = db.otps ? db.otps[member.userId] : null;
-  if (!savedOtp || savedOtp !== otp) {
+  if (!savedOtp || String(savedOtp).trim() !== String(otp).trim()) {
     return res.status(400).json({ success: false, message: "รหัส OTP ไม่ถูกต้อง กรุณาตรวจสอบรหัสจากอีเมลหรือกดขอรับรหัสอีกครั้งค่ะ" });
   }
 
-  const parsedLat = warehouseLat ? parseFloat(warehouseLat) : (member.warehouseLat || 13.7563);
-  const parsedLng = warehouseLng ? parseFloat(warehouseLng) : (member.warehouseLng || 100.5018);
+  const parsedLat = (warehouseLat !== undefined && warehouseLat !== null && !isNaN(parseFloat(warehouseLat))) 
+    ? parseFloat(warehouseLat) 
+    : (member.warehouseLat || 13.7563);
+  const parsedLng = (warehouseLng !== undefined && warehouseLng !== null && !isNaN(parseFloat(warehouseLng))) 
+    ? parseFloat(warehouseLng) 
+    : (member.warehouseLng || 100.5018);
 
   member.sellerAddress = sellerAddress;
+  member.storeAddress = sellerAddress;
   if (sellerLine !== undefined) member.sellerLine = sellerLine;
   member.warehouseLat = parsedLat;
   member.warehouseLng = parsedLng;
   member.lat = parsedLat;
   member.lng = parsedLng;
+
+  if (!member.sellerStatus || member.sellerStatus === 'NotApplied') {
+    member.sellerStatus = 'Active';
+  }
 
   delete db.otps[member.userId];
   writeDb(db);

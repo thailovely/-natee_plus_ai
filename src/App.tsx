@@ -15954,7 +15954,7 @@ export default function App() {
                                 }}
                                 address={sellerWarehouseEditAddress}
                                 onAddressChange={(addr) => {
-                                  if (!sellerWarehouseEditAddress) setSellerWarehouseEditAddress(addr);
+                                  if (addr) setSellerWarehouseEditAddress(addr);
                                 }}
                               />
                             </div>

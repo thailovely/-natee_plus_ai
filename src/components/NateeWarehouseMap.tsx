@@ -297,29 +297,68 @@ export function NateeWarehouseMap({
 
       {!effectiveReadOnly && (
         <div className="space-y-2">
-          {/* Address Search Bar */}
-          <div className="flex gap-1.5">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleSearch();
-                }
-              }}
-              placeholder="พิมพ์สถานที่, อำเภอ หรือจังหวัด เช่น ชุมพร, บางลำพู, เชียงใหม่..."
-              className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-slate-800"
-            />
+          {/* Address Search Bar & GPS Button */}
+          <div className="flex flex-col sm:flex-row gap-1.5">
+            <div className="flex gap-1.5 flex-1">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleSearch();
+                  }
+                }}
+                placeholder="พิมพ์สถานที่, อำเภอ หรือจังหวัด เช่น ชุมพร, บางลำพู, เชียงใหม่..."
+                className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-slate-800"
+              />
+              <button
+                type="button"
+                onClick={handleSearch}
+                disabled={isSearching}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition shrink-0 cursor-pointer disabled:bg-indigo-300 shadow-sm"
+              >
+                {isSearching ? 'กำลังค้น...' : '🔍 ค้นหา'}
+              </button>
+            </div>
             <button
               type="button"
-              onClick={handleSearch}
+              onClick={() => {
+                if (!navigator.geolocation) {
+                  alert("อุปกรณ์ของคุณไม่รองรับการดึงพิกัด GPS อัตโนมัติค่ะ");
+                  return;
+                }
+                setIsSearching(true);
+                navigator.geolocation.getCurrentPosition(
+                  (pos) => {
+                    const latitudeVal = pos.coords.latitude;
+                    const longitudeVal = pos.coords.longitude;
+                    if (mapInstanceRef.current && markerRef.current) {
+                      mapInstanceRef.current.setView([latitudeVal, longitudeVal], 16);
+                      markerRef.current.setLatLng([latitudeVal, longitudeVal]);
+                      if (effectiveOnChange) effectiveOnChange(latitudeVal, longitudeVal);
+                      if (onAddressChange) {
+                        fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitudeVal}&lon=${longitudeVal}&accept-language=th`)
+                          .then(r => r.json())
+                          .then(data => { if (data?.display_name) onAddressChange(data.display_name); })
+                          .catch(() => {});
+                      }
+                    }
+                    setIsSearching(false);
+                  },
+                  () => {
+                    alert("ไม่สามารถดึงตำแหน่ง GPS ได้ กรุณาอนุญาตให้ระบบเข้าถึงพิกัดในเบราว์เซอร์ค่ะ");
+                    setIsSearching(false);
+                  },
+                  { enableHighAccuracy: true, timeout: 10000 }
+                );
+              }}
               disabled={isSearching}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition shrink-0 cursor-pointer disabled:bg-indigo-300 shadow-sm"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition shrink-0 cursor-pointer shadow-sm flex items-center justify-center gap-1"
             >
-              {isSearching ? 'กำลังค้น...' : '🔍 ค้นหาบนแผนที่'}
+              <span>📍 GPS พิกัดปัจจุบัน</span>
             </button>
           </div>
 
