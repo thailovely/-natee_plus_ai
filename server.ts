@@ -5196,7 +5196,7 @@ app.post('/api/seller/product', async (req, res) => {
     });
   }
 
-  const isApproved = !!approveInstantly || member?.role === 'Admin' || member?.sellerStatus === 'Active' || userId === 'admin' || (typeof userId === 'string' && userId.startsWith('admin_'));
+  const isApproved = !!approveInstantly || member?.role === 'Admin' || member?.role === 'Manager' || userId === 'admin' || (typeof userId === 'string' && userId.startsWith('admin_'));
 
   const newProduct = {
     id: newProductId,
@@ -6579,7 +6579,7 @@ app.post('/api/seller/product/edit', async (req, res) => {
     prod.stock = parseFloat(stock);
   }
   
-  const isApproved = !!approveInstantly || isAdmin || member?.sellerStatus === 'Active';
+  const isApproved = !!approveInstantly || isAdmin;
 
   if (isApproved) {
     prod.status = "Approved";
