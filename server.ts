@@ -582,7 +582,7 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
 
       // Merge members (union by userId)
       const mergedMembers = [...(loadedData.members || [])];
-      let hasMergedChanges = hasFilteredGhostProducts;
+      let hasMergedChanges = false;
 
       if (localDb && Array.isArray(localDb.members)) {
         for (const localMember of localDb.members) {
