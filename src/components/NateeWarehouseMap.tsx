@@ -13,6 +13,84 @@ interface NateeWarehouseMapProps {
   onAddressChange?: (addr: string) => void;
 }
 
+// Helper to format clean, standard Thai address from Nominatim data
+export function formatThaiNominatimAddress(data: any): string {
+  if (!data) return '';
+  const addr = data.address || {};
+
+  // House number / building
+  const houseNumber = addr.house_number || addr.building || '';
+
+  // Road
+  let road = addr.road || addr.street || addr.pedestrian || addr.path || '';
+  if (road && !road.startsWith('ถนน') && !road.startsWith('ถ.') && !road.startsWith('ซอย') && !road.startsWith('ซ.')) {
+    road = `ถนน${road}`;
+  }
+
+  // Subdistrict / Tambon / Khwaeng
+  let subdistrict = addr.subdistrict || addr.quarter || addr.township || '';
+  if (!subdistrict && addr.suburb && !addr.suburb.includes('บ้าน') && !addr.suburb.includes('เทศบาล')) {
+    subdistrict = addr.suburb;
+  }
+  if (!subdistrict && addr.village && !addr.village.includes('บ้าน') && !addr.village.includes('เทศบาล')) {
+    subdistrict = addr.village;
+  }
+
+  if (subdistrict) {
+    subdistrict = subdistrict.replace(/^(ตำบล|ต\.|แขวง)\s*/, '');
+    subdistrict = `ตำบล${subdistrict}`;
+  }
+
+  // District / Amphoe / Khet
+  let district = addr.district || addr.city_district || addr.county || addr.city || '';
+  if (district) {
+    district = district.replace(/^(อำเภอ|อ\.|เขต)\s*/, '');
+    if (district && !district.includes('เทศบาล')) {
+      district = `อำเภอ${district}`;
+    } else {
+      district = '';
+    }
+  }
+
+  // Province / Changwat
+  let province = addr.province || addr.state || '';
+  if (province) {
+    province = province.replace(/^(จังหวัด|จ\.)\s*/, '');
+    province = `จังหวัด${province}`;
+  }
+
+  const postcode = addr.postcode || '';
+
+  const parts: string[] = [];
+  if (houseNumber) parts.push(houseNumber);
+  if (road) parts.push(road);
+  if (subdistrict) parts.push(subdistrict);
+  if (district) parts.push(district);
+  if (province) parts.push(province);
+  if (postcode) parts.push(postcode);
+
+  if (parts.length >= 2) {
+    return parts.join(' ');
+  }
+
+  // Fallback cleanup if structured fields are sparse
+  if (data.display_name) {
+    return data.display_name
+      .split(',')
+      .map((s: string) => s.trim())
+      .filter((s: string) => {
+        if (!s) return false;
+        if (s === 'ประเทศไทย' || s === 'Thailand') return false;
+        if (s.includes('เทศบาล')) return false;
+        if (s.includes('บ้านใหม่') && !s.startsWith('ตำบล')) return false;
+        return true;
+      })
+      .join(' ');
+  }
+
+  return '';
+}
+
 export function NateeWarehouseMap({
   lat,
   lng,
@@ -112,29 +190,40 @@ export function NateeWarehouseMap({
       markerRef.current = marker;
 
       // Click to pin on map (if not effectiveReadOnly)
-      if (!effectiveReadOnly) {
-        map.on('click', (e: any) => {
-          const { lat: clickLat, lng: clickLng } = e.latlng;
-          marker.setLatLng([clickLat, clickLng]);
-          if (effectiveOnChange) effectiveOnChange(clickLat, clickLng);
-          triggerReverseGeocode(clickLat, clickLng);
-        });
+      map.on('click', (e: any) => {
+        if (effectiveReadOnly) return;
+        const { lat: clickLat, lng: clickLng } = e.latlng;
+        marker.setLatLng([clickLat, clickLng]);
+        if (effectiveOnChange) effectiveOnChange(clickLat, clickLng);
+        triggerReverseGeocode(clickLat, clickLng);
+      });
 
-        marker.on('dragend', () => {
-          const position = marker.getLatLng();
-          if (effectiveOnChange) effectiveOnChange(position.lat, position.lng);
-          triggerReverseGeocode(position.lat, position.lng);
-        });
-      }
+      marker.on('dragend', () => {
+        if (effectiveReadOnly) return;
+        const position = marker.getLatLng();
+        if (effectiveOnChange) effectiveOnChange(position.lat, position.lng);
+        triggerReverseGeocode(position.lat, position.lng);
+      });
     } else {
+      // Dynamic drag enable/disable based on readOnly
+      if (markerRef.current && markerRef.current.dragging) {
+        if (effectiveReadOnly) {
+          markerRef.current.dragging.disable();
+        } else {
+          markerRef.current.dragging.enable();
+        }
+      }
+
       // Update Marker position if lat/lng changes from outside
-      if (effectiveLat && effectiveLng) {
+      if (effectiveLat && effectiveLng && markerRef.current) {
         markerRef.current.setLatLng([effectiveLat, effectiveLng]);
-        mapInstanceRef.current.setView([effectiveLat, effectiveLng], mapInstanceRef.current.getZoom());
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.setView([effectiveLat, effectiveLng], mapInstanceRef.current.getZoom());
+        }
       }
     }
 
-    // Helper to perform reverse geocoding via Nominatim OpenStreetMap (safe & free!)
+    // Helper to perform reverse geocoding via Nominatim OpenStreetMap with clean Thai address formatting
     async function triggerReverseGeocode(latVal: number, lngVal: number) {
       if (effectiveReadOnly || !onAddressChange) return;
       try {
@@ -142,8 +231,10 @@ export function NateeWarehouseMap({
           `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latVal}&lon=${lngVal}&accept-language=th`
         );
         const data = await response.json();
-        if (data && data.display_name) {
-          // Clean address for Thai language
+        const formatted = formatThaiNominatimAddress(data);
+        if (formatted) {
+          onAddressChange(formatted);
+        } else if (data && data.display_name) {
           onAddressChange(data.display_name);
         }
       } catch (err) {
@@ -342,7 +433,11 @@ export function NateeWarehouseMap({
                       if (onAddressChange) {
                         fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitudeVal}&lon=${longitudeVal}&accept-language=th`)
                           .then(r => r.json())
-                          .then(data => { if (data?.display_name) onAddressChange(data.display_name); })
+                          .then(data => {
+                            const formatted = formatThaiNominatimAddress(data);
+                            if (formatted) onAddressChange(formatted);
+                            else if (data?.display_name) onAddressChange(data.display_name);
+                          })
                           .catch(() => {});
                       }
                     }

@@ -269,6 +269,7 @@ export default function App() {
   const [sellerWarehouseOtp, setSellerWarehouseOtp] = useState('');
   const [sellerWarehouseOtpSimulated, setSellerWarehouseOtpSimulated] = useState('');
   const [sellerWarehouseOtpSent, setSellerWarehouseOtpSent] = useState(false);
+  const [isWarehouseLocked, setIsWarehouseLocked] = useState(true);
 
   // System Notification Bell States
   const [systemNotifications, setSystemNotifications] = useState<any[]>([]);
@@ -5508,6 +5509,7 @@ export default function App() {
 
   const handleSendWarehouseOtp = async () => {
     if (!sellerSessionUser?.userId) return;
+    setIsWarehouseLocked(false); // Unlock map pin editing when requesting OTP
     try {
       const res = await fetch('/api/seller/send-warehouse-otp', {
         method: 'POST',
@@ -5518,7 +5520,7 @@ export default function App() {
       if (data.success) {
         setSellerWarehouseOtpSent(true);
         if (data.otpSimulated) setSellerWarehouseOtpSimulated(data.otpSimulated);
-        showNotif(data.message, "success");
+        showNotif(data.message + " (ขณะนี้คุณสามารถเคลื่อนย้ายหมุดบนแผนที่เพื่อปรับพิกัดได้แล้วค่ะ)", "success");
       } else {
         showNotif(data.message, "error");
       }
@@ -5554,7 +5556,8 @@ export default function App() {
       });
       const data = await res.json();
       if (data.success) {
-        showNotif(data.message, "success");
+        setIsWarehouseLocked(true); // Securely lock map pin coordinates after successful save
+        showNotif("🔒 บันทึกและล็อกพิกัดคลังสินค้าเรียบร้อยแล้วค่ะ!", "success");
         setSellerWarehouseOtp('');
         setSellerWarehouseOtpSimulated('');
         setSellerWarehouseOtpSent(false);
@@ -12955,137 +12958,138 @@ export default function App() {
                 </div>
               )}
 
-              {sellerPortalSubTab === 'learning' ? (
-                // 📖 RENDER LEARNING CENTER (ACCESSIBLE TO ALL MEMBERS & SELLERS)
-                <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6 animate-fadeIn">
-                  <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                        📖 ศูนย์การเรียนรู้และคู่มือผู้ขาย (Partner Learning Centre)
-                      </h4>
-                      <p className="text-xs text-slate-400 mt-0.5">รวมคู่มือการใช้งานระบบ บทเรียนการตลาด และวิธีการไลฟ์สดขายสินค้า</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSellerPortalSubTab('home')}
-                      className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm flex items-center gap-1.5 shrink-0"
-                    >
-                      <span>←</span>
-                      <span>{sellerSessionUser ? 'กลับสู่แผงควบคุมร้านค้า' : 'กลับสู่หน้าเข้าสู่ระบบร้านค้า'}</span>
-                    </button>
-                  </div>
-
-                  {/* FEATURED: LIVE STREAMING SELLER GUIDE */}
-                  <div className="bg-gradient-to-br from-rose-900 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 border border-rose-500/30 shadow-xl space-y-5 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-80 h-80 bg-rose-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
-                    
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4 relative z-10">
-                      <div className="space-y-1">
-                        <div className="inline-flex items-center gap-1.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full animate-pulse">
-                          <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-                          คู่มือการใช้งานระบบ: Live Shopping
-                        </div>
-                        <h5 className="text-base font-extrabold text-white flex items-center gap-2">
-                          🎥 ขั้นตอนการไลฟ์สดขายสินค้า และเชื่อมต่อ TikTok Live / YouTube / Facebook
-                        </h5>
-                        <p className="text-xs text-slate-300">
-                          วิธีสร้างห้องไลฟ์สด นำลิงก์วิดีโอจากแพลตฟอร์มต่างๆ มาวางเพื่อดึงสัญญาณสด พร้อมปักตะกร้าสินค้าในร้านค้าของคุณ
-                        </p>
+              {!sellerSessionUser ? (
+                sellerPortalSubTab === 'learning' ? (
+                  // 📖 RENDER LEARNING CENTER (ACCESSIBLE TO ALL MEMBERS & VISITORS)
+                  <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6 animate-fadeIn">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                          📖 ศูนย์การเรียนรู้และคู่มือผู้ขาย (Partner Learning Centre)
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-0.5">รวมคู่มือการใช้งานระบบ บทเรียนการตลาด และวิธีการไลฟ์สดขายสินค้า</p>
                       </div>
                       <button
                         type="button"
-                        onClick={() => {
-                          setActiveTab('shop');
-                          showNotif("นำท่านไปยังหน้าตลาดเพื่อทดลองเปิดห้องไลฟ์สด", "info");
-                        }}
-                        className="bg-rose-600 hover:bg-rose-500 text-white font-extrabold px-4 py-2.5 rounded-2xl text-xs transition shadow-lg flex items-center gap-2 shrink-0 cursor-pointer active:scale-95"
+                        onClick={() => setSellerPortalSubTab('home')}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm flex items-center gap-1.5 shrink-0"
                       >
-                        <Video size={16} />
-                        <span>ไปที่หน้าตลาด เพื่อเปิดไลฟ์สด</span>
+                        <span>←</span>
+                        <span>กลับสู่หน้าเข้าสู่ระบบร้านค้า</span>
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10 font-sans text-xs">
-                      {/* STEP 1 */}
-                      <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-lg bg-rose-500 text-white font-black text-xs flex items-center justify-center shrink-0">1</span>
-                          <h6 className="font-extrabold text-rose-200">เริ่มสร้างห้องไลฟ์สด</h6>
+                    {/* FEATURED: LIVE STREAMING SELLER GUIDE */}
+                    <div className="bg-gradient-to-br from-rose-900 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 border border-rose-500/30 shadow-xl space-y-5 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-80 h-80 bg-rose-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
+                      
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4 relative z-10">
+                        <div className="space-y-1">
+                          <div className="inline-flex items-center gap-1.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full animate-pulse">
+                            <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                            คู่มือการใช้งานระบบ: Live Shopping
+                          </div>
+                          <h5 className="text-base font-extrabold text-white flex items-center gap-2">
+                            🎥 ขั้นตอนการไลฟ์สดขายสินค้า และเชื่อมต่อ TikTok Live / YouTube / Facebook
+                          </h5>
+                          <p className="text-xs text-slate-300">
+                            วิธีสร้างห้องไลฟ์สด นำลิงก์วิดีโอจากแพลตฟอร์มต่างๆ มาวางเพื่อดึงสัญญาณสด พร้อมปักตะกร้าสินค้าในร้านค้าของคุณ
+                          </p>
                         </div>
-                        <p className="text-slate-300 text-[11px] leading-relaxed">
-                          กดปุ่ม <strong className="text-white">"🎥 เริ่มไลฟ์สด"</strong> บนแถบห้องไลฟ์สดหน้ามาร์เก็ต ใส่หัวข้อเรื่องที่น่าสนใจ และอัปโหลดภาพปกห้องไลฟ์ (Cover Image) เพื่อดึงดูดผู้เข้าชม
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('shop');
+                            showNotif("นำท่านไปยังหน้าตลาดเพื่อทดลองเปิดห้องไลฟ์สด", "info");
+                          }}
+                          className="bg-rose-600 hover:bg-rose-500 text-white font-extrabold px-4 py-2.5 rounded-2xl text-xs transition shadow-lg flex items-center gap-2 shrink-0 cursor-pointer active:scale-95"
+                        >
+                          <Video size={16} />
+                          <span>ไปที่หน้าตลาด เพื่อเปิดไลฟ์สด</span>
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10 font-sans text-xs">
+                        {/* STEP 1 */}
+                        <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-lg bg-rose-500 text-white font-black text-xs flex items-center justify-center shrink-0">1</span>
+                            <h6 className="font-extrabold text-rose-200">เริ่มสร้างห้องไลฟ์สด</h6>
+                          </div>
+                          <p className="text-slate-300 text-[11px] leading-relaxed">
+                            กดปุ่ม <strong className="text-white">"🎥 เริ่มไลฟ์สด"</strong> บนแถบห้องไลฟ์สดหน้ามาร์เก็ต ใส่หัวข้อเรื่องที่น่าสนใจ และอัปโหลดภาพปกห้องไลฟ์ (Cover Image) เพื่อดึงดูดผู้เข้าชม
+                          </p>
+                        </div>
+
+                        {/* STEP 2 */}
+                        <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-lg bg-indigo-500 text-white font-black text-xs flex items-center justify-center shrink-0">2</span>
+                            <h6 className="font-extrabold text-indigo-200">คัดลอกลิงก์สตรีมไลฟ์สด</h6>
+                          </div>
+                          <div className="space-y-1.5 text-slate-300 text-[11px] leading-relaxed">
+                            <div><strong className="text-white">🎵 TikTok Live:</strong> เปิด TikTok บนมือถือ -&gt; Go LIVE -&gt; คัดลอกลิงก์สตรีม เช่น <code className="text-amber-300 text-[10px]">https://www.tiktok.com/@yourname/live</code></div>
+                            <div><strong className="text-white">▶️ YouTube Live:</strong> คัดลอก URL เช่น <code className="text-amber-300 text-[10px]">https://youtube.com/live/xxx</code> หรือ <code className="text-amber-300 text-[10px]">https://youtu.be/xxx</code></div>
+                            <div><strong className="text-white">📘 Facebook Live:</strong> คัดลอกลิงก์วิดีโอถ่ายทอดสดบนเพจของคุณ</div>
+                          </div>
+                        </div>
+
+                        {/* STEP 3 */}
+                        <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-lg bg-emerald-500 text-white font-black text-xs flex items-center justify-center shrink-0">3</span>
+                            <h6 className="font-extrabold text-emerald-200">ปักตะกร้าสินค้า & รับออเดอร์</h6>
+                          </div>
+                          <p className="text-slate-300 text-[11px] leading-relaxed">
+                            เลือกสินค้าในร้านของคุณที่ต้องการปักตะกร้า ลูกค้าที่เข้าชมไลฟ์สดสามารถคลิกดูสินค้า ปักตะกร้า และกดสั่งซื้อพร้อมสะสมคะแนน PV ได้ทันทีขณะรับชม
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-900/90 border border-slate-750 rounded-2xl p-3.5 text-[11px] text-slate-300 flex flex-wrap items-center justify-between gap-2 relative z-10">
+                        <div className="flex items-center gap-2">
+                          <span className="text-amber-400 font-bold">💡 เคล็ดลับเพิ่มยอดขาย:</span>
+                          <span>แชทโต้ตอบกับลูกค้าแบบ Real-time และมอบโค้ดส่วนลดพิเศษสำหรับผู้เข้าชมไลฟ์สดเท่านั้น</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-mono">ระบบรองรับ Live Embed อัตโนมัติ</span>
+                      </div>
+                    </div>
+
+                    {/* OTHER LEARNING LESSONS GRID */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                        <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded-full">ยอดนิยม 🔥</span>
+                        <h5 className="font-bold text-slate-800 text-xs">🚀 บทเรียนที่ 1: ตกแต่งร้านค้าอย่างไรให้สมาชิกสนใจกดสั่ง</h5>
+                        <p className="text-xs text-slate-500 leading-relaxed">
+                          เทคนิคจับคู่โทนสีที่เหมาะสมกับกลุ่มผลิตภัณฑ์สุขภาพ การจัดสรรวางสินค้าหมวดหมู่หลักในตำแหน่งหน้าแรก และความโดดเด่นของภาพผลิตภัณฑ์
                         </p>
                       </div>
-
-                      {/* STEP 2 */}
-                      <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-lg bg-indigo-500 text-white font-black text-xs flex items-center justify-center shrink-0">2</span>
-                          <h6 className="font-extrabold text-indigo-200">คัดลอกลิงก์สตรีมไลฟ์สด</h6>
-                        </div>
-                        <div className="space-y-1.5 text-slate-300 text-[11px] leading-relaxed">
-                          <div><strong className="text-white">🎵 TikTok Live:</strong> เปิด TikTok บนมือถือ -&gt; Go LIVE -&gt; คัดลอกลิงก์สตรีม เช่น <code className="text-amber-300 text-[10px]">https://www.tiktok.com/@yourname/live</code></div>
-                          <div><strong className="text-white">▶️ YouTube Live:</strong> คัดลอก URL เช่น <code className="text-amber-300 text-[10px]">https://youtube.com/live/xxx</code> หรือ <code className="text-amber-300 text-[10px]">https://youtu.be/xxx</code></div>
-                          <div><strong className="text-white">📘 Facebook Live:</strong> คัดลอกลิงก์วิดีโอถ่ายทอดสดบนเพจของคุณ</div>
-                        </div>
+                      <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                        <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-2 py-0.5 rounded-full">คู่มือระบบ 📑</span>
+                        <h5 className="font-bold text-slate-800 text-xs">📦 บทเรียนที่ 2: ไขข้อสงสัยสูตรค่าขนส่ง Shippop และ PV</h5>
+                        <p className="text-xs text-slate-500 leading-relaxed">
+                          อธิบายขั้นตอนการวัดขนาด กว้างxยาวxสูง จริงของแพ็คเกจ และการคำนวณน้ำหนักปริมาตรที่เหมาะสม เพื่อลดความคลาดเคลื่อนทางบัญชี
+                        </p>
                       </div>
-
-                      {/* STEP 3 */}
-                      <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-lg bg-emerald-500 text-white font-black text-xs flex items-center justify-center shrink-0">3</span>
-                          <h6 className="font-extrabold text-emerald-200">ปักตะกร้าสินค้า & รับออเดอร์</h6>
-                        </div>
-                        <p className="text-slate-300 text-[11px] leading-relaxed">
-                          เลือกสินค้าในร้านของคุณที่ต้องการปักตะกร้า ลูกค้าที่เข้าชมไลฟ์สดสามารถคลิกดูสินค้า ปักตะกร้า และกดสั่งซื้อพร้อมสะสมคะแนน PV ได้ทันทีขณะรับชม
+                      <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                        <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full">กฎหมายร้านค้า ⚖️</span>
+                        <h5 className="font-bold text-slate-800 text-xs">🛡️ บทเรียนที่ 3: ระเบียบข้อบังคับและจรรยาบรรณผู้ค้าของนทีพลัส</h5>
+                        <p className="text-xs text-slate-500 leading-relaxed">
+                          ทำความเข้าใจนโยบายความโปร่งใสทางกฎหมาย กฎการคุ้มครองข้อมูลส่วนบุคคล (PDPA) ของผู้ซื้อ และการห้ามจำหน่ายสินค้าลอกเลียนแบบ
+                        </p>
+                      </div>
+                      <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                        <span className="bg-purple-100 text-purple-800 text-[9px] font-bold px-2 py-0.5 rounded-full">แชร์ประสบการณ์ 💡</span>
+                        <h5 className="font-bold text-slate-800 text-xs">🌟 บทเรียนที่ 4: เคล็ดลับการตอบกลับแชทและบริการหลังการขาย</h5>
+                        <p className="text-xs text-slate-500 leading-relaxed">
+                          ตอบข้อซักถามลูกค้าอย่างถูกต้อง สรรพคุณทางกฏหมาย วิธีดูแลออเดอร์ที่มีปัญหาคืนสินค้า เพื่อคงสถานะเรตติ้งระดับ 5 ดาวเสมอ
                         </p>
                       </div>
                     </div>
-
-                    <div className="bg-slate-900/90 border border-slate-750 rounded-2xl p-3.5 text-[11px] text-slate-300 flex flex-wrap items-center justify-between gap-2 relative z-10">
-                      <div className="flex items-center gap-2">
-                        <span className="text-amber-400 font-bold">💡 เคล็ดลับเพิ่มยอดขาย:</span>
-                        <span>แชทโต้ตอบกับลูกค้าแบบ Real-time และมอบโค้ดส่วนลดพิเศษสำหรับผู้เข้าชมไลฟ์สดเท่านั้น</span>
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-mono">ระบบรองรับ Live Embed อัตโนมัติ</span>
-                    </div>
                   </div>
-
-                  {/* OTHER LEARNING LESSONS GRID */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
-                      <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded-full">ยอดนิยม 🔥</span>
-                      <h5 className="font-bold text-slate-800 text-xs">🚀 บทเรียนที่ 1: ตกแต่งร้านค้าอย่างไรให้สมาชิกสนใจกดสั่ง</h5>
-                      <p className="text-xs text-slate-500 leading-relaxed">
-                        เทคนิคจับคู่โทนสีที่เหมาะสมกับกลุ่มผลิตภัณฑ์สุขภาพ การจัดสรรวางสินค้าหมวดหมู่หลักในตำแหน่งหน้าแรก และความโดดเด่นของภาพผลิตภัณฑ์
-                      </p>
-                    </div>
-                    <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
-                      <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-2 py-0.5 rounded-full">คู่มือระบบ 📑</span>
-                      <h5 className="font-bold text-slate-800 text-xs">📦 บทเรียนที่ 2: ไขข้อสงสัยสูตรค่าขนส่ง Shippop และ PV</h5>
-                      <p className="text-xs text-slate-500 leading-relaxed">
-                        อธิบายขั้นตอนการวัดขนาด กว้างxยาวxสูง จริงของแพ็คเกจ และการคำนวณน้ำหนักปริมาตรที่เหมาะสม เพื่อลดความคลาดเคลื่อนทางบัญชี
-                      </p>
-                    </div>
-                    <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
-                      <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full">กฎหมายร้านค้า ⚖️</span>
-                      <h5 className="font-bold text-slate-800 text-xs">🛡️ บทเรียนที่ 3: ระเบียบข้อบังคับและจรรยาบรรณผู้ค้าของนทีพลัส</h5>
-                      <p className="text-xs text-slate-500 leading-relaxed">
-                        ทำความเข้าใจนโยบายความโปร่งใสทางกฎหมาย กฎการคุ้มครองข้อมูลส่วนบุคคล (PDPA) ของผู้ซื้อ และการห้ามจำหน่ายสินค้าลอกเลียนแบบ
-                      </p>
-                    </div>
-                    <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
-                      <span className="bg-purple-100 text-purple-800 text-[9px] font-bold px-2 py-0.5 rounded-full">แชร์ประสบการณ์ 💡</span>
-                      <h5 className="font-bold text-slate-800 text-xs">🌟 บทเรียนที่ 4: เคล็ดลับการตอบกลับแชทและบริการหลังการขาย</h5>
-                      <p className="text-xs text-slate-500 leading-relaxed">
-                        ตอบข้อซักถามลูกค้าอย่างถูกต้อง สรรพคุณทางกฏหมาย วิธีดูแลออเดอร์ที่มีปัญหาคืนสินค้า เพื่อคงสถานะเรตติ้งระดับ 5 ดาวเสมอ
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : !sellerSessionUser ? (
-                // SELLER PORTAL LOGIN & REGISTRATION
-                <div className="max-w-xl mx-auto">
+                ) : (
+                  // SELLER PORTAL LOGIN & REGISTRATION
+                  <div className="max-w-xl mx-auto">
                   {!isRegisteringSeller ? (
                     // 1. SELLER CENTRE LOGIN SCREEN
                     <div className="bg-white border border-slate-100 rounded-3xl p-8 shadow-md space-y-6">
@@ -13548,7 +13552,8 @@ export default function App() {
                     </div>
                   )}
                 </div>
-              ) : sellerSessionUser.sellerStatus === 'Pending' ? (
+              )
+            ) : sellerSessionUser.sellerStatus === 'Pending' ? (
                 // PENDING APPROVAL SCREEN WITH SECURITY LOCK LOGO
                 <div className="bg-white border border-slate-100 rounded-3xl p-10 shadow-md text-center max-w-lg mx-auto space-y-6">
                   <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto shadow-sm relative animate-pulse">
@@ -15810,9 +15815,138 @@ export default function App() {
                       </div>
                     )}
 
+                    {sellerPortalSubTab === 'learning' && (
+                      <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6 animate-fadeIn">
+                        <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                              📖 ศูนย์การเรียนรู้และคู่มือผู้ขาย (Partner Learning Centre)
+                            </h4>
+                            <p className="text-xs text-slate-400 mt-0.5">รวมคู่มือการใช้งานระบบ บทเรียนการตลาด และวิธีการไลฟ์สดขายสินค้า</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSellerPortalSubTab('home')}
+                            className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm flex items-center gap-1.5 shrink-0"
+                          >
+                            <span>←</span>
+                            <span>กลับสู่แผงควบคุมร้านค้า</span>
+                          </button>
+                        </div>
+
+                        {/* FEATURED: LIVE STREAMING SELLER GUIDE */}
+                        <div className="bg-gradient-to-br from-rose-900 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 border border-rose-500/30 shadow-xl space-y-5 relative overflow-hidden">
+                          <div className="absolute top-0 right-0 w-80 h-80 bg-rose-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
+                          
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4 relative z-10">
+                            <div className="space-y-1">
+                              <div className="inline-flex items-center gap-1.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full animate-pulse">
+                                <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                                คู่มือการใช้งานระบบ: Live Shopping
+                              </div>
+                              <h5 className="text-base font-extrabold text-white flex items-center gap-2">
+                                🎥 ขั้นตอนการไลฟ์สดขายสินค้า และเชื่อมต่อ TikTok Live / YouTube / Facebook
+                              </h5>
+                              <p className="text-xs text-slate-300">
+                                วิธีสร้างห้องไลฟ์สด นำลิงก์วิดีโอจากแพลตฟอร์มต่างๆ มาวางเพื่อดึงสัญญาณสด พร้อมปักตะกร้าสินค้าในร้านค้าของคุณ
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('shop');
+                                showNotif("นำท่านไปยังหน้าตลาดเพื่อทดลองเปิดห้องไลฟ์สด", "info");
+                              }}
+                              className="bg-rose-600 hover:bg-rose-500 text-white font-extrabold px-4 py-2.5 rounded-2xl text-xs transition shadow-lg flex items-center gap-2 shrink-0 cursor-pointer active:scale-95"
+                            >
+                              <Video size={16} />
+                              <span>ไปที่หน้าตลาด เพื่อเปิดไลฟ์สด</span>
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10 font-sans text-xs">
+                            {/* STEP 1 */}
+                            <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="w-6 h-6 rounded-lg bg-rose-500 text-white font-black text-xs flex items-center justify-center shrink-0">1</span>
+                                <h6 className="font-extrabold text-rose-200">เริ่มสร้างห้องไลฟ์สด</h6>
+                              </div>
+                              <p className="text-slate-300 text-[11px] leading-relaxed">
+                                กดปุ่ม <strong className="text-white">"🎥 เริ่มไลฟ์สด"</strong> บนแถบห้องไลฟ์สดหน้ามาร์เก็ต ใส่หัวข้อเรื่องที่น่าสนใจ และอัปโหลดภาพปกห้องไลฟ์ (Cover Image) เพื่อดึงดูดผู้เข้าชม
+                              </p>
+                            </div>
+
+                            {/* STEP 2 */}
+                            <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="w-6 h-6 rounded-lg bg-indigo-500 text-white font-black text-xs flex items-center justify-center shrink-0">2</span>
+                                <h6 className="font-extrabold text-indigo-200">คัดลอกลิงก์สตรีมไลฟ์สด</h6>
+                              </div>
+                              <div className="space-y-1.5 text-slate-300 text-[11px] leading-relaxed">
+                                <div><strong className="text-white">🎵 TikTok Live:</strong> เปิด TikTok บนมือถือ -&gt; Go LIVE -&gt; คัดลอกลิงก์สตรีม เช่น <code className="text-amber-300 text-[10px]">https://www.tiktok.com/@yourname/live</code></div>
+                                <div><strong className="text-white">▶️ YouTube Live:</strong> คัดลอก URL เช่น <code className="text-amber-300 text-[10px]">https://youtube.com/live/xxx</code> หรือ <code className="text-amber-300 text-[10px]">https://youtu.be/xxx</code></div>
+                                <div><strong className="text-white">📘 Facebook Live:</strong> คัดลอกลิงก์วิดีโอถ่ายทอดสดบนเพจของคุณ</div>
+                              </div>
+                            </div>
+
+                            {/* STEP 3 */}
+                            <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 space-y-2.5 backdrop-blur-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="w-6 h-6 rounded-lg bg-emerald-500 text-white font-black text-xs flex items-center justify-center shrink-0">3</span>
+                                <h6 className="font-extrabold text-emerald-200">ปักตะกร้าสินค้า & รับออเดอร์</h6>
+                              </div>
+                              <p className="text-slate-300 text-[11px] leading-relaxed">
+                                เลือกสินค้าในร้านของคุณที่ต้องการปักตะกร้า ลูกค้าที่เข้าชมไลฟ์สดสามารถคลิกดูสินค้า ปักตะกร้า และกดสั่งซื้อพร้อมสะสมคะแนน PV ได้ทันทีขณะรับชม
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="bg-slate-900/90 border border-slate-750 rounded-2xl p-3.5 text-[11px] text-slate-300 flex flex-wrap items-center justify-between gap-2 relative z-10">
+                            <div className="flex items-center gap-2">
+                              <span className="text-amber-400 font-bold">💡 เคล็ดลับเพิ่มยอดขาย:</span>
+                              <span>แชทโต้ตอบกับลูกค้าแบบ Real-time และมอบโค้ดส่วนลดพิเศษสำหรับผู้เข้าชมไลฟ์สดเท่านั้น</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono">ระบบรองรับ Live Embed อัตโนมัติ</span>
+                          </div>
+                        </div>
+
+                        {/* OTHER LEARNING LESSONS GRID */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                            <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-2 py-0.5 rounded-full">ยอดนิยม 🔥</span>
+                            <h5 className="font-bold text-slate-800 text-xs">🚀 บทเรียนที่ 1: ตกแต่งร้านค้าอย่างไรให้สมาชิกสนใจกดสั่ง</h5>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              เทคนิคจับคู่โทนสีที่เหมาะสมกับกลุ่มผลิตภัณฑ์สุขภาพ การจัดสรรวางสินค้าหมวดหมู่หลักในตำแหน่งหน้าแรก และความโดดเด่นของภาพผลิตภัณฑ์
+                            </p>
+                          </div>
+                          <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                            <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-2 py-0.5 rounded-full">คู่มือระบบ 📑</span>
+                            <h5 className="font-bold text-slate-800 text-xs">📦 บทเรียนที่ 2: ไขข้อสงสัยสูตรค่าขนส่ง Shippop และ PV</h5>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              อธิบายขั้นตอนการวัดขนาด กว้างxยาวxสูง จริงของแพ็คเกจ และการคำนวณน้ำหนักปริมาตรที่เหมาะสม เพื่อลดความคลาดเคลื่อนทางบัญชี
+                            </p>
+                          </div>
+                          <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full">กฎหมายร้านค้า ⚖️</span>
+                            <h5 className="font-bold text-slate-800 text-xs">🛡️ บทเรียนที่ 3: ระเบียบข้อบังคับและจรรยาบรรณผู้ค้าของนทีพลัส</h5>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              ทำความเข้าใจนโยบายความโปร่งใสทางกฎหมาย กฎการคุ้มครองข้อมูลส่วนบุคคล (PDPA) ของผู้ซื้อ และการห้ามจำหน่ายสินค้าลอกเลียนแบบ
+                            </p>
+                          </div>
+                          <div className="border border-slate-150 rounded-2xl p-4 bg-slate-50 space-y-2">
+                            <span className="bg-purple-100 text-purple-800 text-[9px] font-bold px-2 py-0.5 rounded-full">แชร์ประสบการณ์ 💡</span>
+                            <h5 className="font-bold text-slate-800 text-xs">🌟 บทเรียนที่ 4: เคล็ดลับการตอบกลับแชทและบริการหลังการขาย</h5>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              ตอบข้อซักถามลูกค้าอย่างถูกต้อง สรรพคุณทางกฏหมาย วิธีดูแลออเดอร์ที่มีปัญหาคืนสินค้า เพื่อคงสถานะเรตติ้งระดับ 5 ดาวเสมอ
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {sellerPortalSubTab === 'info' && (
                       <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-100 pb-4 gap-2">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-100 pb-4 gap-3">
                           <div>
                             <h4 className="text-sm font-extrabold text-slate-800 flex items-center gap-1.5">
                               🏪 ข้อมูลที่อยู่จัดส่งและปักหมุดพิกัด GPS คลังสินค้า (Warehouse GPS Map Location)
@@ -15821,16 +15955,102 @@ export default function App() {
                               ปักหมุดตำแหน่งที่ตั้งคลังสินค้าปลายทางสำหรับการจัดส่งพัสดุ เมื่อท่านบันทึกและล็อกพิกัดเรียบร้อยแล้ว แอดมินจะมองเห็นพิกัดและที่อยู่นี้ตรงกันโดยสมบูรณ์
                             </p>
                           </div>
-                          <span className="text-xs text-indigo-600 font-bold bg-indigo-50 px-3 py-1 rounded-xl font-mono shrink-0">
-                            รหัสร้านค้า: {sellerSessionUser.sellerCode || '-'}
-                          </span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-xs text-indigo-600 font-bold bg-indigo-50 px-3 py-1.5 rounded-xl font-mono">
+                              รหัสร้านค้า: {sellerSessionUser.sellerCode || '-'}
+                            </span>
+                            {isWarehouseLocked ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsWarehouseLocked(false);
+                                  showNotif("ปลดล็อกคลังสินค้าเรียบร้อยค่ะ ท่านสามารถแก้ไขที่อยู่และลากหมุดบนแผนที่ได้เลยค่ะ", "info");
+                                }}
+                                className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-3.5 py-1.5 rounded-xl text-xs shadow-sm flex items-center gap-1.5 transition cursor-pointer active:scale-95"
+                              >
+                                <span>✏️</span>
+                                <span>แก้ไขคลังสินค้า</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsWarehouseLocked(true);
+                                  showNotif("ยกเลิกการแก้ไขและล็อกพิกัดคลังสินค้าเรียบร้อยค่ะ", "info");
+                                }}
+                                className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1 transition cursor-pointer"
+                              >
+                                <span>❌</span>
+                                <span>ยกเลิกการแก้ไข</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
+
+                        {/* Status Mode Banner */}
+                        {isWarehouseLocked ? (
+                          <div className="bg-emerald-50/80 border border-emerald-200/90 rounded-2xl p-4 text-xs flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xs">
+                            <div className="flex items-center gap-3 text-emerald-950">
+                              <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-base shrink-0 shadow-xs">
+                                🔒
+                              </div>
+                              <div>
+                                <h6 className="font-extrabold text-emerald-950 text-xs flex items-center gap-2">
+                                  <span>พิกัดและที่อยู่คลังสินค้าถูกล็อกอยู่ (Warehouse Locked)</span>
+                                  <span className="text-[10px] bg-emerald-200/80 text-emerald-900 px-2 py-0.5 rounded-md font-bold">ปลอดภัย 100%</span>
+                                </h6>
+                                <p className="text-[11px] text-emerald-800/90 mt-0.5">
+                                  หากต้องการปรับเปลี่ยนตำแหน่งปักหมุด GPS หรือแก้ไขรายละเอียดที่อยู่จัดส่ง ให้กดปุ่ม <strong>"แก้ไขคลังสินค้า"</strong> ด้านขวามือค่ะ
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsWarehouseLocked(false);
+                                showNotif("ปลดล็อกคลังสินค้าแล้วค่ะ ท่านสามารถแก้ไขที่อยู่และลากหมุดบนแผนที่ได้เลยค่ะ", "info");
+                              }}
+                              className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-4 py-2 rounded-xl text-xs shadow-sm transition cursor-pointer shrink-0 active:scale-95 flex items-center gap-1.5"
+                            >
+                              <span>✏️</span>
+                              <span>แก้ไขคลังสินค้า</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="bg-amber-50 border border-amber-300/80 rounded-2xl p-4 text-xs flex flex-col sm:flex-row items-center justify-between gap-3 animate-fadeIn shadow-2xs">
+                            <div className="flex items-center gap-3 text-amber-950">
+                              <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold text-base shrink-0 shadow-xs animate-bounce">
+                                📍
+                              </div>
+                              <div>
+                                <h6 className="font-extrabold text-amber-950 text-xs flex items-center gap-2">
+                                  <span>กำลังอยู่ในโหมดปรับแก้ไขคลังสินค้า (Editing Mode)</span>
+                                  <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded-md font-bold">ปลดล็อกแล้ว</span>
+                                </h6>
+                                <p className="text-[11px] text-amber-800/90 mt-0.5">
+                                  ท่านสามารถพิมพ์เปลี่ยนที่อยู่ หรือลากหมุดปักตำแหน่งพิกัด GPS ใหม่ได้เลย เมื่อเปลี่ยนเรียบร้อยให้กด <strong>"ขอรับ OTP"</strong> แล้วกรอกรหัสเพื่อล็อกพิกัดอีกครั้งค่ะ
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsWarehouseLocked(true);
+                                showNotif("ยกเลิกการแก้ไขและล็อกพิกัดคลังสินค้าเรียบร้อยค่ะ", "info");
+                              }}
+                              className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3.5 py-2 rounded-xl text-xs transition cursor-pointer shrink-0 flex items-center gap-1"
+                            >
+                              <span>❌</span>
+                              <span>ยกเลิกการแก้ไข</span>
+                            </button>
+                          </div>
+                        )}
 
                         <form onSubmit={handleUpdateWarehouseWithOtp} className="space-y-6 text-xs text-slate-700">
                           {/* Security Notice Banner */}
-                          <div className="bg-amber-50/90 border border-amber-200/80 rounded-2xl p-4 text-xs space-y-2 shadow-xs">
-                            <div className="flex items-center gap-2 text-amber-950 font-extrabold text-xs">
-                              <ShieldCheck size={16} className="text-amber-600 shrink-0" />
+                          <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-xs space-y-2 shadow-2xs">
+                            <div className="flex items-center gap-2 text-slate-900 font-extrabold text-xs">
+                              <ShieldCheck size={16} className="text-indigo-600 shrink-0" />
                               <span>🔒 ระบบความปลอดภัยมาตรฐานป้องกันการทุจริต (Email OTP Verification Required)</span>
                             </div>
                             <p className="text-slate-600 text-[11px] leading-relaxed">
@@ -15843,8 +16063,13 @@ export default function App() {
                             <div className="space-y-4 flex flex-col justify-between">
                               <div className="space-y-3">
                                 <div className="space-y-1.5">
-                                  <label className="block text-xs font-extrabold text-slate-800 flex items-center gap-1">
-                                    🏭 ที่อยู่จัดส่งคลังสินค้าปลายทาง (Full Warehouse Shipping Address) *
+                                  <label className="block text-xs font-extrabold text-slate-800 flex items-center justify-between">
+                                    <span className="flex items-center gap-1">🏭 ที่อยู่จัดส่งคลังสินค้าปลายทาง (Full Warehouse Shipping Address) *</span>
+                                    {isWarehouseLocked && (
+                                      <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                        🔒 ช่องนี้ถูกล็อกอยู่
+                                      </span>
+                                    )}
                                   </label>
                                   <p className="text-[10px] text-slate-400">
                                     * หมายเหตุ: คลังสินค้าสำหรับจัดส่งพัสดุอาจไม่ใช่ที่อยู่ปัจจุบันของคุณ กรุณาระบุรายละเอียดที่อยู่คลังจริง
@@ -15852,10 +16077,15 @@ export default function App() {
                                   <textarea 
                                     rows={3}
                                     required
+                                    readOnly={isWarehouseLocked}
                                     value={sellerWarehouseEditAddress}
                                     onChange={(e) => setSellerWarehouseEditAddress(e.target.value)}
                                     placeholder="ระบุบ้านเลขที่, ถนน, ตำบล, อำเภอ, จังหวัด และรหัสไปรษณีย์ ของคลังสินค้า..."
-                                    className="w-full border border-slate-200 bg-slate-50/50 rounded-xl p-3 text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:bg-white outline-none leading-relaxed transition"
+                                    className={`w-full border rounded-xl p-3 text-xs outline-none leading-relaxed transition ${
+                                      isWarehouseLocked 
+                                        ? 'bg-slate-100/80 border-slate-200 text-slate-600 cursor-not-allowed' 
+                                        : 'bg-white border-indigo-300 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-900 shadow-2xs'
+                                    }`}
                                   />
                                 </div>
 
@@ -15868,10 +16098,15 @@ export default function App() {
                                   </p>
                                   <input 
                                     type="text"
+                                    readOnly={isWarehouseLocked}
                                     value={sellerWarehouseEditLine}
                                     onChange={(e) => setSellerWarehouseEditLine(e.target.value)}
                                     placeholder="เช่น @nateeplus หรือ https://line.me/ti/p/..."
-                                    className="w-full border border-slate-200 bg-slate-50/50 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:bg-white outline-none transition font-mono"
+                                    className={`w-full border rounded-xl p-2.5 text-xs outline-none transition font-mono ${
+                                      isWarehouseLocked 
+                                        ? 'bg-slate-100/80 border-slate-200 text-slate-600 cursor-not-allowed' 
+                                        : 'bg-white border-indigo-300 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-900'
+                                    }`}
                                   />
                                 </div>
 
@@ -15892,10 +16127,10 @@ export default function App() {
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                   <div>
                                     <h5 className="font-extrabold text-indigo-950 text-xs flex items-center gap-1">
-                                      🔑 รหัสยืนยัน OTP ทางอีเมล
+                                      🔑 ขอรับรหัส OTP ทางอีเมลเพื่อล็อกพิกัด
                                     </h5>
                                     <p className="text-[10px] text-indigo-700/80">
-                                      กดปุ่มเพื่อขอรับรหัส OTP ส่งไปยัง {sellerSessionUser.email}
+                                      ส่งรหัส OTP 6 หลักไปยังอีเมล {sellerSessionUser.email}
                                     </p>
                                   </div>
                                   <button
@@ -15930,7 +16165,7 @@ export default function App() {
 
                                 <button
                                   type="submit"
-                                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-xl text-xs transition cursor-pointer shadow-md flex justify-center items-center gap-1.5"
+                                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-xl text-xs transition cursor-pointer shadow-md flex justify-center items-center gap-1.5 active:scale-95"
                                 >
                                   <span>🔒 บันทึกและล็อกพิกัดคลังสินค้าปลายทาง</span>
                                 </button>
@@ -15939,11 +16174,24 @@ export default function App() {
 
                             {/* Map Selector & Pinpoint Canvas */}
                             <div className="space-y-2">
-                              <label className="block text-xs font-extrabold text-slate-800 flex items-center justify-between">
+                              <label className="block text-xs font-extrabold text-slate-800 flex items-center justify-between gap-2">
                                 <span>🗺️ ปักหมุดแผนที่ตำแหน่งคลังสินค้า GPS (Pin Location) *</span>
-                                <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-md">
-                                  คลิกหรือลากหมุดบนแผนที่ได้เลย
-                                </span>
+                                {isWarehouseLocked ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setIsWarehouseLocked(false);
+                                      showNotif("ปลดล็อกแผนที่แล้ว สามารถขยับหมุดปักพิกัดใหม่ได้เลยค่ะ", "info");
+                                    }}
+                                    className="text-[10px] font-extrabold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 shrink-0"
+                                  >
+                                    <span>✏️ แก้ไขคลังสินค้า</span>
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg animate-pulse shrink-0">
+                                    📍 ปลดล็อกแล้ว: คลิกหรือลากหมุดบนแผนที่ได้เลย
+                                  </span>
+                                )}
                               </label>
                               <NateeWarehouseMap 
                                 lat={sellerWarehouseEditLat} 
@@ -15956,6 +16204,7 @@ export default function App() {
                                 onAddressChange={(addr) => {
                                   if (addr) setSellerWarehouseEditAddress(addr);
                                 }}
+                                readOnly={isWarehouseLocked}
                               />
                             </div>
                           </div>
