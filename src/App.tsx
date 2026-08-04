@@ -512,7 +512,9 @@ export default function App() {
     setCurrentUser(null);
     setProfile(null);
     setSellerSessionUser(null);
-    setActiveTab('home');
+    setActiveTab('shop');
+    setShopPortalView('store');
+    setShopSubTab('shop');
     setOriginalAdmin(null);
     setUsername('');
     setPassword('');
@@ -1690,14 +1692,14 @@ export default function App() {
     }
   };
 
-  // Fetch initial profile & dashboard data on login
+  // Fetch initial profile & dashboard data on login / guest visit
   useEffect(() => {
     fetchBankSettings();
+    fetchProducts();
     if (currentUser) {
       fetchNotifications();
       fetchProfile(true);
       fetchTransactions();
-      fetchProducts();
       fetchMlmTrees();
       fetchCsrFeed();
       fetchReports();
@@ -9689,7 +9691,7 @@ export default function App() {
           )}
 
           {/* MARKETPLACE TAB (นที พลัส มาร์เก็ต) */}
-          {activeTab === 'shop' && (
+          {(activeTab === 'shop' || activeTab === 'home') && (
             <div className="space-y-5 animate-fadeIn">
                   {shopSubTab === 'myOrders' ? (
                     <div className="bg-white border border-slate-100 p-5 sm:p-6 rounded-3xl shadow-sm space-y-6 animate-fadeIn">
@@ -22233,7 +22235,7 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => {
-                                setEditingBankQrFile("");
+                                setEditingBankQrFile("DELETE");
                                 setEditingBankQrPreview("");
                               }}
                               className="absolute -top-2 -right-2 bg-rose-500 hover:bg-rose-600 text-white p-1 rounded-full shadow-md transition cursor-pointer"
@@ -27468,8 +27470,8 @@ export default function App() {
         </footer>
 
         {/* Lazada/Shopee Style Admin Promo Pop-up Modal */}
-        {showPromoPopup && promoConfig.active && (
-          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[999] flex items-center justify-center p-4 animate-fadeIn">
+        {showPromoPopup && (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-fadeIn">
             <div className="bg-white rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl border border-amber-200/80 relative transform animate-scaleUp">
               {/* Close Button X */}
               <button

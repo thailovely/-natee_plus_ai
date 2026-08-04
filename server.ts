@@ -6899,17 +6899,17 @@ app.post('/api/bank-settings', async (req, res) => {
   }
 
   let qrCodeUrl = db.bankSettings?.qrCodeUrl || "";
-  if (qrCodeFile !== undefined) {
+  if (qrCodeFile === "DELETE" || qrCodeFile === "REMOVE") {
+    qrCodeUrl = "";
+  } else if (typeof qrCodeFile === "string" && qrCodeFile.startsWith("data:")) {
     try {
-      if (qrCodeFile && qrCodeFile.startsWith("data:")) {
-        qrCodeUrl = await uploadImageToFirebaseOrKeepBase64(qrCodeFile, 'bank', `bank_qr`);
-      } else if (qrCodeFile === null || qrCodeFile === "") {
-        qrCodeUrl = "";
-      }
+      qrCodeUrl = await uploadImageToFirebaseOrKeepBase64(qrCodeFile, 'bank', `bank_qr`);
     } catch (err) {
       console.error("Error saving QR Code file:", err);
       return res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการบันทึกรูปภาพ QR Code" });
     }
+  } else if (typeof qrCodeFile === "string" && qrCodeFile.trim().length > 0 && qrCodeFile !== "null") {
+    qrCodeUrl = qrCodeFile.trim();
   }
 
   db.bankSettings = {
@@ -6920,7 +6920,8 @@ app.post('/api/bank-settings', async (req, res) => {
     remainingRightsMode: remainingRightsMode !== undefined ? remainingRightsMode : (db.bankSettings?.remainingRightsMode || "1_channel"),
     maintenanceMode: maintenanceMode !== undefined ? !!maintenanceMode : (db.bankSettings?.maintenanceMode || false),
     sellerRegulations: db.bankSettings?.sellerRegulations,
-    promoConfig: db.bankSettings?.promoConfig
+    promoConfig: db.bankSettings?.promoConfig,
+    notifySettings: db.bankSettings?.notifySettings
   };
 
   writeDb(db);
