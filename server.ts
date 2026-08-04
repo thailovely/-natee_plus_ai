@@ -8,6 +8,7 @@ import { initializeFirestore, memoryLocalCache, doc, getDoc, writeBatch, onSnaps
 import { getStorage, ref as storageRef, uploadString, getDownloadURL } from 'firebase/storage';
 import { GoogleGenAI } from '@google/genai';
 import nodemailer from 'nodemailer';
+import { PDFParse } from 'pdf-parse';
 
 // Email Helper Function using Nodemailer (SMTP)
 async function sendSystemEmail({
@@ -6970,6 +6971,261 @@ app.post('/api/admin/promo-config', async (req, res) => {
 
   writeDb(db);
   res.json({ success: true, message: "บันทึกข้อมูล Pop-Up โปรโมชั่นเรียบร้อยแล้วค่ะ", promoConfig: db.bankSettings.promoConfig });
+});
+
+// GET PUBLIC BOT CONFIG
+app.get('/api/ai/bot-config', (req, res) => {
+  const db = readDb();
+  const botConfig = db.bankSettings?.botConfig || {
+    enabled: true,
+    botName: "Natee bot",
+    botAvatarUrl: "",
+    greetingMsg: "สวัสดีค่ะ! หนูคือ Natee bot ผู้ช่วยประจำระบบ Natee Plus Market ยินดีให้คำแนะนำและตอบทุกข้อสงสัยเกี่ยวกับระบบค่ะ 🤖✨",
+    quickQuestions: [
+      "นที พลัส มาร์เก็ต คืออะไร?",
+      "วิธีสมัครแพ็กเกจ และคะแนน PV",
+      "วิธีเปิดร้านค้าขายของในระบบ",
+      "การฝากเงิน ถอนเงิน และสิทธิ์คงเหลือ"
+    ]
+  };
+  res.json({
+    success: true,
+    botConfig: {
+      enabled: botConfig.enabled ?? true,
+      botName: botConfig.botName || "Natee bot",
+      botAvatarUrl: botConfig.botAvatarUrl || "",
+      greetingMsg: botConfig.greetingMsg || "สวัสดีค่ะ! หนูคือ Natee bot ผู้ช่วยประจำระบบ Natee Plus Market ยินดีให้คำแนะนำและตอบทุกข้อสงสัยเกี่ยวกับระบบค่ะ 🤖✨",
+      quickQuestions: botConfig.quickQuestions || [
+        "นที พลัส มาร์เก็ต คืออะไร?",
+        "วิธีสมัครแพ็กเกจ และคะแนน PV",
+        "วิธีเปิดร้านค้าขายของในระบบ",
+        "การฝากเงิน ถอนเงิน และสิทธิ์คงเหลือ"
+      ],
+      systemPrompt: botConfig.systemPrompt || "",
+      knowledgeBaseText: botConfig.knowledgeBaseText || "",
+      knowledgeFiles: botConfig.knowledgeFiles || []
+    }
+  });
+});
+
+// AI CHATBOT MESSAGING ENDPOINT
+app.post('/api/ai/chat', async (req, res) => {
+  const { message } = req.body;
+  if (!message || typeof message !== 'string' || !message.trim()) {
+    return res.status(400).json({ success: false, message: "กรุณากรอกข้อความสอบถาม" });
+  }
+
+  const db = readDb();
+  const botConfig = db.bankSettings?.botConfig || {};
+  
+  if (botConfig.enabled === false) {
+    return res.json({
+      success: true,
+      reply: "ขณะนี้ระบบ AI Chatbot ปิดให้บริการชั่วคราวตามการตั้งค่าจากผู้ดูแลระบบค่ะ",
+      botName: botConfig.botName || "Natee bot"
+    });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  const botName = botConfig.botName || "Natee bot";
+  const customPrompt = botConfig.systemPrompt || "";
+  const knowledgeBaseText = botConfig.knowledgeBaseText || "";
+
+  const baseSystemInstruction = `คุณคือ "${botName}" ผู้ช่วยอัจฉริยะประจำระบบ Natee Plus Market (นที พลัส มาร์เก็ต)
+บุคลิกภาพ: สุภาพ น่ารัก อ่อนน้อม ใช้สรรพนามแทนตัวเองว่า "หนู" หรือ "น้องนที" พูดจาไพเราะ เป็นกันเอง ตอบด้วยภาษาไทยที่กระชับ เข้าใจง่าย มีอิโมจิน่ารักประกอบ
+
+ขอบเขตหน้าที่และกฎเหล็กการทำงาน (CRITICAL RULES & BOUNDARIES):
+1. ให้ข้อมูล ตอบคำถาม และแนะนำผู้ใช้งานเฉพาะในส่วนของระบบ Natee Plus Market เท่านั้น เช่น:
+   - รายละเอียดระบบ, สิทธิประโยชน์สมาชิก, แพ็กเกจ (Member, Silver, Gold, Platinum, Diamond), คะแนน PV
+   - การเปิดร้านค้าผู้ขาย (Seller), กฎระเบียบผู้ขาย, การอนุมัติสินค้า
+   - การฝากเงิน/ถอนเงิน E-Money, สิทธิ์คงเหลือ (Remaining Rights), กระเป๋า E-Coupon, ปันสุข, All-Share
+   - ผังองค์กรไบนารี Plan B, โบนัสจับคู่, โบนัสแนะนำ
+2. ห้ามตอบคำถามเรื่องการเมือง, ศาสนา, ข่าวสารภายนอกที่ไม่เกี่ยวกับ Natee Plus Market, การลงทุนภายนอก หรือเรื่องทั่วไปที่ไม่เกี่ยวข้องกับระบบ
+3. หากผู้ใช้สอบถามเรื่องภายนอกระบบ หรือเรื่องที่ผิดขอบเขต ให้ปฏิเสธอย่างสุภาพทันที โดยไม่ตอบเนื้อหาภายนอกนั้น เช่น "หนูต้องขออภัยด้วยนะคะ น้องนทีสามารถให้คำแนะนำและตอบคำถามเฉพาะข้อมูลระบบ Natee Plus Market เท่านั้นค่ะ หากมีข้อสงสัยเกี่ยวกับแพ็กเกจ สินค้า หรือการใช้งานระบบ ถามหนูได้เลยนะคะ 😊"
+4. ห้ามพาดพิง โจมตี หรือวิพากษ์วิจารณ์บริษัทอื่น แพลตฟอร์มอื่น หรือบุคคลอื่นเด็ดขาด ให้มุ่งเน้นการอธิบายข้อมูลของ Natee Plus Market อย่างมีมิตรภาพ
+5. ให้คำตอบอิงตามเอกสารข้อมูลระบบ (Knowledge Base) ด้านล่างนี้เป็นหลัก:
+
+=== [เอกสารข้อมูลระบบ / KNOWLEDGE BASE] ===
+${knowledgeBaseText || `
+- ระบบ Natee Plus Market: แพลตฟอร์มช้อปปิ้งมาร์เก็ตเพลสผสมผสานระบบกระจายรายได้สมาชิก (MLM / Plan B)
+- แพ็กเกจสมาชิก: Member (ฟรี), Silver (1,000 PV), Gold (3,000 PV), Platinum (5,000 PV), Diamond (10,000 PV)
+- การฝากถอน: ฝากเงินผ่าน QR Code หรือบัญชีธนาคารระบบ, ถอนเงินต้องผ่านการยืนยันตัวตน (KYC) ก่อน
+- ผังองค์กร Plan B: เป็นผังไบนารี 2 ขา (ซ้าย-ขวา) คำนวณโบนัสและแจงคะแนน PV
+- ร้านค้า: สมาชิกสามารถลงทะเบียนเปิดร้านขายสินค้าได้เมื่อปฏิบัติตามกฎระเบียบผู้ขาย
+`}
+=== [จบเอกสารข้อมูลระบบ] ===
+
+${customPrompt ? `=== [คำสั่งเพิ่มเติมจาก Admin] ===\n${customPrompt}\n` : ""}
+`;
+
+  if (!apiKey) {
+    const userMsgLower = message.toLowerCase();
+    let mockReply = "สวัสดีค่ะ! หนูคือน้องนที AI ผู้ช่วยประจำระบบ Natee Plus Market 😊 ";
+    if (userMsgLower.includes("แพ็กเกจ") || userMsgLower.includes("package") || userMsgLower.includes("สมัคร")) {
+      mockReply += "ระบบ Natee Plus Market มีแพ็กเกจสมาชิก 5 ระดับ ได้แก่ Member (ฟรี), Silver (1,000 PV), Gold (3,000 PV), Platinum (5,000 PV) และ Diamond (10,000 PV) ค่ะ สามารถเลือกดูรายละเอียดได้ที่เมนู 'แพ็กเกจสมาชิก' เลยนะคะ ✨";
+    } else if (userMsgLower.includes("ถอนเงิน") || userMsgLower.includes("ฝากเงิน") || userMsgLower.includes("กระเป๋า")) {
+      mockReply += "การฝากเงินสามารถทำได้ผ่าน QR Code บัญชีธนาคารของระบบ ส่วนการถอนเงิน สมาชิกต้องทำการยืนยันตัวตน (KYC) ให้เรียบร้อยก่อนจึงจะดำเนินการถอนเงินได้ค่ะ 💳";
+    } else if (userMsgLower.includes("เปิดร้าน") || userMsgLower.includes("ขายของ") || userMsgLower.includes("ร้านค้า")) {
+      mockReply += "สมาชิกสามารถเปิดร้านขายสินค้าบน Natee Plus Market ได้ที่เมนู 'เปิดร้านค้า' โดยยอมรับกฎระเบียบผู้ขายและรอการอนุมัติจากผู้จัดการระบบค่ะ 🛍️";
+    } else if (userMsgLower.includes("การเมือง") || userMsgLower.includes("หุ้น") || userMsgLower.includes("ข่าวดัง") || userMsgLower.includes("คู่แข่ง")) {
+      mockReply = "หนูต้องขออภัยด้วยนะคะ น้องนทีสามารถให้คำแนะนำและตอบคำถามเฉพาะข้อมูลระบบ Natee Plus Market เท่านั้นค่ะ หากมีข้อสงสัยเกี่ยวกับแพ็กเกจ สินค้า หรือการใช้งานระบบ ถามหนูได้เลยนะคะ 😊";
+    } else {
+      mockReply += "หนี้ยินดีให้คำแนะนำเกี่ยวกับระบบ Natee Plus Market ค่ะ ไม่ว่าจะเป็นเรื่องแพ็กเกจสมาชิก การสะสมคะแนน PV การเปิดร้านค้า หรือการฝากถอนเงิน สอบถามหนูได้เลยนะคะ ✨";
+    }
+    return res.json({ success: true, reply: mockReply, botName, isMock: true });
+  }
+
+  try {
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+
+    const fullPrompt = `${baseSystemInstruction}\n\nคำถามจากผู้ใช้: "${message}"\nคำตอบจากน้องนที:`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.6-flash',
+      contents: fullPrompt,
+    });
+
+    const replyText = response.text ? response.text.trim() : "น้องนทีต้องขออภัยด้วยนะคะ ไม่สามารถประมวลผลคำตอบได้ในขณะนี้ กรุณาลองใหม่อีกครั้งค่ะ";
+    return res.json({ success: true, reply: replyText, botName });
+
+  } catch (err: any) {
+    console.error("Error generating AI response:", err);
+    return res.status(500).json({
+      success: false,
+      message: "เกิดข้อผิดพลาดในการเชื่อมต่อ AI Chatbot",
+      reply: "น้องนทีต้องขออภัยด้วยนะคะ ระบบประมวลผล AI ขัดข้องชั่วคราว กรุณาลองสอบถามใหม่อีกครั้งค่ะ"
+    });
+  }
+});
+
+// SAVE BOT CONFIG FROM ADMIN
+app.post('/api/admin/bot-config', async (req, res) => {
+  const { enabled, botName, botAvatarUrl, greetingMsg, systemPrompt, knowledgeBaseText, quickQuestions, editorUserId } = req.body;
+  const db = readDb();
+
+  if (editorUserId) {
+    const isSpecialAdmin = editorUserId === 'admin' || (typeof editorUserId === 'string' && editorUserId.toLowerCase().startsWith('admin')) || editorUserId === 'ADMIN001' || editorUserId === 'A260001';
+    const editor = db.members.find((m: any) => m.userId === editorUserId || m.username === editorUserId);
+    const roleUpper = (editor?.role || '').toUpperCase();
+    const isAllowed = isSpecialAdmin || roleUpper === 'ADMIN' || roleUpper === 'MANAGER' || editor?.username === 'admin' || editor?.userId === 'ADMIN001';
+    if (!isAllowed) {
+      return res.status(403).json({ success: false, message: "ไม่มีสิทธิ์ในการแก้ไขตั้งค่า AI Chatbot (เฉพาะ Manager/Admin เท่านั้น)" });
+    }
+  }
+
+  if (!db.bankSettings) db.bankSettings = {};
+  
+  db.bankSettings.botConfig = {
+    enabled: enabled !== undefined ? !!enabled : (db.bankSettings.botConfig?.enabled ?? true),
+    botName: botName !== undefined ? botName : (db.bankSettings.botConfig?.botName || "น้องนที AI"),
+    botAvatarUrl: botAvatarUrl !== undefined ? botAvatarUrl : (db.bankSettings.botConfig?.botAvatarUrl || ""),
+    greetingMsg: greetingMsg !== undefined ? greetingMsg : (db.bankSettings.botConfig?.greetingMsg || "สวัสดีค่ะ! หนูคือน้องนที AI ผู้ช่วยประจำระบบ Natee Plus Market ยินดีให้คำแนะนำและตอบทุกข้อสงสัยเกี่ยวกับระบบค่ะ 🤖✨"),
+    systemPrompt: systemPrompt !== undefined ? systemPrompt : (db.bankSettings.botConfig?.systemPrompt || ""),
+    knowledgeBaseText: knowledgeBaseText !== undefined ? knowledgeBaseText : (db.bankSettings.botConfig?.knowledgeBaseText || ""),
+    knowledgeFiles: db.bankSettings.botConfig?.knowledgeFiles || [],
+    quickQuestions: quickQuestions || db.bankSettings.botConfig?.quickQuestions || [
+      "นที พลัส มาร์เก็ต คืออะไร?",
+      "วิธีสมัครแพ็กเกจ และคะแนน PV",
+      "วิธีเปิดร้านค้าขายของในระบบ",
+      "การฝากเงิน ถอนเงิน และสิทธิ์คงเหลือ"
+    ]
+  };
+
+  writeDb(db);
+  res.json({ success: true, message: "บันทึกการตั้งค่า AI Chatbot เรียบร้อยแล้วค่ะ", botConfig: db.bankSettings.botConfig });
+});
+
+// UPLOAD PDF KNOWLEDGE BASE FROM ADMIN
+app.post('/api/admin/upload-bot-pdf', async (req, res) => {
+  const { pdfFile, fileName, editorUserId } = req.body;
+  if (!pdfFile || typeof pdfFile !== 'string' || !pdfFile.startsWith('data:application/pdf;base64,')) {
+    return res.status(400).json({ success: false, message: "กรุณาแนบไฟล์เอกสาร PDF ที่ถูกต้อง" });
+  }
+
+  const db = readDb();
+  if (editorUserId) {
+    const isSpecialAdmin = editorUserId === 'admin' || (typeof editorUserId === 'string' && editorUserId.toLowerCase().startsWith('admin')) || editorUserId === 'ADMIN001' || editorUserId === 'A260001';
+    const editor = db.members.find((m: any) => m.userId === editorUserId || m.username === editorUserId);
+    const roleUpper = (editor?.role || '').toUpperCase();
+    const isAllowed = isSpecialAdmin || roleUpper === 'ADMIN' || roleUpper === 'MANAGER' || editor?.username === 'admin' || editor?.userId === 'ADMIN001';
+    if (!isAllowed) {
+      return res.status(403).json({ success: false, message: "ไม่มีสิทธิ์อัปโหลดเอกสารระบบ (เฉพาะ Manager/Admin เท่านั้น)" });
+    }
+  }
+
+  try {
+    const base64Data = pdfFile.replace(/^data:application\/pdf;base64,/, "");
+    const pdfBuffer = Buffer.from(base64Data, 'base64');
+    
+    let extractedText = "";
+    try {
+      const parser = new PDFParse({ data: pdfBuffer });
+      await parser.load();
+      const parsed = await parser.getText();
+      extractedText = (parsed.text || "").trim();
+    } catch (parseErr) {
+      console.warn("PDFParse library error, attempting raw text extraction:", parseErr);
+      const rawStr = pdfBuffer.toString('utf-8');
+      const textMatches = rawStr.match(/\(([^()]+)\)\s*Tj/g) || rawStr.match(/\[([^\[\]]+)\]\s*TJ/g);
+      if (textMatches) {
+        extractedText = textMatches.map(m => m.replace(/[()\[\]\s*TjTJ]/g, '')).join(' ');
+      }
+    }
+    extractedText = extractedText.trim();
+
+    if (!extractedText) {
+      return res.status(400).json({ success: false, message: "ไม่พบข้อความในไฟล์ PDF หรือไฟล์อาจถูกล็อกรหัสผ่าน" });
+    }
+
+    if (!db.bankSettings) db.bankSettings = {};
+    if (!db.bankSettings.botConfig) {
+      db.bankSettings.botConfig = {
+        enabled: true,
+        botName: "น้องนที AI",
+        botAvatarUrl: "",
+        greetingMsg: "สวัสดีค่ะ! หนูคือน้องนที AI ผู้ช่วยประจำระบบ Natee Plus Market ยินดีให้คำแนะนำและตอบทุกข้อสงสัยเกี่ยวกับระบบค่ะ 🤖✨",
+        systemPrompt: "",
+        knowledgeBaseText: "",
+        knowledgeFiles: [],
+        quickQuestions: ["นที พลัส มาร์เก็ต คืออะไร?", "วิธีสมัครแพ็กเกจ และคะแนน PV", "วิธีเปิดร้านค้าขายของในระบบ", "การฝากเงิน ถอนเงิน และสิทธิ์คงเหลือ"]
+      };
+    }
+
+    const currentKb = db.bankSettings.botConfig.knowledgeBaseText || "";
+    const cleanFileName = fileName || `เอกสารข้อมูล_${new Date().toLocaleDateString('th-TH')}.pdf`;
+    
+    const appendedKb = `${currentKb}\n\n=== [เอกสารอ้างอิง: ${cleanFileName}] ===\n${extractedText}`;
+    db.bankSettings.botConfig.knowledgeBaseText = appendedKb;
+
+    const fileMeta = {
+      id: 'pdf_' + Date.now(),
+      name: cleanFileName,
+      uploadedAt: new Date().toISOString(),
+      textLength: extractedText.length
+    };
+
+    if (!db.bankSettings.botConfig.knowledgeFiles) db.bankSettings.botConfig.knowledgeFiles = [];
+    db.bankSettings.botConfig.knowledgeFiles.push(fileMeta);
+
+    writeDb(db);
+    res.json({
+      success: true,
+      message: `นำเข้าข้อความจาก PDF "${cleanFileName}" จำนวน ${extractedText.length.toLocaleString()} ตัวอักษร เข้าสู่ความรู้ AI เรียบร้อยแล้วค่ะ`,
+      botConfig: db.bankSettings.botConfig,
+      extractedPreview: extractedText.slice(0, 300) + "..."
+    });
+
+  } catch (err: any) {
+    console.error("Error parsing PDF file:", err);
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการอ่านไฟล์ PDF: " + (err.message || "") });
+  }
 });
 
 // GET & SAVE LINE DEVELOPERS MESSAGING API & WEBHOOK SETTINGS

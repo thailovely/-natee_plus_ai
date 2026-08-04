@@ -8,10 +8,12 @@ import {
   Eye, EyeOff, X, ClipboardList, Printer, Lock, Key, FileSpreadsheet,
   Coins, FileText, Store, Bell, Truck, UserX, RotateCcw, 
   MessageSquare, MessageCircle, BookOpen, BarChart2, Home, ShoppingCart, ChevronRight,
-  Binary, Award, Heart, ArrowLeftRight, Receipt, Calculator, Database, Sparkles, Video, Edit
+  Binary, Award, Heart, ArrowLeftRight, Receipt, Calculator, Database, Sparkles, Video, Edit, Bot
 } from 'lucide-react';
 import { thaiAddressData, searchThaiAddress } from './thaiAddressData';
 import { NateeWarehouseMap } from './components/NateeWarehouseMap';
+import { NateeBotWidget } from './components/NateeBotWidget';
+import { AdminBotSettings } from './components/AdminBotSettings';
 import {
   initGoogleSheetsAuth,
   signInWithGoogleSheets,
@@ -940,7 +942,7 @@ export default function App() {
   const [treeScale, setTreeScale] = useState<number>(0.85);
   const [maxTreeDepth, setMaxTreeDepth] = useState<number>(3);
   const [planBSubTab, setPlanBSubTab] = useState<'b1' | 'b2'>('b1');
-  const [adminSubTab, setAdminSubTab] = useState<'queues' | 'members' | 'couponPv' | 'systemReset' | 'memberApprovals' | 'shippingApprove' | 'manageShops' | 'productApprovals' | 'orderStatus' | 'bankSettings' | 'depositApprove' | 'packageChoices' | 'companyAccountingReport' | 'maintenance' | 'analytics' | 'promoPopupConfig' | 'manageRegulations' | 'systemConditions' | 'memberShopInfo'>('queues');
+  const [adminSubTab, setAdminSubTab] = useState<'queues' | 'members' | 'couponPv' | 'systemReset' | 'memberApprovals' | 'shippingApprove' | 'manageShops' | 'productApprovals' | 'orderStatus' | 'bankSettings' | 'depositApprove' | 'packageChoices' | 'companyAccountingReport' | 'maintenance' | 'analytics' | 'promoPopupConfig' | 'manageRegulations' | 'systemConditions' | 'memberShopInfo' | 'botConfig'>('queues');
   const [adminSection, setAdminSection] = useState<'members_system' | 'seller_system' | 'admin_console'>('members_system');
   const [allSellerProducts, setAllSellerProducts] = useState<any[]>([]);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
@@ -7826,6 +7828,31 @@ export default function App() {
                   <span className="flex items-center gap-3">
                     <Sparkles size={18} className="shrink-0 text-amber-400" />
                     {(!isSidebarCollapsed || sidebarOpen) && <span>ตั้งค่า Pop-Up ส่วนลด</span>}
+                  </span>
+                </button>
+
+                {/* AI Chatbot Settings */}
+                <button 
+                  onClick={() => { 
+                    setActiveTab('admin'); 
+                    setAdminSection('admin_console');
+                    setAdminSubTab('botConfig'); 
+                    setSidebarOpen(false); 
+                  }}
+                  title="ตั้งค่า AI Chatbot ผู้ช่วยประจำระบบ"
+                  className={`w-full flex items-center transition-all duration-200 cursor-pointer relative rounded-xl ${
+                    isSidebarCollapsed 
+                      ? 'justify-center p-2.5 text-center' 
+                      : 'justify-between px-3.5 py-2.5 text-left text-xs font-semibold'
+                  } ${
+                    activeTab === 'admin' && adminSubTab === 'botConfig' && adminSection === 'admin_console' 
+                      ? 'bg-gradient-to-r from-cyan-500/25 to-sky-500/15 text-cyan-300 font-bold border-l-4 border-cyan-400 shadow-sm' 
+                      : 'text-cyan-300/80 hover:bg-slate-800/60 hover:text-cyan-200'
+                  }`}
+                >
+                  <span className="flex items-center gap-3">
+                    <Bot size={18} className="shrink-0 text-cyan-400" />
+                    {(!isSidebarCollapsed || sidebarOpen) && <span>🤖 ตั้งค่า AI Chatbot</span>}
                   </span>
                 </button>
 
@@ -17191,6 +17218,15 @@ export default function App() {
                         🎁 ตั้งค่า Pop-Up ส่วนลดพิเศษ
                      </button>
 
+                     <button 
+                        onClick={() => setAdminSubTab('botConfig')} 
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                          adminSubTab === 'botConfig' ? 'bg-cyan-600 text-white shadow-md font-black' : 'bg-white hover:bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        🤖 ตั้งค่า AI Chatbot & PDF
+                     </button>
+
                      {(profile?.role === 'Manager' || profile?.role === 'Admin' || currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
                        <button 
                          onClick={() => setAdminSubTab('systemReset')} 
@@ -22449,6 +22485,10 @@ export default function App() {
                     </div>
                   </form>
                 </div>
+              )}
+
+              {adminSubTab === 'botConfig' && (
+                <AdminBotSettings currentUser={currentUser} showNotif={showNotif} />
               )}
 
               {adminSubTab === 'maintenance' && (profile?.role === 'Manager' || profile?.role === 'Admin' || currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
@@ -28277,6 +28317,8 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        <NateeBotWidget currentUser={currentUser} />
 
         {renderLoginModal()}
       </main>
