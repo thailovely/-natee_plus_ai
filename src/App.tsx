@@ -8,7 +8,7 @@ import {
   Eye, EyeOff, X, ClipboardList, Printer, Lock, Key, FileSpreadsheet,
   Coins, FileText, Store, Bell, Truck, UserX, RotateCcw, 
   MessageSquare, MessageCircle, BookOpen, BarChart2, Home, ShoppingCart, ChevronRight,
-  Binary, Award, Heart, ArrowLeftRight, Receipt, Calculator, Database, Sparkles, Video, Edit, Bot
+  Binary, Award, Heart, ArrowLeftRight, Receipt, Calculator, Database, Sparkles, Video, Edit, Bot, Package
 } from 'lucide-react';
 import { thaiAddressData, searchThaiAddress } from './thaiAddressData';
 import { NateeWarehouseMap } from './components/NateeWarehouseMap';
@@ -8355,6 +8355,23 @@ export default function App() {
                   >
                     <CreditCard size={15} className="shrink-0" />
                     <span>เติมเงิน E-Cash</span>
+                  </button>
+
+                  <button 
+                    onClick={() => {
+                      setActiveTab('shop');
+                      setShopPortalView('store');
+                      setShopSubTab('packages');
+                    }}
+                    className={`px-4 py-1.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer shadow-sm ${
+                      activeTab === 'shop' && shopSubTab === 'packages'
+                        ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-purple-500/20 scale-[1.02]'
+                        : 'bg-purple-50/80 text-purple-700 hover:bg-purple-100 border border-purple-200/80'
+                    }`}
+                    title="ซื้อแพ็กเกจ"
+                  >
+                    <Package size={15} className="shrink-0" />
+                    <span>ซื้อแพ็กเกจ</span>
                   </button>
                 </div>
 
