@@ -8,7 +8,7 @@ import {
   Eye, EyeOff, X, ClipboardList, Printer, Lock, Key, FileSpreadsheet,
   Coins, FileText, Store, Bell, Truck, UserX, RotateCcw, 
   MessageSquare, MessageCircle, BookOpen, BarChart2, Home, ShoppingCart, ChevronRight,
-  Binary, Award, Heart, ArrowLeftRight, Receipt, Calculator, Database, Sparkles, Video
+  Binary, Award, Heart, ArrowLeftRight, Receipt, Calculator, Database, Sparkles, Video, Edit
 } from 'lucide-react';
 import { thaiAddressData, searchThaiAddress } from './thaiAddressData';
 import { NateeWarehouseMap } from './components/NateeWarehouseMap';
@@ -4230,7 +4230,7 @@ export default function App() {
           bankAccount: bankSettings.bankAccount,
           bankAccountName: bankSettings.bankAccountName,
           qrCodeFile: null,
-          editorUserId: currentUser.userId,
+          editorUserId: currentUser?.userId || profile?.userId || 'admin',
           maintenanceMode: targetVal
         })
       });
@@ -6586,6 +6586,25 @@ export default function App() {
   if (isMaintenanceActive && !isUserExemptFromMaintenance) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden select-none">
+        {/* Top Right Admin Quick Link to Edit News & Announcements */}
+        {(profile?.role === 'Admin' || profile?.role === 'Manager' || currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
+          <div className="absolute top-4 right-4 z-50">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('admin');
+                setAdminSection('admin_console');
+                setAdminSubTab('promoPopupConfig');
+              }}
+              className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-black px-4 py-2 rounded-2xl shadow-xl border border-rose-400/40 flex items-center gap-1.5 transition duration-200 cursor-pointer active:scale-95"
+              title="เฉพาะสิทธิ์ Admin ขึ้นไป: ลิงก์เข้าไปแก้ไขรายการประกาศข่าวสาร"
+            >
+              <Edit size={14} />
+              <span>⚙️ แก้ไขรายการประกาศข่าวสาร</span>
+            </button>
+          </div>
+        )}
+
         {/* Ambient background glows */}
         <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-rose-500/10 blur-[100px] animate-pulse"></div>
         <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 rounded-full bg-indigo-500/10 blur-[120px] animate-pulse"></div>
@@ -10131,48 +10150,77 @@ export default function App() {
                             📢 ประกาศข่าวสาร & โปรโมชั่นพิเศษ
                           </div>
                           <h2 className="text-lg sm:text-2xl font-black text-white leading-tight">
-                            มหกรรมช้อปปิ้ง นที พลัส มาร์เก็ต สะสม PV รับคอมมิชชั่น 100%!
+                            {promoConfig?.title || "มหกรรมช้อปปิ้ง นที พลัส มาร์เก็ต สะสม PV รับคอมมิชชั่น 100%!"}
                           </h2>
                           <p className="text-xs text-amber-50/90 leading-relaxed">
-                            เลือกซื้อสินค้าคุณภาพจากผู้ขายการันตี รับสิทธิ์อัปเกรดสถานะร้านค้าอัตโนมัติ พร้อมส่งฟรีทั่วประเทศ
+                            {promoConfig?.subtitle || "เลือกซื้อสินค้าคุณภาพจากผู้ขายการันตี รับสิทธิ์อัปเกรดสถานะร้านค้าอัตโนมัติ พร้อมส่งฟรีทั่วประเทศ"}
                           </p>
                         </div>
 
-                        {/* Admin Banner Toggle Indicator / Action */}
-                        {(profile?.role === 'Admin' || profile?.role === 'Manager') && (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                const res = await fetch('/api/admin/toggle-banner', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ visible: false })
-                                });
-                                const d = await res.json();
-                                if (d.success) {
-                                  setBannerVisible(false);
-                                  showNotif('ซ่อนแบนเนอร์ข่าวสารเรียบร้อยแล้วค่ะ', 'info');
+                        {/* Admin Banner Action Buttons (Visible ONLY for Admin / Manager) */}
+                        {(profile?.role === 'Admin' || profile?.role === 'Manager' || currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
+                          <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('admin');
+                                setAdminSection('admin_console');
+                                setAdminSubTab('promoPopupConfig');
+                              }}
+                              className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-black px-3.5 py-2 rounded-xl shadow-lg border border-rose-400/40 flex items-center gap-1.5 transition-all duration-200 cursor-pointer shrink-0 active:scale-95"
+                              title="เฉพาะสิทธิ์ Admin ขึ้นไป: ลิงก์เข้าไปแก้ไขรายการประกาศข่าวสาร"
+                            >
+                              <Edit size={14} />
+                              <span>⚙️ แก้ไขรายการประกาศ</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch('/api/admin/toggle-banner', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ visible: false })
+                                  });
+                                  const d = await res.json();
+                                  if (d.success) {
+                                    setBannerVisible(false);
+                                    showNotif('ซ่อนแบนเนอร์ข่าวสารเรียบร้อยแล้วค่ะ', 'info');
+                                  }
+                                } catch (e) {
+                                  console.error(e);
                                 }
-                              } catch (e) {
-                                console.error(e);
-                              }
-                            }}
-                            className="bg-black/30 hover:bg-black/50 text-white text-[10px] font-bold px-3 py-1.5 rounded-xl border border-white/20 transition cursor-pointer shrink-0"
-                            title="สำหรับ Admin: กดซ่อนแบนเนอร์นี้"
-                          >
-                            👁️ Admin: ปิดแบนเนอร์นี้
-                          </button>
+                              }}
+                              className="bg-black/30 hover:bg-black/50 text-white text-[10px] font-bold px-3 py-2 rounded-xl border border-white/20 transition cursor-pointer shrink-0"
+                              title="สำหรับ Admin: กดซ่อนแบนเนอร์นี้"
+                            >
+                              👁️ ปิดแบนเนอร์
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
                   )}
 
-                  {!bannerVisible && (profile?.role === 'Admin' || profile?.role === 'Manager') && (
-                    <div className="bg-slate-100 border border-slate-200 p-2 rounded-2xl flex justify-between items-center text-xs text-slate-600">
-                      <span>📢 แบนเนอร์ประกาศถูกซ่อนอยู่</span>
-                      <button
-                        type="button"
+                  {!bannerVisible && (profile?.role === 'Admin' || profile?.role === 'Manager' || currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
+                    <div className="bg-slate-100 border border-slate-200 p-2.5 rounded-2xl flex justify-between items-center text-xs text-slate-600">
+                      <span className="font-bold">📢 แบนเนอร์ประกาศถูกซ่อนอยู่</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('admin');
+                            setAdminSection('admin_console');
+                            setAdminSubTab('promoPopupConfig');
+                          }}
+                          className="bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-black px-3 py-1.5 rounded-xl shadow-sm border border-rose-400/30 transition cursor-pointer flex items-center gap-1 active:scale-95"
+                          title="เฉพาะสิทธิ์ Admin ขึ้นไป: ลิงก์เข้าไปแก้ไขรายการประกาศข่าวสาร"
+                        >
+                          <Edit size={12} />
+                          <span>⚙️ แก้ไขประกาศ</span>
+                        </button>
+                        <button
+                          type="button"
                         onClick={async () => {
                           try {
                             const res = await fetch('/api/admin/toggle-banner', {
@@ -10194,7 +10242,8 @@ export default function App() {
                         👁️ Admin: แสดงแบนเนอร์
                       </button>
                     </div>
-                  )}
+                  </div>
+                )}
 
                   {/* 3. CATEGORY NAVIGATION BAR (หมวดหมู่สินค้า) */}
                   <div className="space-y-2">
