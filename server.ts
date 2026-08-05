@@ -3548,6 +3548,622 @@ app.get('/api/mlm/search-downline', (req, res) => {
 });
 
 
+
+// =============================================================
+// HELPER: BINARY TREE PLACEMENT
+// =============================================================
+function findAndPlaceBinaryMember(db: any, sponsorId: string) {
+  const members = db.members || [];
+  let root = members.find((m: any) => m.userId === sponsorId || m.username === sponsorId);
+  if (!root) {
+    root = members.find((m: any) => m.userId === "A260600001");
+  }
+  if (!root) {
+    return { parentId: "A260600001", side: "L" };
+  }
+
+  const queue = [root.userId];
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const currentId = queue.shift()!;
+    if (visited.has(currentId)) continue;
+    visited.add(currentId);
+
+    const children = members.filter((m: any) => m.parentId === currentId);
+    const leftChild = children.find((m: any) => m.side === "L");
+    const rightChild = children.find((m: any) => m.side === "R");
+
+    if (!leftChild) {
+      return { parentId: currentId, side: "L" };
+    }
+    if (!rightChild) {
+      return { parentId: currentId, side: "R" };
+    }
+
+    queue.push(leftChild.userId);
+    queue.push(rightChild.userId);
+  }
+
+  return { parentId: root.userId, side: "L" };
+}
+
+// =============================================================
+// SHOP ENDPOINTS (PACKAGE & PRODUCT PURCHASES)
+// =============================================================
+
+// GET SHOP PRODUCTS
+app.get("/api/shop/products", (req, res) => {
+  const db = readDb();
+  const prods = db.products || [];
+  res.json(prods);
+});
+
+// GET SHOP PACKAGE CHOICES
+app.get("/api/shop/package-choices", (req, res) => {
+  const db = readDb();
+  res.json({ success: true, packageChoices: db.packageProductChoices || [] });
+});
+
+// POST SHOP PURCHASE (PURCHASE PACKAGES OR PRODUCTS)
+app.post("/api/shop/purchase", async (req, res) => {
+  const { userId, productId, quantity, shippingAddress, selectedChoiceId } = req.body;
+  if (!userId || !productId) {
+    return res.status(400).json({ success: false, message: "ข้อมูลไม่ครบถ้วน" });
+  }
+
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) {
+    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกในระบบ" });
+  }
+
+  const allProducts = [...(db.products || []), ...(db.sellerProducts || [])];
+  const product = allProducts.find((p: any) => p.id === productId);
+  if (!product) {
+    return res.status(404).json({ success: false, message: "ไม่พบสินค้าหรือแพ็กเกจนี้ในระบบ" });
+  }
+
+  const qty = Math.max(1, Number(quantity) || 1);
+  const totalPrice = (product.price || 0) * qty;
+  const totalPv = (product.pv || 0) * qty;
+  const isPkg = product.category === "Package" || product.id.startsWith("pack_");
+
+  if (isPkg) {
+    if ((member.balanceECash || 0) < totalPrice) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "ยอดเงิน E-Cash ไม่เพียงพอสำหรับการสั่งซื้อแพ็กเกจ (ต้องการ ฿" + totalPrice.toLocaleString() + " แต่คุณมี ฿" + (member.balanceECash || 0).toLocaleString() + ")" 
+      });
+    }
+
+    // Deduct E-Cash
+    member.balanceECash = (member.balanceECash || 0) - totalPrice;
+
+    // Set member rank / package
+    member.selectedPackageId = product.id;
+    if (product.id === "pack_s") member.rank = "S";
+    else if (product.id === "pack_m") member.rank = "M";
+    else if (product.id === "pack_l") member.rank = "L";
+    else if (product.id === "pack_xl") member.rank = "XL";
+    else if (product.id === "pack_xxl") member.rank = "XXL";
+    else member.rank = product.name || "Member";
+
+    // Add PV
+    member.pv = (member.pv || 0) + totalPv;
+
+    // Binary placement if not placed yet
+    if (!member.parentId || member.parentId === "") {
+      const slot = findAndPlaceBinaryMember(db, member.sponsorId || "A260600001");
+      member.parentId = slot.parentId;
+      member.side = slot.side;
+    }
+  } else {
+    // Standard product
+    let couponToUse = Math.min(member.balanceECoupon || 0, totalPrice);
+    let cashToUse = totalPrice - couponToUse;
+
+    if ((member.balanceECash || 0) < cashToUse) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "ยอดเงิน E-Cash ไม่เพียงพอ (ต้องการ ฿" + cashToUse.toLocaleString() + " แต่คุณมี ฿" + (member.balanceECash || 0).toLocaleString() + ")" 
+      });
+    }
+
+    member.balanceECoupon = (member.balanceECoupon || 0) - couponToUse;
+    member.balanceECash = (member.balanceECash || 0) - cashToUse;
+  }
+
+  // Choice lookup
+  const choiceObj = selectedChoiceId ? (db.packageProductChoices || []).find((c: any) => c.id === selectedChoiceId) : null;
+
+  const orderId = "ORD_" + Math.random().toString(36).substring(2, 10).toUpperCase();
+  const newOrder = {
+    id: orderId,
+    userId: member.userId,
+    userName: (`${member.name || ""} ${member.surname || ""}`).trim() || member.username,
+    userPhone: member.phone || "",
+    productId: product.id,
+    productName: product.name,
+    price: product.price,
+    quantity: qty,
+    totalPrice: totalPrice,
+    pv: product.pv || 0,
+    totalPv: totalPv,
+    productCategory: product.category || (isPkg ? "Package" : "General"),
+    selectedChoiceId: selectedChoiceId || null,
+    selectedChoiceName: choiceObj ? choiceObj.name : null,
+    status: "Completed",
+    shippingAddress: shippingAddress || (`${member.name || ""} ${member.surname || ""} ${member.phone || ""} ${member.address || ""}`),
+    createdAt: new Date().toISOString()
+  };
+
+  if (!db.orders) db.orders = [];
+  db.orders.unshift(newOrder);
+
+  const txnId = "TXN_" + Math.random().toString(36).substring(2, 10).toUpperCase();
+  const newTxn = {
+    id: txnId,
+    userId: member.userId,
+    username: member.username,
+    type: isPkg ? "PackagePurchase" : "Purchase",
+    amount: totalPrice,
+    currency: "E-Cash",
+    details: isPkg ? ("สั่งซื้อแพ็กเกจ " + product.name) : ("สั่งซื้อสินค้า " + product.name),
+    status: "Completed",
+    createdAt: new Date().toISOString()
+  };
+
+  if (!db.transactions) db.transactions = [];
+  db.transactions.unshift(newTxn);
+
+  writeDb(db);
+
+  res.json({
+    success: true,
+    message: isPkg ? ("สั่งซื้อแพ็กเกจ " + product.name + " เรียบร้อยแล้วค่ะ!") : ("สั่งซื้อสินค้า " + product.name + " เรียบร้อยแล้วค่ะ!"),
+    order: newOrder,
+    newBalanceECash: member.balanceECash,
+    newBalanceECoupon: member.balanceECoupon,
+    rank: member.rank
+  });
+});
+
+// =============================================================
+// MEMBER PORTAL ENDPOINTS
+// =============================================================
+
+// GET MEMBER PROFILE
+app.get("/api/member/profile/:userId", (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) {
+    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
+  }
+  res.json({ success: true, profile: member, ...member });
+});
+
+// GET MEMBER TRANSACTIONS
+app.get("/api/member/transactions/:userId", (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  const txns = (db.transactions || []).filter((t: any) => t.userId === userId);
+  res.json({ success: true, transactions: txns });
+});
+
+// GET MEMBER ORDERS
+app.get("/api/member/orders/:userId", (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  const userOrders = (db.orders || []).filter((o: any) => o.userId === userId);
+  res.json({ success: true, orders: userOrders });
+});
+
+// POST MEMBER UPDATE PROFILE
+app.post("/api/member/update-profile", (req, res) => {
+  const { userId, name, surname, phone, email, bankName, bankAccount, bankAccountName, idAddress, shippingAddress } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) {
+    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
+  }
+
+  if (name !== undefined) member.name = name;
+  if (surname !== undefined) member.surname = surname;
+  if (phone !== undefined) member.phone = phone;
+  if (email !== undefined) member.email = email;
+  if (bankName !== undefined) member.bankName = bankName;
+  if (bankAccount !== undefined) member.bankAccount = bankAccount;
+  if (bankAccountName !== undefined) member.bankAccountName = bankAccountName;
+  if (idAddress !== undefined) member.idAddress = idAddress;
+  if (shippingAddress !== undefined) member.shippingAddress = shippingAddress;
+
+  writeDb(db);
+  res.json({ success: true, message: "อัปเดตข้อมูลส่วนตัวเรียบร้อยแล้วค่ะ", profile: member });
+});
+
+// POST MEMBER TOPUP
+app.post("/api/member/topup", async (req, res) => {
+  const { userId, amount, transferDate, slipImage } = req.body;
+  if (!userId || !amount) {
+    return res.status(400).json({ success: false, message: "ข้อมูลไม่ครบถ้วน" });
+  }
+
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) {
+    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
+  }
+
+  let slipUrl = "";
+  if (slipImage) {
+    slipUrl = await uploadImageToFirebaseOrKeepBase64(slipImage, "slip_topup_" + userId + "_" + Date.now(), "topup_slips");
+  }
+
+  const depId = "DEP_" + Math.random().toString(36).substring(2, 10).toUpperCase();
+  const topupRecord = {
+    id: depId,
+    userId: member.userId,
+    username: member.username,
+    name: (`${member.name || ""} ${member.surname || ""}`).trim(),
+    amount: Number(amount),
+    transferAmount: Number(amount),
+    transferDate: transferDate || new Date().toISOString(),
+    currency: "E-Cash",
+    type: "Deposit",
+    status: "Pending",
+    slipImgUrl: slipUrl,
+    createdAt: new Date().toISOString()
+  };
+
+  if (!db.transactions) db.transactions = [];
+  db.transactions.unshift(topupRecord);
+
+  writeDb(db);
+  res.json({ success: true, message: "ส่งคำขอเติมเงินเรียบร้อยแล้วค่ะ กรุณารอผู้ดูแลระบบอนุมัตินะคะ" });
+});
+
+// POST MEMBER WITHDRAW
+app.post("/api/member/withdraw", (req, res) => {
+  const { userId, amount, bankName, bankAccount, bankAccountName, pin } = req.body;
+  if (!userId || !amount) {
+    return res.status(400).json({ success: false, message: "ข้อมูลไม่ครบถ้วน" });
+  }
+
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) {
+    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
+  }
+
+  if (member.pin && pin && member.pin !== pin) {
+    return res.status(400).json({ success: false, message: "รหัส PIN ไม่ถูกต้อง" });
+  }
+
+  const numAmount = Number(amount);
+  if ((member.balanceEMoney || member.balanceECash || 0) < numAmount) {
+    return res.status(400).json({ success: false, message: "ยอดเงินคงเหลือไม่เพียงพอสำหรับถอน" });
+  }
+
+  if (member.balanceEMoney && member.balanceEMoney >= numAmount) {
+    member.balanceEMoney -= numAmount;
+  } else {
+    member.balanceECash = (member.balanceECash || 0) - numAmount;
+  }
+
+  const wId = "WTH_" + Math.random().toString(36).substring(2, 10).toUpperCase();
+  const withdrawRecord = {
+    id: wId,
+    userId: member.userId,
+    username: member.username,
+    name: (`${member.name || ""} ${member.surname || ""}`).trim(),
+    amount: numAmount,
+    currency: "E-Money",
+    type: "Withdraw",
+    bankName: bankName || member.bankName || "",
+    bankAccount: bankAccount || member.bankAccount || "",
+    bankAccountName: bankAccountName || member.bankAccountName || "",
+    status: "Pending",
+    createdAt: new Date().toISOString()
+  };
+
+  if (!db.transactions) db.transactions = [];
+  db.transactions.unshift(withdrawRecord);
+
+  writeDb(db);
+  res.json({ success: true, message: "ส่งคำขอถอนเงินเรียบร้อยแล้วค่ะ" });
+});
+
+// POST MEMBER TRANSFER E-CASH
+app.post("/api/member/transfer-e-cash", (req, res) => {
+  const { userId, targetUser, amount, pin } = req.body;
+  if (!userId || !targetUser || !amount) {
+    return res.status(400).json({ success: false, message: "ข้อมูลไม่ครบถ้วน" });
+  }
+
+  const db = readDb();
+  const sender = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!sender) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลผู้โอน" });
+
+  if (sender.pin && pin && sender.pin !== pin) {
+    return res.status(400).json({ success: false, message: "รหัส PIN ไม่ถูกต้อง" });
+  }
+
+  const recipient = (db.members || []).find((m: any) => m.userId === targetUser || m.username === targetUser || m.phone === targetUser);
+  if (!recipient) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลผู้รับโอน" });
+
+  const numAmount = Number(amount);
+  if ((sender.balanceECash || 0) < numAmount) {
+    return res.status(400).json({ success: false, message: "ยอดเงิน E-Cash ไม่เพียงพอ" });
+  }
+
+  sender.balanceECash = (sender.balanceECash || 0) - numAmount;
+  recipient.balanceECash = (recipient.balanceECash || 0) + numAmount;
+
+  const txn1 = {
+    id: "TRF_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+    userId: sender.userId,
+    username: sender.username,
+    type: "TransferOut",
+    amount: numAmount,
+    currency: "E-Cash",
+    details: "โอน E-Cash ให้ " + (recipient.name || recipient.username) + " (" + recipient.userId + ")",
+    status: "Completed",
+    createdAt: new Date().toISOString()
+  };
+
+  const txn2 = {
+    id: "TRF_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+    userId: recipient.userId,
+    username: recipient.username,
+    type: "TransferIn",
+    amount: numAmount,
+    currency: "E-Cash",
+    details: "รับโอน E-Cash จาก " + (sender.name || sender.username) + " (" + sender.userId + ")",
+    status: "Completed",
+    createdAt: new Date().toISOString()
+  };
+
+  if (!db.transactions) db.transactions = [];
+  db.transactions.unshift(txn1, txn2);
+
+  writeDb(db);
+  res.json({ success: true, message: "โอน E-Cash จำนวน ฿" + numAmount.toLocaleString() + " ให้ " + (recipient.name || recipient.username) + " สำเร็จแล้วค่ะ!" });
+});
+
+// POST MEMBER BUY COUPON
+app.post("/api/member/buy-coupon", (req, res) => {
+  const { userId, amount, pin } = req.body;
+  if (!userId || !amount) {
+    return res.status(400).json({ success: false, message: "ข้อมูลไม่ครบถ้วน" });
+  }
+
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
+
+  if (member.pin && pin && member.pin !== pin) {
+    return res.status(400).json({ success: false, message: "รหัส PIN ไม่ถูกต้อง" });
+  }
+
+  const numAmount = Number(amount);
+  if ((member.balanceECash || 0) < numAmount) {
+    return res.status(400).json({ success: false, message: "ยอดเงิน E-Cash ไม่เพียงพอสำหรับแลกคูปอง" });
+  }
+
+  member.balanceECash -= numAmount;
+  member.balanceECoupon = (member.balanceECoupon || 0) + numAmount;
+
+  const txn = {
+    id: "CPN_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+    userId: member.userId,
+    username: member.username,
+    type: "CouponExchange",
+    amount: numAmount,
+    currency: "E-Coupon",
+    details: "แลกเปลี่ยน E-Cash เป็น E-Coupon ฿" + numAmount,
+    status: "Completed",
+    createdAt: new Date().toISOString()
+  };
+
+  if (!db.transactions) db.transactions = [];
+  db.transactions.unshift(txn);
+
+  writeDb(db);
+  res.json({ success: true, message: "แลกคูปองสำเร็จแล้วค่ะ", newECoupon: member.balanceECoupon, newECash: member.balanceECash });
+});
+
+// POST MEMBER VERIFY RECIPIENT
+app.post("/api/member/verify-recipient", (req, res) => {
+  const { recipientInput, targetUser } = req.body;
+  const input = String(recipientInput || targetUser || "").trim();
+  const db = readDb();
+  const recipient = (db.members || []).find((m: any) => 
+    (m.userId && m.userId.toLowerCase() === input.toLowerCase()) ||
+    (m.username && m.username.toLowerCase() === input.toLowerCase()) ||
+    (m.phone && m.phone === input)
+  );
+
+  if (recipient) {
+    return res.json({ 
+      success: true, 
+      recipient: {
+        userId: recipient.userId,
+        username: recipient.username,
+        name: (`${recipient.name || ""} ${recipient.surname || ""}`).trim()
+      }
+    });
+  } else {
+    return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิกผู้รับนี้ในระบบ" });
+  }
+});
+
+// POST MEMBER KYC SUBMISSION
+app.post("/api/member/kyc", async (req, res) => {
+  const { userId, idCard, kycImgUrl, kycBookUrl, bankName, bankAccount, bankAccountName } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบข้อมูลสมาชิก" });
+
+  if (idCard) member.idCard = idCard;
+  if (bankName) member.bankName = bankName;
+  if (bankAccount) member.bankAccount = bankAccount;
+  if (bankAccountName) member.bankAccountName = bankAccountName;
+
+  if (kycImgUrl) {
+    member.kycImgUrl = await uploadImageToFirebaseOrKeepBase64(kycImgUrl, "kyc_id_" + userId, "kyc_documents");
+  }
+  if (kycBookUrl) {
+    member.kycBookUrl = await uploadImageToFirebaseOrKeepBase64(kycBookUrl, "kyc_book_" + userId, "kyc_documents");
+  }
+
+  member.statusKyc = "Pending";
+  writeDb(db);
+
+  res.json({ success: true, message: "ส่งเอกสารยืนยันตัวตน (KYC) เรียบร้อยแล้วค่ะ กรุณารอผู้ดูแลระบบอนุมัติ" });
+});
+
+// POST MEMBER REQUEST EMAIL OTP
+app.post("/api/member/request-email-otp", async (req, res) => {
+  const { userId, email } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || (email && m.email === email));
+  const targetEmail = email || member?.email;
+  if (!targetEmail) return res.status(400).json({ success: false, message: "ไม่พบอีเมลผู้ใช้" });
+
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  await sendSystemEmail({
+    to: targetEmail,
+    subject: "[Natee Plus] รหัสยืนยัน OTP",
+    title: "รหัส OTP ของคุณ",
+    otpCode: otpCode,
+    bodyText: "กรุณานำรหัส OTP 6 หลักนี้ไปยืนยันทำรายการในระบบนะคะ"
+  });
+
+  res.json({ success: true, message: "ส่งรหัส OTP ไปยังอีเมลเรียบร้อยแล้วค่ะ", otp: otpCode });
+});
+
+// POST MEMBER SEND PIN OTP
+app.post("/api/member/send-pin-otp", async (req, res) => {
+  const { userId, email } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId);
+  const targetEmail = email || member?.email;
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+  if (targetEmail) {
+    await sendSystemEmail({
+      to: targetEmail,
+      subject: "[Natee Plus] รหัส OTP สำหรับรีเซ็ต/เปลี่ยน PIN",
+      title: "รหัส OTP เปลี่ยน PIN",
+      otpCode: otpCode,
+      bodyText: "กรุณานำรหัส OTP นี้ไปยืนยันเปลี่ยน PIN"
+    });
+  }
+
+  res.json({ success: true, message: "ส่ง OTP แล้วค่ะ", otp: otpCode });
+});
+
+// POST MEMBER SEND TRANSACTION OTP
+app.post("/api/member/send-transaction-otp", async (req, res) => {
+  const { userId, email } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId);
+  const targetEmail = email || member?.email;
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+  if (targetEmail) {
+    await sendSystemEmail({
+      to: targetEmail,
+      subject: "[Natee Plus] รหัส OTP ยืนยันการทำธุรกรรม",
+      title: "รหัส OTP ยืนยันธุรกรรม",
+      otpCode: otpCode,
+      bodyText: "กรุณานำรหัส OTP นี้ไปยืนยันทำรายการ"
+    });
+  }
+
+  res.json({ success: true, message: "ส่ง OTP แล้วค่ะ", otp: otpCode });
+});
+
+// POST MEMBER CHANGE PASSWORD
+app.post("/api/member/change-password", (req, res) => {
+  const { userId, currentPassword, newPassword } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบผู้ใช้" });
+
+  if (member.password && currentPassword && member.password !== currentPassword) {
+    return res.status(400).json({ success: false, message: "รหัสผ่านเดิมไม่ถูกต้อง" });
+  }
+
+  member.password = newPassword;
+  writeDb(db);
+  res.json({ success: true, message: "เปลี่ยนรหัสผ่านเรียบร้อยแล้วค่ะ" });
+});
+
+// POST MEMBER CHANGE PIN
+app.post("/api/member/change-pin", (req, res) => {
+  const { userId, currentPin, newPin } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบผู้ใช้" });
+
+  if (member.pin && currentPin && member.pin !== currentPin) {
+    return res.status(400).json({ success: false, message: "รหัส PIN เดิมไม่ถูกต้อง" });
+  }
+
+  member.pin = newPin;
+  writeDb(db);
+  res.json({ success: true, message: "เปลี่ยนรหัส PIN เรียบร้อยแล้วค่ะ" });
+});
+
+// POST MEMBER TRANSFER ECASH TO EMONEY
+app.post("/api/member/transfer-ecash-to-emoney", (req, res) => {
+  const { userId, amount, pin } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบผู้ใช้" });
+  const numAmount = Number(amount);
+  if ((member.balanceECash || 0) < numAmount) return res.status(400).json({ success: false, message: "ยอด E-Cash ไม่เพียงพอ" });
+
+  member.balanceECash -= numAmount;
+  member.balanceEMoney = (member.balanceEMoney || 0) + numAmount;
+  writeDb(db);
+  res.json({ success: true, message: "โอน E-Cash เป็น E-Money เรียบร้อยแล้วค่ะ", newECash: member.balanceECash, newEMoney: member.balanceEMoney });
+});
+
+// POST MEMBER TRANSFER EMONEY TO ECASH
+app.post("/api/member/transfer-emoney-to-ecash", (req, res) => {
+  const { userId, amount, pin } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบผู้ใช้" });
+  const numAmount = Number(amount);
+  if ((member.balanceEMoney || 0) < numAmount) return res.status(400).json({ success: false, message: "ยอด E-Money ไม่เพียงพอ" });
+
+  member.balanceEMoney -= numAmount;
+  member.balanceECash = (member.balanceECash || 0) + numAmount;
+  writeDb(db);
+  res.json({ success: true, message: "โอน E-Money เป็น E-Cash เรียบร้อยแล้วค่ะ", newECash: member.balanceECash, newEMoney: member.balanceEMoney });
+});
+
+// POST MEMBER TRANSFER EMONEY TO ECOUPON
+app.post("/api/member/transfer-emoney-to-ecoupon", (req, res) => {
+  const { userId, amount, pin } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId);
+  if (!member) return res.status(404).json({ success: false, message: "ไม่พบผู้ใช้" });
+  const numAmount = Number(amount);
+  if ((member.balanceEMoney || 0) < numAmount) return res.status(400).json({ success: false, message: "ยอด E-Money ไม่เพียงพอ" });
+
+  member.balanceEMoney -= numAmount;
+  member.balanceECoupon = (member.balanceECoupon || 0) + numAmount;
+  writeDb(db);
+  res.json({ success: true, message: "โอน E-Money เป็น E-Coupon เรียบร้อยแล้วค่ะ", newEMoney: member.balanceEMoney, newECoupon: member.balanceECoupon });
+});
+
+
 async function startServer() {
   console.log("🚀 Booting NaTee Plus Full-Stack Server...");
   await loadDbFromFirestore();
