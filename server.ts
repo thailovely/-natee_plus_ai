@@ -1578,6 +1578,49 @@ function recalculateMemberEligibleRights(db: any, member: any) {
   member.eligibleRights = parseFloat(remainingRights.toFixed(4));
 }
 
+function checkAndSpawnPlanBNode(db: any, member: any) {
+  if (!member) return;
+  if (!db.planB_Tree) {
+    db.planB_Tree = { b1: [], b2: [], b3: [], b4: [], b5: [], b6: [], b7: [], b8: [], b9: [], b10: [], b11: [], b12: [], b13: [], b14: [], b15: [] };
+  }
+  if (!db.planB_Tree.b1) db.planB_Tree.b1 = [];
+
+  const pts = Number(member.planBPoints) || 0;
+  const existingNodes = db.planB_Tree.b1.filter((n: any) => n.memberUserId === member.userId || n.userId === member.userId);
+  
+  // Every 100 Plan B Points spawns 1 new auto-run B1 node
+  const eligibleNodeCount = Math.floor(pts / 100);
+
+  if (eligibleNodeCount > existingNodes.length) {
+    const nodesToSpawn = eligibleNodeCount - existingNodes.length;
+    for (let i = 0; i < nodesToSpawn; i++) {
+      const lastNode = db.planB_Tree.b1.length > 0 ? db.planB_Tree.b1[db.planB_Tree.b1.length - 1] : null;
+      const newNode = {
+        id: member.userId + "26b1_" + (existingNodes.length + i + 1),
+        memberUserId: member.userId,
+        username: member.username,
+        parentId: lastNode ? lastNode.id : "SYSTEM",
+        side: db.planB_Tree.b1.length % 2 === 0 ? "Left" : "Right",
+        progress: 0,
+        status: "Planing",
+        createdAt: new Date().toISOString()
+      };
+      db.planB_Tree.b1.push(newNode);
+    }
+  }
+
+  // Update progress for all nodes in B1
+  const totalB1 = db.planB_Tree.b1.length;
+  db.planB_Tree.b1.forEach((node: any, idx: number) => {
+    const totalUnder = totalB1 - 1 - idx;
+    const pct = Math.min(100, Math.round((totalUnder / 62) * 10000) / 100);
+    node.progress = pct;
+    if (pct >= 100) {
+      node.status = "Success";
+    }
+  });
+}
+
 function writeDb(data) {
   if (data) {
     if (!Array.isArray(data.products)) data.products = [];
@@ -3530,8 +3573,49 @@ app.get('/api/mlm/referral-tree/:targetId', (req, res) => {
 app.get('/api/mlm/plan-b/:userId', (req, res) => {
   const { userId } = req.params;
   const db = readDb();
-  const planData = db.planB_Tree?.[userId] || { points: 0, tree: [] };
-  res.json({ success: true, data: planData });
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  
+  if (!member) {
+    return res.json({ success: false, message: "ไม่พบสมาชิก" });
+  }
+
+  if (!db.planB_Tree) {
+    db.planB_Tree = { b1: [], b2: [], b3: [], b4: [], b5: [], b6: [], b7: [], b8: [], b9: [], b10: [], b11: [], b12: [], b13: [], b14: [], b15: [] };
+  }
+
+  checkAndSpawnPlanBNode(db, member);
+
+  const responseData: any = {
+    points: Number(member.planBPoints) || 0,
+  };
+
+  for (let i = 1; i <= 15; i++) {
+    const tierKey = `b${i}`;
+    const allTierNodes = db.planB_Tree[tierKey] || [];
+    const userNodes = allTierNodes.filter((node: any) => node.memberUserId === member.userId || node.userId === member.userId);
+
+    if (i === 1 && userNodes.length === 0 && (member.rank === 'S' || member.rank === 'M' || member.rank === 'L' || member.rank === 'XL' || member.rank === 'XXL' || member.role === 'Admin' || member.role === 'Manager')) {
+      const trackingProgress = Math.min(99.9, Math.round(((Number(member.planBPoints) || 0) / 100) * 100));
+      responseData.b1Nodes = [{
+        id: member.userId + "26b1_0",
+        memberUserId: member.userId,
+        username: member.username,
+        parentId: "SYSTEM",
+        side: "Left",
+        progress: trackingProgress,
+        status: "Planing",
+        createdAt: member.createdAt || new Date().toISOString()
+      }];
+    } else {
+      responseData[`b${i}Nodes`] = userNodes;
+    }
+  }
+
+  res.json({
+    success: true,
+    planB: responseData,
+    data: responseData
+  });
 });
 
 app.get('/api/mlm/search-downline', (req, res) => {
@@ -3716,7 +3800,7 @@ app.post("/api/shop/purchase", async (req, res) => {
   if (!db.transactions) db.transactions = [];
   db.transactions.unshift(newTxn);
 
-  // 1. Purchaser E-Coupon Cashback Return for Package Purchase (Package S = 10 THB, Others = 10%)
+  // 1. Purchaser E-Coupon Cashback Return & Plan B Points for Package Purchase
   if (isPkg) {
     const cashbackECoupon = product.id === "pack_s" ? 10 : Math.round(totalPrice * 0.10);
     if (cashbackECoupon > 0) {
@@ -3732,6 +3816,23 @@ app.post("/api/shop/purchase", async (req, res) => {
         status: "Approved",
         createdAt: new Date().toISOString()
       });
+    }
+
+    // Package S grants 5 Plan B Points to Purchaser according to Package S rules
+    if (product.id === "pack_s") {
+      member.planBPoints = (Number(member.planBPoints) || 0) + 5;
+      db.transactions.unshift({
+        id: "PTS_PKG_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+        userId: member.userId,
+        username: member.username,
+        type: "Bonus",
+        currency: "PlanBPoints",
+        amount: 5,
+        details: `คะแนนสะสมโครงสร้าง Plan B Points (+5 คะแนน) จากการเปิดแพ็กเกจ S`,
+        status: "Approved",
+        createdAt: new Date().toISOString()
+      });
+      checkAndSpawnPlanBNode(db, member);
     }
   }
 
@@ -3799,6 +3900,7 @@ app.post("/api/shop/purchase", async (req, res) => {
           status: "Approved",
           createdAt: new Date().toISOString()
         });
+        checkAndSpawnPlanBNode(db, sponsor);
       }
 
       recalculateMemberEligibleRights(db, sponsor);
@@ -3827,22 +3929,25 @@ app.post("/api/shop/purchase", async (req, res) => {
 
         if (payableShare > 0) {
           m.balanceEMoney = (Number(m.balanceEMoney) || 0) + payableShare;
-          m.planBPoints = (Number(m.planBPoints) || 0) + sharePlanBPoints;
-
-          db.transactions.unshift({
-            id: "ALL_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
-            userId: m.userId,
-            username: m.username,
-            type: "EShare",
-            currency: "E-Money",
-            amount: payableShare,
-            details: `โบนัส All-Share จากรหัส ${(member.name + " " + (member.surname || "")).trim() || member.username} (${member.userId}) (+${payableShare.toFixed(4)} E-Money / +${sharePlanBPoints.toFixed(4)} คะแนน Plan B)`,
-            status: "Approved",
-            createdAt: new Date().toISOString()
-          });
-
-          recalculateMemberEligibleRights(db, m);
         }
+        if (sharePlanBPoints > 0) {
+          m.planBPoints = (Number(m.planBPoints) || 0) + sharePlanBPoints;
+          checkAndSpawnPlanBNode(db, m);
+        }
+
+        db.transactions.unshift({
+          id: "ALL_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+          userId: m.userId,
+          username: m.username,
+          type: "EShare",
+          currency: "E-Money",
+          amount: payableShare,
+          details: `โบนัส All-Share จากรหัส ${(member.name + " " + (member.surname || "")).trim() || member.username} (${member.userId}) (+${payableShare.toFixed(4)} E-Money / +${sharePlanBPoints.toFixed(4)} คะแนน Plan B)`,
+          status: "Approved",
+          createdAt: new Date().toISOString()
+        });
+
+        recalculateMemberEligibleRights(db, m);
       });
     }
   }
@@ -3881,6 +3986,7 @@ app.post("/api/shop/purchase", async (req, res) => {
             parent.balanceEMoney = (Number(parent.balanceEMoney) || 0) + payableEMoney;
             parent.balanceECoupon = (Number(parent.balanceECoupon) || 0) + netECoupon;
             parent.planBPoints = (Number(parent.planBPoints) || 0) + netPlanBPoints;
+            checkAndSpawnPlanBNode(db, parent);
 
             db.transactions.unshift({
               id: "COMM_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
