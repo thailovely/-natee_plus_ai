@@ -8024,34 +8024,36 @@ export default function App() {
                 <LayoutDashboard size={24} />
               </button>
 
-              {/* Left Front Group: ชื่อสมาชิก & KYC, รหัสสมาชิก, Username, ตำแหน่ง */}
-              <div className="flex flex-wrap items-center gap-2">
-                {/* ชื่อสมาชิก (สวยงามด้วย Gradient ไล่โทนสี) */}
-                <div className="flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-indigo-600 px-3 py-1.5 rounded-xl text-white font-extrabold text-[11px] shadow-sm shrink-0">
-                  <span>👤</span>
+              {/* Left Front Group: Card บัตรประจำตัวสมาชิก (ชื่อ, รหัสสมาชิก, KYC, Username, ตำแหน่ง) */}
+              <div className="bg-slate-50/90 border border-slate-200/80 p-1.5 rounded-2xl flex flex-wrap items-center gap-1.5 shrink-0 shadow-xs max-w-full">
+                {/* รหัสสมาชิก Highlighted Badge */}
+                <div className="bg-gradient-to-r from-indigo-700 via-indigo-600 to-sky-600 text-white font-black px-3 py-1.5 rounded-xl text-xs shadow-xs flex items-center gap-1.5 whitespace-nowrap shrink-0 border border-indigo-500/30">
+                  <span className="text-amber-300 font-normal">🆔</span>
+                  <span className="tracking-wide">รหัสสมาชิก:</span>
+                  <span className="font-mono text-amber-300 font-extrabold text-xs tracking-wider">{profile?.userId || currentUser?.userId || '-'}</span>
+                </div>
+
+                {/* ชื่อสมาชิก */}
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200/90 px-3 py-1.5 rounded-xl text-slate-800 font-extrabold text-[11px] shadow-xs whitespace-nowrap shrink-0">
+                  <span className="text-indigo-600">👤</span>
                   <span>{profile?.name} {profile?.surname}</span>
                 </div>
 
                 {/* KYC Status Badge */}
-                <span className={`text-[9px] px-2 py-1.5 rounded-xl font-bold uppercase shrink-0 shadow-sm border ${
-                  profile?.statusKyc === 'Active' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
+                <span className={`text-[9px] px-2.5 py-1.5 rounded-xl font-bold uppercase shrink-0 shadow-xs border whitespace-nowrap ${
+                  profile?.statusKyc === 'Active' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'
                 }`}>
                   {profile?.statusKyc === 'Active' ? '✓ KYC APPROVED' : '⌛ WAITING KYC'}
                 </span>
 
-                {/* รหัสสมาชิก */}
-                <div className="bg-slate-50 text-slate-700 font-bold px-3 py-1.5 rounded-xl text-[11px] border border-slate-200/60 shrink-0">
-                  รหัสสมาชิก: <span className="font-mono text-indigo-600 font-extrabold">{profile?.userId}</span>
-                </div>
-
                 {/* Username */}
-                <div className="bg-slate-50 text-slate-700 font-bold px-3 py-1.5 rounded-xl text-[11px] border border-slate-200/60 shrink-0">
-                  Username: <span className="text-slate-900 font-extrabold">{profile?.username}</span>
+                <div className="bg-white border border-slate-200/90 text-slate-700 font-bold px-3 py-1.5 rounded-xl text-[11px] shadow-xs whitespace-nowrap shrink-0">
+                  Username: <span className="text-slate-900 font-extrabold">{profile?.username || currentUser?.username || '-'}</span>
                 </div>
 
                 {/* ตำแหน่ง */}
-                <div className="bg-indigo-50 text-indigo-700 font-extrabold px-3 py-1.5 rounded-xl text-[11px] border border-indigo-200/60 shrink-0">
-                  ตำแหน่ง: {profile?.rank || 'S'}
+                <div className="bg-indigo-50 border border-indigo-200/80 text-indigo-800 font-extrabold px-3 py-1.5 rounded-xl text-[11px] shadow-xs whitespace-nowrap shrink-0">
+                  ตำแหน่ง: <span className="font-black text-indigo-700">{profile?.rank || 'S'}</span>
                 </div>
               </div>
 
@@ -12123,6 +12125,20 @@ export default function App() {
                   <h2 className="text-2xl font-bold text-slate-900">รายงานข้อมูลระบบ นที พลัส 📊</h2>
                   <p className="text-xs text-slate-400 mt-1">สรุปข้อมูลการเงิน คูปอง รายรับออลแชร์ และโครงสร้างสายงานในระบบของคุณ</p>
                 </div>
+
+                {/* Live Real-time Refresh Button */}
+                <button
+                  onClick={() => {
+                    fetchProfile(true);
+                    fetchTransactions();
+                    fetchReports();
+                    showNotif('อัปเดตรายงานและค่าคอมมิชชันเป็นปัจจุบันเรียบร้อยแล้วค่ะ 🔄', 'success');
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-4 py-2.5 rounded-2xl transition shadow-sm active:scale-95 flex items-center gap-2 cursor-pointer shrink-0 border border-emerald-400/30"
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-300 animate-ping"></span>
+                  <span>🔄 อัปเดตข้อมูลปัจจุบัน</span>
+                </button>
 
                 {/* Report Sub-tabs Selector */}
                 <div className="flex flex-wrap gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200">
