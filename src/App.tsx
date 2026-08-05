@@ -942,7 +942,16 @@ export default function App() {
   const [treeScale, setTreeScale] = useState<number>(0.85);
   const [maxTreeDepth, setMaxTreeDepth] = useState<number>(3);
   const [planBSubTab, setPlanBSubTab] = useState<'b1' | 'b2'>('b1');
-  const [adminSubTab, setAdminSubTab] = useState<'queues' | 'members' | 'couponPv' | 'systemReset' | 'memberApprovals' | 'shippingApprove' | 'manageShops' | 'productApprovals' | 'orderStatus' | 'bankSettings' | 'depositApprove' | 'packageChoices' | 'companyAccountingReport' | 'maintenance' | 'analytics' | 'promoPopupConfig' | 'manageRegulations' | 'systemConditions' | 'memberShopInfo' | 'botConfig'>('queues');
+  const [adminSubTab, setAdminSubTab] = useState<'queues' | 'members' | 'couponPv' | 'systemReset' | 'memberApprovals' | 'shippingApprove' | 'manageShops' | 'productApprovals' | 'orderStatus' | 'bankSettings' | 'depositApprove' | 'packageChoices' | 'companyAccountingReport' | 'maintenance' | 'analytics' | 'promoPopupConfig' | 'manageRegulations' | 'systemConditions' | 'memberShopInfo' | 'botConfig' | 'featureToggles'>('queues');
+  const [featureToggles, setFeatureToggles] = useState<any>({
+    enableSlip2Go: true,
+    enableSCBNetPayout: true,
+    enableEFilingExport: true,
+    enableLiveSystem: true,
+    enableECouponExchange: true,
+    enableAiChatbot: true,
+    enablePromoPopup: true
+  });
   const [adminSection, setAdminSection] = useState<'members_system' | 'seller_system' | 'admin_console'>('members_system');
   const [allSellerProducts, setAllSellerProducts] = useState<any[]>([]);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
@@ -4121,6 +4130,9 @@ export default function App() {
         setEditingBankAccount(data.bankSettings.bankAccount || '');
         setEditingBankAccountName(data.bankSettings.bankAccountName || '');
         setEditingBankQrPreview(data.bankSettings.qrCodeUrl || '');
+        if (data.bankSettings.featureToggles) {
+          setFeatureToggles(data.bankSettings.featureToggles);
+        }
       }
       if (data.promoConfig) {
         setPromoConfig(data.promoConfig);
@@ -4221,6 +4233,115 @@ export default function App() {
     } finally {
       setIsSavingBankSettings(false);
     }
+  };
+
+  const handleSaveFeatureToggles = async (updatedToggles: any) => {
+    try {
+      const res = await fetch('/api/admin/feature-toggles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          featureToggles: updatedToggles,
+          editorUserId: currentUser?.userId || profile?.userId
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFeatureToggles(data.featureToggles);
+        showNotif('บันทึกการตั้งค่าเปิด-ปิดฟีเจอร์ระบบเรียบร้อยแล้วค่ะ 🎛️', 'success');
+      } else {
+        showNotif(data.message || 'บันทึกไม่สำเร็จ', 'error');
+      }
+    } catch (err) {
+      showNotif('เกิดข้อผิดพลาดในการบันทึกการตั้งค่า', 'error');
+    }
+  };
+
+  const exportEFilingCSV = (taxType: 'PND3' | 'PND53') => {
+    const yearTh = 2569;
+    let content = "";
+    
+    if (taxType === 'PND3') {
+      content = "ลำดับ|เลขประจำตัวผู้เสียภาษี/บัตรประชาชน|คำนำหน้า|ชื่อ|นามสกุล|ที่อยู่ผู้ถูกหักภาษี|วันเดือนปีที่จ่าย|ประเภทรายได้|อัตราภาษี(%)|จำนวนเงินที่จ่าย(บาท)|จำนวนภาษีที่หัก(บาท)|เงื่อนไขการหัก\n";
+      let seq = 1;
+      const approvedTx = transactions.filter((t: any) => t.type === 'WithdrawalRequest' && t.status === 'Approved');
+      if (approvedTx.length === 0) {
+        showNotif('ไม่มีข้อมูลการถอนเงินที่อนุมัติสำหรับยื่น ภ.ง.ด.3 ค่ะ', 'warning');
+        return;
+      }
+      approvedTx.forEach((tx: any) => {
+        const member = members.find((m: any) => m.userId === tx.userId);
+        const idCard = (member?.idCard || member?.taxId || "0000000000000").replace(/[^0-9]/g, "");
+        const name = member?.name || "สมาชิก";
+        const surname = member?.surname || "";
+        const addr = (member?.idAddress || member?.shippingAddress || "123/45 กรุงเทพมหานคร").replace(/\|/g, " ");
+        const payDate = tx.createdAt ? new Date(tx.createdAt).toLocaleDateString('th-TH') : new Date().toLocaleDateString('th-TH');
+        const grossAmt = tx.taxableAmount !== undefined ? tx.taxableAmount : ((tx.amount || 0) * 0.80);
+        const taxAmt = tx.withholdingTax !== undefined ? tx.withholdingTax : (grossAmt * 0.03);
+        
+        content += `${seq}|${idCard}||${name}|${surname}|${addr}|${payDate}|ค่านายหน้า/โบนัสการขาย (ม.40(2))|3|${grossAmt.toFixed(2)}|${taxAmt.toFixed(2)}|1\n`;
+        seq++;
+      });
+    } else if (taxType === 'PND53') {
+      content = "ลำดับ|เลขประจำตัวผู้เสียภาษีอากรนิติบุคคล|ชื่อนิติบุคคล/ร้านค้า|ที่อยู่นิติบุคคล|วันเดือนปีที่จ่าย|ประเภทรายได้|อัตราภาษี(%)|จำนวนเงินที่จ่าย(บาท)|จำนวนภาษีที่หัก(บาท)|เงื่อนไขการหัก\n";
+      let seq = 1;
+      const sellerTx = transactions.filter((t: any) => (t.type === 'WithdrawalRequest' || t.type === 'SellerPayout') && t.status === 'Approved');
+      sellerTx.forEach((tx: any) => {
+        const member = members.find((m: any) => m.userId === tx.userId);
+        if (member && member.sellerStatus === 'Active') {
+          const taxId = (member.taxId || member.idCard || "0305569007935").replace(/[^0-9]/g, "");
+          const shopName = member.shopName || `${member.name} ${member.surname}`;
+          const addr = (member.shippingAddress || "123/45 กรุงเทพมหานคร").replace(/\|/g, " ");
+          const payDate = tx.createdAt ? new Date(tx.createdAt).toLocaleDateString('th-TH') : new Date().toLocaleDateString('th-TH');
+          const grossAmt = tx.amount || 0;
+          const taxAmt = grossAmt * 0.03;
+          content += `${seq}|${taxId}|${shopName}|${addr}|${payDate}|ค่าบริการ/ค่านายหน้าร้านค้า|3|${grossAmt.toFixed(2)}|${taxAmt.toFixed(2)}|1\n`;
+          seq++;
+        }
+      });
+      if (seq === 1) {
+        showNotif('ไม่มีข้อมูลโบนัสร้านค้าสำหรับยื่น ภ.ง.ด.53 ค่ะ', 'warning');
+        return;
+      }
+    }
+
+    const blob = new Blob(["\uFEFF" + content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `RD_eFiling_${taxType}_TaxYear_${yearTh}_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showNotif(`ส่งออกไฟล์ยื่นภาษี e-Filing สรรพากร (${taxType}) เรียบร้อยแล้วค่ะ! นำเข้าผ่านระบบ RD Prep ได้ทันที 📄✨`, 'success');
+  };
+
+  const exportSCBPayoutBatch = (queueItems: any[]) => {
+    if (!queueItems || queueItems.length === 0) {
+      showNotif('ไม่มีรายการโอนเงินในคิวสำหรับส่งออกไฟล์ SCB Business Net ค่ะ', 'warning');
+      return;
+    }
+    let content = "เลขที่บัญชีผู้รับ,ชื่อบัญชีผู้รับ,จำนวนเงินโอน,รหัสธนาคาร,รหัสอ้างอิง,หมายเหตุ\n";
+    queueItems.forEach((tx: any) => {
+      const member = members.find((m: any) => m.userId === tx.userId);
+      const rawBankAcc = (member?.bankAccount || tx.bankAccount || "").replace(/[^0-9]/g, "");
+      const bankName = member?.bankName || tx.bankName || "ธนาคารไทยพาณิชย์";
+      const receiverName = `${member?.name || ''} ${member?.surname || ''}`.trim() || member?.bankAccountName || "สมาชิก Natee Plus";
+      const netAmt = tx.netAmount !== undefined ? tx.netAmount : (tx.amount || 0);
+      const bankCode = bankName.includes("ไทยพาณิชย์") || bankName.includes("SCB") ? "014" : (bankName.includes("กสิกร") ? "004" : "002");
+      const ref = tx.id || "WITHDRAWAL";
+      content += `"${rawBankAcc}","${receiverName}",${netAmt.toFixed(2)},"${bankCode}","${ref}","จ่ายโบนัสคอมมิชชัน Natee Plus Market"\n`;
+    });
+
+    const blob = new Blob(["\uFEFF" + content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `SCB_BusinessNet_BatchPayout_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showNotif('ส่งออกไฟล์ชุดโอนเงิน SCB Business Net Batch CSV เรียบร้อยแล้วค่ะ! นำไปใช้ในระบบธนาคารได้ทันที 🏦✨', 'success');
   };
 
   const handleToggleMaintenanceMode = async (targetVal: boolean) => {
@@ -17318,6 +17439,14 @@ export default function App() {
                            🏦 ตั้งค่าธนาคาร / ระบบแจ้งเตือน (LINE)
                          </button>
                          <button 
+                           onClick={() => setAdminSubTab('featureToggles')} 
+                           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                             adminSubTab === 'featureToggles' ? 'bg-amber-600 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
+                           }`}
+                         >
+                           🎛️ เปิด-ปิด ฟีเจอร์ระบบอิสระ
+                         </button>
+                         <button 
                            onClick={() => setAdminSubTab('maintenance')} 
                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
                              adminSubTab === 'maintenance' ? 'bg-slate-800 text-white shadow-md' : 'bg-white hover:bg-slate-100 text-slate-700'
@@ -17410,33 +17539,44 @@ export default function App() {
                   <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                     💸 ตารางอนุมัติเบิกยอดเงินรายได้สมาชิก (Bank Withdrawal Queue)
                   </h4>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (withQueue.length === 0) {
-                        showNotif('ไม่มีคำขอถอนเงินในคิวที่จะส่งออก CSV ค่ะ', 'warning');
-                        return;
-                      }
-                      const headers = ['รหัสรายการ', 'รหัสสมาชิก', 'ยอดถอน (บาท)', 'หักสำรอง 20%', 'หัก ณ ที่จ่าย 3%', 'ค่าธรรมเนียม 2%', 'ยอดโอนจริง (บาท)', 'รายละเอียดบัญชี', 'สถานะ', 'วันที่'];
-                      const rows = withQueue.map((item: any) => [
-                        item.id,
-                        item.userId,
-                        item.amount || 0,
-                        item.autoReserve || 0,
-                        item.withholdingTax || 0,
-                        item.companyFee || 0,
-                        item.netAmount || 0,
-                        item.details || '-',
-                        item.status || 'Pending',
-                        new Date(item.createdAt).toLocaleString('th-TH')
-                      ]);
-                      exportToCsv(`eMoney_Withdrawal_Queue_${new Date().toISOString().slice(0,10)}.csv`, headers, rows);
-                      showNotif('ส่งออกรายงานยอดถอน e-Money เป็นไฟล์ CSV เรียบร้อยแล้วค่ะ 📥', 'success');
-                    }}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-1 rounded-xl transition cursor-pointer shadow-2xs flex items-center gap-1"
-                  >
-                    📥 ส่งออก CSV รายงานถอนเงิน
-                  </button>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    {featureToggles.enableSCBNetPayout !== false && (
+                      <button
+                        type="button"
+                        onClick={() => exportSCBPayoutBatch(withQueue)}
+                        className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold px-3 py-1 rounded-xl transition cursor-pointer shadow-2xs flex items-center gap-1"
+                      >
+                        🏦 ส่งออก Batch โอน SCB Business Net (.CSV)
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (withQueue.length === 0) {
+                          showNotif('ไม่มีคำขอถอนเงินในคิวที่จะส่งออก CSV ค่ะ', 'warning');
+                          return;
+                        }
+                        const headers = ['รหัสรายการ', 'รหัสสมาชิก', 'ยอดถอน (บาท)', 'หักสำรอง 20%', 'หัก ณ ที่จ่าย 3%', 'ค่าธรรมเนียม 2%', 'ยอดโอนจริง (บาท)', 'รายละเอียดบัญชี', 'สถานะ', 'วันที่'];
+                        const rows = withQueue.map((item: any) => [
+                          item.id,
+                          item.userId,
+                          item.amount || 0,
+                          item.autoReserve || 0,
+                          item.withholdingTax || 0,
+                          item.companyFee || 0,
+                          item.netAmount || 0,
+                          item.details || '-',
+                          item.status || 'Pending',
+                          new Date(item.createdAt).toLocaleString('th-TH')
+                        ]);
+                        exportToCsv(`eMoney_Withdrawal_Queue_${new Date().toISOString().slice(0,10)}.csv`, headers, rows);
+                        showNotif('ส่งออกรายงานยอดถอน e-Money เป็นไฟล์ CSV เรียบร้อยแล้วค่ะ 📥', 'success');
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-1 rounded-xl transition cursor-pointer shadow-2xs flex items-center gap-1"
+                    >
+                      📥 ส่งออก CSV รายงานถอนเงิน
+                    </button>
+                  </div>
                 </div>
                 <div className="max-h-[300px] overflow-y-auto space-y-3 pr-2 text-xs text-slate-700">
                   {withQueue.length > 0 ? (
@@ -22242,6 +22382,160 @@ export default function App() {
                 </div>
               )}
 
+              {adminSubTab === 'featureToggles' && (profile?.role === 'Manager' || profile?.role === 'Admin' || currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
+                <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-6 max-w-3xl mx-auto animate-fadeIn text-slate-800">
+                  <div className="text-center space-y-1">
+                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-amber-50 text-amber-600 mb-2 border border-amber-100">
+                      <Sliders size={24} />
+                    </div>
+                    <h3 className="text-lg font-black text-slate-900">🎛️ ศูนย์ควบคุมเปิด-ปิด ฟีเจอร์ระบบอิสระ (Dynamic System Feature Toggles)</h3>
+                    <p className="text-xs text-slate-500">ผู้บริหารและแอดมินสามารถเปิดหรือปิดระบบย่อยต่างๆ ได้ทันทีแบบ Real-time โดยไม่ต้องแก้ไขโค้ด</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* 1. Slip2Go Auto Verification */}
+                    <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          📲 ตรวจสอบสลิปอัตโนมัติ (Slip2Go / QR)
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          ระบบตรวจสอบสลิปโอนเงินฝาก E-Cash อัตโนมัติด้วย Slip2Go API
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleSaveFeatureToggles({ ...featureToggles, enableSlip2Go: !featureToggles.enableSlip2Go })}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                          featureToggles.enableSlip2Go ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {featureToggles.enableSlip2Go ? '🟢 เปิดใช้งาน' : '🔴 ปิดใช้งาน'}
+                      </button>
+                    </div>
+
+                    {/* 2. SCB Business Net Payout Export */}
+                    <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          🏦 ส่งออกไฟล์โอนเงิน SCB Business Net
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          อนุญาตการดาวน์โหลดชุดไฟล์ Batch CSV/TXT สำหรับโอนเงินก้อนใหญ่ผ่านระบบ SCB Net
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleSaveFeatureToggles({ ...featureToggles, enableSCBNetPayout: !featureToggles.enableSCBNetPayout })}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                          featureToggles.enableSCBNetPayout ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {featureToggles.enableSCBNetPayout ? '🟢 เปิดใช้งาน' : '🔴 ปิดใช้งาน'}
+                      </button>
+                    </div>
+
+                    {/* 3. e-Filing Revenue Export */}
+                    <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          📄 ส่งออกไฟล์ยื่นภาษี e-Filing สรรพากร
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          ฟีเจอร์ส่งออกไฟล์ ภ.ง.ด.3 / ภ.ง.ด.53 รูปแบบมาตรฐานสรรพากร
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleSaveFeatureToggles({ ...featureToggles, enableEFilingExport: !featureToggles.enableEFilingExport })}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                          featureToggles.enableEFilingExport ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {featureToggles.enableEFilingExport ? '🟢 เปิดใช้งาน' : '🔴 ปิดใช้งาน'}
+                      </button>
+                    </div>
+
+                    {/* 4. Live Stream Shopping */}
+                    <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          🎥 ระบบถ่ายทอดสดซื้อขายสินค้า (Live Stream)
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          เปิด/ปิด ปุ่มไลฟ์สดและการกดสั่งซื้อสินค้าระหว่างไลฟ์
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleSaveFeatureToggles({ ...featureToggles, enableLiveSystem: !featureToggles.enableLiveSystem })}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                          featureToggles.enableLiveSystem ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {featureToggles.enableLiveSystem ? '🟢 เปิดใช้งาน' : '🔴 ปิดใช้งาน'}
+                      </button>
+                    </div>
+
+                    {/* 5. E-Coupon Exchange */}
+                    <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          🎟️ แลกสินค้าด้วยกระเป๋า E-Coupon
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          เปิด/ปิด สิทธิ์สมาชิกในการใช้คูปองสะสมแลกรับสินค้า
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleSaveFeatureToggles({ ...featureToggles, enableECouponExchange: !featureToggles.enableECouponExchange })}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                          featureToggles.enableECouponExchange ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {featureToggles.enableECouponExchange ? '🟢 เปิดใช้งาน' : '🔴 ปิดใช้งาน'}
+                      </button>
+                    </div>
+
+                    {/* 6. AI Assistant Chatbot */}
+                    <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          🤖 ผู้ช่วยปัญญาประดิษฐ์ NateeBot AI
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          แสดง/ซ่อน ปุ่มแชตบอต AI ผู้ช่วยตอบคำถามหน้าจอผู้ใช้งาน
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleSaveFeatureToggles({ ...featureToggles, enableAiChatbot: !featureToggles.enableAiChatbot })}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                          featureToggles.enableAiChatbot ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {featureToggles.enableAiChatbot ? '🟢 เปิดใช้งาน' : '🔴 ปิดใช้งาน'}
+                      </button>
+                    </div>
+
+                    {/* 7. Promotional Pop-up */}
+                    <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          🔥 Pop-Up ประกาศโปรโมชั่นระบบ
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          เปิด/ปิด หน้าต่างป๊อบอัพข่าวสารโปรโมชั่นเมื่อเข้าสู่แอพ
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleSaveFeatureToggles({ ...featureToggles, enablePromoPopup: !featureToggles.enablePromoPopup })}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                          featureToggles.enablePromoPopup ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {featureToggles.enablePromoPopup ? '🟢 เปิดใช้งาน' : '🔴 ปิดใช้งาน'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {adminSubTab === 'bankSettings' && (profile?.role === 'Manager' || profile?.role === 'Admin' || currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
                 <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-6 max-w-2xl mx-auto animate-fadeIn">
                   <div className="text-center space-y-1">
@@ -22957,7 +23251,23 @@ export default function App() {
                           รายงานสรุปรายได้ รายจ่าย ผลกำไรสุทธิ และภาษีนำส่งสะสมจากการจำหน่ายแพ็กเกจสินค้า (S, M, L, XL, XXL) ของบริษัท นที พลัส มาร์เก็ต จำกัด อย่างครบถ้วนโปร่งใสตามหลักกฎหมายสรรพากร
                         </p>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
+                        {featureToggles.enableEFilingExport !== false && (
+                          <>
+                            <button
+                              onClick={() => exportEFilingCSV('PND3')}
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-2.5 rounded-xl transition shadow-md flex items-center gap-1.5 cursor-pointer"
+                            >
+                              📄 e-Filing ภ.ง.ด.3 (บุคคล)
+                            </button>
+                            <button
+                              onClick={() => exportEFilingCSV('PND53')}
+                              className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-3 py-2.5 rounded-xl transition shadow-md flex items-center gap-1.5 cursor-pointer"
+                            >
+                              🏢 e-Filing ภ.ง.ด.53 (นิติบุคคล)
+                            </button>
+                          </>
+                        )}
                         <button
                           onClick={() => {
                             if (adminOrders.length === 0) {
@@ -25318,7 +25628,7 @@ export default function App() {
               <div id="receipt-print-area" className="p-4 bg-slate-50/50 rounded-2xl border border-slate-100 space-y-4 text-xs text-slate-700">
                 <div className="text-center space-y-1 pb-3 border-b border-dashed border-slate-200">
                   <h3 className="text-sm font-extrabold text-indigo-900">บริษัท นที พลัส มาร์เก็ต จำกัด (NATEE PLUS MARKET CO., LTD.)</h3>
-                  <p className="text-[10px] text-slate-400">เลขประจำตัวผู้เสียภาษี: 0105565123456</p>
+                  <p className="text-[10px] text-slate-400">เลขประจำตัวผู้เสียภาษี: 0-30556-9007-93-5</p>
                   <p className="text-[10px] text-slate-400 font-medium">99/99 อาคารรุ่งเรืองทาวเวอร์ ถนนสุขุมวิท กรุงเทพมหานคร 10110</p>
                   <p className="text-[10px] text-indigo-600 font-bold uppercase mt-2 text-xs font-sans">ใบเสร็จรับเงินอย่างย่อ / Tax Invoice (ABB)</p>
                 </div>
@@ -25518,7 +25828,7 @@ export default function App() {
                     <span className="font-extrabold text-slate-900 block border-b border-slate-100 pb-1">1. ผู้มีหน้าที่หักภาษี ณ ที่จ่าย (ผู้จ่ายเงิน):</span>
                     <div className="space-y-1 text-slate-700">
                       <div>ชื่อ: <strong className="text-slate-900 font-bold">บริษัท นที พลัส มาร์เก็ต จำกัด (NATEE PLUS MARKET CO., LTD.)</strong></div>
-                      <div>เลขประจำตัวผู้เสียภาษีอากร: <strong className="text-slate-900 font-mono font-bold">0105565123456</strong></div>
+                      <div>เลขประจำตัวผู้เสียภาษีอากร: <strong className="text-slate-900 font-mono font-bold">0-30556-9007-93-5</strong></div>
                       <div>ที่อยู่: <span className="text-slate-600">123/45 ถนนพระราม 9 แขวงห้วยขวาง เขตห้วยขวาง กรุงเทพมหานคร 10310</span></div>
                     </div>
                   </div>
@@ -28351,7 +28661,7 @@ export default function App() {
           </div>
         </div>
 
-        <NateeBotWidget currentUser={currentUser} />
+        {featureToggles.enableAiChatbot !== false && <NateeBotWidget currentUser={currentUser} />}
 
         {renderLoginModal()}
       </main>
