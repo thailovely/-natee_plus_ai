@@ -98,6 +98,14 @@ export const NateeBotWidget: React.FC<NateeBotWidgetProps> = () => {
   }, []);
 
   useEffect(() => {
+    // Auto hide tooltip popup after 5 seconds
+    const timer = setTimeout(() => {
+      setShowTooltip(false);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     if (isOpen) {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }

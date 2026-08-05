@@ -7674,7 +7674,7 @@ export default function App() {
                   setReportSubTab('ecash');
                   setSidebarOpen(false); 
                 }}
-                title="รายงาน E-Cash (Report)"
+                title="รายงานธุรกรรมต่างๆ (Report)"
                 className={`w-full flex items-center rounded-xl transition-all duration-200 cursor-pointer ${
                   isSidebarCollapsed 
                     ? 'justify-center p-2.5 text-center' 
@@ -7686,14 +7686,14 @@ export default function App() {
                 }`}
               >
                 <ClipboardList size={18} className="shrink-0" />
-                {(!isSidebarCollapsed || sidebarOpen) && <span>รายงาน E-Cash</span>}
+                {(!isSidebarCollapsed || sidebarOpen) && <span>รายงานธุรกรรมต่างๆ</span>}
               </button>
 
               {/* Partner System */}
               {profile && (
                 <button 
                   onClick={() => { setActiveTab('seller'); setSidebarOpen(false); }}
-                  title="ระบบ Partner (ร้านค้าผู้ขาย)"
+                  title="ระบบร้านค้า (ร้านค้าผู้ขาย)"
                   className={`w-full flex items-center rounded-xl transition-all duration-200 cursor-pointer ${
                     isSidebarCollapsed 
                       ? 'justify-center p-2.5 text-center' 
@@ -7705,7 +7705,7 @@ export default function App() {
                   }`}
                 >
                   <Star size={18} className="shrink-0 text-amber-400" />
-                  {(!isSidebarCollapsed || sidebarOpen) && <span>ระบบ Natee Partner</span>}
+                  {(!isSidebarCollapsed || sidebarOpen) && <span>ระบบร้านค้า</span>}
                 </button>
               )}
             </div>

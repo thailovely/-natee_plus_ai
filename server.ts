@@ -413,7 +413,29 @@ function setupServerRealTimeSync() {
                   saveDbToFirestore(cacheDb).catch(() => {});
                 }
               } else {
-                cacheDb[key] = incomingData;
+                if (key === 'bankSettings') {
+                  cacheDb.bankSettings = {
+                    ...(cacheDb.bankSettings || {}),
+                    ...(incomingData || {}),
+                    promoConfig: {
+                      ...(cacheDb.bankSettings?.promoConfig || {}),
+                      ...(incomingData?.promoConfig || {})
+                    },
+                    botConfig: {
+                      ...(cacheDb.bankSettings?.botConfig || {}),
+                      ...(incomingData?.botConfig || {})
+                    },
+                    notifySettings: {
+                      ...(cacheDb.bankSettings?.notifySettings || {}),
+                      ...(incomingData?.notifySettings || {})
+                    }
+                  };
+                  if (cacheDb.bankSettings.sellerRegulations && !incomingData?.sellerRegulations) {
+                    // Retain existing sellerRegulations
+                  }
+                } else {
+                  cacheDb[key] = incomingData;
+                }
               }
 
               if (key === 'members') {
@@ -772,6 +794,30 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
         }
       }
 
+      // Deep merge bankSettings so admin edits (regulations, botConfig, promoConfig, etc.) are never wiped out
+      const mergedBankSettings = {
+        ...(localDb?.bankSettings || {}),
+        ...(loadedData?.bankSettings || {}),
+        promoConfig: {
+          ...(localDb?.bankSettings?.promoConfig || {}),
+          ...(loadedData?.bankSettings?.promoConfig || {})
+        },
+        botConfig: {
+          ...(localDb?.bankSettings?.botConfig || {}),
+          ...(loadedData?.bankSettings?.botConfig || {})
+        },
+        notifySettings: {
+          ...(localDb?.bankSettings?.notifySettings || {}),
+          ...(loadedData?.bankSettings?.notifySettings || {})
+        }
+      };
+      if (localDb?.bankSettings?.sellerRegulations) {
+        mergedBankSettings.sellerRegulations = localDb.bankSettings.sellerRegulations;
+      }
+      if (loadedData?.bankSettings?.sellerRegulations) {
+        mergedBankSettings.sellerRegulations = loadedData.bankSettings.sellerRegulations;
+      }
+
       cacheDb = {
         members: mergedMembers,
         products: mergedProducts,
@@ -783,7 +829,7 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
         systemStats: loadedData.systemStats || (localDb && localDb.systemStats) || { totalPlanBReserves: 0, totalTaxReserves: 0, totalCompanyProfits: 0 },
         otps: loadedData.otps || {},
         packageProductChoices: loadedData.packageProductChoices || (localDb && localDb.packageProductChoices) || undefined,
-        bankSettings: loadedData.bankSettings || (localDb && localDb.bankSettings) || undefined,
+        bankSettings: mergedBankSettings,
         notifications: loadedData.notifications || (localDb && localDb.notifications) || []
       };
 
@@ -1555,6 +1601,31 @@ function writeDb(data) {
       console.warn("⚠️ [writeDb Safety] Restoring sellerProducts from cacheDb because incoming sellerProducts array was empty.");
       data.sellerProducts = [...cacheDb.sellerProducts];
     }
+
+    // Safety & Pruning: Preserve all tax/CSR/fee records 100% while limiting general transaction history to 50 pages max (1,000 txns)
+    if (Array.isArray(data.transactions)) {
+      const taxTransactions = data.transactions.filter((t: any) => 
+        t.type === 'Tax' || 
+        t.type === 'TaxReserve' || 
+        t.isTaxRecord === true ||
+        (t.details && (t.details.includes('ภาษี') || t.details.includes('Tax') || t.details.includes('บำรุงรักษาระบบ'))) ||
+        (t.description && (t.description.includes('ภาษี') || t.description.includes('Tax')))
+      );
+
+      const nonTaxTransactions = data.transactions.filter((t: any) => 
+        !(t.type === 'Tax' || 
+          t.type === 'TaxReserve' || 
+          t.isTaxRecord === true ||
+          (t.details && (t.details.includes('ภาษี') || t.details.includes('Tax') || t.details.includes('บำรุงรักษาระบบ'))) ||
+          (t.description && (t.description.includes('ภาษี') || t.description.includes('Tax'))))
+      );
+
+      const maxNonTaxItems = 1000; // 50 pages x 20 items
+      const trimmedNonTax = nonTaxTransactions.length > maxNonTaxItems ? nonTaxTransactions.slice(nonTaxTransactions.length - maxNonTaxItems) : nonTaxTransactions;
+
+      // Recombine preserved tax records with trimmed regular transactions
+      data.transactions = [...taxTransactions, ...trimmedNonTax].sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    }
   }
 
   if (data && data.members) {
@@ -1836,6 +1907,10 @@ function calculateBinaryCommissions(db, buyerId, pvAmount, orderId) {
 function processEShareDistribution(db, amount, triggerMemberId, excludeTriggerId = false) {
   if (amount <= 0) return;
   
+  const triggerMember = db.members.find(m => m.userId === triggerMemberId);
+  const triggerName = triggerMember ? `${triggerMember.name || ''} ${triggerMember.surname || ''}`.trim() : '';
+  const triggerInfoText = triggerName ? `${triggerMemberId} (${triggerName})` : triggerMemberId;
+
   // Eligible members are active members in XXL position, or who have eligibleRights > 0 (everyone except those with no rights)
   const eligibleMembers = db.members.filter(m => 
     (m.eligibleRights || 0) > 0 && 
@@ -1854,14 +1929,14 @@ function processEShareDistribution(db, amount, triggerMemberId, excludeTriggerId
     member.planBPoints = parseFloat(((member.planBPoints || 0) + planBPart).toFixed(6));
     member.balanceEShare = parseFloat(((member.balanceEShare || 0) + sharePerMember).toFixed(6));
     
-    // Log transaction
+    // Log transaction with explicit trigger member details
     db.transactions.push({
       id: "ALL_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
       userId: member.userId,
       type: "EShare",
       amount: eMoneyPart,
       currency: "E-Money",
-      description: `โบนัส All-Share จากรหัส ${triggerMemberId} (+${eMoneyPart.toFixed(4)} E-Money / +${planBPart.toFixed(4)} คะแนน Plan B)`,
+      description: `โบนัส All-Share จากรหัส ${triggerInfoText} (+${eMoneyPart.toFixed(4)} E-Money / +${planBPart.toFixed(4)} คะแนน Plan B)`,
       createdAt: new Date().toISOString()
     });
 
@@ -5025,10 +5100,12 @@ app.get('/api/seller/regulations', (req, res) => {
 8. หมุดตำแหน่งคลังสินค้าและพิกัดจัดส่งจะถูกล็อกเป็นภาพนิ่งเมื่อยืนยันเรียบร้อยแล้ว หากต้องการย้ายหรือแก้ไขพิกัด ต้องยื่นขออนุมัติปรับเปลี่ยนพิกัดกับทางแอดมินระบบ`;
 
   if (!db.bankSettings) db.bankSettings = {};
-  db.bankSettings.sellerRegulations = latestOfficialRegulations;
-  writeDb(db);
+  if (!db.bankSettings.sellerRegulations) {
+    db.bankSettings.sellerRegulations = latestOfficialRegulations;
+    writeDb(db);
+  }
 
-  res.json({ success: true, regulations: latestOfficialRegulations });
+  res.json({ success: true, regulations: db.bankSettings.sellerRegulations });
 });
 
 // Save Seller Regulations text (Admin with Manager/Admin role only)
