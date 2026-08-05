@@ -3032,6 +3032,170 @@ function ensurePizzaoneUser() {
   return;
 }
 
+
+// -------------------------------------------------------------
+// AI BOT & GEMINI ASSISTANT ENDPOINTS (NateeBot AI)
+// -------------------------------------------------------------
+
+// Initialize Gemini Client
+let aiGenClient = null;
+function getGeminiClient() {
+  if (!aiGenClient && process.env.GEMINI_API_KEY) {
+    try {
+      const { GoogleGenAI } = require('@google/genai');
+      aiGenClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    } catch (e) {
+      console.error("Failed to initialize GoogleGenAI client:", e);
+    }
+  }
+  return aiGenClient;
+}
+
+// GET AI BOT CONFIG
+app.get("/api/ai/bot-config", (req, res) => {
+  res.json({
+    success: true,
+    botConfig: {
+      enabled: true,
+      botName: "Natee bot",
+      greetingMsg: "สวัสดีค่ะ! หนูคือ Natee bot ผู้ช่วยปัญญาประดิษฐ์ประจำระบบ Natee Plus Market ยินดีให้คำแนะนำและตอบทุกข้อสงสัยเกี่ยวกับระบบค่ะ 🤖✨",
+      quickQuestions: [
+        "นที พลัส มาร์เก็ต คืออะไร?",
+        "วิธีสมัครแพ็กเกจ และคะแนน PV",
+        "วิธีเปิดร้านค้าขายของในระบบ",
+        "การฝากเงิน ถอนเงิน และสิทธิ์คงเหลือ"
+      ]
+    }
+  });
+});
+
+// POST AI CHATBOT (NateeBot)
+app.post("/api/ai/chat", async (req, res) => {
+  const { message } = req.body;
+  if (!message || typeof message !== "string" || !message.trim()) {
+    return res.status(400).json({ success: false, message: "กรุณาระบุข้อความที่ต้องการสอบถามค่ะ" });
+  }
+
+  const query = message.trim();
+  const systemInstruction = `คุณคือ Natee bot (น้องนที) ผู้ช่วยปัญญาประดิษฐ์ประจำระบบ Natee Plus Market (นที พลัส มาร์เก็ต)
+บุคลิกน่ารัก เป็นมิตร สุภาพ พูดจาไพเราะ มีหางเสียง (ค่ะ/นะคะ) ใช้ภาษาไทยเป็นหลัก
+คุณมีความเชี่ยวชาญเกี่ยวกับระบบ Natee Plus ดังนี้:
+1. Natee Plus Market คือแพลตฟอร์มอีคอมเมิร์ซ ช้อปปิ้งออนไลน์ และสวัสดิการชุมชน
+2. กระเป๋าเงิน e-Wallet ในระบบมี 3 ประเภท:
+   - e-Cash: เงินสดดิจิทัล ใช้ชำระสินค้า โอนให้เพื่อน หรือถอนเข้าบัญชีธนาคารได้
+   - e-Money: เงินสะสมสวัสดิการ สำหรับซื้อแพ็กเกจหรือแลกเปลี่ยนคูปอง
+   - e-Coupon: สิทธิ์คูปองส่วนลดและสวัสดิการพิเศษ
+3. การซื้อสินค้าและแพ็กเกจจะได้รับคะแนน PV (Point Value) เพื่อสะสมสิทธิ์ประโยชน์
+4. สมาชิกสามารถเปิดร้านค้าผู้ขาย (Seller) เพิ่มรายการสินค้า และขยายช่องทางจัดจำหน่ายได้ (สินค้าต้องผ่านการอนุมัติจากแอดมิน)
+5. มีระบบความปลอดภัยด้วย รหัส PIN 6 หลัก, รหัส OTP ผ่านอีเมล/LINE, และการยืนยันตัวตน KYC
+ตอบคำถามกระชับ ชัดเจน เข้าใจง่าย มีมิตรไมตรี และใช้ emoji ตกแต่งอย่างน่ารัก`;
+
+  const ai = getGeminiClient();
+  let aiReply = "";
+  let isMockResponse = false;
+
+  if (ai) {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: query,
+        config: {
+          systemInstruction,
+          temperature: 0.7,
+        }
+      });
+
+      if (response && response.text) {
+        aiReply = response.text.trim();
+      }
+    } catch (err) {
+      console.log("⚠️ Gemini API notice (falling back to smart NateeBot KB):", (err && err.message) ? err.message.slice(0, 100) : err);
+    }
+  }
+
+  // Smart Knowledge Base Fallback if AI quota exceeded or offline
+  if (!aiReply) {
+    isMockResponse = true;
+    const qLower = query.toLowerCase();
+
+    if (qLower.includes("คืออะไร") || qLower.includes("เกี่ยวกับ") || qLower.includes("นที พลัส") || qLower.includes("มาร์เก็ต")) {
+      aiReply = "Natee Plus Market (นที พลัส มาร์เก็ต) คือแพลตฟอร์มอีคอมเมิร์ซและระบบการเรียนรู้การตลาดออนไลน์รูปแบบใหม่ค่ะ! 🛒✨ ที่รวบรวมสินค้าคุณภาพ พร้อมระบบสวัสดิการ e-Wallet, คะแนน PV สะสม, และโอกาสเปิดร้านค้าสร้างรายได้ให้กับพาร์ทเนอร์ทุกท่านค่ะ";
+    } else if (qLower.includes("สมัคร") || qLower.includes("แพ็กเกจ") || qLower.includes("pv") || qLower.includes("คะแนน")) {
+      aiReply = "การเลือกซื้อแพ็กเกจสมาชิกใน Natee Plus จะทำให้คุณได้รับคะแนน PV (Point Value) สะสมค่ะ 💎 สามารถเลือกดูแพ็กเกจต่างๆ ได้ในเมนู 'สั่งซื้อแพ็กเกจ / เลือกคูปอง' และนำ PV ไปรับสิทธิประโยชน์ตามโครงสร้างสวัสดิการของระบบได้เลยนะคะ";
+    } else if (qLower.includes("ขาย") || qLower.includes("ร้านค้า") || qLower.includes("เปิดร้าน") || qLower.includes("ลงสินค้า")) {
+      aiReply = "หากต้องการเปิดร้านค้าใน Natee Plus Market สามารถยื่นคำขอในเมนู 'ศูนย์ผู้ขาย (Seller Center)' ได้เลยค่ะ 🏪 เมื่ออนุมัติแล้วสามารถลงรายการสินค้า กำหนดราคา PV และสต็อกได้ทันที (สินค้าใหม่จะรอแอดมินตรวจสอบก่อนแสดงผลหน้าร้านนะคะ)";
+    } else if (qLower.includes("ฝาก") || qLower.includes("ถอน") || qLower.includes("โอน") || qLower.includes("เงิน") || qLower.includes("wallet") || qLower.includes("กระเป๋า")) {
+      aiReply = "ระบบ e-Wallet ของเราแบ่งเป็น 3 กระเป๋าค่ะ 💳\n1. e-Cash: ใช้ชำระสินค้า โอนเงิน และถอนเข้าธนาคาร\n2. e-Money: ใช้สำหรับซื้อแพ็กเกจและคูปอง\n3. e-Coupon: คูปองส่วนลดสวัสดิการ\nสามารถทำรายการฝาก-ถอนได้ง่ายๆ ในเมนู 'กระเป๋าเงินดิจิทัล' ค่ะ";
+    } else if (qLower.includes("kyc") || qLower.includes("ยืนยันตัวตน") || qLower.includes("เอกสาร")) {
+      aiReply = "การยืนยันตัวตน KYC ช่วยเพิ่มความปลอดภัยในการทำธุรกรรมถอนเงินค่ะ 🛡️ สามารถอัปโหลดรูปบัตรประชาชนและหน้าสมุดบัญชีธนาคารได้ในหน้า 'โปรไฟล์ / ยืนยันตัวตน' แอดมินจะตรวจสอบและอนุมัติภายใน 24 ชม. ค่ะ";
+    } else {
+      aiReply = "สวัสดีค่ะ! น้องนที ยินดีให้บริการค่ะ 🤖✨ คุณสามารถสอบถามเกี่ยวกับการใช้งานระบบ Natee Plus Market, กระเป๋าเงิน e-Wallet, คะแนน PV, การสมัครแพ็กเกจ หรือการเปิดร้านค้าขายสินค้า ได้ตลอดเวลาเลยนะคะ!";
+    }
+  }
+
+  return res.json({
+    success: true,
+    reply: aiReply,
+    isMock: isMockResponse
+  });
+});
+
+// POST REFINE PRODUCT DESCRIPTION WITH AI
+app.post("/api/ai/refine-description", async (req, res) => {
+  const { name, category, subcategory, price, currentDesc } = req.body;
+  const productName = name || "สินค้า";
+  
+  const ai = getGeminiClient();
+  let refinedText = "";
+
+  if (ai) {
+    try {
+      const prompt = `ช่วยเขียนคำอธิบายรายละเอียดสินค้าให้น่าซื้อ น่าเชื่อถือ มีความโปรเฟสชันนัล และดึงดูดลูกค้าสำหรับขายบนหน้าร้านค้าออนไลน์ Natee Plus Market
+ข้อมูลสินค้า:
+- ชื่อสินค้า: ${productName}
+- หมวดหมู่: ${category || "ทั่วไป"} ${subcategory ? "(" + subcategory + ")" : ""}
+- ราคา: ฿${price || "0"}
+- รายละเอียดเดิม/คีย์เวิร์ด: ${currentDesc || "สินค้าคุณภาพดี พร้อมจัดส่ง"}
+
+คำแนะนำในการเขียน:
+- ใช้ภาษาไทยที่สุภาพ ดึงดูด กระชับ อ่านง่าย
+- แบ่งเป็นจุดเด่น คุณสมบัติสำคัญ และเหตุผลที่ควรซื้อ
+- ความยาวประมาณ 3-5 ย่อหน้าหรือจุดหัวข้อ
+- ใส่ emoji ตกแต่งเบาๆ อย่างเหมาะสม`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: prompt
+      });
+
+      if (response && response.text) {
+        refinedText = response.text.trim();
+      }
+    } catch (err) {
+      console.log("⚠️ Gemini API refine error (using fallback generator):", (err && err.message) ? err.message.slice(0, 100) : err);
+    }
+  }
+
+  if (!refinedText) {
+    refinedText = `🌟 ${productName} — สินค้าคุณภาพสูง คัดสรรพิเศษเพื่อคุณ!
+
+✨ จุดเด่นและคุณสมบัติสินค้า:
+• คัดสรรวัตถุดิบและวัสดุคุณภาพดีเยี่ยม ผ่านการตรวจสอบมาตรฐาน
+• เหมาะสำหรับการใช้งานประจำวัน คุ้มค่า คุ้มราคา
+• ราคาพิเศษเพียง ฿${price || "0"} บาท เท่านั้น
+
+📦 การจัดส่งและการรับประกัน:
+• สินค้าพร้อมส่ง จัดส่งรวดเร็วทันใจ พร้อมระบบติดตามพัสดุ
+• การันตีความพึงพอใจและได้รับการดูแลจากศูนย์ผู้ขาย Natee Plus Market`;
+  }
+
+  res.json({
+    success: true,
+    description: refinedText
+  });
+});
+
+
 async function startServer() {
   console.log("🚀 Booting NaTee Plus Full-Stack Server...");
   await loadDbFromFirestore();
