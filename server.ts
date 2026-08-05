@@ -1551,11 +1551,10 @@ function recalculateMemberEligibleRights(db: any, member: any) {
   if (db && db.orders && Array.isArray(db.orders)) {
     const pkgOrders = db.orders.filter((o: any) => o.userId === member.userId && (o.productId === 'pack_s' || o.productId === 'pack_m' || o.productId === 'pack_l' || o.productId === 'pack_xl' || o.productId === 'pack_xxl') && o.status !== 'Cancelled');
     if (pkgOrders.length > 0) {
-      const orderRightsSum = pkgOrders.reduce((sum: number, o: any) => {
-        const mult = o.productId === 'pack_s' ? 1000 : o.productId === 'pack_m' ? 5000 : o.productId === 'pack_l' ? 10000 : o.productId === 'pack_xl' ? 30000 : o.productId === 'pack_xxl' ? 50000 : 0;
-        return sum + (mult * (o.quantity || 1));
-      }, 0);
-      grantedRights = Math.max(grantedRights, orderRightsSum);
+      const maxOrderRights = Math.max(...pkgOrders.map((o: any) => {
+        return o.productId === 'pack_s' ? 1000 : o.productId === 'pack_m' ? 5000 : o.productId === 'pack_l' ? 10000 : o.productId === 'pack_xl' ? 30000 : o.productId === 'pack_xxl' ? 50000 : 0;
+      }));
+      grantedRights = Math.max(grantedRights, maxOrderRights);
     }
   }
 
@@ -3716,6 +3715,48 @@ app.post("/api/shop/purchase", async (req, res) => {
 
   if (!db.transactions) db.transactions = [];
   db.transactions.unshift(newTxn);
+
+  // Recalculate purchaser's remaining income rights
+  recalculateMemberEligibleRights(db, member);
+
+  // Distribute Direct Sponsor Bonus (Plan A ค่าแนะนำตรง 50%)
+  const sponsorId = member.sponsorId || "A260600001";
+  const sponsor = (db.members || []).find((m: any) => m.userId === sponsorId || m.username === sponsorId);
+
+  if (sponsor && sponsor.userId !== member.userId) {
+    const grossBonus = Math.round(isPkg ? (totalPrice * 0.50) : (totalPv > 0 ? totalPv * 0.50 : totalPrice * 0.10));
+
+    if (grossBonus > 0) {
+      // 80% net credited into E-Money wallet
+      const netBonus = Math.round(grossBonus * 0.80);
+
+      // Check sponsor's eligible rights limit
+      const isUnlimitedRights = sponsor.role === 'Admin' || sponsor.role === 'Manager' || sponsor.userId === 'A260600001' || sponsor.username === 'nateeplus';
+      const availableRights = isUnlimitedRights ? 999999999 : (sponsor.eligibleRights || 0);
+      const payableBonus = isUnlimitedRights ? netBonus : Math.min(netBonus, Math.max(0, availableRights));
+
+      if (payableBonus > 0) {
+        sponsor.balanceEMoney = (Number(sponsor.balanceEMoney) || 0) + payableBonus;
+
+        const bonusTxn = {
+          id: "BON_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+          userId: sponsor.userId,
+          username: sponsor.username,
+          type: "Bonus",
+          amount: payableBonus,
+          currency: "E-Money",
+          details: `ค่าแนะนำตรงตำแหน่ง ${member.rank || 'S'} ของรหัส ${(member.name + " " + (member.surname || "")).trim() || member.username} (${member.userId}) (ได้รับสุทธิหลังหัก 20% ตามเงื่อนไข)`,
+          status: "Approved",
+          createdAt: new Date().toISOString()
+        };
+
+        db.transactions.unshift(bonusTxn);
+
+        // Recalculate sponsor remaining rights after receiving bonus
+        recalculateMemberEligibleRights(db, sponsor);
+      }
+    }
+  }
 
   writeDb(db);
 
