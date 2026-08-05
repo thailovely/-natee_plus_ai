@@ -428,10 +428,6 @@ function setupServerRealTimeSync() {
                     notifySettings: {
                       ...(cacheDb.bankSettings?.notifySettings || {}),
                       ...(incomingData?.notifySettings || {})
-                    },
-                    featureToggles: {
-                      ...(cacheDb.bankSettings?.featureToggles || {}),
-                      ...(incomingData?.featureToggles || {})
                     }
                   };
                   if (cacheDb.bankSettings.sellerRegulations && !incomingData?.sellerRegulations) {
@@ -813,17 +809,6 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
         notifySettings: {
           ...(localDb?.bankSettings?.notifySettings || {}),
           ...(loadedData?.bankSettings?.notifySettings || {})
-        },
-        featureToggles: {
-          enableSlip2Go: true,
-          enableSCBNetPayout: true,
-          enableEFilingExport: true,
-          enableLiveSystem: true,
-          enableECouponExchange: true,
-          enableAiChatbot: true,
-          enablePromoPopup: true,
-          ...(localDb?.bankSettings?.featureToggles || {}),
-          ...(loadedData?.bankSettings?.featureToggles || {})
         }
       };
       if (localDb?.bankSettings?.sellerRegulations) {
@@ -6061,20 +6046,9 @@ app.get('/api/admin/kyc-queue', (req, res) => {
 
 // APPROVE KYC
 app.post('/api/admin/kyc-approve', (req, res) => {
-  const { userId, adminId, editorUserId } = req.body;
+  const { userId, adminId } = req.body;
   const db = readDb();
   
-  const requesterId = adminId || editorUserId;
-  if (requesterId) {
-    const requester = db.members.find((m: any) => m.userId === requesterId || m.username === requesterId);
-    const isSpecialAdmin = requesterId === 'admin' || requesterId === 'ADMIN001' || requesterId === 'A260001' || (typeof requesterId === 'string' && requesterId.toLowerCase().startsWith('admin'));
-    const roleUpper = (requester?.role || '').toUpperCase();
-    const isAllowed = isSpecialAdmin || roleUpper === 'ADMIN' || roleUpper === 'MANAGER' || requester?.username === 'admin' || requester?.userId === 'ADMIN001';
-    if (!isAllowed) {
-      return res.status(403).json({ success: false, message: "สิทธิ์การอนุมัติ KYC ถูกจำกัดเฉพาะผู้ใช้งานระดับ Admin หรือ Manager เท่านั้นค่ะ" });
-    }
-  }
-
   const member = db.members.find(m => m.userId === userId);
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
   
@@ -6097,19 +6071,8 @@ app.post('/api/admin/kyc-approve', (req, res) => {
 
 // REJECT KYC
 app.post('/api/admin/kyc-reject', (req, res) => {
-  const { userId, reason, adminId, editorUserId } = req.body;
+  const { userId, reason } = req.body;
   const db = readDb();
-
-  const requesterId = adminId || editorUserId;
-  if (requesterId) {
-    const requester = db.members.find((m: any) => m.userId === requesterId || m.username === requesterId);
-    const isSpecialAdmin = requesterId === 'admin' || requesterId === 'ADMIN001' || requesterId === 'A260001' || (typeof requesterId === 'string' && requesterId.toLowerCase().startsWith('admin'));
-    const roleUpper = (requester?.role || '').toUpperCase();
-    const isAllowed = isSpecialAdmin || roleUpper === 'ADMIN' || roleUpper === 'MANAGER' || requester?.username === 'admin' || requester?.userId === 'ADMIN001';
-    if (!isAllowed) {
-      return res.status(403).json({ success: false, message: "สิทธิ์การปฏิเสธ KYC ถูกจำกัดเฉพาะผู้ใช้งานระดับ Admin หรือ Manager เท่านั้นค่ะ" });
-    }
-  }
   
   const member = db.members.find(m => m.userId === userId);
   if (!member) return res.status(404).json({ success: false, message: "ไม่พบสมาชิก" });
@@ -7401,57 +7364,6 @@ app.post('/api/admin/test-notify', async (req, res) => {
   res.json(resObj);
 });
 
-// GET & SAVE FEATURE TOGGLES
-app.get('/api/admin/feature-toggles', (req, res) => {
-  const db = readDb();
-  const featureToggles = db.bankSettings?.featureToggles || {
-    enableSlip2Go: true,
-    enableSCBNetPayout: true,
-    enableEFilingExport: true,
-    enableLiveSystem: true,
-    enableECouponExchange: true,
-    enableAiChatbot: true,
-    enablePromoPopup: true
-  };
-  res.json({ success: true, featureToggles });
-});
-
-app.post('/api/admin/feature-toggles', (req, res) => {
-  const { featureToggles, editorUserId } = req.body;
-  const db = readDb();
-
-  if (editorUserId) {
-    const isSpecialAdmin = editorUserId === 'admin' || (typeof editorUserId === 'string' && editorUserId.toLowerCase().startsWith('admin')) || editorUserId === 'ADMIN001' || editorUserId === 'A260001';
-    const editor = db.members.find((m: any) => m.userId === editorUserId || m.username === editorUserId);
-    const roleUpper = (editor?.role || '').toUpperCase();
-    const isAllowed = isSpecialAdmin || roleUpper === 'ADMIN' || roleUpper === 'MANAGER' || editor?.username === 'admin' || editor?.userId === 'ADMIN001';
-    if (!isAllowed) {
-      return res.status(403).json({ success: false, message: "ไม่มีสิทธิ์ในการแก้ไขตั้งค่าระบบ (เฉพาะสิทธิ์ Manager หรือ Admin เท่านั้น)" });
-    }
-  }
-
-  if (!db.bankSettings) {
-    db.bankSettings = {
-      bankName: "ธนาคารไทยพาณิชย์",
-      bankAccount: "111-222-3333",
-      bankAccountName: "บริษัท นที พลัส มาร์เก็ต จำกัด"
-    };
-  }
-
-  db.bankSettings.featureToggles = {
-    enableSlip2Go: featureToggles?.enableSlip2Go !== undefined ? !!featureToggles.enableSlip2Go : true,
-    enableSCBNetPayout: featureToggles?.enableSCBNetPayout !== undefined ? !!featureToggles.enableSCBNetPayout : true,
-    enableEFilingExport: featureToggles?.enableEFilingExport !== undefined ? !!featureToggles.enableEFilingExport : true,
-    enableLiveSystem: featureToggles?.enableLiveSystem !== undefined ? !!featureToggles.enableLiveSystem : true,
-    enableECouponExchange: featureToggles?.enableECouponExchange !== undefined ? !!featureToggles.enableECouponExchange : true,
-    enableAiChatbot: featureToggles?.enableAiChatbot !== undefined ? !!featureToggles.enableAiChatbot : true,
-    enablePromoPopup: featureToggles?.enablePromoPopup !== undefined ? !!featureToggles.enablePromoPopup : true
-  };
-
-  writeDb(db);
-  res.json({ success: true, message: "บันทึกการตั้งค่าเปิด-ปิดฟีเจอร์ระบบเรียบร้อยแล้วค่ะ", featureToggles: db.bankSettings.featureToggles });
-});
-
 const CURRENT_APP_VERSION = "2.1.0";
 const BUILD_TIMESTAMP = new Date().toISOString();
 
@@ -8159,20 +8071,6 @@ app.post('/api/admin/member-update', (req, res) => {
       return res.status(403).json({
         success: false,
         message: "สิทธิ์การเปลี่ยนแปลงหรือถอดถอนผู้บริหารสูงสุด (Manager) ถูกสงวนไว้สำหรับสิทธิ์ Manager เท่านั้นค่ะ"
-      });
-    }
-  }
-
-  // 3. Validate financial balance / point adjustments: strictly restricted to Manager level or root admin
-  const isBalanceModified = balanceECash !== undefined || balanceEMoney !== undefined || balanceECoupon !== undefined || planBPoints !== undefined || eligibleRights !== undefined;
-  if (isBalanceModified) {
-    const editor = db.members.find((m: any) => m.userId === editorUserId || m.username === editorUserId);
-    const isSpecialAdmin = editorUserId === 'admin' || editorUserId === 'ADMIN001' || editorUserId === 'A260001' || (typeof editorUserId === 'string' && editorUserId.toLowerCase().startsWith('admin'));
-    const isManager = (editor?.role || '').toUpperCase() === 'MANAGER' || isSpecialAdmin || editor?.username === 'nateeplus';
-    if (!isManager) {
-      return res.status(403).json({
-        success: false,
-        message: "สิทธิ์การปรับแก้กระเป๋าเงิน (E-Cash, E-Money, E-Coupon) หรือคะแนนของสมาชิก ถูกสงวนไว้เฉพาะสิทธิ์ระดับ Manager เท่านั้นค่ะ"
       });
     }
   }
