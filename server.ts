@@ -3716,10 +3716,29 @@ app.post("/api/shop/purchase", async (req, res) => {
   if (!db.transactions) db.transactions = [];
   db.transactions.unshift(newTxn);
 
+  // 1. Purchaser E-Coupon Cashback Return for Package Purchase (Package S = 10 THB, Others = 10%)
+  if (isPkg) {
+    const cashbackECoupon = product.id === "pack_s" ? 10 : Math.round(totalPrice * 0.10);
+    if (cashbackECoupon > 0) {
+      member.balanceECoupon = (Number(member.balanceECoupon) || 0) + cashbackECoupon;
+      db.transactions.unshift({
+        id: "COUP_CB_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+        userId: member.userId,
+        username: member.username,
+        type: "Bonus",
+        currency: "E-Coupon",
+        amount: cashbackECoupon,
+        details: `รับ E-Coupon คืน ${cashbackECoupon} บาท (ส่วนลด) จากการเปิดแพ็กเกจ ${product.name}`,
+        status: "Approved",
+        createdAt: new Date().toISOString()
+      });
+    }
+  }
+
   // Recalculate purchaser's remaining income rights
   recalculateMemberEligibleRights(db, member);
 
-  // Distribute Direct Sponsor Bonus (Plan A ค่าแนะนำตรง 50%)
+  // 2. Distribute Direct Sponsor Bonus (Plan A ค่าแนะนำตรง 50%)
   const sponsorId = member.sponsorId || "A260600001";
   const sponsor = (db.members || []).find((m: any) => m.userId === sponsorId || m.username === sponsorId);
 
@@ -3727,34 +3746,175 @@ app.post("/api/shop/purchase", async (req, res) => {
     const grossBonus = Math.round(isPkg ? (totalPrice * 0.50) : (totalPv > 0 ? totalPv * 0.50 : totalPrice * 0.10));
 
     if (grossBonus > 0) {
-      // 80% net credited into E-Money wallet
-      const netBonus = Math.round(grossBonus * 0.80);
+      const rawNetEMoney = Math.round(grossBonus * 0.80);
+      const netECoupon = Math.round(grossBonus * 0.10);
+      const netPlanBPoints = Math.round((grossBonus * 0.05) * 100) / 100;
 
       // Check sponsor's eligible rights limit
       const isUnlimitedRights = sponsor.role === 'Admin' || sponsor.role === 'Manager' || sponsor.userId === 'A260600001' || sponsor.username === 'nateeplus';
       const availableRights = isUnlimitedRights ? 999999999 : (sponsor.eligibleRights || 0);
-      const payableBonus = isUnlimitedRights ? netBonus : Math.min(netBonus, Math.max(0, availableRights));
+      const payableEMoney = isUnlimitedRights ? rawNetEMoney : Math.min(rawNetEMoney, Math.max(0, availableRights));
 
-      if (payableBonus > 0) {
-        sponsor.balanceEMoney = (Number(sponsor.balanceEMoney) || 0) + payableBonus;
+      if (payableEMoney > 0) {
+        sponsor.balanceEMoney = (Number(sponsor.balanceEMoney) || 0) + payableEMoney;
 
-        const bonusTxn = {
+        db.transactions.unshift({
           id: "BON_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
           userId: sponsor.userId,
           username: sponsor.username,
           type: "Bonus",
-          amount: payableBonus,
+          amount: payableEMoney,
           currency: "E-Money",
           details: `ค่าแนะนำตรงตำแหน่ง ${member.rank || 'S'} ของรหัส ${(member.name + " " + (member.surname || "")).trim() || member.username} (${member.userId}) (ได้รับสุทธิหลังหัก 20% ตามเงื่อนไข)`,
           status: "Approved",
           createdAt: new Date().toISOString()
-        };
-
-        db.transactions.unshift(bonusTxn);
-
-        // Recalculate sponsor remaining rights after receiving bonus
-        recalculateMemberEligibleRights(db, sponsor);
+        });
       }
+
+      if (netECoupon > 0) {
+        sponsor.balanceECoupon = (Number(sponsor.balanceECoupon) || 0) + netECoupon;
+        db.transactions.unshift({
+          id: "COUP_BON_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+          userId: sponsor.userId,
+          username: sponsor.username,
+          type: "Bonus",
+          amount: netECoupon,
+          currency: "E-Coupon",
+          details: `โบนัส E-Coupon (หักเข้าคูปอง 10%) จากค่าแนะนำตรงตำแหน่ง ${member.rank || 'S'} ของรหัส ${(member.name + " " + (member.surname || "")).trim() || member.username} (${member.userId})`,
+          status: "Approved",
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      if (netPlanBPoints > 0) {
+        sponsor.planBPoints = (Number(sponsor.planBPoints) || 0) + netPlanBPoints;
+        db.transactions.unshift({
+          id: "PTS_BON_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+          userId: sponsor.userId,
+          username: sponsor.username,
+          type: "Bonus",
+          amount: netPlanBPoints,
+          currency: "PlanBPoints",
+          details: `คะแนน Plan B Points (5%) จากค่าแนะนำตรงตำแหน่ง ${member.rank || 'S'} ของรหัส ${(member.name + " " + (member.surname || "")).trim() || member.username} (${member.userId})`,
+          status: "Approved",
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      recalculateMemberEligibleRights(db, sponsor);
+    }
+  }
+
+  // 3. All-Share Pool Distribution (Package S = 10 THB, Others = 3% of totalPv)
+  const allSharePool = isPkg ? (product.id === 'pack_s' ? 10 : Math.round(totalPrice * 0.03)) : (totalPv > 0 ? Math.round(totalPv * 0.03) : 0);
+
+  if (allSharePool > 0) {
+    const activeMembers = (db.members || []).filter((m: any) => {
+      const isQual = m.rank === 'S' || m.rank === 'M' || m.rank === 'L' || m.rank === 'XL' || m.rank === 'XXL' || m.role === 'Admin' || m.role === 'Manager';
+      const isUnlim = m.role === 'Admin' || m.role === 'Manager' || m.userId === 'A260600001' || m.username === 'nateeplus';
+      return isQual && (isUnlim || (m.eligibleRights || 0) > 0);
+    });
+
+    if (activeMembers.length > 0) {
+      const perMemberShare = allSharePool / activeMembers.length;
+      const shareEMoney = Math.round((perMemberShare / 2) * 10000) / 10000;
+      const sharePlanBPoints = Math.round((perMemberShare / 2) * 10000) / 10000;
+
+      activeMembers.forEach((m: any) => {
+        const isUnlim = m.role === 'Admin' || m.role === 'Manager' || m.userId === 'A260600001' || m.username === 'nateeplus';
+        const availRights = isUnlim ? 999999999 : (m.eligibleRights || 0);
+        const payableShare = isUnlim ? shareEMoney : Math.min(shareEMoney, Math.max(0, availRights));
+
+        if (payableShare > 0) {
+          m.balanceEMoney = (Number(m.balanceEMoney) || 0) + payableShare;
+          m.planBPoints = (Number(m.planBPoints) || 0) + sharePlanBPoints;
+
+          db.transactions.unshift({
+            id: "ALL_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+            userId: m.userId,
+            username: m.username,
+            type: "EShare",
+            currency: "E-Money",
+            amount: payableShare,
+            details: `โบนัส All-Share จากรหัส ${(member.name + " " + (member.surname || "")).trim() || member.username} (${member.userId}) (+${payableShare.toFixed(4)} E-Money / +${sharePlanBPoints.toFixed(4)} คะแนน Plan B)`,
+            status: "Approved",
+            createdAt: new Date().toISOString()
+          });
+
+          recalculateMemberEligibleRights(db, m);
+        }
+      });
+    }
+  }
+
+  // 4. Unilevel 20-Level Binary Tree Commission (Plan A Placement) if PV > 0
+  if (totalPv > 0) {
+    let currentParentId = member.parentId;
+    let level = 1;
+
+    const depthLimits: Record<string, number> = {
+      'S': 1,
+      'M': 5,
+      'L': 10,
+      'XL': 15,
+      'XXL': 20
+    };
+
+    while (currentParentId && currentParentId !== 'SYSTEM' && level <= 20) {
+      const parent = (db.members || []).find((m: any) => m.userId === currentParentId || m.username === currentParentId);
+      if (!parent) break;
+
+      const isUnlim = parent.role === 'Admin' || parent.role === 'Manager' || parent.userId === 'A260600001' || parent.username === 'nateeplus';
+      const maxAllowedLevel = isUnlim ? 20 : (depthLimits[parent.rank] || 0);
+
+      if (level <= maxAllowedLevel) {
+        const availRights = isUnlim ? 999999999 : (parent.eligibleRights || 0);
+        if (availRights > 0 || isUnlim) {
+          const grossLevelBonus = totalPv * 0.025;
+          const rawNetEMoney = grossLevelBonus * 0.80;
+          const netECoupon = grossLevelBonus * 0.10;
+          const netPlanBPoints = grossLevelBonus * 0.05;
+
+          const payableEMoney = isUnlim ? rawNetEMoney : Math.min(rawNetEMoney, Math.max(0, availRights));
+
+          if (payableEMoney > 0) {
+            parent.balanceEMoney = (Number(parent.balanceEMoney) || 0) + payableEMoney;
+            parent.balanceECoupon = (Number(parent.balanceECoupon) || 0) + netECoupon;
+            parent.planBPoints = (Number(parent.planBPoints) || 0) + netPlanBPoints;
+
+            db.transactions.unshift({
+              id: "COMM_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+              userId: parent.userId,
+              username: parent.username,
+              type: "Bonus",
+              currency: "E-Money",
+              amount: payableEMoney,
+              details: `คอมมิชชันผังไบนารี ชั้นที่ ${level} จากการสั่งซื้อของรหัส ${(member.name + " " + (member.surname || "")).trim() || member.username} (${member.userId})`,
+              status: "Approved",
+              createdAt: new Date().toISOString()
+            });
+
+            if (netECoupon > 0) {
+              db.transactions.unshift({
+                id: "COUP_COMM_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+                userId: parent.userId,
+                username: parent.username,
+                type: "Bonus",
+                currency: "E-Coupon",
+                amount: netECoupon,
+                details: `โบนัส E-Coupon (หักเข้าคูปอง 10%) จากคอมมิชชันผังไบนารี ชั้นที่ ${level} จากการสั่งซื้อของรหัส ${(member.name + " " + (member.surname || "")).trim() || member.username} (${member.userId})`,
+                status: "Approved",
+                createdAt: new Date().toISOString()
+              });
+            }
+
+            recalculateMemberEligibleRights(db, parent);
+          }
+        }
+      }
+
+      currentParentId = parent.parentId;
+      level++;
     }
   }
 
