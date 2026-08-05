@@ -3918,6 +3918,20 @@ app.post("/api/shop/purchase", async (req, res) => {
     }
   }
 
+  // 5. CSR Fund (กองทุนปันสุข CSR) Contribution
+  const csrContribution = isPkg ? (product.id === 'pack_s' ? 5 : Math.round(totalPrice * 0.05)) : (totalPv > 0 ? Math.round(totalPv * 0.05) : 0);
+  if (csrContribution > 0) {
+    if (!db.csrFund) db.csrFund = { balance: 0, history: [] };
+    if (!db.csrFund.history) db.csrFund.history = [];
+    db.csrFund.balance = (Number(db.csrFund.balance) || 0) + csrContribution;
+    db.csrFund.history.unshift({
+      id: "CSR_CONT_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+      amount: csrContribution,
+      details: `สะสมเข้ากองทุนปันสุข CSR จากการซื้อ${isPkg ? 'แพ็กเกจ' : 'สินค้า'} ${product.name} ของรหัส ${(member.name + " " + (member.surname || "")).trim() || member.username} (${member.userId})`,
+      createdAt: new Date().toISOString()
+    });
+  }
+
   writeDb(db);
 
   res.json({
