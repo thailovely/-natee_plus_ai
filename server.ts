@@ -1569,10 +1569,18 @@ function recalculateMemberEligibleRights(db: any, member: any) {
     return;
   }
 
-  // 2. Calculate total E-Money withdrawn or spent by this member
+  // 2. Calculate total E-Money withdrawn or spent by this member (excluding admin manual adjustments)
   const txns = (db && db.transactions) ? db.transactions : [];
   const withdrawnOrSpentEMoney = txns
-    .filter((t: any) => t.userId === member.userId && t.currency === "E-Money" && (t.type === "Withdraw" || t.type === "WithdrawalRequest" || t.type === "Withdrawal") && t.status !== "Rejected" && t.status !== "Cancelled")
+    .filter((t: any) => 
+      t.userId === member.userId && 
+      t.currency === "E-Money" && 
+      (t.type === "Withdraw" || t.type === "WithdrawalRequest" || t.type === "Withdrawal") && 
+      !t.id?.startsWith("ADJ_") &&
+      !t.details?.includes("ผู้ดูแลระบบปรับปรุงยอด") &&
+      t.status !== "Rejected" && 
+      t.status !== "Cancelled"
+    )
     .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
 
   // 3. Total E-Money earned = current balanceEMoney + withdrawnOrSpentEMoney
@@ -1630,6 +1638,7 @@ function processAndEnsurePackageCommissions(db: any): boolean {
   );
 
   packageOrders.forEach((order: any) => {
+    if (order.processedCommissions) return;
     const member = (db.members || []).find((m: any) => m.userId === order.userId || m.username === order.userId);
     if (!member) return;
 
@@ -1773,6 +1782,7 @@ function processAndEnsurePackageCommissions(db: any): boolean {
       }
     }
 
+    order.processedCommissions = true;
     if (modified) {
       member.lastUpdated = Date.now();
     }
@@ -3002,16 +3012,18 @@ app.post('/api/admin/member-update', (req, res) => {
     }
   }
 
-  // 3. Validate financial balance / point adjustments: strictly restricted to Manager level or root admin
+  // 3. Validate financial balance / point adjustments: restricted to Manager level or Admin with verified Manager OTP
   const isBalanceModified = balanceECash !== undefined || balanceEMoney !== undefined || balanceECoupon !== undefined || planBPoints !== undefined || eligibleRights !== undefined;
   if (isBalanceModified) {
     const editor = db.members.find((m: any) => m.userId === editorUserId || m.username === editorUserId);
     const isSpecialAdmin = editorUserId === 'admin' || editorUserId === 'ADMIN001' || editorUserId === 'A260001' || (typeof editorUserId === 'string' && editorUserId.toLowerCase().startsWith('admin'));
     const isManager = (editor?.role || '').toUpperCase() === 'MANAGER' || isSpecialAdmin || editor?.username === 'nateeplus';
-    if (!isManager) {
+    const isAdminWithPermission = (editor?.role || '').toUpperCase() === 'ADMIN';
+
+    if (!isManager && !isAdminWithPermission) {
       return res.status(403).json({
         success: false,
-        message: "สิทธิ์การปรับแก้กระเป๋าเงิน (E-Cash, E-Money, E-Coupon) หรือคะแนนของสมาชิก ถูกสงวนไว้เฉพาะสิทธิ์ระดับ Manager เท่านั้นค่ะ"
+        message: "สิทธิ์การปรับแก้กระเป๋าเงิน (E-Cash, E-Money, E-Coupon) หรือคะแนนของสมาชิก ถูกสงวนไว้เฉพาะสิทธิ์ระดับ Manager หรือ Admin ที่ได้รับอนุมัติด้วย OTP เท่านั้นค่ะ"
       });
     }
   }
@@ -3052,7 +3064,7 @@ app.post('/api/admin/member-update', (req, res) => {
       db.transactions.push({
         id: "ADJ_CASH_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
         userId: member.userId,
-        type: curr > prev ? "Deposit" : "Withdraw",
+        type: "Adjustment",
         amount: Math.abs(curr - prev),
         currency: "E-Cash",
         details: "ผู้ดูแลระบบปรับปรุงยอด E-Cash (จาก ฿" + (prev.toFixed(2)) + " เป็น ฿" + (curr.toFixed(2)) + ")",
@@ -3069,7 +3081,7 @@ app.post('/api/admin/member-update', (req, res) => {
       db.transactions.push({
         id: "ADJ_MNY_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
         userId: member.userId,
-        type: curr > prev ? "Deposit" : "Withdraw",
+        type: "Adjustment",
         amount: Math.abs(curr - prev),
         currency: "E-Money",
         details: "ผู้ดูแลระบบปรับปรุงยอด E-Money (จาก ฿" + (prev.toFixed(2)) + " เป็น ฿" + (curr.toFixed(2)) + ")",
@@ -3086,7 +3098,7 @@ app.post('/api/admin/member-update', (req, res) => {
       db.transactions.push({
         id: "ADJ_COUP_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
         userId: member.userId,
-        type: curr > prev ? "Deposit" : "Withdraw",
+        type: "Adjustment",
         amount: Math.abs(curr - prev),
         currency: "E-Coupon",
         details: "ผู้ดูแลระบบปรับปรุงยอด E-Coupon (จาก ฿" + (prev.toFixed(2)) + " เป็น ฿" + (curr.toFixed(2)) + ")",
@@ -3098,9 +3110,12 @@ app.post('/api/admin/member-update', (req, res) => {
   if (sellerStatus !== undefined) member.sellerStatus = sellerStatus;
   if (eligibleRights !== undefined) member.eligibleRights = Number(eligibleRights);
   if (parentId !== undefined) member.parentId = parentId;
-  if (side !== undefined) member.side = side;
+  if (side !== undefined) {
+    member.side = (side === "Left" || side === "L") ? "L" : (side === "Right" || side === "R") ? "R" : side;
+  }
   if (planBPoints !== undefined) member.planBPoints = Number(planBPoints);
 
+  member.lastUpdated = Date.now();
   writeDb(db);
   res.json({ success: true, message: "แก้ไขข้อมูลสมาชิก " + (member.username) + " สำเร็จเรียบร้อยแล้ว" });
 });
