@@ -620,16 +620,17 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
             mergedMembers.push(localMember);
             hasMergedChanges = true;
           } else {
-            // If local member's state is newer (based on lastUpdated), preserve the local member data completely!
             const fMember = mergedMembers[idx];
-            if (localMember.lastUpdated && fMember.lastUpdated && localMember.lastUpdated > fMember.lastUpdated) {
-              console.log("🛠️ [Self-Heal] Restoring newer local member data for " + (localMember.userId) + " (Local: " + (localMember.lastUpdated) + " > Firestore: " + (fMember.lastUpdated) + ")");
-              mergedMembers[idx] = { ...localMember };
+            const localTime = localMember.lastUpdated || 0;
+            const firestoreTime = fMember.lastUpdated || 0;
+            const localHasRank = localMember.rank && localMember.rank !== 'Member';
+            const firestoreIsMember = !fMember.rank || fMember.rank === 'Member';
+
+            if (localTime >= firestoreTime || (localHasRank && firestoreIsMember)) {
+              mergedMembers[idx] = { ...fMember, ...localMember };
               hasMergedChanges = true;
             } else {
-              // Self-heal/merge: If the local member is Active but Firestore is Pending (e.g. write quota failed), preserve the approved active state!
               if (localMember.sellerStatus === 'Active' && fMember.sellerStatus !== 'Active') {
-                console.log("🛠️ Self-healing member " + (localMember.userId) + " (" + (localMember.sellerCode) + ") status to Active (restoring local approved state)");
                 fMember.sellerStatus = 'Active';
                 if (localMember.sellerCode) {
                   fMember.sellerCode = localMember.sellerCode;
@@ -1525,6 +1526,11 @@ function readDb() {
     });
   }
 
+  const packageCommissionsUpdated = processAndEnsurePackageCommissions(db);
+  if (packageCommissionsUpdated) {
+    writeDb(db);
+  }
+
   cacheDb = db;
   return db;
 }
@@ -1576,6 +1582,203 @@ function recalculateMemberEligibleRights(db: any, member: any) {
   // 4. Remaining Eligible Rights = Granted Rights - Total E-Money Earned
   const remainingRights = Math.max(0, grantedRights - totalEMoneyEarned);
   member.eligibleRights = parseFloat(remainingRights.toFixed(4));
+}
+
+function findAndPlaceBinaryMember(db: any, sponsorId: string) {
+  const members = db.members || [];
+  let root = members.find((m: any) => m.userId === sponsorId || m.username === sponsorId);
+  if (!root) {
+    root = members.find((m: any) => m.userId === "A260600001");
+  }
+  if (!root) {
+    return { parentId: "A260600001", side: "L" };
+  }
+
+  const queue = [root.userId];
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const currentId = queue.shift()!;
+    if (visited.has(currentId)) continue;
+    visited.add(currentId);
+
+    const children = members.filter((m: any) => m.parentId === currentId);
+    const leftChild = children.find((m: any) => m.side === "L");
+    const rightChild = children.find((m: any) => m.side === "R");
+
+    if (!leftChild) {
+      return { parentId: currentId, side: "L" };
+    }
+    if (!rightChild) {
+      return { parentId: currentId, side: "R" };
+    }
+
+    queue.push(leftChild.userId);
+    queue.push(rightChild.userId);
+  }
+
+  return { parentId: root.userId, side: "L" };
+}
+
+function processAndEnsurePackageCommissions(db: any): boolean {
+  if (!db || !db.orders || !Array.isArray(db.orders)) return false;
+  let modified = false;
+
+  const packageOrders = db.orders.filter((o: any) => 
+    (o.productId?.startsWith("pack_") || o.productCategory === "Package") && 
+    o.status === "Completed"
+  );
+
+  packageOrders.forEach((order: any) => {
+    const member = (db.members || []).find((m: any) => m.userId === order.userId || m.username === order.userId);
+    if (!member) return;
+
+    // 1. Upgrade Rank & Binary placement
+    const rankMap: Record<string, string> = { pack_s: "S", pack_m: "M", pack_l: "L", pack_xl: "XL", pack_xxl: "XXL" };
+    const targetRank = rankMap[order.productId] || "S";
+    if (!member.rank || member.rank === "Member") {
+      member.rank = targetRank;
+      member.selectedPackageId = order.productId;
+      if (!member.parentId || member.parentId === "") {
+        const slot = findAndPlaceBinaryMember(db, member.sponsorId || "A260600001");
+        member.parentId = slot.parentId;
+        member.side = slot.side;
+      }
+      modified = true;
+    }
+
+    // 2. Purchaser E-Coupon Cashback
+    const hasCouponTxn = (db.transactions || []).some((t: any) => t.userId === member.userId && t.currency === "E-Coupon" && t.details?.includes(order.id));
+    if (!hasCouponTxn) {
+      const cashbackECoupon = order.productId === "pack_s" ? 10 : Math.round((order.totalPrice || 100) * 0.10);
+      if (cashbackECoupon > 0) {
+        member.balanceECoupon = (Number(member.balanceECoupon) || 0) + cashbackECoupon;
+        if (!db.transactions) db.transactions = [];
+        db.transactions.unshift({
+          id: "PTS_COU_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+          userId: member.userId,
+          username: member.username,
+          type: "Bonus",
+          currency: "E-Coupon",
+          amount: cashbackECoupon,
+          details: `คูปองส่วนลด E-Coupon สะสมคืน (+${cashbackECoupon} คูปอง) จากการสั่งซื้อแพ็กเกจ ${order.productName || order.productId} (อ้างอิง: ${order.id})`,
+          status: "Approved",
+          createdAt: order.createdAt || new Date().toISOString()
+        });
+        modified = true;
+      }
+    }
+
+    // 3. Plan B Points (5 pts for pack_s)
+    const hasPlanBTxn = (db.transactions || []).some((t: any) => t.userId === member.userId && t.currency === "PlanBPoints" && t.details?.includes(order.id));
+    if (!hasPlanBTxn && order.productId === "pack_s") {
+      member.planBPoints = (Number(member.planBPoints) || 0) + 5;
+      if (!db.transactions) db.transactions = [];
+      db.transactions.unshift({
+        id: "PTS_PKG_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+        userId: member.userId,
+        username: member.username,
+        type: "Bonus",
+        currency: "PlanBPoints",
+        amount: 5,
+        details: `คะแนนสะสมโครงสร้าง Plan B Points (+5 คะแนน) จากการเปิดแพ็กเกจ S (อ้างอิง: ${order.id})`,
+        status: "Approved",
+        createdAt: order.createdAt || new Date().toISOString()
+      });
+      checkAndSpawnPlanBNode(db, member);
+      modified = true;
+    }
+
+    // 4. CSR Fund (5 THB for pack_s)
+    if (!db.csrFund) db.csrFund = { balance: 0, history: [] };
+    if (!db.csrFund.history) db.csrFund.history = [];
+    const hasCsrTxn = db.csrFund.history.some((h: any) => h.details?.includes(order.id) || (h.userId === member.userId && h.createdAt === order.createdAt));
+    if (!hasCsrTxn) {
+      const csrContribution = order.productId === "pack_s" ? 5 : Math.round((order.totalPrice || 100) * 0.05);
+      if (csrContribution > 0) {
+        db.csrFund.balance = (Number(db.csrFund.balance) || 0) + csrContribution;
+        db.csrFund.history.unshift({
+          id: "CSR_CONT_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+          amount: csrContribution,
+          details: `สะสมเข้ากองทุนปันสุข CSR จากการซื้อแพ็กเกจ ${order.productName || order.productId} ของรหัส ${member.name || member.username} (${member.userId}) (อ้างอิง: ${order.id})`,
+          createdAt: order.createdAt || new Date().toISOString()
+        });
+        modified = true;
+      }
+    }
+
+    // 5. Direct Referral Bonus to Sponsor if missing
+    if (member.sponsorId) {
+      const sponsor = (db.members || []).find((m: any) => m.userId === member.sponsorId);
+      if (sponsor) {
+        const hasSponsorBonus = (db.transactions || []).some((t: any) => t.userId === sponsor.userId && t.details?.includes(member.userId) && (t.type === "Bonus" || t.currency === "E-Money"));
+        if (!hasSponsorBonus) {
+          const directBonus = order.productId === "pack_s" ? 40 : Math.round((order.totalPrice || 100) * 0.40);
+          if (directBonus > 0) {
+            sponsor.balanceEMoney = (Number(sponsor.balanceEMoney) || 0) + directBonus;
+            if (!db.transactions) db.transactions = [];
+            db.transactions.unshift({
+              id: "BON_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+              userId: sponsor.userId,
+              username: sponsor.username,
+              type: "Bonus",
+              currency: "E-Money",
+              amount: directBonus,
+              details: `ค่าแนะนำตรงตำแหน่ง ${targetRank} ของรหัส ${(member.name + " " + (member.surname || "")).trim() || member.username} (${member.userId}) (ได้รับสุทธิหลังหัก 20% ตามเงื่อนไข) (อ้างอิง: ${order.id})`,
+              status: "Approved",
+              createdAt: order.createdAt || new Date().toISOString()
+            });
+            checkAndSpawnPlanBNode(db, sponsor);
+            recalculateMemberEligibleRights(db, sponsor);
+            modified = true;
+          }
+        }
+      }
+    }
+
+    // 6. All-Share Pool Distribution
+    const hasAllShareTxn = (db.transactions || []).some((t: any) => t.type === "EShare" && t.details?.includes(order.id));
+    if (!hasAllShareTxn) {
+      const allShareAmount = order.productId === "pack_s" ? 10 : Math.round((order.totalPv || 0) * 0.03);
+      if (allShareAmount > 0) {
+        const activeMembers = (db.members || []).filter((m: any) => (m.eligibleRights || 0) > 0 || m.rank === "S" || m.rank === "M" || m.rank === "L" || m.rank === "XL" || m.rank === "XXL");
+        if (activeMembers.length > 0) {
+          const perUserShare = allShareAmount / activeMembers.length;
+          const payableShare = parseFloat((perUserShare * 0.50).toFixed(4));
+          const sharePlanBPoints = parseFloat(((perUserShare * 0.50) / 10).toFixed(4));
+
+          activeMembers.forEach((m: any) => {
+            if (payableShare > 0) m.balanceEMoney = (Number(m.balanceEMoney) || 0) + payableShare;
+            if (sharePlanBPoints > 0) {
+              m.planBPoints = (Number(m.planBPoints) || 0) + sharePlanBPoints;
+              checkAndSpawnPlanBNode(db, m);
+            }
+
+            if (!db.transactions) db.transactions = [];
+            db.transactions.unshift({
+              id: "ALL_" + Math.random().toString(36).substring(2, 10).toUpperCase(),
+              userId: m.userId,
+              username: m.username,
+              type: "EShare",
+              currency: "E-Money",
+              amount: payableShare,
+              details: `โบนัส All-Share จากรหัส ${member.name || member.username} (${member.userId}) (+${payableShare.toFixed(4)} E-Money / +${sharePlanBPoints.toFixed(4)} คะแนน Plan B) (อ้างอิง: ${order.id})`,
+              status: "Approved",
+              createdAt: order.createdAt || new Date().toISOString()
+            });
+            recalculateMemberEligibleRights(db, m);
+          });
+          modified = true;
+        }
+      }
+    }
+
+    if (modified) {
+      member.lastUpdated = Date.now();
+    }
+  });
+
+  return modified;
 }
 
 function checkAndSpawnPlanBNode(db: any, member: any) {
@@ -1741,6 +1944,9 @@ function writeDb(data) {
   cacheDb = data;
   const currentDbFile = isSandboxActive ? DB_FILE_SANDBOX : DB_FILE;
   fs.writeFileSync(currentDbFile, JSON.stringify(data, null, 2), 'utf8');
+  if (isSandboxActive) {
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
+  }
   if (isDatabaseLoadedFromFirestore) {
     saveDbToFirestore(data).catch(err => {
       console.error("❌ Async save to Firestore failed:", err);
@@ -3631,45 +3837,6 @@ app.get('/api/mlm/search-downline', (req, res) => {
 });
 
 
-
-// =============================================================
-// HELPER: BINARY TREE PLACEMENT
-// =============================================================
-function findAndPlaceBinaryMember(db: any, sponsorId: string) {
-  const members = db.members || [];
-  let root = members.find((m: any) => m.userId === sponsorId || m.username === sponsorId);
-  if (!root) {
-    root = members.find((m: any) => m.userId === "A260600001");
-  }
-  if (!root) {
-    return { parentId: "A260600001", side: "L" };
-  }
-
-  const queue = [root.userId];
-  const visited = new Set<string>();
-
-  while (queue.length > 0) {
-    const currentId = queue.shift()!;
-    if (visited.has(currentId)) continue;
-    visited.add(currentId);
-
-    const children = members.filter((m: any) => m.parentId === currentId);
-    const leftChild = children.find((m: any) => m.side === "L");
-    const rightChild = children.find((m: any) => m.side === "R");
-
-    if (!leftChild) {
-      return { parentId: currentId, side: "L" };
-    }
-    if (!rightChild) {
-      return { parentId: currentId, side: "R" };
-    }
-
-    queue.push(leftChild.userId);
-    queue.push(rightChild.userId);
-  }
-
-  return { parentId: root.userId, side: "L" };
-}
 
 // =============================================================
 // SHOP ENDPOINTS (PACKAGE & PRODUCT PURCHASES)
