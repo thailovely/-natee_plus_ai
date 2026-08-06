@@ -1043,6 +1043,12 @@ export default function App() {
   const [sellerNewMessageText, setSellerNewMessageText] = useState<string>('');
   const [sellerShippingTracking, setSellerShippingTracking] = useState<{[key: string]: { company: string, trackingNo: string, note: string }}>({});
   
+  // Tax Credit Notes & Order Cancellation States
+  const [creditNotes, setCreditNotes] = useState<any[]>([]);
+  const [selectedCreditNoteForView, setSelectedCreditNoteForView] = useState<any | null>(null);
+  const [cancelOrderModalData, setCancelOrderModalData] = useState<{ orderId: string; productName: string; userId: string; totalPrice: number } | null>(null);
+  const [cancelOrderReason, setCancelOrderReason] = useState<string>('ออกบิลซ้ำเนื่องจากข้อผิดพลาดของระบบ');
+  
   // CSR scrolling text state
   const [csrFeed, setCsrFeed] = useState<any[]>([]);
   const [csrBalance, setCsrBalance] = useState<number>(0);
@@ -3132,6 +3138,10 @@ export default function App() {
       const r6 = await fetch('/api/admin/orders');
       const d6 = await r6.json();
       if (d6.success) setAdminOrders(d6.orders || []);
+
+      const rCN = await fetch('/api/admin/credit-notes');
+      const dCN = await rCN.json();
+      if (dCN.success) setCreditNotes(dCN.creditNotes || []);
 
       // Fetch all products for admin management
       const rProds = await fetch('/api/admin/all-products');
@@ -5604,6 +5614,36 @@ export default function App() {
         showNotif(d.message, 'error');
       }
     } catch (err) {}
+  };
+
+  const handleCancelOrderSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cancelOrderModalData) return;
+    try {
+      const res = await fetch('/api/admin/cancel-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: cancelOrderModalData.orderId,
+          reason: cancelOrderReason,
+          adminName: currentUser?.name || currentUser?.userId || 'Admin'
+        })
+      });
+      const d = await res.json();
+      if (d.success) {
+        showNotif(d.message, 'success');
+        setCancelOrderModalData(null);
+        setCancelOrderReason('ออกบิลซ้ำเนื่องจากข้อผิดพลาดของระบบ');
+        fetchAdminQueues();
+        if (d.creditNote) {
+          setSelectedCreditNoteForView(d.creditNote);
+        }
+      } else {
+        showNotif(d.message || 'ไม่สามารถยกเลิกคำสั่งซื้อได้', 'error');
+      }
+    } catch (err: any) {
+      showNotif('เกิดข้อผิดพลาดในการยกเลิกคำสั่งซื้อ: ' + (err.message || err), 'error');
+    }
   };
 
   // Seller Centre API Hooks
@@ -19158,6 +19198,7 @@ export default function App() {
                         <option value="">ทั้งหมด</option>
                         <option value="Processing">รอดำเนินการ (Processing)</option>
                         <option value="Completed">จัดส่งเรียบร้อย (Completed)</option>
+                        <option value="Cancelled">ยกเลิกแล้ว / ใบลดหนี้ (Cancelled)</option>
                       </select>
                     </div>
                   </div>
@@ -19216,17 +19257,71 @@ export default function App() {
                                   <span className="bg-amber-100 text-amber-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-amber-200">
                                     รอดำเนินการ
                                   </span>
-                                  <button 
-                                    onClick={() => handleCompleteOrder(order.id)}
-                                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-2 py-1 rounded text-[9px] cursor-pointer mt-1"
+                                  <div className="flex flex-col gap-1 mt-1">
+                                    <button 
+                                      onClick={() => handleCompleteOrder(order.id)}
+                                      className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-2 py-1 rounded text-[9px] cursor-pointer"
+                                    >
+                                      ยืนยันการจัดส่งแล้ว
+                                    </button>
+                                    <button
+                                      onClick={() => setCancelOrderModalData({
+                                        orderId: order.id,
+                                        productName: order.productName || 'สินค้า/แพ็กเกจ',
+                                        userId: order.userId,
+                                        totalPrice: order.totalPrice || 0
+                                      })}
+                                      className="bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold px-2 py-1 rounded text-[9px] cursor-pointer border border-rose-200"
+                                    >
+                                      🚫 ยกเลิกบิล / ออกใบลดหนี้
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : order.status === "Cancelled" ? (
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className="bg-red-100 text-red-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-red-200">
+                                    🚫 ยกเลิกบิลแล้ว
+                                  </span>
+                                  <button
+                                    onClick={() => {
+                                      const cn = creditNotes.find((c: any) => c.orderId === order.id) || {
+                                        id: `CN-${order.id}`,
+                                        orderId: order.id,
+                                        userId: order.userId,
+                                        productName: order.productName || 'สินค้า/แพ็กเกจ',
+                                        originalReceiptId: order.taxInvoiceNo || order.id,
+                                        originalAmount: order.totalPrice || 0,
+                                        amountBeforeVat: parseFloat(((order.totalPrice || 0) / 1.07).toFixed(2)),
+                                        vatAmount: parseFloat(((order.totalPrice || 0) * 0.07 / 1.07).toFixed(2)),
+                                        reason: order.cancelReason || 'ยกเลิกรายการเนื่องจากออกบิลซ้ำ/ข้อผิดพลาดทางเทคนิค',
+                                        createdAt: order.cancelledAt || new Date().toISOString(),
+                                        status: 'Approved',
+                                        issuedBy: 'Admin'
+                                      };
+                                      setSelectedCreditNoteForView(cn);
+                                    }}
+                                    className="bg-slate-800 hover:bg-slate-700 text-white font-bold px-2 py-1 rounded text-[9px] cursor-pointer shadow-sm mt-1"
                                   >
-                                    ยืนยันการจัดส่งแล้ว
+                                    📄 ดู/พิมพ์ใบลดหนี้
                                   </button>
                                 </div>
                               ) : (
-                                <span className="bg-emerald-100 text-emerald-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-200">
-                                  จัดส่งเรียบร้อย
-                                </span>
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className="bg-emerald-100 text-emerald-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-200">
+                                    จัดส่งเรียบร้อย
+                                  </span>
+                                  <button
+                                    onClick={() => setCancelOrderModalData({
+                                      orderId: order.id,
+                                      productName: order.productName || 'สินค้า/แพ็กเกจ',
+                                      userId: order.userId,
+                                      totalPrice: order.totalPrice || 0
+                                    })}
+                                    className="bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold px-2 py-0.5 rounded text-[8px] cursor-pointer border border-rose-200 mt-1"
+                                  >
+                                    🚫 ยกเลิกบิล / ออกใบลดหนี้
+                                  </button>
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -23337,8 +23432,9 @@ export default function App() {
                   </div>
 
                   {(() => {
-                    // Compute package transaction entries
+                    // Compute package transaction entries (Exclude Cancelled orders)
                     const packageOrders = adminOrders.filter(order => {
+                      if (order.status === 'Cancelled') return false;
                       const isS = order.productId === 'pack_s' || order.productName?.toLowerCase().includes('package s');
                       const isPackage = isS || order.productName?.toLowerCase().includes('package') || order.productId?.startsWith('pack_');
                       return isPackage;
@@ -23804,6 +23900,76 @@ export default function App() {
                                   <tr>
                                     <td colSpan={7} className="px-6 py-6 text-center text-slate-400 font-medium">
                                       ยังไม่มีรายการบันทึกค่าใช้จ่ายทั่วไปเพิ่มเติมในช่วงเวลานี้
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Credit Notes Ledger for Revenue Dept */}
+                        <div className="bg-white border border-rose-100 rounded-3xl shadow-sm overflow-hidden mb-6">
+                          <div className="border-b border-rose-100 px-6 py-4 flex justify-between items-center bg-rose-50/40">
+                            <h4 className="text-xs font-black text-rose-900 flex items-center gap-1.5">
+                              📄 บัญชีใบลดหนี้และบิลที่ยกเลิกสะสม (Credit Notes & Cancelled Invoices Ledger - สรรพากร)
+                            </h4>
+                            <span className="text-[10px] font-bold text-rose-600 bg-white border border-rose-200 px-3 py-1 rounded-full font-mono">
+                              รวมปรับลดรายรับสุทธิ: - ฿ {creditNotes.reduce((sum, cn) => sum + Number(cn.originalAmount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse text-xs">
+                              <thead>
+                                <tr className="bg-rose-50/60 text-rose-800 text-[10px] font-bold uppercase border-b border-rose-100">
+                                  <th className="px-6 py-3">เลขที่ใบลดหนี้</th>
+                                  <th className="px-6 py-3">อ้างอิงบิลเดิม</th>
+                                  <th className="px-6 py-3">วันที่ออกใบลดหนี้</th>
+                                  <th className="px-6 py-3">รหัสสมาชิก</th>
+                                  <th className="px-6 py-3">สาเหตุการยกเลิก/ลดหนี้</th>
+                                  <th className="px-6 py-3 text-right">ยอดก่อน Vat</th>
+                                  <th className="px-6 py-3 text-right">Vat 7% ที่ลด</th>
+                                  <th className="px-6 py-3 text-right text-rose-600 font-extrabold">ยอดรวมปรับลด</th>
+                                  <th className="px-6 py-3 text-center">พิมพ์ใบลดหนี้</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-rose-100/50 text-[11px] text-slate-700">
+                                {creditNotes.length > 0 ? (
+                                  creditNotes.map((cn) => (
+                                    <tr key={cn.id} className="hover:bg-rose-50/20 transition">
+                                      <td className="px-6 py-3 font-mono font-bold text-rose-700">{cn.id}</td>
+                                      <td className="px-6 py-3 font-mono text-indigo-600">{cn.orderId || cn.originalReceiptId}</td>
+                                      <td className="px-6 py-3 font-mono text-slate-500">
+                                        {new Date(cn.createdAt).toLocaleDateString('th-TH')}
+                                      </td>
+                                      <td className="px-6 py-3 font-bold">{cn.userId}</td>
+                                      <td className="px-6 py-3 text-slate-600 max-w-xs truncate" title={cn.reason}>
+                                        {cn.reason}
+                                      </td>
+                                      <td className="px-6 py-3 text-right font-mono">
+                                        ฿ {Number(cn.amountBeforeVat || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-6 py-3 text-right font-mono text-amber-600">
+                                        ฿ {Number(cn.vatAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-6 py-3 text-right font-black font-mono text-rose-600">
+                                        - ฿ {Number(cn.originalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-6 py-3 text-center">
+                                        <button
+                                          onClick={() => setSelectedCreditNoteForView(cn)}
+                                          className="bg-slate-800 hover:bg-slate-700 text-white font-bold px-2.5 py-1 rounded text-[10px] cursor-pointer shadow-sm"
+                                        >
+                                          📄 ดู/พิมพ์เอกสาร
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan={9} className="px-6 py-6 text-center text-slate-400 font-medium">
+                                      ยังไม่มีรายการออกใบลดหนี้หรือยกเลิกบิลในช่วงเวลานี้
                                     </td>
                                   </tr>
                                 )}
@@ -28693,6 +28859,226 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        {/* MODAL: Cancel Order & Generate Credit Note */}
+        {cancelOrderModalData && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-lg w-full p-6 space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2 text-rose-600 font-extrabold text-base">
+                  <span>🚫</span>
+                  <h3>ยืนยันการยกเลิกบิลสั่งซื้อ (Void Order & Issue Credit Note)</h3>
+                </div>
+                <button
+                  onClick={() => setCancelOrderModalData(null)}
+                  className="text-slate-400 hover:text-slate-600 font-bold text-lg cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-xs text-rose-900 space-y-1.5">
+                <div className="font-black text-rose-800 flex items-center gap-1 text-sm">
+                  <span>⚠️</span>
+                  <span>คำเตือนทางภาษีและสิทธิ์สมาชิก</span>
+                </div>
+                <p className="leading-relaxed">
+                  การยกเลิกบิลนี้จะส่งผลให้ระบบสร้าง <strong>"ใบลดหนี้ (Credit Note)"</strong> สำหรับนำแสดงต่อกรมสรรพากรโดยอัตโนมัติ เพื่อขอลดหย่อนภาษีขาย และจะทำการคำนวณสิทธิ์และยอด PV สะสมของผู้ใช้รหัส <strong className="font-mono">{cancelOrderModalData.userId}</strong> ใหม่ทันที
+                </p>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-xs space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">เลขที่บิลสั่งซื้อ:</span>
+                  <span className="font-mono font-bold text-indigo-600">{cancelOrderModalData.orderId}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">รหัสสมาชิกผู้สั่งซื้อ:</span>
+                  <span className="font-bold text-slate-800">{cancelOrderModalData.userId}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">รายการสินค้า:</span>
+                  <span className="font-bold text-slate-800">{cancelOrderModalData.productName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">มูลค่ารวมบิล:</span>
+                  <span className="font-black text-emerald-600 font-mono">฿ {cancelOrderModalData.totalPrice?.toLocaleString()}</span>
+                </div>
+              </div>
+
+              <form onSubmit={handleCancelOrderSubmit} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    เหตุผลการยกเลิกบิล (ระบุสำหรับสรรพากรและใบลดหนี้) <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={cancelOrderReason}
+                    onChange={(e) => setCancelOrderReason(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-rose-500 mb-2"
+                  >
+                    <option value="ออกบิลซ้ำเนื่องจากข้อผิดพลาดของระบบ">ออกบิลซ้ำเนื่องจากข้อผิดพลาดของระบบ (Duplicate Billing Error)</option>
+                    <option value="คำนวณราคาหรือแพ็กเกจผิดพลาดทางเทคนิค">คำนวณราคาหรือแพ็กเกจผิดพลาดทางเทคนิค (System Pricing Calculation Error)</option>
+                    <option value="ลูกค้าขอยกเลิกและคืนเงินเต็มจำนวน">ลูกค้าขอยกเลิกและคืนเงินเต็มจำนวน (Customer Cancellation & Full Refund)</option>
+                    <option value="ออกใบกำกับภาษีผิดรหัสสมาชิก/ที่อยู่">ออกใบกำกับภาษีผิดรหัสสมาชิก/ที่อยู่ (Incorrect Tax Invoice Credentials)</option>
+                    <option value="custom">ระบุเหตุผลอื่นๆ...</option>
+                  </select>
+                  {cancelOrderReason === 'custom' && (
+                    <input
+                      type="text"
+                      placeholder="กรอกเหตุผลการยกเลิกบิล..."
+                      onChange={(e) => setCancelOrderReason(e.target.value)}
+                      required
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-rose-500"
+                    />
+                  )}
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setCancelOrderModalData(null)}
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs transition cursor-pointer"
+                  >
+                    ยกเลิก / ถอยกลับ
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-extrabold py-2.5 rounded-xl text-xs transition shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>🚫</span>
+                    <span>ยืนยันยกเลิกและออกใบลดหนี้</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: Printable Official Thai Tax Credit Note / Void Document */}
+        {selectedCreditNoteForView && (
+          <div className="fixed inset-0 z-[210] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto animate-fadeIn">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full p-8 my-8 space-y-6 text-slate-800 font-sans print:shadow-none print:border-none print:p-0">
+              
+              {/* Header Controls (Hide during actual print) */}
+              <div className="flex justify-between items-center border-b border-slate-200 pb-4 print:hidden">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">📄</span>
+                  <h3 className="font-extrabold text-slate-800 text-base">เอกสารใบลดหนี้ / ใบกำกับภาษียกเลิก (Tax Credit Note)</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => window.print()}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-md transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>🖨️</span>
+                    <span>สั่งพิมพ์ใบลดหนี้</span>
+                  </button>
+                  <button
+                    onClick={() => setSelectedCreditNoteForView(null)}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-2 rounded-xl text-xs transition cursor-pointer"
+                  >
+                    ปิดหน้าต่าง
+                  </button>
+                </div>
+              </div>
+
+              {/* Official Credit Note Paper Container */}
+              <div className="border border-slate-300 p-6 rounded-xl space-y-6 bg-white">
+                {/* Company Header */}
+                <div className="flex justify-between items-start border-b-2 border-slate-800 pb-4">
+                  <div>
+                    <h2 className="text-lg font-black text-slate-900">บริษัท นที พลัส มาร์เก็ต จำกัด</h2>
+                    <p className="text-xs text-slate-600">NATEE PLUS MARKET CO., LTD.</p>
+                    <p className="text-[11px] text-slate-500 mt-1">เลขประจำตัวผู้เสียภาษีอากร: <strong>0105567012345</strong> (สำนักงานใหญ่)</p>
+                    <p className="text-[11px] text-slate-500">โทรศัพท์: 02-123-4567 | อีเมล: tax@nateeplus.com</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="inline-block bg-rose-600 text-white text-xs font-black px-3 py-1 rounded uppercase tracking-wider mb-1">
+                      ใบลดหนี้ / ใบกำกับภาษี
+                    </span>
+                    <p className="text-[10px] text-rose-700 font-bold">CREDIT NOTE / TAX INVOICE VOID</p>
+                  </div>
+                </div>
+
+                {/* Metadata Grid */}
+                <div className="grid grid-cols-2 gap-4 text-xs border-b border-slate-200 pb-4">
+                  <div className="space-y-1">
+                    <p><strong>เลขที่ใบลดหนี้ (CN No.):</strong> <span className="font-mono text-rose-700 font-bold">{selectedCreditNoteForView.id}</span></p>
+                    <p><strong>วันที่ออกเอกสาร:</strong> <span className="font-mono">{new Date(selectedCreditNoteForView.createdAt).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}</span></p>
+                    <p><strong>ผู้ออกเอกสาร (Admin):</strong> {selectedCreditNoteForView.issuedBy || 'Admin System'}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p><strong>อ้างอิงใบกำกับภาษีเดิม:</strong> <span className="font-mono font-bold text-indigo-700">{selectedCreditNoteForView.originalReceiptId || selectedCreditNoteForView.orderId}</span></p>
+                    <p><strong>รหัสสมาชิก/ลูกค้า:</strong> <span className="font-bold">{selectedCreditNoteForView.userId}</span></p>
+                    <p><strong>สถานะเอกสาร:</strong> <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-bold">อนุมัติถูกต้อง (Approved)</span></p>
+                  </div>
+                </div>
+
+                {/* Cancellation Reason */}
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs space-y-1">
+                  <span className="font-bold text-slate-700 block">สาเหตุในการออกใบลดหนี้ / ยกเลิกบิล (Reason for Credit Note):</span>
+                  <p className="text-slate-800 font-semibold">{selectedCreditNoteForView.reason}</p>
+                </div>
+
+                {/* Calculation Table */}
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 font-bold border-y border-slate-300">
+                      <th className="py-2 px-3">รายการ (Description)</th>
+                      <th className="py-2 px-3 text-right">มูลค่าเดิม (Original)</th>
+                      <th className="py-2 px-3 text-right">มูลค่าที่ถูกต้อง (Correct)</th>
+                      <th className="py-2 px-3 text-right text-rose-700">ผลต่างปรับลด (Adjustment)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 font-medium">
+                    <tr>
+                      <td className="py-2.5 px-3">
+                        <span className="font-bold block">{selectedCreditNoteForView.productName || 'ยกเลิกคำสั่งซื้อและใบกำกับภาษี'}</span>
+                        <span className="text-[10px] text-slate-500 font-mono">อ้างอิงบิลเลขที่ {selectedCreditNoteForView.orderId}</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono">฿ {Number(selectedCreditNoteForView.originalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td className="py-2.5 px-3 text-right font-mono">฿ 0.00</td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-rose-600">- ฿ {Number(selectedCreditNoteForView.originalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* Tax Breakdown */}
+                <div className="flex justify-end pt-2 border-t border-slate-300 text-xs">
+                  <div className="w-64 space-y-1.5 font-medium">
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">มูลค่าสินค้าก่อนภาษี (Net Amount):</span>
+                      <span className="font-mono font-bold">฿ {Number(selectedCreditNoteForView.amountBeforeVat || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">ภาษีมูลค่าเพิ่ม VAT 7%:</span>
+                      <span className="font-mono font-bold text-amber-700">฿ {Number(selectedCreditNoteForView.vatAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between border-t border-slate-300 pt-1 text-sm font-black text-rose-700">
+                      <span>จำนวนเงินปรับลดรวมสุทธิ:</span>
+                      <span className="font-mono">- ฿ {Number(selectedCreditNoteForView.originalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Signatures */}
+                <div className="grid grid-cols-2 gap-8 pt-8 text-center text-xs text-slate-600">
+                  <div className="border-t border-slate-300 pt-2 space-y-1">
+                    <p className="font-bold">ลงชื่อ ......................................................</p>
+                    <p>ผู้รับใบลดหนี้ / ลูกค้า</p>
+                    <p className="text-[10px] text-slate-400">วันที่ ........ / ........ / .............</p>
+                  </div>
+                  <div className="border-t border-slate-300 pt-2 space-y-1">
+                    <p className="font-bold">ลงชื่อ ......................................................</p>
+                    <p>ผู้มีอำนาจลงนาม / ฝ่ายบัญชี บริษัท นที พลัส มาร์เก็ต จำกัด</p>
+                    <p className="text-[10px] text-slate-400">วันที่ {new Date(selectedCreditNoteForView.createdAt).toLocaleDateString('th-TH')}</p>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        )}
 
         {featureToggles.enableAiChatbot !== false && <NateeBotWidget currentUser={currentUser} />}
 

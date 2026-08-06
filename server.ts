@@ -1557,6 +1557,11 @@ function recalculateMemberEligibleRights(db: any, member: any) {
     }
   }
 
+  // Support custom granted rights override if explicitly modified by admin
+  if (member.customGrantedRights !== undefined && member.customGrantedRights > 0) {
+    grantedRights = Math.max(grantedRights, member.customGrantedRights);
+  }
+
   if (grantedRights <= 0) {
     member.eligibleRights = 0.00;
     return;
@@ -1572,7 +1577,7 @@ function recalculateMemberEligibleRights(db: any, member: any) {
   const currentEMoney = (typeof member.balanceEMoney === 'number' && !isNaN(member.balanceEMoney)) ? member.balanceEMoney : (parseFloat(member.balanceEMoney || '0') || 0);
   const totalEMoneyEarned = currentEMoney + withdrawnOrSpentEMoney;
 
-  // 4. Remaining Eligible Rights = Granted Rights - Total E-Money Earned
+  // 4. Remaining Eligible Rights = Max(0, Granted Rights - Total E-Money Earned)
   const remainingRights = Math.max(0, grantedRights - totalEMoneyEarned);
   member.eligibleRights = parseFloat(remainingRights.toFixed(4));
 }
@@ -3231,11 +3236,9 @@ function processMLMCommission(db: any, order: any, purchaser: any) {
       const grossSponsorBonus = totalPV * 0.50; // 50% of PV
       recalculateMemberEligibleRights(db, sponsor);
 
-      const currentGrantedRights = Number(sponsor.eligibleRights || 0);
-      const currentEMoneyEarned = Number(sponsor.totalEMoneyEarnedSoFar || 0);
-      const remainingRights = Math.max(0, currentGrantedRights - currentEMoneyEarned);
-
-      const payableBonus = currentGrantedRights > 0 ? Math.min(grossSponsorBonus, remainingRights) : grossSponsorBonus;
+      const remainingRights = Number(sponsor.eligibleRights || 0);
+      const isSpecialRole = sponsor.role === 'Manager' || sponsor.role === 'Admin' || sponsor.userId === 'A260600001' || sponsor.username === 'nateeplus';
+      const payableBonus = isSpecialRole ? grossSponsorBonus : Math.min(grossSponsorBonus, remainingRights);
 
       if (payableBonus > 0) {
         // Flat 20% Split:
@@ -3314,11 +3317,9 @@ function processMLMCommission(db: any, order: any, purchaser: any) {
         recalculateMemberEligibleRights(db, upline);
         const grossComm = totalPV * 0.02; // 2.0% per level
 
-        const currentEarned = Number(upline.totalEMoneyEarnedSoFar || 0);
-        const grantedRights = Number(upline.eligibleRights || 0);
-        const remainingRights = Math.max(0, grantedRights - currentEarned);
-
-        const payableComm = grantedRights > 0 ? Math.min(grossComm, remainingRights) : grossComm;
+        const remainingRights = Number(upline.eligibleRights || 0);
+        const isSpecialRole = upline.role === 'Manager' || upline.role === 'Admin' || upline.userId === 'A260600001' || upline.username === 'nateeplus';
+        const payableComm = isSpecialRole ? grossComm : Math.min(grossComm, remainingRights);
 
         if (payableComm > 0) {
           const eMoneyNet = Math.round((payableComm * 0.80) * 100) / 100;
@@ -3856,6 +3857,85 @@ app.get('/api/admin/orders', (req, res) => {
   return res.json({ success: true, orders: db.orders || [] });
 });
 
+app.post('/api/admin/order-complete', (req, res) => {
+  const { orderId, trackingCompany, trackingNo, shippingNote } = req.body;
+  const db = readDb();
+  const order = (db.orders || []).find((o: any) => o.id === orderId);
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'ไม่พบรายการสั่งซื้อ' });
+  }
+  order.status = 'Completed';
+  order.shippingCompany = trackingCompany || 'Flash Express';
+  order.trackingNo = trackingNo || '';
+  order.shippingNote = shippingNote || '';
+  order.shippedAt = new Date().toISOString();
+  writeDb(db);
+  return res.json({ success: true, message: 'อัปเดตสถานะจัดส่งเรียบร้อยแล้วค่ะ', order });
+});
+
+app.post('/api/admin/cancel-order', (req, res) => {
+  const { orderId, reason, adminName } = req.body;
+  if (!orderId) {
+    return res.status(400).json({ success: false, message: 'โปรดระบุรหัสคำสั่งซื้อ' });
+  }
+  const db = readDb();
+  const order = (db.orders || []).find((o: any) => o.id === orderId);
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'ไม่พบรายการสั่งซื้อ' });
+  }
+  if (order.status === 'Cancelled') {
+    return res.status(400).json({ success: false, message: 'คำสั่งซื้อนี้ถูกยกเลิกแล้ว' });
+  }
+
+  // Mark order as Cancelled
+  order.status = 'Cancelled';
+  order.cancelledAt = new Date().toISOString();
+  order.cancelReason = reason || 'ยกเลิกบิลเนื่องจากข้อผิดพลาดของระบบ/สั่งซื้อซ้ำ';
+
+  // Create Credit Note (ใบลดหนี้ / ใบยกเลิกภาษี)
+  if (!db.creditNotes) db.creditNotes = [];
+  const cnNumber = `CN-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}${String(new Date().getDate()).padStart(2,'0')}-${Math.floor(1000 + Math.random()*9000)}`;
+  const totalPrice = Number(order.totalPrice || 0);
+  const vatAmount = parseFloat((totalPrice * 0.07 / 1.07).toFixed(2));
+  const amountBeforeVat = parseFloat((totalPrice - vatAmount).toFixed(2));
+
+  const creditNote = {
+    id: cnNumber,
+    orderId: order.id,
+    userId: order.userId,
+    productName: order.productName || 'สินค้า/แพ็กเกจ',
+    originalReceiptId: order.taxInvoiceNo || order.id,
+    originalAmount: totalPrice,
+    amountBeforeVat,
+    vatAmount,
+    reason: reason || 'ยกเลิกรายการเนื่องจากออกบิลซ้ำ/ข้อผิดพลาดทางเทคนิค',
+    createdAt: new Date().toISOString(),
+    status: 'Approved',
+    issuedBy: adminName || 'Admin'
+  };
+  db.creditNotes.push(creditNote);
+
+  // Recalculate member's eligible rights and balances
+  const member = (db.members || []).find((m: any) => m.userId === order.userId);
+  if (member) {
+    recalculateMemberEligibleRights(db, member);
+  }
+
+  writeDb(db);
+  return res.json({
+    success: true,
+    message: `ยกเลิกบิล ${order.id} และออกใบลดหนี้ ${cnNumber} เรียบร้อยแล้วค่ะ`,
+    order,
+    creditNote,
+    updatedEligibleRights: member?.eligibleRights
+  });
+});
+
+app.get('/api/admin/credit-notes', (req, res) => {
+  const db = readDb();
+  return res.json({ success: true, creditNotes: db.creditNotes || [] });
+});
+
 app.get('/api/admin/stats', (req, res) => {
   const db = readDb();
   return res.json({ success: true, stats: db.systemStats || {} });
@@ -4208,7 +4288,16 @@ app.post('/api/admin/member-update', (req, res) => {
     }
   }
   if (sellerStatus !== undefined) member.sellerStatus = sellerStatus;
-  if (eligibleRights !== undefined) member.eligibleRights = Number(eligibleRights);
+  if (eligibleRights !== undefined) {
+    const targetRights = Number(eligibleRights);
+    member.eligibleRights = targetRights;
+    const txns = (db && db.transactions) ? db.transactions : [];
+    const withdrawnOrSpentEMoney = txns
+      .filter((t: any) => t.userId === member.userId && t.currency === "E-Money" && (t.type === "Withdraw" || t.type === "WithdrawalRequest" || t.type === "Withdrawal") && t.status !== "Rejected" && t.status !== "Cancelled")
+      .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+    const currentEMoney = Number(member.balanceEMoney || 0);
+    member.customGrantedRights = targetRights + currentEMoney + withdrawnOrSpentEMoney;
+  }
   if (parentId !== undefined) member.parentId = parentId;
   if (side !== undefined) member.side = side;
   if (planBPoints !== undefined) member.planBPoints = Number(planBPoints);
