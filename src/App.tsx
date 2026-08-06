@@ -1623,11 +1623,6 @@ export default function App() {
       }
     }
 
-    if (window.location.pathname.includes('/join') || window.location.pathname.includes('/register')) {
-      setAuthMode('register');
-      setShowLoginModal(true);
-    }
-
     // Always fetch public shop products for guests & members
     fetch('/api/shop/products')
       .then(res => res.json())

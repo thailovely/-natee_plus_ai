@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { initializeFirestore, doc, getDoc, memoryLocalCache } from 'firebase/firestore';
+import { initializeFirestore, doc, getDoc, setDoc, memoryLocalCache } from 'firebase/firestore';
 import fs from 'fs';
 
 const firebaseConfig = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf8'));
@@ -11,35 +11,26 @@ const db = initializeFirestore(app, {
 
 async function run() {
   try {
-    console.log("Checking app_sections/members...");
-    const docRef = doc(db, 'app_sections', 'members');
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      const members = snap.data().data || [];
-      console.log(`Found ${members.length} members in Firestore`);
-      
-      const foundS = members.filter(m => m.userId && (m.userId.includes("260700025") || m.userId.includes("26070025")));
-      console.log("Search 260700025 or 26070025 in members:", foundS);
-      
-      // Let's print the last 5 registered members
-      const sorted = [...members].sort((a,b) => (b.userId || '').localeCompare(a.userId || ''));
-      console.log("Last 5 registered members:");
-      console.log(sorted.slice(0, 5).map(m => ({ userId: m.userId, username: m.username, name: m.name, rank: m.rank, sponsorId: m.sponsorId })));
-    } else {
-      console.log("app_sections/members does not exist in Firestore!");
-    }
-
-    console.log("Checking app_sections/transactions...");
     const txDocRef = doc(db, 'app_sections', 'transactions');
     const txSnap = await getDoc(txDocRef);
     if (txSnap.exists()) {
-      const txs = txSnap.data().data || [];
-      console.log(`Found ${txs.length} transactions in Firestore`);
-      // Last 10 transactions
-      console.log("Last 10 transactions in Firestore:");
-      txs.slice(-10).forEach(tx => {
-        console.log(`ID: ${tx.id}, User: ${tx.userId}, Type: ${tx.type}, Amt: ${tx.amount || tx.transferAmount}, Status: ${tx.status}, Details: ${tx.details}`);
-      });
+      const data = txSnap.data();
+      const txs = data.data || [];
+      
+      const memberId = "A260700019";
+      // Dates look like 2026-07-16...
+      const filteredTxs = txs.filter(tx => 
+        !(tx.userId === memberId && (tx.date || tx.createdAt || '').startsWith('2026-07-16'))
+      );
+      
+      console.log(`Original count: ${txs.length}, New count: ${filteredTxs.length}`);
+      
+      if (txs.length !== filteredTxs.length) {
+        await setDoc(txDocRef, { ...data, data: filteredTxs });
+        console.log("Updated transactions in Firestore.");
+      } else {
+        console.log("No transactions to remove.");
+      }
     }
 
   } catch (e) {

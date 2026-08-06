@@ -499,7 +499,7 @@
         "zipcode": "",
         "details": ""
       },
-      "email": "hg@",
+      "email": "hg@123.com",
       "name": "ชัยยะ",
       "bankAccountName": "ชัยยะ ไชยาคม",
       "phone": "0980000000",
@@ -978,7 +978,7 @@
       "role": "Member",
       "parentId": "A260700012",
       "balanceECash": 0.38,
-      "eligibleRights": 1939.6319,
+      "eligibleRights": 949.1414,
       "sellerStatus": "NotApplied",
       "kycRelation": "",
       "bankName": "",
