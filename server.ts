@@ -2632,14 +2632,15 @@ app.post('/api/auth/check-sponsor', (req, res) => {
   if (!sponsorId) return res.status(400).json({ success: false, message: 'กรุณากรอกรหัสผู้แนะนำ' });
 
   const cleanSponsor = sponsorId.trim().toUpperCase();
-  if (cleanSponsor === 'SYSTEM' || cleanSponsor === 'A260600001') {
+  if (cleanSponsor === 'SYSTEM' || cleanSponsor === 'A260600001' || cleanSponsor === 'NATEEPLUS') {
     return res.json({ success: true, name: 'บริษัท นที พลัส มาร์เก็ต จำกัด' });
   }
 
   const db = readDb();
   const sponsor = (db.members || []).find((m: any) => 
     (m.userId && m.userId.trim().toUpperCase() === cleanSponsor) ||
-    (m.username && m.username.trim().toUpperCase() === cleanSponsor)
+    (m.username && m.username.trim().toUpperCase() === cleanSponsor) ||
+    (m.sellerCode && m.sellerCode.trim().toUpperCase() === cleanSponsor)
   );
 
   if (sponsor) {
@@ -2685,17 +2686,24 @@ app.post('/api/auth/register', (req, res) => {
     return res.status(400).json({ success: false, message: 'ชื่อผู้ใช้นี้ถูกใช้งานแล้ว' });
   }
 
-  // Generate new userId: e.g. A26060000X
-  let maxNum = 1;
+  // Generate new userId dynamically based on current Year and Month: e.g. A260800003
+  const now = new Date();
+  const yy = now.getFullYear().toString().slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const currentPrefix = `A${yy}${mm}`;
+
+  let maxNum = 0;
   (db.members || []).forEach((m: any) => {
-    if (m.userId && m.userId.startsWith("A2606")) {
-      const numPart = parseInt(m.userId.replace("A2606", ""), 10);
+    if (m.userId && typeof m.userId === 'string' && m.userId.startsWith(currentPrefix)) {
+      const numPart = parseInt(m.userId.substring(currentPrefix.length), 10);
       if (!isNaN(numPart) && numPart > maxNum) {
         maxNum = numPart;
       }
     }
   });
-  const newUserId = "A2606" + String(maxNum + 1).padStart(5, '0');
+
+  const nextSeq = maxNum + 1;
+  const newUserId = `${currentPrefix}${String(nextSeq).padStart(5, '0')}`;
 
   // Package rank mapping
   let rank = "Member";
