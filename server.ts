@@ -932,6 +932,7 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
               email: "nateeplus@gmail.com",
               role: "Manager",
               sellerStatus: "Active",
+              sellerAddress: "107/4 ถนนมนัส ตำบลในเมือง อำเภอเมือง จังหวัดนครราชสีมา 30000",
               rank: "XXL",
               eligibleRights: 999999999
             };

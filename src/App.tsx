@@ -25629,7 +25629,7 @@ export default function App() {
                 <div className="text-center space-y-1 pb-3 border-b border-dashed border-slate-200">
                   <h3 className="text-sm font-extrabold text-indigo-900">บริษัท นที พลัส มาร์เก็ต จำกัด (NATEE PLUS MARKET CO., LTD.)</h3>
                   <p className="text-[10px] text-slate-400">เลขประจำตัวผู้เสียภาษี: 0-30556-9007-93-5</p>
-                  <p className="text-[10px] text-slate-400 font-medium">99/99 อาคารรุ่งเรืองทาวเวอร์ ถนนสุขุมวิท กรุงเทพมหานคร 10110</p>
+                  <p className="text-[10px] text-slate-400 font-medium">107/4 ถนนมนัส ตำบลในเมือง อำเภอเมือง จังหวัดนครราชสีมา 30000</p>
                   <p className="text-[10px] text-indigo-600 font-bold uppercase mt-2 text-xs font-sans">ใบเสร็จรับเงินอย่างย่อ / Tax Invoice (ABB)</p>
                 </div>
 
@@ -25829,7 +25829,7 @@ export default function App() {
                     <div className="space-y-1 text-slate-700">
                       <div>ชื่อ: <strong className="text-slate-900 font-bold">บริษัท นที พลัส มาร์เก็ต จำกัด (NATEE PLUS MARKET CO., LTD.)</strong></div>
                       <div>เลขประจำตัวผู้เสียภาษีอากร: <strong className="text-slate-900 font-mono font-bold">0-30556-9007-93-5</strong></div>
-                      <div>ที่อยู่: <span className="text-slate-600">123/45 ถนนพระราม 9 แขวงห้วยขวาง เขตห้วยขวาง กรุงเทพมหานคร 10310</span></div>
+                      <div>ที่อยู่: <span className="text-slate-600">107/4 ถนนมนัส ตำบลในเมือง อำเภอเมือง จังหวัดนครราชสีมา 30000</span></div>
                     </div>
                   </div>
 
@@ -26470,7 +26470,7 @@ export default function App() {
                 <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50 space-y-1">
                   <p className="font-bold text-indigo-950">ผู้ควบคุมข้อมูลส่วนบุคคล (Data Controller):</p>
                   <p className="font-extrabold text-indigo-700 text-sm">บริษัท นที พลัส มาร์เก็ต จำกัด (Natee Plus Market Co., Ltd.)</p>
-                  <p className="text-[10px] text-slate-500">สำนักงานใหญ่จดทะเบียนอย่างถูกต้องตามกฎหมายแห่งประเทศไทย</p>
+                  <p className="text-[10px] text-slate-500">สำนักงานใหญ่: 107/4 ถนนมนัส ตำบลในเมือง อำเภอเมือง จังหวัดนครราชสีมา 30000</p>
                 </div>
 
                 <div className="space-y-2">
@@ -26620,8 +26620,8 @@ export default function App() {
                       <h1 className="text-xl font-black text-indigo-950 tracking-tight">บริษัท นที พลัส มาร์เก็ต จำกัด</h1>
                       <p className="text-xs font-bold text-slate-500 tracking-wider uppercase">NATEE PLUS MARKET CO., LTD.</p>
                       <p className="text-[10px] text-slate-500 mt-1">
-                        สำนักงานใหญ่: เลขที่ 168/88 หมู่บ้านนทีพลัส ถนนมิตรภาพ ตำบลในเมือง อำเภอเมือง จังหวัดขอนแก่น 40000 <br/>
-                        เลขประจำตัวผู้เสียภาษี: 0105566123456 • โทร: 063-516-1734
+                        สำนักงานใหญ่: 107/4 ถนนมนัส ตำบลในเมือง อำเภอเมือง จังหวัดนครราชสีมา 30000 <br/>
+                        เลขประจำตัวผู้เสียภาษี: 0-30556-9007-93-5 • โทร: 063-516-1734
                       </p>
                     </div>
                   </div>
