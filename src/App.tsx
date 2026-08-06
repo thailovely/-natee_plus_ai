@@ -20840,25 +20840,26 @@ export default function App() {
                                   <span className="font-bold font-mono text-indigo-700">10 บาท</span>
                                 </div>
                                 <div className="bg-white/90 p-2.5 rounded-xl border border-amber-100/80 flex justify-between items-center shadow-2xs">
-                                  <span className="font-sans text-slate-600 font-medium">3. เข้ากองทุน All share:</span>
-                                  <span className="font-bold font-mono text-sky-700">10 บาท</span>
+                                  <span className="font-sans text-slate-600 font-medium">1. จ่ายผู้แนะนำ (ค่าแนะนำเปิดร้าน):</span>
+                                  <span className="font-bold font-mono text-emerald-700">50 บาท <span className="font-sans text-[10px] text-slate-500 font-normal">(เข้าคูปองสมาชิก 40B [หัก 10% สะสม Plan B] + Plan B 10B)</span></span>
                                 </div>
                                 <div className="bg-white/90 p-2.5 rounded-xl border border-amber-100/80 flex justify-between items-center shadow-2xs">
-                                  <span className="font-sans text-slate-600 font-medium">4. โครงสร้าง Plan B:</span>
+                                  <span className="font-sans text-slate-600 font-medium">2. เข้าโครงสร้าง Plan B:</span>
                                   <span className="font-bold font-mono text-purple-700">5 บาท</span>
                                 </div>
                                 <div className="bg-white/90 p-2.5 rounded-xl border border-amber-100/80 flex justify-between items-center shadow-2xs">
-                                  <span className="font-sans text-slate-600 font-medium">5. เข้ากองทุนปันสุข:</span>
-                                  <span className="font-bold font-mono text-amber-700">5 บาท</span>
+                                  <span className="font-sans text-slate-600 font-medium">3. เข้ากองทุน All Share:</span>
+                                  <span className="font-bold font-mono text-sky-700">20 บาท</span>
                                 </div>
                                 <div className="bg-white/90 p-2.5 rounded-xl border border-amber-100/80 flex justify-between items-center shadow-2xs">
-                                  <span className="font-sans text-slate-600 font-medium">6. ภาษีมูลค่าเพิ่ม (VAT 7%):</span>
-                                  <span className="font-bold font-mono text-slate-700">6.54 บาท <span className="font-sans text-[10px] text-slate-500 font-normal">(100/1.07 = 93.46)</span></span>
+                                  <span className="font-sans text-slate-600 font-medium">4. เข้ากองทุนปันสุข (CSR):</span>
+                                  <span className="font-bold font-mono text-amber-700">5 บาท</span>
+                                </div>
+                                <div className="bg-white/90 p-2.5 rounded-xl border border-amber-100/80 flex justify-between items-center shadow-2xs sm:col-span-2">
+                                  <span className="font-sans text-slate-600 font-medium">5. ภาษีมูลค่าเพิ่ม (VAT 7%):</span>
+                                  <span className="font-bold font-mono text-slate-700">6.54 บาท <span className="font-sans text-[10px] text-slate-500 font-normal">(100/1.07 = 93.46 บาท)</span></span>
                                 </div>
                               </div>
-                              <p className="text-[10.5px] text-slate-600 italic leading-relaxed pt-1.5 border-t border-amber-200/60">
-                                * หลังหักรายการจ่ายผลตอบแทนและภาษี Vat 7% ข้างต้นทั้งหมดแล้ว กำไรส่วนเหลือที่เหลืออยู่จะบันทึกเป็นค่าใช้จ่ายบริหารจัดการของบริษัท
-                              </p>
                             </div>
 
                             <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 space-y-2 text-[11px] text-slate-500 leading-relaxed">
@@ -20884,7 +20885,7 @@ export default function App() {
                           </div>
                           <div>
                             <h4 className="text-base font-black text-slate-900">แผนงานรายได้ผังองค์กร แผน A ยูนิลีเวอร์ 20 ชั้น (Placement Tree & 20-Level Unilevel Bonus)</h4>
-                            <p className="text-xs text-slate-400">โครงสร้างการจัดวางสมาชิกขยาย 2 (1 แตก 2) และการคำนวณจ่ายโบนัสยูนิลีเวอร์ลึก 20 ชั้นแบบเรียลไทม์</p>
+                            <p className="text-xs text-slate-400">โครงสร้างการจัดวางสมาชิกและการคำนวณจ่ายโบนัสยูนิลีเวอร์ลึก 20 ชั้นแบบเรียลไทม์</p>
                           </div>
                         </div>
 
@@ -20892,7 +20893,7 @@ export default function App() {
                           <div className="space-y-4">
                             <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">📐 โครงสร้างการจ่ายผลตอบแทน (Commissions & Level Depth)</h5>
                             <p className="text-xs text-slate-600 leading-relaxed">
-                              ทุกยอดการสั่งซื้อสินค้าใดๆ บนระบบ Natee Plus Market จะนำพาคะแนน PV มาด้วยเสมอ โดยคะแนน PV นี้จะถูกวิ่งส่งตรงขึ้นสายงานอัพไลน์ขึ้นไปสูงสุดถึง <strong>20 ชั้นสายงาน</strong> ในอัตราผลตอบแทน <strong>2.5% ต่อชั้น</strong> ของคะแนน PV (1 PV = 1 บาท)
+                              ทุกยอดการสั่งซื้อสินค้าใดๆ บนระบบ Natee Plus Market จะนำพาคะแนน PV มาด้วยเสมอ โดยคะแนน PV นี้จะถูกวิ่งส่งตรงขึ้นสายงานอัพไลน์ขึ้นไปสูงสุดถึง <strong>20 ชั้นสายงาน</strong> ในอัตราผลตอบแทน <strong>2.0% ต่อชั้น</strong> ของคะแนน PV (1 PV = 1 บาท)
                             </p>
 
                             <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-sm">
@@ -20908,27 +20909,27 @@ export default function App() {
                                   <tr>
                                     <td className="px-3 py-2.5 font-bold text-indigo-600">S</td>
                                     <td className="px-3 py-2.5 text-center font-mono">1 ชั้นองค์กรลึก</td>
-                                    <td className="px-3 py-2.5 text-right font-mono">2.50%</td>
+                                    <td className="px-3 py-2.5 text-right font-mono">2.00%</td>
                                   </tr>
                                   <tr>
                                     <td className="px-3 py-2.5 font-bold text-amber-600">M</td>
                                     <td className="px-3 py-2.5 text-center font-mono">5 ชั้นองค์กรลึก</td>
-                                    <td className="px-3 py-2.5 text-right font-mono">12.50%</td>
+                                    <td className="px-3 py-2.5 text-right font-mono">10.00%</td>
                                   </tr>
                                   <tr>
                                     <td className="px-3 py-2.5 font-bold text-teal-600">L</td>
                                     <td className="px-3 py-2.5 text-center font-mono">10 ชั้นองค์กรลึก</td>
-                                    <td className="px-3 py-2.5 text-right font-mono">25.00%</td>
+                                    <td className="px-3 py-2.5 text-right font-mono">20.00%</td>
                                   </tr>
                                   <tr>
                                     <td className="px-3 py-2.5 font-bold text-rose-600">XL</td>
                                     <td className="px-3 py-2.5 text-center font-mono">15 ชั้นองค์กรลึก</td>
-                                    <td className="px-3 py-2.5 text-right font-mono">37.50%</td>
+                                    <td className="px-3 py-2.5 text-right font-mono">30.00%</td>
                                   </tr>
                                   <tr className="bg-amber-50/20">
                                     <td className="px-3 py-2.5 font-bold text-purple-600">XXL</td>
                                     <td className="px-3 py-2.5 text-center font-mono">20 ชั้นองค์กรลึก (สูงสุด)</td>
-                                    <td className="px-3 py-2.5 text-right font-mono">50.00%</td>
+                                    <td className="px-3 py-2.5 text-right font-mono">40.00%</td>
                                   </tr>
                                 </tbody>
                               </table>
@@ -20985,9 +20986,9 @@ export default function App() {
                               <p className="font-bold">📄 ตัวอย่างการคำนวณ:</p>
                               <p>
                                 ยอดซื้อสินค้าของทีมใต้สายงานมีคะแนนสะสม <strong>10,000 PV</strong> <br />
-                                • ค่าคอมมิชชันรวม (2.5%) = <strong>250 บาท</strong> <br />
-                                • ยอดจ่ายจริงเข้ากระเป๋า <strong>E-Money</strong> สมาชิก = 250 x 80% = <strong>200.00 บาท</strong> <br />
-                                • ยอดคะแนนสะสมอัพขึ้น <strong>Plan B Points</strong> = 250 x 5% = <strong>12.50 คะแนน</strong> (เมื่อสะสมคะแนนครบ 100 ระบบจะทำการสร้างรหัสวิ่งไปลงผังเดี่ยวระดับโลกให้อัตโนมัติทันที)
+                                • ค่าคอมมิชชันรวม (2.0%) = <strong>200 บาท</strong> <br />
+                                • ยอดจ่ายจริงเข้ากระเป๋า <strong>E-Money</strong> สมาชิก = 200 x 80% = <strong>160.00 บาท</strong> <br />
+                                • ยอดคะแนนสะสมอัพขึ้น <strong>Plan B Points</strong> = 200 x 5% = <strong>10.00 คะแนน</strong> (เมื่อสะสมคะแนนครบ 100 ระบบจะทำการสร้างรหัสวิ่งไปลงผังเดี่ยวระดับโลกให้อัตโนมัติทันที)
                               </p>
                             </div>
                           </div>

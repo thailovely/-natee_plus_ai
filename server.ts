@@ -2698,11 +2698,11 @@ app.post('/api/auth/register', (req, res) => {
   // Package rank mapping
   let rank = "Member";
   let eligibleRights = 0;
-  if (selectedPackageId === "pack_s") { rank = "S"; eligibleRights = 0; }
-  else if (selectedPackageId === "pack_m") { rank = "M"; eligibleRights = 250; }
-  else if (selectedPackageId === "pack_l") { rank = "L"; eligibleRights = 500; }
-  else if (selectedPackageId === "pack_xl") { rank = "XL"; eligibleRights = 1000; }
-  else if (selectedPackageId === "pack_xxl") { rank = "XXL"; eligibleRights = 2500; }
+  if (selectedPackageId === "pack_s") { rank = "S"; eligibleRights = 1000; }
+  else if (selectedPackageId === "pack_m") { rank = "M"; eligibleRights = 5000; }
+  else if (selectedPackageId === "pack_l") { rank = "L"; eligibleRights = 10000; }
+  else if (selectedPackageId === "pack_xl") { rank = "XL"; eligibleRights = 30000; }
+  else if (selectedPackageId === "pack_xxl") { rank = "XXL"; eligibleRights = 50000; }
 
   // Get sponsor name
   const sponsor = (db.members || []).find((m: any) => m.userId === sponsorId || m.username === sponsorId);
@@ -3140,7 +3140,7 @@ app.post('/api/shop/purchase', (req, res) => {
 
   // Define default packages dictionary
   const defaultPackages: Record<string, any> = {
-    pack_s: { id: "pack_s", name: "Package S (1,000 THB)", price: 1000, category: "Package", rank: "S" },
+    pack_s: { id: "pack_s", name: "Package S (100 THB)", price: 100, category: "Package", rank: "S" },
     pack_m: { id: "pack_m", name: "Package M (5,000 THB)", price: 5000, category: "Package", rank: "M" },
     pack_l: { id: "pack_l", name: "Package L (10,000 THB)", price: 10000, category: "Package", rank: "L" },
     pack_xl: { id: "pack_xl", name: "Package XL (30,000 THB)", price: 30000, category: "Package", rank: "XL" },
@@ -4160,20 +4160,57 @@ app.get('/api/ai/bot-config', (req, res) => {
     greetingMsg: "สวัสดีค่ะ! หนูคือ Natee bot ผู้ช่วยประจำระบบ Natee Plus Market ยินดีให้คำแนะนำและตอบทุกข้อสงสัยเกี่ยวกับระบบค่ะ 🤖✨",
     systemPrompt: "คุณคือ Natee bot ผู้ช่วยเสมือนประจำระบบ Natee Plus Market ให้ตอบคำถามเกี่ยวกับระบบ Natee Plus ด้วยความสุภาพ เป็นมิตร และให้ข้อมูลถูกต้อง ห้ามตอบเรื่องที่ไม่เกี่ยวกับระบบ หรือถ้าไม่แน่ใจให้แนะนำติดต่อแอดมิน",
     knowledgeBaseText: botConfig.knowledgeBaseText || `
-ระบบ Natee Plus Market (นที พลัส มาร์เก็ต):
-- เป็นแพลตฟอร์มมาร์เก็ตเพลสช้อปปิ้งออนไลน์และเครือข่ายธุรกิจ
-- สมาชิกมีกระเป๋าเงิน: E-Cash (เงินสดใช้ซื้อ/ถอน/โอน), E-Coupon (คูปองส่วนลด), E-Share (หุ้น/ปันผล), E-Money (โบนัสสะสม)
-- การสมัครแพ็กเกจและตำแหน่งตามคะแนน PV:
-  • Member 100 บาท (0 PV)
-  • S 100 บาท (0 PV)
-  • M 500 บาท (250 PV)
-  • L 1,000 บาท (500 PV)
-  • XL 3,000 บาท (1,000 PV)
-  • XXL 5,000 บาท (2,500 PV)
-- การฝากเงิน: แนบสลิปผ่านระบบ Admin ตรวจสอบอนุมัติเข้า E-Cash
-- การถอนเงิน: ยื่นคำขอถอนเงินเข้าบัญชีธนาคาร ใช้รหัส OTP ยืนยันทางอีเมล
-- การเปิดร้านค้า: สมาชิกยื่นเปิดร้านค้าและลงสินค้า เมื่อแอดมินอนุมัติจะวางขายในมาร์เก็ตเพลส
-- สิทธิ์คงเหลือ (Eligible Rights): คำนวณจากสิทธิ์โบนัสตามแพ็กเกจ หักด้วย E-Money ที่ได้รับแล้ว
+📋 รายละเอียดเงื่อนไขการจ่ายคอมมิชชั่นและผลประโยชน์ทั้งหมดของระบบ Natee Plus Market:
+ข้อที่ 1: เงื่อนไขการรับสิทธิ์ตามระดับตำแหน่ง (Package & Eligible Rights)
+- Member (สมัครฟรี): ซื้อสินค้าและเปิดร้านค้าได้ (ไม่มีลิงก์แนะนำ)
+- Package S (100 บาท) 0 PV → สิทธิ์รับรายได้สูงสุด 1,000 บาท (รับลึก 1 ชั้นองค์กร = 2%)
+  * โปรโมชั่นค่าแนะนำ Package S: 50 บาท/ร้านค้า (จัดสรร: เข้า E-Coupon 40 บาท โดยหัก 10% หรือ 10 บาทสะสม Plan B, เข้า Plan B 5 บาท, เข้า All-Share 20 บาท, เข้า ปันสุข CSR 5 บาท, ไม่จ่ายในแผน A 20 ชั้น)
+- Package M (500 บาท) 250 PV → สิทธิ์รับรายได้สูงสุด 5,000 บาท (รับลึก 5 ชั้นองค์กร = 10.0% รวม)
+- Package L (1,000 บาท) 500 PV → สิทธิ์รับรายได้สูงสุด 10,000 บาท (รับลึก 10 ชั้นองค์กร = 20.0% รวม)
+- Package XL (3,000 บาท) 1,500 PV → สิทธิ์รับรายได้สูงสุด 30,000 บาท (รับลึก 15 ชั้นองค์กร = 30.0% รวม)
+- Package XXL (5,000 บาท) 2,500 PV → สิทธิ์รับรายได้สูงสุด 50,000 บาท (รับลึก 20 ชั้นองค์กร = 40.0% รวม)
+- ค่าแนะนำ 50% ของ PV (สำหรับ Package M - XXL)
+
+ข้อที่ 2: คอมมิชชั่นแผน A - ยูนิลีเวอร์ 20 ชั้น (Plan A Unilevel 20 Levels)
+- คำนวณจากทุกบิลที่มีคะแนน PV (1 PV = 1 บาท)
+- ค่าแนะนำ 50% ของ PV (ยกเว้น Package S ซึ่งจ่ายโปรโมชั่นพิเศษตามข้อ 1)
+- อัตราการจ่าย: 2% ของ PV ต่อชั้น สูงสุด 20 ชั้น (รวมจ่ายสูงสุด 40% สำหรับตำแหน่ง XXL)
+- ระบบบีบสายงาน (Dynamic Compression / Low-up Bypass): ข้ามอัปไลน์ที่สิทธิ์คงเหลือหมด (Remaining Rights = 0) หรือตำแหน่งไม่ถึง เพื่อให้จ่ายเต็ม 20 ชั้นเสมอ
+
+ข้อที่ 3: กฎการจัดสรรตัดหักยอดคอมมิชชั่น 20% (Flat 20% Split System)
+- ยอดคอมมิชชั่น 100% จัดสรรดังนี้:
+  • 80% → เข้ากระเป๋า E-Money (ถอนเป็นเงินสดเข้าบัญชีธนาคารได้)
+  • 20% → หมุนเวียนเข้ากองทุนระบบนิเวศน์: 10% เข้า E-Coupon (หัก 1% เข้า All-Share), 3% เข้า All-Share Pool, 5% สะสมเป็น Plan B Points, 1% เข้า CSR Welfare Fund (ปันสุข), 1% เข้า Company Profit
+
+ข้อที่ 4: คอมมิชชั่นแผน B - กองทุนออโต้รันเดี่ยวทั่วโลก (Plan B Global Auto-run B1 - B15)
+- สะสม Plan B Points ครบทุกๆ 100 Points สร้างรหัสใหม่ 1 รหัส (เริ่มต้น B1) เข้าผังเดี่ยวระดับโลก (Global Single Line Tree)
+- วงรอบสำเร็จ (Cycle Completion): ครบ 5 ชั้นไบนารี่ (62 รหัส)
+- ระดับ B1 - B14: แบ่ง 6 ส่วนเท่าๆ กัน จ่ายเข้า: E-Money, E-Coupon, ทุนยกระดับ B ถัดไป, All-Share Pool, CSR Fund, Company Profit
+- ระดับ B15 (สูงสุด): แบ่ง 5 ส่วนเต็ม จ่ายเข้า E-Money, E-Coupon, All-Share Pool, CSR Fund, Company Profit รับผลตอบแทนสุทธิสูงสุด 4,356,075.85 บาทต่อรหัส
+
+ข้อที่ 5: โบนัสหุ้นระบบ All-Share & กองทุนช่วยเหลือปันสุข CSR
+- All-Share Pool: แหล่งเงินทุนจาก 3% PV Plan A + 1% PV Bill Pass E-Coupon + 5% ค่าธรรมเนียมแปลง E-Cash เป็น E-Money. จ่ายเรียลไทม์เป็น 50% E-Money + 50% Plan B Points รายงานเรียกว่า E-Share
+- CSR Welfare Fund (กองทุนปันสุข): แหล่งเงินจาก 5 บาท/รหัส จาก Package S + 1% PV Plan A + 1/6 ส่วนจาก Plan B
+
+ข้อที่ 6: เกณฑ์การคิดสิทธิ์รับรายได้คงเหลือ (Remaining Rights Policy)
+- สิทธิ์คงเหลือ = สิทธิ์ตามแพ็กเกจ - รายได้สะสมสุทธิ
+- เมื่อสิทธิ์คงเหลือเป็น 0 จะไม่ได้รับคอมมิชชั่นเพิ่ม จนกว่าจะทำการซื้อแพ็กเกจขยายสิทธิ์ใหม่
+
+ข้อที่ 7: กฎการโอนเงินภายในและการถอนเงินสดเข้าธนาคาร (Transfers & Cash Out)
+- โอน E-Cash ให้สมาชิกอื่น: ฟรี 0%
+- แปลง E-Cash เป็น E-Money: ค่าธรรมเนียม 10% (5% เข้า All-Share Pool + 5% เข้า Company Profit)
+- แปลง E-Money เป็น E-Cash / E-Coupon: ฟรี 0%
+- ถอน E-Money เข้าธนาคาร: ขั้นต่ำ 200 บาท, ผ่าน KYC + OTP, หักสำรอง Auto-Reserve 20%, หักภาษี WHT 3% (2.40%), หักค่าบริการ 20 บาท/ครั้ง
+
+ข้อที่ 8: เงื่อนไขร้านค้าพาร์ทเนอร์ & การแชร์ GP คืนสู่ผัง MLM (Partner GP System)
+- GP ร้านค้า 20% ของราคาสินค้า, นำ 50% ของ GP (10% ของราคาสินค้า) แปลงเป็น PV ส่งเข้าคำนวณในแผน A ยูนิลีเวอร์ 20 ชั้นทันที
+
+ข้อที่ 9: ระบบค่านายหน้าปักตะกร้าพันธมิตร (Affiliate Commission System)
+- ร้านค้ากำหนดค่าคอมมิชชั่นปักตะกร้า (บาท/ชิ้น) หักออกจากยอดรับสุทธิของพาร์ทเนอร์หลังหัก GP และ VAT
+
+ข้อที่ 10: การตั้งราคาสินค้าและรายได้ร้านค้า
+- ภาษี 7%, ค่าจัดส่งขั้นต่ำ 35 บาท, GP 20%, ค่า Affiliate และ GP PV
+- ร้านค้าถอนเงินขั้นต่ำ 300 บาท หัก ณ ที่จ่าย 3% และค่าบริการถอน 20 บาท/ครั้ง
 `,
     knowledgeFiles: botConfig.knowledgeFiles || [],
     quickQuestions: botConfig.quickQuestions || [
