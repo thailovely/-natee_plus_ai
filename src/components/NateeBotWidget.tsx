@@ -258,7 +258,7 @@ export const NateeBotWidget: React.FC<NateeBotWidgetProps> = () => {
               <BookOpen className="w-3 h-3 text-cyan-400" />
               ตอบเฉพาะข้อมูลระบบ Natee Plus Market เท่านั้น
             </span>
-            <span className="text-slate-400">Gemini 3.6 Flash</span>
+            <span className="text-slate-400">Gemini 2.5 Flash (Free Tier)</span>
           </div>
 
           {/* Chat Messages List */}

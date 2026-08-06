@@ -205,7 +205,7 @@ export const AdminBotSettings: React.FC<AdminBotSettingsProps> = ({ currentUser,
             <div className="flex items-center gap-2">
               <h3 className="font-black text-xl text-cyan-200">🤖 ตั้งค่า AI Chatbot ผู้ช่วยประจำระบบ</h3>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
-                Gemini 3.6 Flash
+                Gemini 2.5 Flash (Free Tier)
               </span>
             </div>
             <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
