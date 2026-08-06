@@ -2748,6 +2748,7 @@ app.post('/api/auth/register', (req, res) => {
     createdAt: new Date().toISOString(),
     role: "Member",
     sellerStatus: "NotApplied",
+    justRegistered: true,
     idAddress: idAddress || {},
     shippingAddress: useSameAddress ? idAddress : (shippingAddress || {})
   };
@@ -3140,7 +3141,27 @@ function processMLMCommission(db: any, order: any, purchaser: any) {
   if (!db || !order || !purchaser) return;
 
   const productId = order.productId;
-  const isPackageS = (productId === 'pack_s' || (order.productName && order.productName.includes('Package S')));
+  const product = (db.products || []).find((p: any) => p.id === productId) || {
+    pack_s: { price: 100, category: 'Package' },
+    pack_m: { price: 500, category: 'Package' },
+    pack_l: { price: 1000, category: 'Package' },
+    pack_xl: { price: 3000, category: 'Package' },
+    pack_xxl: { price: 5000, category: 'Package' }
+  }[productId];
+
+  const isPackage = product?.category === 'Package' || productId?.startsWith('pack_');
+
+  if (!Array.isArray(db.transactions)) db.transactions = [];
+  if (!db.csrFund) db.csrFund = { balance: 0, history: [] };
+  if (!db.systemStats) db.systemStats = { totalPlanBReserves: 0, totalTaxReserves: 0, totalCompanyProfits: 0, totalAllShareReserves: 0 };
+
+  // When purchasing any package (Package S up to XXL), do not pay referral or any commissions/bonuses, ONLY All Share
+  if (isPackage) {
+    const pkgPrice = (product?.price || 100) * (order.quantity || 1);
+    const allShareFund = pkgPrice * 0.20; // 20% to All Share Pool
+    db.systemStats.totalAllShareReserves = (db.systemStats.totalAllShareReserves || 0) + allShareFund;
+    return;
+  }
 
   // Package PV map if not set on product
   const packagePvMap: Record<string, number> = {
@@ -3151,96 +3172,15 @@ function processMLMCommission(db: any, order: any, purchaser: any) {
     pack_xxl: 2500
   };
 
-  const product = (db.products || []).find((p: any) => p.id === productId);
   const pvPerUnit = product && product.pv !== undefined ? Number(product.pv) : (packagePvMap[productId] || 0);
   const totalPV = pvPerUnit * (order.quantity || 1);
 
-  if (!Array.isArray(db.transactions)) db.transactions = [];
-  if (!db.csrFund) db.csrFund = { balance: 0, history: [] };
-  if (!db.systemStats) db.systemStats = { totalPlanBReserves: 0, totalTaxReserves: 0, totalCompanyProfits: 0, totalAllShareReserves: 0 };
-
-  // 1. SPECIAL DISTRIBUTION FOR PACKAGE S (100 THB)
-  if (isPackageS) {
-    const pkgPrice = 100 * (order.quantity || 1);
-    // VAT 7%
-    const vat7 = Math.round((pkgPrice / 1.07 * 0.07) * 100) / 100; // ~6.54 THB per unit
-    db.systemStats.totalTaxReserves = (db.systemStats.totalTaxReserves || 0) + vat7;
-
-    // Sponsor Promotion: 50 THB/shop
-    const sponsorId = purchaser.sponsorId;
-    const sponsor = (db.members || []).find((m: any) => m.userId === sponsorId || m.username === sponsorId);
-
-    if (sponsor && sponsor.userId !== purchaser.userId) {
-      // Direct Referral Promotion 50 THB
-      // Allocation: 40 THB into E-Coupon + 10 THB into Plan B accumulation (10% deducted for Plan B)
-      const eCouponAmt = 40 * (order.quantity || 1);
-      const planBAmt = 10 * (order.quantity || 1);
-
-      sponsor.balanceECoupon = Number(sponsor.balanceECoupon || 0) + eCouponAmt;
-      sponsor.totalCouponsEarned = Number(sponsor.totalCouponsEarned || 0) + eCouponAmt;
-      sponsor.planBPoints = Number(sponsor.planBPoints || 0) + planBAmt;
-
-      // 1. Transaction for E-Coupon
-      db.transactions.push({
-        id: "TXN_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
-        userId: sponsor.userId,
-        type: "PackageS_Referral",
-        amount: eCouponAmt,
-        currency: "E-Coupon",
-        details: `ค่าแนะนำโปรโมชั่น Package S จากสมาชิก ${purchaser.name} (${purchaser.userId}) - รับ E-Coupon ฿${eCouponAmt}`,
-        status: "Approved",
-        createdAt: new Date().toISOString()
-      });
-
-      // 2. Transaction for Plan B Points
-      db.transactions.push({
-        id: "TXN_" + (Date.now() + 1) + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
-        userId: sponsor.userId,
-        type: "Bonus",
-        amount: planBAmt,
-        currency: "PlanBPoints",
-        details: `คะแนนสะสมผังเดี่ยว Plan B จากการแนะนำ Package S สมาชิก ${purchaser.name} (${purchaser.userId}) - รับ ${planBAmt} คะแนน`,
-        status: "Approved",
-        createdAt: new Date().toISOString()
-      });
-    }
-
-    // Allocation to System Funds:
-    // Plan B structure = 5 THB
-    const planBFund = 5 * (order.quantity || 1);
-    db.systemStats.totalPlanBReserves = (db.systemStats.totalPlanBReserves || 0) + planBFund;
-
-    // All-Share Pool = 20 THB
-    const allShareFund = 20 * (order.quantity || 1);
-    db.systemStats.totalAllShareReserves = (db.systemStats.totalAllShareReserves || 0) + allShareFund;
-
-    // CSR Welfare / ปันสุข = 5 THB
-    const csrFundAmt = 5 * (order.quantity || 1);
-    db.csrFund.balance = Number(db.csrFund.balance || 0) + csrFundAmt;
-    if (!Array.isArray(db.csrFund.history)) db.csrFund.history = [];
-    db.csrFund.history.push({
-      id: "CSR_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
-      type: "Package S Contribution",
-      amount: csrFundAmt,
-      description: `เงินสมทบจาก Package S สมาชิก ${purchaser.name} (${purchaser.userId})`,
-      createdAt: new Date().toISOString()
-    });
-
-    // Remaining is Company Profit:
-    const companyProfit = Math.max(0, pkgPrice - vat7 - 50 * (order.quantity || 1) - planBFund - allShareFund - csrFundAmt);
-    db.systemStats.totalCompanyProfits = (db.systemStats.totalCompanyProfits || 0) + companyProfit;
-
-    // Does NOT pay in Plan A 20 levels
-    return;
-  }
-
-  // 2. DISTRIBUTION FOR PACKAGES M, L, XL, XXL AND PV PRODUCTS (totalPV > 0)
   if (totalPV > 0) {
     // A. DIRECT SPONSOR BONUS (50% of PV)
     const sponsorId = purchaser.sponsorId;
     const sponsor = (db.members || []).find((m: any) => m.userId === sponsorId || m.username === sponsorId);
 
-    if (sponsor && sponsor.userId !== purchaser.userId) {
+    if (sponsor && sponsor.userId !== purchaser.userId && !purchaser.justRegistered) {
       const grossSponsorBonus = totalPV * 0.50; // 50% of PV
       recalculateMemberEligibleRights(db, sponsor);
 
@@ -3294,6 +3234,11 @@ function processMLMCommission(db: any, order: any, purchaser: any) {
 
         recalculateMemberEligibleRights(db, sponsor);
       }
+    }
+
+    if (sponsor && sponsor.userId !== purchaser.userId && purchaser.justRegistered) {
+      const allShareNet = Math.round((totalPV * 0.50 * 0.03) * 100) / 100;
+      db.systemStats.totalAllShareReserves = (db.systemStats.totalAllShareReserves || 0) + allShareNet;
     }
 
     // B. PLAN A UNILEVEL 20 LEVELS (2.0% of PV per level)
@@ -3485,6 +3430,10 @@ app.post('/api/shop/purchase', (req, res) => {
 
   // Process MLM Commissions according to business rules
   processMLMCommission(db, newOrder, member);
+
+  if (member.justRegistered) {
+    member.justRegistered = false;
+  }
 
   writeDb(db);
 
