@@ -2928,6 +2928,701 @@ app.get('/api/admin/members', (req, res) => {
   res.json({ success: true, members: enrichedMembers });
 });
 
+// Helper: Find next available slot in Binary Tree under sponsor
+function findAndPlaceBinaryMember(db: any, sponsorId: string) {
+  const members = db.members || [];
+  let root = members.find((m: any) => m.userId === sponsorId || m.username === sponsorId);
+  if (!root) {
+    root = members.find((m: any) => m.userId === "A260600001") || members[0];
+  }
+  if (!root) {
+    return { parentId: "SYSTEM", side: "Left" };
+  }
+
+  const queue = [root];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) continue;
+
+    const leftChild = members.find((m: any) => m.parentId === current.userId && m.side === 'Left');
+    if (!leftChild) {
+      return { parentId: current.userId, side: 'Left' };
+    }
+
+    const rightChild = members.find((m: any) => m.parentId === current.userId && m.side === 'Right');
+    if (!rightChild) {
+      return { parentId: current.userId, side: 'Right' };
+    }
+
+    queue.push(leftChild);
+    queue.push(rightChild);
+  }
+
+  return { parentId: root.userId, side: 'Left' };
+}
+
+// Helper: Build Binary Tree Structure
+function buildBinaryTreeNode(db: any, targetId: string, currentDepth = 1, maxDepth = 5) {
+  const members = db.members || [];
+  const member = members.find((m: any) => m.userId === targetId || m.username === targetId);
+  if (!member) return null;
+
+  const node: any = {
+    userId: member.userId,
+    username: member.username,
+    name: member.name,
+    surname: member.surname,
+    rank: member.rank || 'Member',
+    statusKyc: member.statusKyc || 'NotVerified',
+    parentId: member.parentId || 'SYSTEM',
+    side: member.side || '',
+    left: null,
+    right: null
+  };
+
+  if (currentDepth < maxDepth) {
+    const leftChild = members.find((m: any) => m.parentId === member.userId && m.side === 'Left');
+    if (leftChild) {
+      node.left = buildBinaryTreeNode(db, leftChild.userId, currentDepth + 1, maxDepth);
+    }
+    const rightChild = members.find((m: any) => m.parentId === member.userId && m.side === 'Right');
+    if (rightChild) {
+      node.right = buildBinaryTreeNode(db, rightChild.userId, currentDepth + 1, maxDepth);
+    }
+  }
+
+  return node;
+}
+
+// Helper: Build Direct Referral Tree Structure
+function buildReferralTreeNode(db: any, targetId: string, currentDepth = 1, maxDepth = 5) {
+  const members = db.members || [];
+  const member = members.find((m: any) => m.userId === targetId || m.username === targetId);
+  if (!member) return null;
+
+  const children = members
+    .filter((m: any) => m.sponsorId === member.userId || m.sponsorId === member.username)
+    .map((child: any) => {
+      if (currentDepth < maxDepth) {
+        return buildReferralTreeNode(db, child.userId, currentDepth + 1, maxDepth);
+      }
+      return {
+        userId: child.userId,
+        username: child.username,
+        name: child.name,
+        rank: child.rank || 'Member',
+        children: []
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    userId: member.userId,
+    username: member.username,
+    name: member.name,
+    rank: member.rank || 'Member',
+    children
+  };
+}
+
+// MLM TREE ENDPOINTS
+app.get('/api/mlm/binary-tree/:targetId', (req, res) => {
+  const { targetId } = req.params;
+  const db = readDb();
+  const tree = buildBinaryTreeNode(db, targetId, 1, 5);
+  const member = (db.members || []).find((m: any) => m.userId === targetId || m.username === targetId);
+  
+  if (!tree) {
+    return res.status(404).json({ success: false, message: 'ไม่พบผังสายงาน หรือไม่ได้อยู่ในสายงานของคุณ' });
+  }
+
+  return res.json({
+    success: true,
+    tree,
+    parentId: member?.parentId || 'SYSTEM'
+  });
+});
+
+app.get('/api/mlm/referral-tree/:targetId', (req, res) => {
+  const { targetId } = req.params;
+  const db = readDb();
+  const tree = buildReferralTreeNode(db, targetId, 1, 5);
+
+  if (!tree) {
+    return res.status(404).json({ success: false, message: 'ไม่พบผังผู้แนะนำตรง' });
+  }
+
+  return res.json({ success: true, tree });
+});
+
+app.get('/api/mlm/plan-b/:userId', (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  
+  return res.json({
+    success: true,
+    planB: {
+      points: member?.planBPoints || 0,
+      currentLevel: 1,
+      history: []
+    }
+  });
+});
+
+app.get('/api/mlm/direct-referrals/:userId', (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  const members = (db.members || []).filter((m: any) => m.sponsorId === userId || m.sponsorId === userId);
+  return res.json({ success: true, members });
+});
+
+app.get('/api/mlm/binary-members/:userId', (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  
+  // Collect all descendants recursively
+  const descendants: any[] = [];
+  const queue = [userId];
+  
+  while (queue.length > 0) {
+    const currentId = queue.shift();
+    const children = (db.members || []).filter((m: any) => m.parentId === currentId);
+    for (const child of children) {
+      descendants.push(child);
+      queue.push(child.userId);
+    }
+  }
+
+  return res.json({ success: true, members: descendants });
+});
+
+app.get('/api/mlm/search-downline', (req, res) => {
+  const { query } = req.query;
+  const db = readDb();
+  if (!query || typeof query !== 'string') {
+    return res.json({ success: true, results: [] });
+  }
+
+  const q = query.trim().toLowerCase();
+  const matches = (db.members || []).filter((m: any) => 
+    (m.userId && m.userId.toLowerCase().includes(q)) ||
+    (m.username && m.username.toLowerCase().includes(q)) ||
+    (m.name && m.name.toLowerCase().includes(q)) ||
+    (m.phone && m.phone.includes(q))
+  );
+
+  return res.json({ success: true, results: matches });
+});
+
+// SHOP & PACKAGE PURCHASE ENDPOINTS
+app.get('/api/shop/products', (req, res) => {
+  const db = readDb();
+  return res.json({ success: true, products: db.products || [] });
+});
+
+app.get('/api/shop/package-choices', (req, res) => {
+  const db = readDb();
+  return res.json({ success: true, choices: db.packageProductChoices || [] });
+});
+
+app.post('/api/shop/purchase', (req, res) => {
+  const { userId, productId, quantity, shippingAddress, selectedChoiceId } = req.body;
+  if (!userId || !productId) {
+    return res.status(400).json({ success: false, message: 'กรุณาระบุข้อมูลการสั่งซื้อให้ครบถ้วน' });
+  }
+
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) {
+    return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลผู้ใช้งานในระบบ' });
+  }
+
+  // Define default packages dictionary
+  const defaultPackages: Record<string, any> = {
+    pack_s: { id: "pack_s", name: "Package S (1,000 THB)", price: 1000, category: "Package", rank: "S" },
+    pack_m: { id: "pack_m", name: "Package M (5,000 THB)", price: 5000, category: "Package", rank: "M" },
+    pack_l: { id: "pack_l", name: "Package L (10,000 THB)", price: 10000, category: "Package", rank: "L" },
+    pack_xl: { id: "pack_xl", name: "Package XL (30,000 THB)", price: 30000, category: "Package", rank: "XL" },
+    pack_xxl: { id: "pack_xxl", name: "Package XXL (50,000 THB)", price: 50000, category: "Package", rank: "XXL" }
+  };
+
+  let product = (db.products || []).find((p: any) => p.id === productId);
+  if (!product && defaultPackages[productId]) {
+    product = defaultPackages[productId];
+  }
+
+  if (!product) {
+    return res.status(404).json({ success: false, message: 'ไม่พบสินค้าในระบบ' });
+  }
+
+  const qty = Math.max(1, parseInt(quantity, 10) || 1);
+  const totalCost = (product.price || 0) * qty;
+
+  // Check member balance
+  const currentBalance = Number(member.balanceECash || 0);
+  if (currentBalance < totalCost) {
+    return res.status(400).json({ success: false, message: `ยอดเงิน E-Cash ไม่เพียงพอ (มี ฿${currentBalance.toLocaleString()} ต้องการ ฿${totalCost.toLocaleString()})` });
+  }
+
+  // Deduct balance
+  member.balanceECash = currentBalance - totalCost;
+
+  // If Package purchase, handle rank upgrade and binary placement
+  const isPackage = product.category === 'Package' || productId.startsWith('pack_');
+  if (isPackage) {
+    const packageRankMap: Record<string, string> = {
+      pack_s: "S", pack_m: "M", pack_l: "L", pack_xl: "XL", pack_xxl: "XXL"
+    };
+    const targetRank = product.rank || packageRankMap[productId] || "S";
+
+    const rankHierarchy: Record<string, number> = { Member: 0, S: 1, M: 2, L: 3, XL: 4, XXL: 5 };
+    const currentRankLevel = rankHierarchy[member.rank] || 0;
+    const newRankLevel = rankHierarchy[targetRank] || 1;
+
+    if (newRankLevel > currentRankLevel) {
+      member.rank = targetRank;
+    }
+
+    // Place into binary tree if not placed
+    if (!member.parentId || member.parentId === "") {
+      const placement = findAndPlaceBinaryMember(db, member.sponsorId || "A260600001");
+      member.parentId = placement.parentId;
+      member.side = placement.side;
+    }
+
+    recalculateMemberEligibleRights(db, member);
+  }
+
+  // Create order record
+  if (!Array.isArray(db.orders)) db.orders = [];
+  const orderId = "ORD_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase();
+  const newOrder = {
+    id: orderId,
+    userId: member.userId,
+    username: member.username,
+    productId: product.id,
+    productName: product.name,
+    category: product.category || 'General',
+    quantity: qty,
+    totalPrice: totalCost,
+    shippingAddress: shippingAddress || `${member.name} ${member.surname} ${member.phone}`,
+    selectedChoiceId: selectedChoiceId || '',
+    status: 'Completed',
+    sellerId: product.sellerId || 'SYSTEM',
+    createdAt: new Date().toISOString()
+  };
+  db.orders.push(newOrder);
+
+  // Record transaction
+  if (!Array.isArray(db.transactions)) db.transactions = [];
+  db.transactions.push({
+    id: "TXN_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+    userId: member.userId,
+    type: "Purchase",
+    amount: totalCost,
+    currency: "E-Cash",
+    details: `ชำระเงินสั่งซื้อ ${product.name} (คำสั่งซื้อ #${orderId})`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+
+  writeDb(db);
+
+  return res.json({
+    success: true,
+    message: `สั่งซื้อ ${product.name} เรียบร้อยแล้วค่ะ`,
+    order: newOrder
+  });
+});
+
+// MEMBER & ORDERS ENDPOINTS
+app.get('/api/member/profile/:userId', (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) return res.status(404).json({ success: false, message: 'ไม่พบสมาชิก' });
+  return res.json({ success: true, profile: member });
+});
+
+app.get('/api/member/transactions/:userId', (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  const txns = (db.transactions || []).filter((t: any) => t.userId === userId);
+  return res.json({ success: true, transactions: txns });
+});
+
+app.post('/api/member/withdraw', (req, res) => {
+  const { userId, amount, pin } = req.body;
+  if (!userId || !amount || parseFloat(amount) < 200) {
+    return res.status(400).json({ success: false, message: 'การถอนเงินขั้นต่ำต้องเป็น 200 บาทขึ้นไปค่ะ' });
+  }
+
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) {
+    return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลสมาชิก' });
+  }
+
+  if (member.pin && pin && pin !== member.pin) {
+    return res.status(400).json({ success: false, message: 'รหัส PIN ไม่ถูกต้องค่ะ' });
+  }
+
+  const amt = parseFloat(amount);
+  const currentEMoney = Number(member.balanceEMoney || 0);
+  if (currentEMoney < amt) {
+    return res.status(400).json({ success: false, message: `ยอดเงิน E-Money ไม่เพียงพอ (มี ฿${currentEMoney.toLocaleString()} ต้องการถอน ฿${amt.toLocaleString()})` });
+  }
+
+  // Deduct E-Money
+  member.balanceEMoney = currentEMoney - amt;
+
+  // Calculation Breakdown according to official system formula
+  const autoReserve = amt * 0.20; // 20% Auto-Reserve
+  const taxableAmount = amt * 0.80; // 80% Tax base
+  const withholdingTax = taxableAmount * 0.03; // 3% WHT on 80% base = 2.4% of gross
+  const companyFee = taxableAmount * 0.02; // 2% Platform fee on 80% base = 1.6% of gross
+  const transferFee = 25; // 25 THB bank transfer fee
+  const netReceived = Math.max(0, taxableAmount - withholdingTax - companyFee - transferFee); // 76% - 25 THB
+
+  // Recalculate Eligible Rights
+  recalculateMemberEligibleRights(db, member);
+
+  // Record Transaction
+  if (!Array.isArray(db.transactions)) db.transactions = [];
+  const txnId = "WD_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase();
+  db.transactions.push({
+    id: txnId,
+    userId: member.userId,
+    type: "Withdraw",
+    amount: amt,
+    currency: "E-Money",
+    netAmount: netReceived,
+    autoReserve,
+    taxableAmount,
+    withholdingTax,
+    companyFee,
+    transferFee,
+    bankName: member.bankName || member.kycBankName || "-",
+    bankAccount: member.bankAccount || member.kycBankAccount || "-",
+    details: `ถอนรายได้ E-Money เข้าบัญชีธนาคาร ฿${amt.toLocaleString()} (ยอดรับสุทธิ ฿${netReceived.toFixed(2)} หักสำรองระบบ 20%, ภาษี 3%, ค่าบริการ 2%, ค่าโอน 25 บ.)`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+
+  writeDb(db);
+  sendSystemNotification('withdrawal', `🔔 สมาชิก ${member.name} (${member.userId}) แจ้งถอนเงิน ฿${amt.toLocaleString()} เข้าธนาคาร ${member.bankName} เลขที่ ${member.bankAccount}`);
+
+  return res.json({
+    success: true,
+    message: `ส่งคำขอถอนเงินรายได้ ฿${amt.toLocaleString()} เรียบร้อยแล้วค่ะ ยอดเข้าบัญชีสุทธิ ฿${netReceived.toFixed(2)}`,
+    netReceived
+  });
+});
+
+app.post('/api/member/topup', (req, res) => {
+  const { userId, amount, transferAmount, transferDate, slipFile } = req.body;
+  if (!userId || !amount) {
+    return res.status(400).json({ success: false, message: 'กรุณาระบุข้อมูลการเติมเงิน' });
+  }
+
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) {
+    return res.status(404).json({ success: false, message: 'ไม่พบสมาชิก' });
+  }
+
+  const topupAmt = parseFloat(amount);
+  if (!Array.isArray(db.transactions)) db.transactions = [];
+  const txnId = "DEP_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase();
+
+  db.transactions.push({
+    id: txnId,
+    userId: member.userId,
+    type: "Deposit",
+    amount: topupAmt,
+    currency: "E-Cash",
+    slipUrl: slipFile || "",
+    transferDate: transferDate || new Date().toISOString(),
+    details: `แจ้งเติมเงิน E-Cash จำนวน ฿${topupAmt.toLocaleString()}`,
+    status: "Pending",
+    createdAt: new Date().toISOString()
+  });
+
+  writeDb(db);
+  return res.json({
+    success: true,
+    isAutoApproved: false,
+    message: 'ส่งหลักฐานสลิปเรียบร้อยแล้วค่ะ รอการตรวจสอบและอนุมัติยอด E-Cash จากแอดมินหลังบ้าน!'
+  });
+});
+
+app.post('/api/member/buy-coupon', (req, res) => {
+  const { userId, amount, pin } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) return res.status(404).json({ success: false, message: 'ไม่พบสมาชิก' });
+
+  if (member.pin && pin && pin !== member.pin) {
+    return res.status(400).json({ success: false, message: 'รหัส PIN ไม่ถูกต้องค่ะ' });
+  }
+
+  const amt = parseFloat(amount);
+  const currentCash = Number(member.balanceECash || 0);
+  if (currentCash < amt) {
+    return res.status(400).json({ success: false, message: 'ยอด E-Cash ไม่เพียงพอ' });
+  }
+
+  member.balanceECash = currentCash - amt;
+  member.balanceECoupon = Number(member.balanceECoupon || 0) + amt;
+
+  if (!Array.isArray(db.transactions)) db.transactions = [];
+  db.transactions.push({
+    id: "CPN_" + Date.now(),
+    userId: member.userId,
+    type: "BuyCoupon",
+    amount: amt,
+    currency: "E-Coupon",
+    details: `แลกเปลี่ยน E-Cash เป็น E-Coupon จำนวน ${amt.toLocaleString()} คูปอง`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+
+  writeDb(db);
+  return res.json({
+    success: true,
+    newECoupon: member.balanceECoupon,
+    message: `แลกคูปองช้อปปิ้งสำเร็จ! รับสิทธิ์คงเหลือ ${member.balanceECoupon} คูปอง`
+  });
+});
+
+app.post('/api/member/verify-recipient', (req, res) => {
+  const { receiverPhoneOrUser, senderId } = req.body;
+  const db = readDb();
+  const target = (receiverPhoneOrUser || '').trim().toLowerCase();
+  
+  const recipient = (db.members || []).find((m: any) => 
+    (m.userId && m.userId.toLowerCase() === target) ||
+    (m.username && m.username.toLowerCase() === target) ||
+    (m.phone && m.phone === target)
+  );
+
+  if (!recipient) {
+    return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลสมาชิกผู้รับปลายทาง' });
+  }
+
+  if (recipient.userId === senderId) {
+    return res.status(400).json({ success: false, message: 'ไม่สามารถโอนเงินให้บัญชีของตัวเองได้ค่ะ' });
+  }
+
+  return res.json({
+    success: true,
+    recipient: {
+      userId: recipient.userId,
+      username: recipient.username,
+      name: `${recipient.name} ${recipient.surname}`,
+      phone: recipient.phone
+    }
+  });
+});
+
+app.post('/api/member/transfer-e-cash', (req, res) => {
+  const { senderId, receiverPhoneOrUser, amount, pin } = req.body;
+  const db = readDb();
+  const sender = (db.members || []).find((m: any) => m.userId === senderId || m.username === senderId);
+  if (!sender) return res.status(404).json({ success: false, message: 'ไม่พบผู้ส่ง' });
+
+  if (sender.pin && pin && pin !== sender.pin) {
+    return res.status(400).json({ success: false, message: 'รหัส PIN ไม่ถูกต้องค่ะ' });
+  }
+
+  const target = (receiverPhoneOrUser || '').trim().toLowerCase();
+  const receiver = (db.members || []).find((m: any) => 
+    (m.userId && m.userId.toLowerCase() === target) ||
+    (m.username && m.username.toLowerCase() === target) ||
+    (m.phone && m.phone === target)
+  );
+  if (!receiver) return res.status(404).json({ success: false, message: 'ไม่พบสมาชิกผู้รับปลายทาง' });
+
+  const amt = parseFloat(amount);
+  const senderCash = Number(sender.balanceECash || 0);
+  if (senderCash < amt) {
+    return res.status(400).json({ success: false, message: 'ยอดเงิน E-Cash ของคุณไม่เพียงพอ' });
+  }
+
+  sender.balanceECash = senderCash - amt;
+  receiver.balanceECash = Number(receiver.balanceECash || 0) + amt;
+
+  if (!Array.isArray(db.transactions)) db.transactions = [];
+  db.transactions.push({
+    id: "TX_OUT_" + Date.now(),
+    userId: sender.userId,
+    type: "Transfer",
+    amount: amt,
+    currency: "E-Cash",
+    details: `โอน E-Cash ให้สมาชิก ${receiver.name} (${receiver.userId})`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+  db.transactions.push({
+    id: "TX_IN_" + Date.now(),
+    userId: receiver.userId,
+    type: "Receive",
+    amount: amt,
+    currency: "E-Cash",
+    details: `ได้รับโอน E-Cash จากสมาชิก ${sender.name} (${sender.userId})`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+
+  writeDb(db);
+  return res.json({ success: true, message: `โอนเงิน E-Cash จำนวน ฿${amt.toLocaleString()} ให้ ${receiver.name} สำเร็จแล้วค่ะ` });
+});
+
+app.post('/api/member/transfer-ecash-to-emoney', (req, res) => {
+  const { userId, amount, pin } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) return res.status(404).json({ success: false, message: 'ไม่พบสมาชิก' });
+
+  if (member.pin && pin && pin !== member.pin) {
+    return res.status(400).json({ success: false, message: 'รหัส PIN ไม่ถูกต้องค่ะ' });
+  }
+
+  const amt = parseFloat(amount);
+  const currentCash = Number(member.balanceECash || 0);
+  if (currentCash < amt) return res.status(400).json({ success: false, message: 'ยอด E-Cash ไม่เพียงพอ' });
+
+  const fee = amt * 0.10; // 10% All-Share allocation fee
+  const net = amt - fee;
+
+  member.balanceECash = currentCash - amt;
+  member.balanceEMoney = Number(member.balanceEMoney || 0) + net;
+
+  if (!Array.isArray(db.transactions)) db.transactions = [];
+  db.transactions.push({
+    id: "CVT_" + Date.now(),
+    userId: member.userId,
+    type: "Transfer",
+    amount: amt,
+    netAmount: net,
+    currency: "E-Money",
+    details: `โยกย้าย E-Cash เข้า E-Money ฿${amt.toLocaleString()} (หักธรรมเนียมจัดสรร All-Share 10% ยอดสุทธิ ฿${net.toLocaleString()})`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+
+  writeDb(db);
+  return res.json({ success: true, message: `โยกย้ายเงินเข้ากระเป๋า E-Money สำเร็จแล้วค่ะ (รับสุทธิ ฿${net.toLocaleString()})` });
+});
+
+app.post('/api/member/transfer-emoney-to-ecash', (req, res) => {
+  const { userId, amount, pin } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) return res.status(404).json({ success: false, message: 'ไม่พบสมาชิก' });
+
+  if (member.pin && pin && pin !== member.pin) {
+    return res.status(400).json({ success: false, message: 'รหัส PIN ไม่ถูกต้องค่ะ' });
+  }
+
+  const amt = parseFloat(amount);
+  const currentEMoney = Number(member.balanceEMoney || 0);
+  if (currentEMoney < amt) return res.status(400).json({ success: false, message: 'ยอด E-Money ไม่เพียงพอ' });
+
+  member.balanceEMoney = currentEMoney - amt;
+  member.balanceECash = Number(member.balanceECash || 0) + amt;
+
+  recalculateMemberEligibleRights(db, member);
+
+  if (!Array.isArray(db.transactions)) db.transactions = [];
+  db.transactions.push({
+    id: "CVT2_" + Date.now(),
+    userId: member.userId,
+    type: "Transfer",
+    amount: amt,
+    currency: "E-Cash",
+    details: `โยกย้าย E-Money เข้ากระเป๋า E-Cash ฿${amt.toLocaleString()} (ไม่มีค่าธรรมเนียม)`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+
+  writeDb(db);
+  return res.json({ success: true, message: `โยกย้ายเงิน E-Money เข้ากระเป๋า E-Cash ฿${amt.toLocaleString()} สำเร็จแล้วค่ะ` });
+});
+
+app.post('/api/member/transfer-emoney-to-ecoupon', (req, res) => {
+  const { userId, amount, pin } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) return res.status(404).json({ success: false, message: 'ไม่พบสมาชิก' });
+
+  if (member.pin && pin && pin !== member.pin) {
+    return res.status(400).json({ success: false, message: 'รหัส PIN ไม่ถูกต้องค่ะ' });
+  }
+
+  const amt = parseFloat(amount);
+  const currentEMoney = Number(member.balanceEMoney || 0);
+  if (currentEMoney < amt) return res.status(400).json({ success: false, message: 'ยอด E-Money ไม่เพียงพอ' });
+
+  member.balanceEMoney = currentEMoney - amt;
+  member.balanceECoupon = Number(member.balanceECoupon || 0) + amt;
+
+  recalculateMemberEligibleRights(db, member);
+
+  if (!Array.isArray(db.transactions)) db.transactions = [];
+  db.transactions.push({
+    id: "CVT3_" + Date.now(),
+    userId: member.userId,
+    type: "Transfer",
+    amount: amt,
+    currency: "E-Coupon",
+    details: `โยกย้าย E-Money เป็น E-Coupon ${amt.toLocaleString()} คูปอง (ไม่มีค่าธรรมเนียม)`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+
+  writeDb(db);
+  return res.json({ success: true, message: `โยกย้ายเงิน E-Money เป็น E-Coupon จำนวน ${amt.toLocaleString()} คูปอง สำเร็จแล้วค่ะ` });
+});
+
+// MEMBER & ORDERS ENDPOINTS
+app.get('/api/member/orders/:userId', (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  const orders = (db.orders || []).filter((o: any) => o.userId === userId);
+  return res.json({ success: true, orders });
+});
+
+app.get('/api/seller/orders/:userId', (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  const orders = (db.orders || []).filter((o: any) => o.sellerId === userId);
+  return res.json({ success: true, orders });
+});
+
+app.get('/api/admin/orders', (req, res) => {
+  const db = readDb();
+  return res.json({ success: true, orders: db.orders || [] });
+});
+
+app.get('/api/admin/stats', (req, res) => {
+  const db = readDb();
+  return res.json({ success: true, stats: db.systemStats || {} });
+});
+
+app.get('/api/bank-settings', (req, res) => {
+  const db = readDb();
+  return res.json({ success: true, bankSettings: db.bankSettings || {} });
+});
+
+app.post('/api/bank-settings', (req, res) => {
+  const db = readDb();
+  db.bankSettings = req.body;
+  writeDb(db);
+  return res.json({ success: true, message: 'บันทึกข้อมูลบัญชีธนาคารเรียบร้อยแล้วค่ะ' });
+});
+
 app.post('/api/admin/rebuild-binary-tree', (req, res) => {
   const { managerId } = req.body;
   const db = readDb();

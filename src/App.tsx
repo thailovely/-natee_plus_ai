@@ -108,6 +108,9 @@ export default function App() {
   const packageChoicesFetchedAt = React.useRef<number>(0);
   const productsFetchedAt = React.useRef<number>(0);
   const sellerProductsFetchedAt = React.useRef<number>(0);
+  const lastNotifiedUserIdRef = React.useRef<string | null>(null);
+  const lastNotifiedECashRef = React.useRef<number | null>(null);
+  const lastNotifiedEMoneyRef = React.useRef<number | null>(null);
 
   const [isUsingPollingFallback, setIsUsingPollingFallback] = useState<boolean>(false);
   const [taxType, setTaxType] = useState<'personal' | 'corporate'>('personal');
@@ -523,6 +526,9 @@ export default function App() {
     setIsFirstLoginModal(false);
     setNewPin('');
     setNewPinConfirm('');
+    lastNotifiedUserIdRef.current = null;
+    lastNotifiedECashRef.current = null;
+    lastNotifiedEMoneyRef.current = null;
     clearRegisterForm();
   };
 
@@ -1494,6 +1500,75 @@ export default function App() {
     setTimeout(() => setNotif(null), 5000);
   };
 
+  // Helper to check and notify balance increases safely without repeating alerts on login
+  const checkAndNotifyBalanceChanges = (newECashRaw: any, newEMoneyRaw: any, targetUserId?: string) => {
+    const uid = targetUserId || currentUser?.userId;
+    if (!uid) return;
+
+    const newECash = Number(newECashRaw || 0);
+    const newEMoney = Number(newEMoneyRaw || 0);
+
+    // If user changed or first load for this user in session: initialize baseline silently!
+    if (lastNotifiedUserIdRef.current !== uid || lastNotifiedECashRef.current === null) {
+      lastNotifiedUserIdRef.current = uid;
+      lastNotifiedECashRef.current = newECash;
+      lastNotifiedEMoneyRef.current = newEMoney;
+      return;
+    }
+
+    // Check E-Cash increase
+    if (lastNotifiedECashRef.current !== null) {
+      const diffECash = parseFloat((newECash - lastNotifiedECashRef.current).toFixed(2));
+      if (diffECash >= 0.05) {
+        lastNotifiedECashRef.current = newECash;
+        
+        fetch(`/api/member/transactions/${uid}`)
+          .then(tRes => tRes.json())
+          .then(tData => {
+            let isDeposit = false;
+            let depositAmount = diffECash;
+
+            if (tData.success && tData.transactions) {
+              const recentDeposit = tData.transactions.find((t: any) => {
+                const isDepType = t.type === "Deposit" || t.type === "Deposit_System";
+                const isApproved = t.status === "Approved";
+                const isRecent = (new Date().getTime() - new Date(t.createdAt).getTime()) < 60000;
+                return isDepType && isApproved && isRecent;
+              });
+
+              if (recentDeposit) {
+                isDeposit = true;
+                depositAmount = recentDeposit.transferAmount || recentDeposit.amount || diffECash;
+              }
+            }
+
+            if (isDeposit) {
+              showNotif(`เติมเงิน E-Cash สำเร็จแล้ว! +${depositAmount.toLocaleString()} บาท (ได้รับยอดจริงครบถ้วนแล้วค่ะ)`, 'success');
+            } else {
+              showNotif(`ได้รับปันผลสำเร็จ! +${diffECash.toLocaleString()} บาท จาก Bonus/E-Share`, 'success');
+            }
+          })
+          .catch(() => {
+            showNotif(`ยอดเงิน E-Cash ของคุณเพิ่มขึ้น +${diffECash.toLocaleString()} บาท`, 'success');
+          });
+      } else if (newECash < lastNotifiedECashRef.current - 0.5) {
+        lastNotifiedECashRef.current = newECash;
+      }
+    }
+
+    // Check E-Money increase
+    if (lastNotifiedEMoneyRef.current !== null) {
+      const diffEMoney = parseFloat((newEMoney - lastNotifiedEMoneyRef.current).toFixed(2));
+      if (diffEMoney >= 0.05) {
+        lastNotifiedEMoneyRef.current = newEMoney;
+        showNotif(`ได้รับรายได้ปันผล/โบนัส E-Money! +${diffEMoney.toLocaleString()} บาท`, 'success');
+        playMoneySound(diffEMoney, 'bonus');
+      } else if (newEMoney < lastNotifiedEMoneyRef.current - 0.5) {
+        lastNotifiedEMoneyRef.current = newEMoney;
+      }
+    }
+  };
+
   // Handle URL sponsor parameter on mount
   useEffect(() => {
     // Warm up/preload speechSynthesis voices
@@ -1885,25 +1960,9 @@ export default function App() {
               setAdminMembersList(members);
               const currentMember = currentUser ? members.find((m: any) => m.userId === currentUser.userId) : null;
               if (currentMember) {
+                checkAndNotifyBalanceChanges(currentMember.balanceECash, currentMember.balanceEMoney, currentMember.userId);
                 setProfile((prevProfile: any) => {
                   if (prevProfile) {
-                    // Check E-Cash (No audio sound per request, just notification)
-                    const prevB = prevProfile.balanceECash;
-                    const newBalance = currentMember.balanceECash;
-                    if (newBalance > prevB && prevB > 0) {
-                      const diff = parseFloat((newBalance - prevB).toFixed(4));
-                      showNotif(`ยอดเงิน E-Cash ของคุณเพิ่มขึ้น +${diff.toLocaleString()} บาท`, 'success');
-                    }
-
-                    // Check E-Money (Play income sound only for E-Money additions!)
-                    const prevEMoney = prevProfile.balanceEMoney || 0;
-                    const newEMoney = currentMember.balanceEMoney || 0;
-                    if (newEMoney > prevEMoney && prevEMoney > 0) {
-                      const diffEMoney = parseFloat((newEMoney - prevEMoney).toFixed(4));
-                      showNotif(`ได้รับรายได้ปันผล/โบนัส E-Money! +${diffEMoney.toLocaleString()} บาท`, 'success');
-                      playMoneySound(diffEMoney, 'bonus');
-                    }
-
                     // Optimizing reference to prevent unnecessary dashboard flickering and visual re-renders
                     const isIdentical = 
                       prevProfile.balanceECash === currentMember.balanceECash &&
@@ -2123,6 +2182,7 @@ export default function App() {
             
             const currentMember = currentUser ? data.find((m: any) => m.userId === currentUser.userId) : null;
             if (currentMember) {
+              checkAndNotifyBalanceChanges(currentMember.balanceECash, currentMember.balanceEMoney, currentMember.userId);
               setProfile((prevProfile: any) => {
                 if (prevProfile) {
                   // Only update the profile if the incoming Firestore update is NOT older than our current profile!
@@ -2138,53 +2198,6 @@ export default function App() {
                   if (profileFetchedAt.current && (Date.now() - profileFetchedAt.current < 4000)) {
                     console.warn("⚠️ [Sync Bypass] Ignored Firestore profile snapshot. HTTP state is newer (time-lock).");
                     return prevProfile;
-                  }
-
-                  // Check E-Cash (No audio sound per request, just notification)
-                  const prevBalance = prevProfile.balanceECash;
-                  const newBalance = currentMember.balanceECash;
-                  if (newBalance > prevBalance && prevBalance > 0 && currentUser) {
-                    const diff = parseFloat((newBalance - prevBalance).toFixed(4));
-                    
-                    // Look up transactions for recent approved deposit vs bonus
-                    fetch(`/api/member/transactions/${currentUser.userId}`)
-                      .then(tRes => tRes.json())
-                      .then(tData => {
-                        let isDeposit = false;
-                        let depositAmount = diff;
-
-                        if (tData.success && tData.transactions) {
-                          const recentDeposit = tData.transactions.find((t: any) => {
-                            const isDepType = t.type === "Deposit" || t.type === "Deposit_System";
-                            const isApproved = t.status === "Approved";
-                            const isRecent = (new Date().getTime() - new Date(t.createdAt).getTime()) < 60000;
-                            return isDepType && isApproved && isRecent;
-                          });
-
-                          if (recentDeposit) {
-                            isDeposit = true;
-                            depositAmount = recentDeposit.transferAmount || recentDeposit.amount || diff;
-                          }
-                        }
-
-                        if (isDeposit) {
-                          showNotif(`เติมเงิน E-Cash สำเร็จแล้ว! +${depositAmount.toLocaleString()} บาท (ได้รับยอดจริงครบถ้วนแล้วค่ะ)`, 'success');
-                        } else {
-                          showNotif(`ได้รับปันผลสำเร็จ! +${diff.toLocaleString()} บาท จาก Bonus/E-Share`, 'success');
-                        }
-                      })
-                      .catch(() => {
-                        showNotif(`ยอดเงิน E-Cash ของคุณเพิ่มขึ้น +${diff.toLocaleString()} บาท`, 'success');
-                      });
-                  }
-
-                  // Check E-Money (Play income sound only for E-Money additions!)
-                  const prevEMoney = prevProfile.balanceEMoney || 0;
-                  const newEMoney = currentMember.balanceEMoney || 0;
-                  if (newEMoney > prevEMoney && prevEMoney > 0) {
-                    const diffEMoney = parseFloat((newEMoney - prevEMoney).toFixed(4));
-                    showNotif(`ได้รับรายได้ปันผล/โบนัส E-Money! +${diffEMoney.toLocaleString()} บาท`, 'success');
-                    playMoneySound(diffEMoney, 'bonus');
                   }
 
                   // Optimizing reference to prevent unnecessary dashboard flickering and visual re-renders
@@ -2423,6 +2436,9 @@ export default function App() {
           setIsSandboxActive(data.isSandboxActive);
         }
         profileFetchedAt.current = Date.now();
+        if (data.profile) {
+          checkAndNotifyBalanceChanges(data.profile.balanceECash, data.profile.balanceEMoney, data.profile.userId || currentUser?.userId);
+        }
         setProfile(data.profile);
         setShippingAddress(data.profile.kycAddress || '');
         if (data.profile.firstLogin && currentUser?.firstLogin !== false) {
@@ -4715,12 +4731,13 @@ export default function App() {
       showNotif('กรุณากรอกรหัส PIN 6 หลัก', 'error');
       return;
     }
-    const systemReserve = amt * 0.15; // หักเข้าระบบ 15%
-    const taxDeduction = amt * 0.05; // ภาษี 5% (หัก ณ ที่จ่าย 3% + 2%)
-    const totalDeduction20 = amt * 0.20; // รวมหัก 20%
-    const remaining20 = amt - totalDeduction20; // 160 บาท
+    const autoReserve = amt * 0.20; // หักสำรองกองทุนระบบหมุนเวียน 20%
+    const taxableAmount = amt * 0.80; // ยอดฐานคำนวณภาษี (80%)
+    const withholdingTax = taxableAmount * 0.03; // หักภาษี ณ ที่จ่าย 3% ของฐาน 80% (2.4% ของยอดถอน)
+    const companyFee = taxableAmount * 0.02; // หักค่าดูแลโครงข่ายแพลตฟอร์ม 2% ของฐาน 80% (1.6% ของยอดถอน)
     const transferFee = 25; // ค่าธรรมเนียมการโอน 25 บาท
-    const netReceived = Math.max(0, remaining20 - transferFee); // 135 บาทสำหรับยอด 200
+    const feeAmount = autoReserve + withholdingTax + companyFee + transferFee;
+    const netReceived = Math.max(0, taxableAmount - withholdingTax - companyFee - transferFee); // ยอดรับสุทธิ (76% ของยอดถอน - 25 บาท)
 
     setTxnConfirm({
       type: 'withdraw_emoney',
@@ -4728,12 +4745,12 @@ export default function App() {
       pin: withdrawPin,
       recipientIdOrPhone: currentUser.userId,
       recipientName: `บัญชีธนาคารของคุณ: ${profile?.bankName || '-'} (เลขที่: ${profile?.bankAccount || '-'})`,
-      autoReserve: systemReserve,
-      taxableAmount: remaining20,
-      withholdingTax: taxDeduction,
-      companyFee: systemReserve,
+      autoReserve: autoReserve,
+      taxableAmount: taxableAmount,
+      withholdingTax: withholdingTax,
+      companyFee: companyFee,
       transferFee: transferFee,
-      feeAmount: totalDeduction20 + transferFee,
+      feeAmount: feeAmount,
       netAmount: netReceived
     });
   };
@@ -12081,11 +12098,11 @@ export default function App() {
                       <div className="col-span-2 bg-slate-50 border border-slate-200 p-3.5 rounded-2xl text-[10px] space-y-1 text-slate-500">
                         <p>ชื่อผู้รับโอนเงินปลายทาง: <b>{profile?.name} {profile?.surname}</b></p>
                         <p>ธนาคาร: <b>{profile?.bankName} (เลขที่: {profile?.bankAccount})</b></p>
-                        <p className="text-rose-600 font-bold">✓ หักเข้าระบบ 15% และภาษี 5% (3%+2%) รวมหัก 20% และมีค่าธรรมเนียมการโอน 25 บาท</p>
+                        <p className="text-rose-600 font-bold">✓ หักสำรองกองทุนระบบ 20% (ฐานคำนวณภาษี 80%), หักภาษี ณ ที่จ่าย 3% (2.4%), ค่าแพลตฟอร์ม 2% (1.6%) รวมหัก 24% + ค่าธรรมเนียมโอน 25 บาท</p>
                         {withdrawAmount && parseFloat(withdrawAmount) >= 200 && (
                           <div className="mt-2 pt-2 border-t border-slate-200 text-xs font-bold text-slate-800 flex justify-between">
-                            <span>ยอดเงินที่จะเข้าบัญชีจริง:</span>
-                            <span className="text-emerald-600 font-mono">฿ {Math.max(0, parseFloat(withdrawAmount) * 0.80 - 25).toFixed(2)} บาท</span>
+                            <span>ยอดเงินที่จะเข้าบัญชีจริง (สุทธิ 76% - 25 บาท):</span>
+                            <span className="text-emerald-600 font-mono">฿ {Math.max(0, parseFloat(withdrawAmount) * 0.76 - 25).toFixed(2)} บาท</span>
                           </div>
                         )}
                       </div>
