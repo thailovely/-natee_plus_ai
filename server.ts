@@ -2706,9 +2706,9 @@ app.post('/api/auth/register', (req, res) => {
   const newUserId = `${currentPrefix}${String(nextSeq).padStart(5, '0')}`;
 
   // Package rank mapping
-  let rank = "Member";
+  let rank = "member";
   let eligibleRights = 0;
-  if (selectedPackageId === "pack_s") { rank = "S"; eligibleRights = 1000; }
+  if (selectedPackageId === "pack_s") { rank = "member"; eligibleRights = 1000; }
   else if (selectedPackageId === "pack_m") { rank = "M"; eligibleRights = 5000; }
   else if (selectedPackageId === "pack_l") { rank = "L"; eligibleRights = 10000; }
   else if (selectedPackageId === "pack_xl") { rank = "XL"; eligibleRights = 30000; }

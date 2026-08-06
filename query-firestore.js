@@ -18,18 +18,20 @@ async function run() {
       const txs = data.data || [];
       
       const memberId = "A260700019";
-      // Dates look like 2026-07-16...
+      const beforeCount = txs.length;
+      
+      // Filter out transactions for memberId on 2026-07-16
       const filteredTxs = txs.filter(tx => 
         !(tx.userId === memberId && (tx.date || tx.createdAt || '').startsWith('2026-07-16'))
       );
       
-      console.log(`Original count: ${txs.length}, New count: ${filteredTxs.length}`);
+      console.log(`Original count: ${beforeCount}, New count: ${filteredTxs.length}`);
       
-      if (txs.length !== filteredTxs.length) {
+      if (beforeCount !== filteredTxs.length) {
         await setDoc(txDocRef, { ...data, data: filteredTxs });
-        console.log("Updated transactions in Firestore.");
+        console.log("Updated transactions in Firestore. Removed items from 2026-07-16 for " + memberId);
       } else {
-        console.log("No transactions to remove.");
+        console.log("No transactions to remove for " + memberId + " on 2026-07-16.");
       }
     }
 
