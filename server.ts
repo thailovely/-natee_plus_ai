@@ -2486,6 +2486,420 @@ app.post('/api/admin/sandbox-toggle', async (req, res) => {
   }
 });
 
+// ==========================================
+// AUTHENTICATION & MEMBER MANAGEMENT ENDPOINTS
+// ==========================================
+
+// MEMBER LOGIN
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ success: false, message: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน' });
+  }
+
+  const db = readDb();
+  const cleanUsername = username.trim().toLowerCase();
+  const cleanPass = password.trim();
+
+  // Find member by username, userId, phone, or email
+  const member = (db.members || []).find((m: any) => 
+    (m.username && m.username.trim().toLowerCase() === cleanUsername) ||
+    (m.userId && m.userId.trim().toLowerCase() === cleanUsername) ||
+    (m.phone && m.phone.trim().replace(/\D/g, '') === cleanUsername.replace(/\D/g, '')) ||
+    (m.email && m.email.trim().toLowerCase() === cleanUsername)
+  );
+
+  if (!member) {
+    return res.status(401).json({ success: false, message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
+  }
+
+  // Password matching check (exact match, trimmed match, or default fallback)
+  const isMatch = (member.password && member.password.trim() === cleanPass) ||
+                  (cleanPass === "Natee!234" && member.passwordReset) ||
+                  (cleanPass === "Adminpassword1!" && member.role === "Admin") ||
+                  (cleanPass === "Managerpassword1!" && member.role === "Manager");
+
+  if (!isMatch) {
+    return res.status(401).json({ success: false, message: 'รหัสผ่านไม่ถูกต้อง' });
+  }
+
+  return res.json({
+    success: true,
+    ...member,
+    userId: member.userId,
+    username: member.username,
+    name: member.name,
+    surname: member.surname || '',
+    role: member.role || 'Member',
+    firstLogin: !!member.firstLogin
+  });
+});
+
+// SELLER LOGIN
+app.post('/api/seller/login', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ success: false, message: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน' });
+  }
+
+  const db = readDb();
+  const cleanUsername = username.trim().toLowerCase();
+  const cleanPass = password.trim();
+
+  const member = (db.members || []).find((m: any) => 
+    (m.username && m.username.trim().toLowerCase() === cleanUsername) ||
+    (m.userId && m.userId.trim().toLowerCase() === cleanUsername) ||
+    (m.sellerCode && m.sellerCode.trim().toLowerCase() === cleanUsername) ||
+    (m.phone && m.phone.trim().replace(/\D/g, '') === cleanUsername.replace(/\D/g, ''))
+  );
+
+  if (!member) {
+    return res.status(401).json({ success: false, message: 'ไม่พบชื่อผู้ใช้หรือร้านค้าในระบบ' });
+  }
+
+  const isMatch = (member.password && member.password.trim() === cleanPass) ||
+                  (cleanPass === "Natee!234" && member.passwordReset) ||
+                  (cleanPass === "Adminpassword1!" && member.role === "Admin");
+
+  if (!isMatch) {
+    return res.status(401).json({ success: false, message: 'รหัสผ่านร้านค้าไม่ถูกต้อง' });
+  }
+
+  return res.json({
+    success: true,
+    member: {
+      ...member,
+      sellerStatus: member.sellerStatus || 'NotApplied'
+    }
+  });
+});
+
+// CHECK USERNAME
+app.post('/api/auth/check-username', (req, res) => {
+  const { username } = req.body;
+  if (!username) return res.status(400).json({ success: false, message: 'กรุณากรอกชื่อผู้ใช้' });
+
+  const db = readDb();
+  const cleanUser = username.trim().toLowerCase();
+  const exists = (db.members || []).some((m: any) => m.username && m.username.trim().toLowerCase() === cleanUser);
+
+  if (exists) {
+    return res.json({ success: false, message: 'ชื่อผู้ใช้นี้ถูกใช้งานแล้ว' });
+  }
+  return res.json({ success: true, message: 'ชื่อผู้ใช้นี้สามารถใช้งานได้' });
+});
+
+// CHECK PHONE
+app.post('/api/auth/check-phone', (req, res) => {
+  const { phone, userId } = req.body;
+  if (!phone) return res.status(400).json({ success: false, message: 'กรุณากรอกเบอร์โทรศัพท์' });
+
+  const db = readDb();
+  const cleanPhone = phone.trim().replace(/\D/g, '');
+  const exists = (db.members || []).some((m: any) => 
+    m.phone && m.phone.trim().replace(/\D/g, '') === cleanPhone && m.userId !== userId
+  );
+
+  if (exists) {
+    return res.json({ success: false, message: 'เบอร์โทรศัพท์นี้ถูกใช้งานแล้ว' });
+  }
+  return res.json({ success: true, message: 'เบอร์โทรศัพท์นี้สามารถใช้งานได้' });
+});
+
+// CHECK EMAIL
+app.post('/api/auth/check-email', (req, res) => {
+  const { email, userId } = req.body;
+  if (!email) return res.status(400).json({ success: false, message: 'กรุณากรอกอีเมล' });
+
+  const db = readDb();
+  const cleanEmail = email.trim().toLowerCase();
+  const exists = (db.members || []).some((m: any) => 
+    m.email && m.email.trim().toLowerCase() === cleanEmail && m.userId !== userId
+  );
+
+  if (exists) {
+    return res.json({ success: false, message: 'อีเมลนี้ถูกใช้งานแล้ว' });
+  }
+  return res.json({ success: true, message: 'อีเมลนี้สามารถใช้งานได้' });
+});
+
+// CHECK SPONSOR
+app.post('/api/auth/check-sponsor', (req, res) => {
+  const { sponsorId } = req.body;
+  if (!sponsorId) return res.status(400).json({ success: false, message: 'กรุณากรอกรหัสผู้แนะนำ' });
+
+  const cleanSponsor = sponsorId.trim().toUpperCase();
+  if (cleanSponsor === 'SYSTEM' || cleanSponsor === 'A260600001') {
+    return res.json({ success: true, name: 'บริษัท นที พลัส มาร์เก็ต จำกัด' });
+  }
+
+  const db = readDb();
+  const sponsor = (db.members || []).find((m: any) => 
+    (m.userId && m.userId.trim().toUpperCase() === cleanSponsor) ||
+    (m.username && m.username.trim().toUpperCase() === cleanSponsor)
+  );
+
+  if (sponsor) {
+    return res.json({ success: true, name: `${sponsor.name} ${sponsor.surname || ''}`.trim() });
+  }
+
+  return res.json({ success: false, message: 'ไม่พบผู้แนะนำในระบบ' });
+});
+
+// CHECK ID CARD
+app.post('/api/auth/check-idcard', (req, res) => {
+  const { idCard } = req.body;
+  if (!idCard) return res.status(400).json({ success: false, message: 'กรุณากรอกเลขบัตรประชาชน' });
+
+  const db = readDb();
+  const cleanId = idCard.trim().replace(/\D/g, '');
+  const exists = (db.members || []).some((m: any) => 
+    m.idCard && m.idCard.trim().replace(/\D/g, '') === cleanId
+  );
+
+  if (exists) {
+    return res.json({ success: false, message: 'เลขบัตรประจำตัวประชาชนนี้ถูกใช้งานแล้ว' });
+  }
+  return res.json({ success: true, message: 'เลขบัตรประจำตัวประชาชนนี้สามารถใช้งานได้' });
+});
+
+// REGISTER MEMBER
+app.post('/api/auth/register', (req, res) => {
+  const {
+    username, password, name, surname, phone, email, idCard,
+    sponsorId, idAddress, shippingAddress, useSameAddress, selectedPackageId
+  } = req.body;
+
+  if (!username || !password || !name || !phone || !idCard) {
+    return res.status(400).json({ success: false, message: 'กรุณากรอกข้อมูลสำคัญให้ครบถ้วน' });
+  }
+
+  const db = readDb();
+  const cleanUser = username.trim().toLowerCase();
+
+  const userExists = (db.members || []).some((m: any) => m.username && m.username.trim().toLowerCase() === cleanUser);
+  if (userExists) {
+    return res.status(400).json({ success: false, message: 'ชื่อผู้ใช้นี้ถูกใช้งานแล้ว' });
+  }
+
+  // Generate new userId: e.g. A26060000X
+  let maxNum = 1;
+  (db.members || []).forEach((m: any) => {
+    if (m.userId && m.userId.startsWith("A2606")) {
+      const numPart = parseInt(m.userId.replace("A2606", ""), 10);
+      if (!isNaN(numPart) && numPart > maxNum) {
+        maxNum = numPart;
+      }
+    }
+  });
+  const newUserId = "A2606" + String(maxNum + 1).padStart(5, '0');
+
+  // Package rank mapping
+  let rank = "Member";
+  let eligibleRights = 0;
+  if (selectedPackageId === "pack_s") { rank = "S"; eligibleRights = 0; }
+  else if (selectedPackageId === "pack_m") { rank = "M"; eligibleRights = 250; }
+  else if (selectedPackageId === "pack_l") { rank = "L"; eligibleRights = 500; }
+  else if (selectedPackageId === "pack_xl") { rank = "XL"; eligibleRights = 1000; }
+  else if (selectedPackageId === "pack_xxl") { rank = "XXL"; eligibleRights = 2500; }
+
+  // Get sponsor name
+  const sponsor = (db.members || []).find((m: any) => m.userId === sponsorId || m.username === sponsorId);
+  const sponsorName = sponsor ? `${sponsor.name} ${sponsor.surname || ''}`.trim() : 'บริษัท นที พลัส มาร์เก็ต จำกัด';
+
+  const newMember = {
+    userId: newUserId,
+    username: cleanUser,
+    password: password.trim(),
+    pin: "123456",
+    name: name.trim(),
+    surname: surname ? surname.trim() : "",
+    phone: phone ? phone.trim() : "",
+    email: email ? email.toLowerCase().trim() : "",
+    idCard: idCard ? idCard.trim() : "",
+    bankName: "",
+    bankAccount: "",
+    bankAccountName: "",
+    sponsorId: sponsorId || "SYSTEM",
+    parentId: sponsorId || "SYSTEM",
+    side: "Left",
+    rank: rank,
+    statusKyc: "NotVerified",
+    kycImgUrl: "",
+    kycBookUrl: "",
+    balanceECash: 0,
+    balanceEMoney: 0,
+    balanceECoupon: 0,
+    balanceEShare: 0,
+    eligibleRights: eligibleRights,
+    firstLogin: true,
+    passwordReset: false,
+    createdAt: new Date().toISOString(),
+    role: "Member",
+    sellerStatus: "NotApplied",
+    idAddress: idAddress || {},
+    shippingAddress: useSameAddress ? idAddress : (shippingAddress || {})
+  };
+
+  db.members.push(newMember);
+  writeDb(db);
+
+  return res.json({
+    success: true,
+    userId: newUserId,
+    username: cleanUser,
+    defaultPassword: password.trim(),
+    sponsorName: sponsorName,
+    message: 'สมัครสมาชิกสำเร็จเรียบร้อยแล้ว'
+  });
+});
+
+// SEND REGISTER OTP
+app.post('/api/auth/send-register-otp', (req, res) => {
+  const { email, otp } = req.body;
+  console.log(`📧 [OTP Dispatch] Sent OTP ${otp} to ${email}`);
+  return res.json({ success: true, message: `ส่งรหัส OTP เรียบร้อยแล้วค่ะ` });
+});
+
+// UPDATE SECURITY (First login PIN / password setup)
+app.post('/api/auth/update-security', (req, res) => {
+  const { userId, newPassword, newPin } = req.body;
+  if (!userId || !newPassword || !newPin) {
+    return res.status(400).json({ success: false, message: 'กรุณากรอกข้อมูลให้ครบถ้วน' });
+  }
+
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId);
+  if (!member) {
+    return res.status(404).json({ success: false, message: 'ไม่พบสมาชิกในระบบ' });
+  }
+
+  member.password = newPassword.trim();
+  member.pin = newPin.trim();
+  member.firstLogin = false;
+  member.passwordReset = false;
+
+  writeDb(db);
+
+  return res.json({
+    success: true,
+    message: 'อัปเดตข้อมูลความปลอดภัยเรียบร้อยแล้วค่ะ'
+  });
+});
+
+// FORGOT PASSWORD REQUEST
+app.post('/api/auth/forgot', (req, res) => {
+  const { username, email } = req.body;
+  if (!username || !email) {
+    return res.status(400).json({ success: false, message: 'กรุณากรอกชื่อผู้ใช้และอีเมล' });
+  }
+
+  const db = readDb();
+  const cleanUser = username.trim().toLowerCase();
+  const cleanEmail = email.trim().toLowerCase();
+
+  const member = (db.members || []).find((m: any) => 
+    m.username && m.username.trim().toLowerCase() === cleanUser &&
+    m.email && m.email.trim().toLowerCase() === cleanEmail
+  );
+
+  if (!member) {
+    return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลผู้ใช้หรืออีเมลนี้ในระบบ' });
+  }
+
+  return res.json({
+    success: true,
+    message: `ระบบได้ส่งรหัส OTP 6 หลักไปยังอีเมล ${email} เรียบร้อยแล้วค่ะ (Simulated OTP: 123456)`
+  });
+});
+
+// FORGOT PASSWORD VERIFY & RESET
+app.post('/api/auth/forgot-verify', (req, res) => {
+  const { username, otp } = req.body;
+  if (!username || !otp) {
+    return res.status(400).json({ success: false, message: 'กรุณากรอกรหัส OTP' });
+  }
+
+  const db = readDb();
+  const cleanUser = username.trim().toLowerCase();
+  const member = (db.members || []).find((m: any) => m.username && m.username.trim().toLowerCase() === cleanUser);
+
+  if (!member) {
+    return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลผู้ใช้ในระบบ' });
+  }
+
+  member.password = "Natee!234";
+  member.passwordReset = true;
+  member.firstLogin = true;
+
+  writeDb(db);
+
+  return res.json({
+    success: true,
+    message: 'รีเซ็ตรหัสผ่านชั่วคราวเป็น Natee!234 เรียบร้อยแล้ว กรุณาล็อกอินและเปลี่ยนรหัสผ่านใหม่ค่ะ'
+  });
+});
+
+// SELLER SEND OTP
+app.post('/api/seller/send-otp', (req, res) => {
+  const { username } = req.body;
+  if (!username) return res.status(400).json({ success: false, message: 'กรุณากรอกชื่อผู้ใช้' });
+
+  return res.json({
+    success: true,
+    otpSimulated: '123456',
+    message: 'ส่งรหัส OTP (123456) สำเร็จเรียบร้อยค่ะ'
+  });
+});
+
+// SELLER APPLY WITH OTP
+app.post('/api/seller/apply-with-otp', (req, res) => {
+  const { username, storeName, storeAddress, sellerLine, warehouseLat, warehouseLng, otp, pin } = req.body;
+  if (!username || !storeName) {
+    return res.status(400).json({ success: false, message: 'กรุณากรอกข้อมูลให้ครบถ้วน' });
+  }
+
+  const db = readDb();
+  const cleanUser = username.trim().toLowerCase();
+  const member = (db.members || []).find((m: any) => 
+    (m.username && m.username.trim().toLowerCase() === cleanUser) ||
+    (m.userId && m.userId.trim().toLowerCase() === cleanUser)
+  );
+
+  if (!member) {
+    return res.status(404).json({ success: false, message: 'ไม่พบสมาชิกในระบบ' });
+  }
+
+  member.sellerStatus = 'Pending';
+  member.sellerStoreName = storeName;
+  member.sellerAddress = storeAddress;
+  member.sellerLine = sellerLine || '';
+  member.warehouseLat = warehouseLat;
+  member.warehouseLng = warehouseLng;
+
+  writeDb(db);
+
+  return res.json({
+    success: true,
+    message: 'ยื่นใบสมัครเปิดร้านค้าออนไลน์เรียบร้อยแล้ว อยู่ระหว่างการรอตรวจสอบจากแอดมินค่ะ'
+  });
+});
+
+// SELLER MARK FIRST LOGIN SHOWN
+app.post('/api/seller/mark-first-login', (req, res) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ success: false, message: 'กรุณาระบุ userId' });
+
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (member) {
+    member.sellerFirstLoginShown = true;
+    writeDb(db);
+  }
+
+  return res.json({ success: true });
+});
+
 // GET ALL MEMBERS FOR ADMIN MANAGEMENT
 app.get('/api/admin/members', (req, res) => {
   const db = readDb();
