@@ -1424,29 +1424,26 @@ function readDb() {
         m.email = (m.username) + "@gmail.com";
       }
       // Migrate old database fields from M-* to E-* dynamically for backward-compatibility
-      // Correctly migrate old balanceMCash to separate E-Money and E-Cash wallets:
-      // E-Money gets the whole Baht part (accumulated income), and E-Cash gets the fractional part (satang).
       if (m.balanceMCash !== undefined) {
-        const originalMCash = Number(m.balanceMCash);
-        const wholePart = Math.floor(originalMCash);
-        const fractionalPart = parseFloat((originalMCash % 1).toFixed(6));
-        
-        // Correct duplicate values from earlier migrations
-        if (m.balanceECash === originalMCash || m.balanceECash === undefined) {
-          m.balanceECash = fractionalPart;
-          migratedEMoney = true;
+        const originalMCash = Number(m.balanceMCash) || 0;
+        if (m.balanceECash === undefined) {
+          m.balanceECash = originalMCash;
         }
-        if (m.balanceEMoney === originalMCash || m.balanceEMoney === undefined || m.balanceEMoney === 0) {
-          m.balanceEMoney = wholePart;
-          migratedEMoney = true;
-        }
+        delete m.balanceMCash;
+        migratedEMoney = true;
       }
 
-      if (m.balanceMCoupon !== undefined && m.balanceECoupon === undefined) {
-        m.balanceECoupon = m.balanceMCoupon;
+      if (m.balanceMCoupon !== undefined) {
+        if (m.balanceECoupon === undefined) {
+          m.balanceECoupon = m.balanceMCoupon;
+        }
+        delete m.balanceMCoupon;
       }
-      if (m.balanceAllShare !== undefined && m.balanceEShare === undefined) {
-        m.balanceEShare = m.balanceAllShare;
+      if (m.balanceAllShare !== undefined) {
+        if (m.balanceEShare === undefined) {
+          m.balanceEShare = m.balanceAllShare;
+        }
+        delete m.balanceAllShare;
       }
     });
     if (migratedEMoney) {
@@ -3126,6 +3123,256 @@ app.get('/api/shop/package-choices', (req, res) => {
   return res.json({ success: true, choices: db.packageProductChoices || [] });
 });
 
+function processMLMCommission(db: any, order: any, purchaser: any) {
+  if (!db || !order || !purchaser) return;
+
+  const productId = order.productId;
+  const isPackageS = (productId === 'pack_s' || (order.productName && order.productName.includes('Package S')));
+
+  // Package PV map if not set on product
+  const packagePvMap: Record<string, number> = {
+    pack_s: 0,
+    pack_m: 250,
+    pack_l: 500,
+    pack_xl: 1500,
+    pack_xxl: 2500
+  };
+
+  const product = (db.products || []).find((p: any) => p.id === productId);
+  const pvPerUnit = product && product.pv !== undefined ? Number(product.pv) : (packagePvMap[productId] || 0);
+  const totalPV = pvPerUnit * (order.quantity || 1);
+
+  if (!Array.isArray(db.transactions)) db.transactions = [];
+  if (!db.csrFund) db.csrFund = { balance: 0, history: [] };
+  if (!db.systemStats) db.systemStats = { totalPlanBReserves: 0, totalTaxReserves: 0, totalCompanyProfits: 0, totalAllShareReserves: 0 };
+
+  // 1. SPECIAL DISTRIBUTION FOR PACKAGE S (100 THB)
+  if (isPackageS) {
+    const pkgPrice = 100 * (order.quantity || 1);
+    // VAT 7%
+    const vat7 = Math.round((pkgPrice / 1.07 * 0.07) * 100) / 100; // ~6.54 THB per unit
+    db.systemStats.totalTaxReserves = (db.systemStats.totalTaxReserves || 0) + vat7;
+
+    // Sponsor Promotion: 50 THB/shop
+    const sponsorId = purchaser.sponsorId;
+    const sponsor = (db.members || []).find((m: any) => m.userId === sponsorId || m.username === sponsorId);
+
+    if (sponsor && sponsor.userId !== purchaser.userId) {
+      // Direct Referral Promotion 50 THB
+      // Allocation: 40 THB into E-Coupon + 10 THB into Plan B accumulation (10% deducted for Plan B)
+      const eCouponAmt = 40 * (order.quantity || 1);
+      const planBAmt = 10 * (order.quantity || 1);
+
+      sponsor.balanceECoupon = Number(sponsor.balanceECoupon || 0) + eCouponAmt;
+      sponsor.totalCouponsEarned = Number(sponsor.totalCouponsEarned || 0) + eCouponAmt;
+      sponsor.planBPoints = Number(sponsor.planBPoints || 0) + planBAmt;
+
+      // 1. Transaction for E-Coupon
+      db.transactions.push({
+        id: "TXN_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+        userId: sponsor.userId,
+        type: "PackageS_Referral",
+        amount: eCouponAmt,
+        currency: "E-Coupon",
+        details: `ค่าแนะนำโปรโมชั่น Package S จากสมาชิก ${purchaser.name} (${purchaser.userId}) - รับ E-Coupon ฿${eCouponAmt}`,
+        status: "Approved",
+        createdAt: new Date().toISOString()
+      });
+
+      // 2. Transaction for Plan B Points
+      db.transactions.push({
+        id: "TXN_" + (Date.now() + 1) + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+        userId: sponsor.userId,
+        type: "Bonus",
+        amount: planBAmt,
+        currency: "PlanBPoints",
+        details: `คะแนนสะสมผังเดี่ยว Plan B จากการแนะนำ Package S สมาชิก ${purchaser.name} (${purchaser.userId}) - รับ ${planBAmt} คะแนน`,
+        status: "Approved",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    // Allocation to System Funds:
+    // Plan B structure = 5 THB
+    const planBFund = 5 * (order.quantity || 1);
+    db.systemStats.totalPlanBReserves = (db.systemStats.totalPlanBReserves || 0) + planBFund;
+
+    // All-Share Pool = 20 THB
+    const allShareFund = 20 * (order.quantity || 1);
+    db.systemStats.totalAllShareReserves = (db.systemStats.totalAllShareReserves || 0) + allShareFund;
+
+    // CSR Welfare / ปันสุข = 5 THB
+    const csrFundAmt = 5 * (order.quantity || 1);
+    db.csrFund.balance = Number(db.csrFund.balance || 0) + csrFundAmt;
+    if (!Array.isArray(db.csrFund.history)) db.csrFund.history = [];
+    db.csrFund.history.push({
+      id: "CSR_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+      type: "Package S Contribution",
+      amount: csrFundAmt,
+      description: `เงินสมทบจาก Package S สมาชิก ${purchaser.name} (${purchaser.userId})`,
+      createdAt: new Date().toISOString()
+    });
+
+    // Remaining is Company Profit:
+    const companyProfit = Math.max(0, pkgPrice - vat7 - 50 * (order.quantity || 1) - planBFund - allShareFund - csrFundAmt);
+    db.systemStats.totalCompanyProfits = (db.systemStats.totalCompanyProfits || 0) + companyProfit;
+
+    // Does NOT pay in Plan A 20 levels
+    return;
+  }
+
+  // 2. DISTRIBUTION FOR PACKAGES M, L, XL, XXL AND PV PRODUCTS (totalPV > 0)
+  if (totalPV > 0) {
+    // A. DIRECT SPONSOR BONUS (50% of PV)
+    const sponsorId = purchaser.sponsorId;
+    const sponsor = (db.members || []).find((m: any) => m.userId === sponsorId || m.username === sponsorId);
+
+    if (sponsor && sponsor.userId !== purchaser.userId) {
+      const grossSponsorBonus = totalPV * 0.50; // 50% of PV
+      recalculateMemberEligibleRights(db, sponsor);
+
+      const currentGrantedRights = Number(sponsor.eligibleRights || 0);
+      const currentEMoneyEarned = Number(sponsor.totalEMoneyEarnedSoFar || 0);
+      const remainingRights = Math.max(0, currentGrantedRights - currentEMoneyEarned);
+
+      const payableBonus = currentGrantedRights > 0 ? Math.min(grossSponsorBonus, remainingRights) : grossSponsorBonus;
+
+      if (payableBonus > 0) {
+        // Flat 20% Split:
+        const eMoneyNet = Math.round((payableBonus * 0.80) * 100) / 100;
+        const eCouponNet = Math.round((payableBonus * 0.10) * 100) / 100;
+        const allShareNet = Math.round((payableBonus * 0.03) * 100) / 100;
+        const planBNet = Math.round((payableBonus * 0.05) * 100) / 100;
+        const csrNet = Math.round((payableBonus * 0.01) * 100) / 100;
+        const companyNet = Math.round((payableBonus * 0.01) * 100) / 100;
+
+        sponsor.balanceEMoney = Number(sponsor.balanceEMoney || 0) + eMoneyNet;
+        sponsor.balanceECoupon = Number(sponsor.balanceECoupon || 0) + eCouponNet;
+        sponsor.planBPoints = Number(sponsor.planBPoints || 0) + planBNet;
+        sponsor.totalEMoneyEarnedSoFar = Number(sponsor.totalEMoneyEarnedSoFar || 0) + eMoneyNet;
+        sponsor.totalEarnings = Number(sponsor.totalEarnings || 0) + eMoneyNet;
+        sponsor.totalCouponsEarned = Number(sponsor.totalCouponsEarned || 0) + eCouponNet;
+
+        db.systemStats.totalAllShareReserves = (db.systemStats.totalAllShareReserves || 0) + allShareNet;
+        db.systemStats.totalCompanyProfits = (db.systemStats.totalCompanyProfits || 0) + companyNet;
+        db.csrFund.balance = Number(db.csrFund.balance || 0) + csrNet;
+
+        db.transactions.push({
+          id: "TXN_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+          userId: sponsor.userId,
+          type: "Commission",
+          amount: eMoneyNet,
+          currency: "E-Money",
+          details: `ค่าแนะนำ 50% (${payableBonus.toFixed(2)} PV) จากการสั่งซื้อของ ${purchaser.name} (${purchaser.userId}) - เข้า E-Money ฿${eMoneyNet}`,
+          status: "Approved",
+          createdAt: new Date().toISOString()
+        });
+
+        if (eCouponNet > 0) {
+          db.transactions.push({
+            id: "TXN_" + (Date.now() + 1) + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+            userId: sponsor.userId,
+            type: "Commission",
+            amount: eCouponNet,
+            currency: "E-Coupon",
+            details: `คูปอง 10% จากค่าแนะนำ (${payableBonus.toFixed(2)} PV) ของ ${purchaser.name} (${purchaser.userId})`,
+            status: "Approved",
+            createdAt: new Date().toISOString()
+          });
+        }
+
+        recalculateMemberEligibleRights(db, sponsor);
+      }
+    }
+
+    // B. PLAN A UNILEVEL 20 LEVELS (2.0% of PV per level)
+    const rankLevelMaxDepth: Record<string, number> = {
+      Member: 0,
+      S: 1,
+      M: 5,
+      L: 10,
+      XL: 15,
+      XXL: 20
+    };
+
+    let currentUplineId = purchaser.parentId || purchaser.sponsorId;
+    let depth = 1;
+    const visited = new Set<string>();
+    visited.add(purchaser.userId);
+
+    while (currentUplineId && currentUplineId !== 'SYSTEM' && depth <= 20) {
+      if (visited.has(currentUplineId)) break;
+      visited.add(currentUplineId);
+
+      const upline = (db.members || []).find((m: any) => m.userId === currentUplineId || m.username === currentUplineId);
+      if (!upline) break;
+
+      const uplineMaxDepth = rankLevelMaxDepth[upline.rank || 'Member'] || 0;
+
+      // Dynamic Compression: Check if upline is qualified for this depth level
+      if (uplineMaxDepth >= depth) {
+        recalculateMemberEligibleRights(db, upline);
+        const grossComm = totalPV * 0.02; // 2.0% per level
+
+        const currentEarned = Number(upline.totalEMoneyEarnedSoFar || 0);
+        const grantedRights = Number(upline.eligibleRights || 0);
+        const remainingRights = Math.max(0, grantedRights - currentEarned);
+
+        const payableComm = grantedRights > 0 ? Math.min(grossComm, remainingRights) : grossComm;
+
+        if (payableComm > 0) {
+          const eMoneyNet = Math.round((payableComm * 0.80) * 100) / 100;
+          const eCouponNet = Math.round((payableComm * 0.10) * 100) / 100;
+          const allShareNet = Math.round((payableComm * 0.03) * 100) / 100;
+          const planBNet = Math.round((payableComm * 0.05) * 100) / 100;
+          const csrNet = Math.round((payableComm * 0.01) * 100) / 100;
+          const companyNet = Math.round((payableComm * 0.01) * 100) / 100;
+
+          upline.balanceEMoney = Number(upline.balanceEMoney || 0) + eMoneyNet;
+          upline.balanceECoupon = Number(upline.balanceECoupon || 0) + eCouponNet;
+          upline.planBPoints = Number(upline.planBPoints || 0) + planBNet;
+          upline.totalEMoneyEarnedSoFar = Number(upline.totalEMoneyEarnedSoFar || 0) + eMoneyNet;
+          upline.totalEarnings = Number(upline.totalEarnings || 0) + eMoneyNet;
+          upline.totalCouponsEarned = Number(upline.totalCouponsEarned || 0) + eCouponNet;
+
+          db.systemStats.totalAllShareReserves = (db.systemStats.totalAllShareReserves || 0) + allShareNet;
+          db.systemStats.totalCompanyProfits = (db.systemStats.totalCompanyProfits || 0) + companyNet;
+          db.csrFund.balance = Number(db.csrFund.balance || 0) + csrNet;
+
+          db.transactions.push({
+            id: "TXN_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+            userId: upline.userId,
+            type: "Commission",
+            amount: eMoneyNet,
+            currency: "E-Money",
+            details: `โบนัสยูนิลีเวอร์ ชั้นที่ ${depth} (2% = ${payableComm.toFixed(2)} PV) จากการสั่งซื้อของ ${purchaser.name} (${purchaser.userId}) - เข้า E-Money ฿${eMoneyNet}`,
+            status: "Approved",
+            createdAt: new Date().toISOString()
+          });
+
+          if (eCouponNet > 0) {
+            db.transactions.push({
+              id: "TXN_" + (Date.now() + 1) + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+              userId: upline.userId,
+              type: "Commission",
+              amount: eCouponNet,
+              currency: "E-Coupon",
+              details: `คูปอง 10% จากโบนัสยูนิลีเวอร์ ชั้นที่ ${depth} (${payableComm.toFixed(2)} PV) ของ ${purchaser.name} (${purchaser.userId})`,
+              status: "Approved",
+              createdAt: new Date().toISOString()
+            });
+          }
+
+          recalculateMemberEligibleRights(db, upline);
+        }
+      }
+
+      currentUplineId = upline.parentId || upline.sponsorId;
+      depth++;
+    }
+  }
+}
+
 app.post('/api/shop/purchase', (req, res) => {
   const { userId, productId, quantity, shippingAddress, selectedChoiceId } = req.body;
   if (!userId || !productId) {
@@ -3141,10 +3388,10 @@ app.post('/api/shop/purchase', (req, res) => {
   // Define default packages dictionary
   const defaultPackages: Record<string, any> = {
     pack_s: { id: "pack_s", name: "Package S (100 THB)", price: 100, category: "Package", rank: "S" },
-    pack_m: { id: "pack_m", name: "Package M (5,000 THB)", price: 5000, category: "Package", rank: "M" },
-    pack_l: { id: "pack_l", name: "Package L (10,000 THB)", price: 10000, category: "Package", rank: "L" },
-    pack_xl: { id: "pack_xl", name: "Package XL (30,000 THB)", price: 30000, category: "Package", rank: "XL" },
-    pack_xxl: { id: "pack_xxl", name: "Package XXL (50,000 THB)", price: 50000, category: "Package", rank: "XXL" }
+    pack_m: { id: "pack_m", name: "Package M (500 THB)", price: 500, category: "Package", rank: "M" },
+    pack_l: { id: "pack_l", name: "Package L (1,000 THB)", price: 1000, category: "Package", rank: "L" },
+    pack_xl: { id: "pack_xl", name: "Package XL (3,000 THB)", price: 3000, category: "Package", rank: "XL" },
+    pack_xxl: { id: "pack_xxl", name: "Package XXL (5,000 THB)", price: 5000, category: "Package", rank: "XXL" }
   };
 
   let product = (db.products || []).find((p: any) => p.id === productId);
@@ -3214,7 +3461,7 @@ app.post('/api/shop/purchase', (req, res) => {
   };
   db.orders.push(newOrder);
 
-  // Record transaction
+  // Record transaction for Purchaser
   if (!Array.isArray(db.transactions)) db.transactions = [];
   db.transactions.push({
     id: "TXN_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
@@ -3226,6 +3473,9 @@ app.post('/api/shop/purchase', (req, res) => {
     status: "Approved",
     createdAt: new Date().toISOString()
   });
+
+  // Process MLM Commissions according to business rules
+  processMLMCommission(db, newOrder, member);
 
   writeDb(db);
 

@@ -1963,6 +1963,10 @@ export default function App() {
                 checkAndNotifyBalanceChanges(currentMember.balanceECash, currentMember.balanceEMoney, currentMember.userId);
                 setProfile((prevProfile: any) => {
                   if (prevProfile) {
+                    // Always switch immediately if user IDs do not match (e.g. impersonation or login changes)
+                    if (prevProfile.userId !== currentMember.userId) {
+                      return currentMember;
+                    }
                     // Optimizing reference to prevent unnecessary dashboard flickering and visual re-renders
                     const isIdentical = 
                       prevProfile.balanceECash === currentMember.balanceECash &&
@@ -2185,6 +2189,11 @@ export default function App() {
               checkAndNotifyBalanceChanges(currentMember.balanceECash, currentMember.balanceEMoney, currentMember.userId);
               setProfile((prevProfile: any) => {
                 if (prevProfile) {
+                  // Always switch immediately if user IDs do not match (e.g. impersonation or login changes)
+                  if (prevProfile.userId !== currentMember.userId) {
+                    return currentMember;
+                  }
+
                   // Only update the profile if the incoming Firestore update is NOT older than our current profile!
                   if (prevProfile.lastUpdated && currentMember.lastUpdated && currentMember.lastUpdated < prevProfile.lastUpdated) {
                     console.warn("⚠️ [Sync Bypass] Ignored stale Firestore profile snapshot. Local state is newer.", {
@@ -7682,8 +7691,12 @@ export default function App() {
               </p>
               <button 
                 onClick={() => {
-                  setCurrentUser(originalAdmin);
-                  setOriginalAdmin(null);
+                  if (originalAdmin) {
+                    setCurrentUser(originalAdmin);
+                    setProfile(originalAdmin);
+                    profileFetchedAt.current = 0;
+                    setOriginalAdmin(null);
+                  }
                   setActiveTab('admin');
                   setAdminSection('members_system');
                   setAdminSubTab('members');
@@ -17827,12 +17840,13 @@ export default function App() {
                                             `คุณต้องการสวมสิทธิ์เพื่อเข้าใช้งานระบบในฐานะคุณ ${member.name} ใช่หรือไม่?`,
                                             () => {
                                               setOriginalAdmin(currentUser);
-                                              setCurrentUser({
-                                                userId: member.userId,
-                                                username: member.username,
-                                                role: member.role || 'Member',
-                                                firstLogin: member.firstLogin
-                                              });
+                                              const targetMember = member;
+                                              setCurrentUser(targetMember);
+                                              setProfile(targetMember);
+                                              if (sellerSessionUser && sellerSessionUser.userId !== targetMember.userId) {
+                                                setSellerSessionUser(null);
+                                              }
+                                              profileFetchedAt.current = 0;
                                               setActiveTab('dash');
                                               showNotif(`สวมสิทธิ์เข้าใช้งานในฐานะ @${member.username} สำเร็จ! ✨`, 'success');
                                             }
@@ -18130,12 +18144,13 @@ export default function App() {
                                               `คุณต้องการสวมสิทธิ์เพื่อเข้าใช้งานระบบในฐานะคุณ ${member.name} ใช่หรือไม่?`,
                                               () => {
                                                 setOriginalAdmin(currentUser);
-                                                setCurrentUser({
-                                                  userId: member.userId,
-                                                  username: member.username,
-                                                  role: member.role || 'Member',
-                                                  firstLogin: member.firstLogin
-                                                });
+                                                const targetMember = member;
+                                                setCurrentUser(targetMember);
+                                                setProfile(targetMember);
+                                                if (sellerSessionUser && sellerSessionUser.userId !== targetMember.userId) {
+                                                  setSellerSessionUser(null);
+                                                }
+                                                profileFetchedAt.current = 0;
                                                 setActiveTab('dash');
                                                 showNotif(`สวมสิทธิ์เข้าใช้งานในฐานะ @${member.username} สำเร็จ! ✨`, 'success');
                                               }
