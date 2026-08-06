@@ -1025,6 +1025,7 @@ export default function App() {
   const [productRandomSeed, setProductRandomSeed] = useState<number>(42);
   const [shopPortalView, setShopPortalView] = useState<'portal' | 'store' | 'packages'>('store');
   const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
+  const [showMissingSponsorModal, setShowMissingSponsorModal] = useState<boolean>(false);
   const [sellerProducts, setSellerProducts] = useState<any[]>([]);
   const [sellerOrders, setSellerOrders] = useState<any[]>([]);
   const [sellerPortalTab, setSellerPortalTab] = useState<'products' | 'orders'>('products');
@@ -6927,6 +6928,35 @@ export default function App() {
   }
 
   // RENDER LOGIN / REGISTER MODAL OVERLAY
+  const renderMissingSponsorModal = () => {
+    if (!showMissingSponsorModal) return null;
+    return (
+      <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[99999] flex items-center justify-center p-4 animate-fadeIn">
+        <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl">
+          <h3 className="text-white font-bold mb-4 text-center">แจ้งเตือน</h3>
+          <p className="text-slate-300 text-xs mb-6 text-center">
+            ระบบต้องสมัครผ่านผู้แนะนำเท่านั้น หากมี กรุณาติดต่อผู้แนะนำของท่านเพื่อขอลิงค์สมัคร เพราะหากสมัครแล้วจะไม่สามารถเปลี่ยนผู้แนะนำได้<br/><br/>
+            หากท่านยืนยันว่าไม่มีผู้แนะนำ กดปุ่มยืนยันด้านล่าง
+          </p>
+          <div className="space-y-3">
+            <button 
+              onClick={() => {
+                setSponsorId('A260600001');
+                clearRegisterForm('A260600001');
+                setAuthMode('register');
+                setShowMissingSponsorModal(false);
+                setShowLoginModal(true);
+              }}
+              className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3 rounded-xl transition text-xs"
+            >
+              ยืนยันว่าไม่มีผู้แนะนำ
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderLoginModal = () => {
     if (!showLoginModal) return null;
     return (
@@ -7001,7 +7031,14 @@ export default function App() {
 
               <div className="flex justify-between items-center text-xs text-sky-400 mt-4">
                 <span onClick={() => setAuthMode('forgot')} className="hover:underline cursor-pointer">ลืมรหัสผ่านใช่หรือไม่?</span>
-                <span onClick={() => { clearRegisterForm(); setAuthMode('register'); }} className="hover:underline cursor-pointer font-semibold text-amber-500">สมัครสมาชิกใหม่</span>
+                <span onClick={() => {
+                  if (sponsorId) {
+                    clearRegisterForm();
+                    setAuthMode('register');
+                  } else {
+                    setShowMissingSponsorModal(true);
+                  }
+                }} className="hover:underline cursor-pointer font-semibold text-amber-500">สมัครสมาชิกใหม่</span>
               </div>
             </form>
           ) : authMode === 'register' ? (
@@ -29083,6 +29120,7 @@ export default function App() {
         {featureToggles.enableAiChatbot !== false && <NateeBotWidget currentUser={currentUser} />}
 
         {renderLoginModal()}
+        {renderMissingSponsorModal()}
       </main>
     </div>
   );
