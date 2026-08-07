@@ -7240,8 +7240,10 @@ export default function App() {
 
           {authMode === 'login' ? (
             <form onSubmit={async (e) => {
-              await handleLogin(e);
-              setShowLoginModal(false);
+              const success = await handleLogin(e);
+              if (success) {
+                setShowLoginModal(false);
+              }
             }} className="space-y-4">
               <div>
                 <label className="block text-slate-300 text-xs font-bold mb-2">Username / รหัสสมาชิก</label>
