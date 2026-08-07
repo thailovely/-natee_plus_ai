@@ -29111,6 +29111,8 @@ export default function App() {
             </div>
           </div>
         )}
+        {renderLoginModal()}
+        {renderMissingSponsorModal()}
         </main>
       </div>
     );
