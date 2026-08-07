@@ -12,6 +12,12 @@ import {
 } from 'lucide-react';
 import { thaiAddressData, searchThaiAddress } from './thaiAddressData';
 import { NateeWarehouseMap } from './components/NateeWarehouseMap';
+import { CancelOrderModal } from './components/modals/CancelOrderModal';
+import { WithdrawModal } from './components/modals/WithdrawModal';
+import { ReviewModal } from './components/modals/ReviewModal';
+import { MarketCheckoutModal } from './components/modals/MarketCheckoutModal';
+import { TablePagination } from './components/TablePagination';
+import { ShopDashboard } from './components/ShopDashboard';
 import { NateeBotWidget } from './components/NateeBotWidget';
 import { AdminBotSettings } from './components/AdminBotSettings';
 import {
@@ -31,42 +37,6 @@ interface PaginationProps {
   onPageChange: (page: number) => void;
 }
 
-const TablePagination: React.FC<PaginationProps> = ({ currentPage, totalItems, itemsPerPage, onPageChange }) => {
-  const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
-
-  if (totalItems === 0) return null;
-
-  return (
-    <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-3 text-xs text-slate-500 border-t border-slate-100">
-      <div>
-        แสดงผล <b>{totalItems === 0 ? 0 : startIndex + 1}-{endIndex}</b> จากทั้งหมด <b>{totalItems}</b> รายการ
-      </div>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-          disabled={currentPage === 1}
-          className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:hover:bg-transparent font-medium cursor-pointer"
-        >
-          ก่อนหน้า
-        </button>
-        <span className="font-semibold text-slate-800">
-          หน้า {currentPage} จาก {totalPages}
-        </span>
-        <button
-          type="button"
-          onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
-          disabled={currentPage === totalPages}
-          className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:hover:bg-transparent font-medium cursor-pointer"
-        >
-          ถัดไป
-        </button>
-      </div>
-    </div>
-  );
-};
 
 export default function App() {
   // Global States
@@ -576,6 +546,8 @@ export default function App() {
   const [importingDb, setImportingDb] = useState(false);
   const [isWarehouseMapEditable, setIsWarehouseMapEditable] = useState(false);
   const [showWarehouseOtpModal, setShowWarehouseOtpModal] = useState(false);
+  const [showShopDashboard, setShowShopDashboard] = useState(false);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [warehouseOtp, setWarehouseOtp] = useState('');
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -1845,11 +1817,11 @@ export default function App() {
       fetchNotifications();
       fetchProfile(true);
       fetchTransactions();
-      fetchMlmTrees();
-      fetchCsrFeed();
-      fetchReports();
+      setTimeout(fetchMlmTrees, 500);
+      setTimeout(fetchCsrFeed, 1000);
+      setTimeout(fetchReports, 1500);
       if (currentUser?.role === 'Admin' || currentUser?.role === 'Manager') {
-        fetchAdminQueues();
+        setTimeout(fetchAdminQueues, 2000);
       }
     }
   }, [currentUser]);
@@ -5025,6 +4997,10 @@ export default function App() {
       showNotif('การถอนเงินขั้นต่ำต้องเป็น 200 บาทขึ้นไปค่ะ', 'error');
       return;
     }
+    if (profile?.kycStatus !== 'Active') {
+      showNotif('กรุณายืนยันตัวตน KYC ให้เรียบร้อยก่อนทำการถอนเงินค่ะ', 'error');
+      return;
+    }
     if ((profile?.balanceEMoney || 0) < 200) {
       showNotif('การถอนเงินเข้าธนาคาร ต้องมียอดเงินใน E-Money ขั้นต่ำ 200 บาทขึ้นไปค่ะ', 'error');
       return;
@@ -5037,13 +5013,9 @@ export default function App() {
       showNotif('กรุณากรอกรหัส PIN 6 หลัก', 'error');
       return;
     }
-    const autoReserve = amt * 0.20; // หักสำรองกองทุนระบบหมุนเวียน 20%
-    const taxableAmount = amt * 0.80; // ยอดฐานคำนวณภาษี (80%)
-    const withholdingTax = taxableAmount * 0.03; // หักภาษี ณ ที่จ่าย 3% ของฐาน 80% (2.4% ของยอดถอน)
-    const companyFee = taxableAmount * 0.02; // หักค่าดูแลโครงข่ายแพลตฟอร์ม 2% ของฐาน 80% (1.6% ของยอดถอน)
-    const transferFee = 25; // ค่าธรรมเนียมการโอน 25 บาท
-    const feeAmount = autoReserve + withholdingTax + companyFee + transferFee;
-    const netReceived = Math.max(0, taxableAmount - withholdingTax - companyFee - transferFee); // ยอดรับสุทธิ (76% ของยอดถอน - 25 บาท)
+    const withholdingTax = amt * 0.03; // หักภาษี ณ ที่จ่าย 3%
+    const feeAmount = 20; // ค่าธรรมเนียมการถอน 20 บาท
+    const netReceived = Math.max(0, amt - withholdingTax - feeAmount);
 
     setTxnConfirm({
       type: 'withdraw_emoney',
@@ -5051,11 +5023,7 @@ export default function App() {
       pin: withdrawPin,
       recipientIdOrPhone: currentUser.userId,
       recipientName: `บัญชีธนาคารของคุณ: ${profile?.bankName || '-'} (เลขที่: ${profile?.bankAccount || '-'})`,
-      autoReserve: autoReserve,
-      taxableAmount: taxableAmount,
       withholdingTax: withholdingTax,
-      companyFee: companyFee,
-      transferFee: transferFee,
       feeAmount: feeAmount,
       netAmount: netReceived
     });
@@ -8918,9 +8886,12 @@ export default function App() {
 
         {/* Dynamic Content Views */}
         <div className="p-6 md:p-8 flex-1">
-          
-          {/* DASHBOARD TAB */}
-          {activeTab === 'dash' && (
+          {showShopDashboard ? (
+            <ShopDashboard profile={profile} transactions={transactions} onBack={() => setShowShopDashboard(false)} />
+          ) : (
+            <>
+              {/* DASHBOARD TAB */}
+              {activeTab === 'dash' && (
             <div className="space-y-8 animate-fadeIn">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white/40 backdrop-blur-md p-6 rounded-3xl border border-white/60 shadow-sm">
                 <div className="text-left space-y-1.5">
@@ -9275,6 +9246,8 @@ export default function App() {
               </div>
             </div>
           )}
+        </>
+      )}
 
           {/* PROFILE & KYC TAB */}
           {activeTab === 'profile' && (
@@ -13776,7 +13749,41 @@ export default function App() {
                   <h2 className="text-2xl font-bold text-indigo-950">Natee Plus Partner 🤝</h2>
                   <p className="text-xs text-slate-400 mt-1">แผงควบคุมคลังสินค้าและการค้าปลีก-ส่ง นที พาร์ทเนอร์</p>
                 </div>
+
               </div>
+
+              {/* EARNINGS DISPLAY */}
+              {(() => {
+                const shopEarnings = transactions.filter(t => t.type === 'Sale' && t.status === 'Approved').reduce((sum, t) => sum + (t.amount || 0), 0);
+                const tax = shopEarnings * 0.03;
+                const fee = 20;
+                const net = shopEarnings - tax - fee;
+                return (
+                  <>
+                    <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-indigo-600 font-bold">รายได้คงเหลือในระบบร้านค้า</p>
+                        <p className="text-2xl font-black text-indigo-950">฿ {shopEarnings.toLocaleString()}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => setShowWithdrawModal(true)} className="bg-white text-indigo-600 font-bold px-4 py-2 rounded-xl text-xs shadow-sm cursor-pointer hover:bg-indigo-50 transition">ถอนรายได้</button>
+                        <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm">
+                          <span className="text-xl">💰</span>
+                        </div>
+                      </div>
+                    </div>
+                    <WithdrawModal 
+                      isOpen={showWithdrawModal}
+                      onClose={() => setShowWithdrawModal(false)}
+                      shopEarnings={shopEarnings}
+                      onConfirm={(amount) => { 
+                        setShowWithdrawModal(false); 
+                        alert(`ทำรายการถอนเงิน ${amount} บาทเรียบร้อย`); 
+                      }}
+                    />
+                  </>
+                );
+              })()}
 
               {/* WELCOME FIRST-LOGIN POPUP MODAL */}
               {sellerWelcomeShown && sellerSessionUser?.sellerStatus === 'Active' && (
@@ -22406,39 +22413,26 @@ export default function App() {
 
                             {(() => {
                               const comm = parseFloat(simMlmCommission) || 0;
-                              const reserve = comm * 0.20;
-                              const baseTaxable = comm - reserve;
-                              const wht = baseTaxable * 0.03;
-                              const fee = baseTaxable * 0.02;
-                              const net = Math.max(0, baseTaxable - wht - fee);
+                              const wht = comm * 0.03;
+                              const fee = 20;
+                              const net = Math.max(0, comm - wht - fee);
                               return (
                                 <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-850 space-y-2 text-[11px] font-mono">
                                   <div className="flex justify-between text-slate-400">
                                     <span>ยอดถอนสั่งตั้งต้น:</span>
                                     <span className="text-white">฿ {comm.toFixed(2)}</span>
                                   </div>
-                                  <div className="flex justify-between text-slate-450 text-[10px] pl-1 text-slate-400">
-                                    <span>• หักกองทุนสะสมสำรอง (20%):</span>
-                                    <span className="text-amber-500">- ฿ {reserve.toFixed(2)}</span>
-                                  </div>
-                                  <div className="flex justify-between text-slate-450 text-[10px] pl-1 text-slate-400">
-                                    <span>• ยอดฐานคำนวณภาษี (80%):</span>
-                                    <span className="text-indigo-300 font-bold">฿ {baseTaxable.toFixed(2)}</span>
+                                  <div className="flex justify-between text-slate-400">
+                                    <span>หักภาษี ณ ที่จ่าย 3%:</span>
+                                    <span className="text-rose-400 font-bold">- ฿ {wht.toFixed(2)}</span>
                                   </div>
                                   <div className="flex justify-between text-slate-400">
-                                    <span>หักภาษี ณ ที่จ่าย 3% (ของฐาน):</span>
-                                    <span className="text-rose-400 font-bold">฿ {wht.toFixed(2)}</span>
-                                  </div>
-                                  <div className="flex justify-between text-slate-400">
-                                    <span>ค่าบริการดูแลระบบ 2% (ของฐาน):</span>
-                                    <span className="text-slate-400">฿ {fee.toFixed(2)}</span>
+                                    <span>หักค่าธรรมเนียมถอนเงิน:</span>
+                                    <span className="text-rose-400 font-bold">- ฿ {fee.toFixed(2)}</span>
                                   </div>
                                   <div className="flex justify-between text-slate-300 border-t border-slate-800/80 pt-1.5">
                                     <span className="font-bold">โอนเข้าบัญชีธนาคารสุทธิ:</span>
                                     <span className="text-emerald-400 font-extrabold">฿ {net.toFixed(2)}</span>
-                                  </div>
-                                  <div className="text-[9px] text-slate-500 mt-1 italic leading-tight">
-                                    * โอนสุทธิคิดเป็นสัดส่วนคงที่เท่ากับ <strong>76.00%</strong> ของเงินถอนตั้งต้นพาส
                                   </div>
                                 </div>
                               );
@@ -26556,111 +26550,42 @@ export default function App() {
           </div>
         )}
 
+
         {/* PRODUCT REVIEW & SELLER RATING MODAL */}
-        {showReviewModal && reviewingOrder && (
-          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-[999999] animate-fade-in" onClick={() => setShowReviewModal(false)}>
-            <div className="bg-white border border-slate-100 rounded-3xl p-6 max-w-md w-full shadow-2xl relative space-y-4" onClick={(e) => e.stopPropagation()}>
-              <button 
-                type="button"
-                onClick={() => setShowReviewModal(false)}
-                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 bg-slate-100 p-1.5 rounded-full cursor-pointer transition text-xs font-bold"
-              >
-                ✕
-              </button>
-
-              <div className="text-center space-y-1">
-                <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-3 py-0.5 rounded-full uppercase tracking-wider">
-                  ⭐ ให้คะแนนและรีวิวสินค้า
-                </span>
-                <h3 className="text-lg font-black text-slate-900 pt-1">
-                  {reviewingOrder.productName || 'สินค้าคำสั่งซื้อ'}
-                </h3>
-                <p className="text-xs text-slate-500 font-mono">
-                  เลขที่ออร์เดอร์: {reviewingOrder.id}
-                </p>
-              </div>
-
-              {/* Star Rating Select */}
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center space-y-2">
-                <label className="text-xs font-bold text-slate-700 block">ให้คะแนนดาวความพึงพอใจ:</label>
-                <div className="flex items-center justify-center gap-2">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      type="button"
-                      onClick={() => setReviewRating(star)}
-                      className={`text-2xl transition transform hover:scale-125 cursor-pointer ${
-                        star <= reviewRating ? 'text-amber-400' : 'text-slate-300'
-                      }`}
-                    >
-                      ★
-                    </button>
-                  ))}
-                </div>
-                <div className="text-[11px] font-extrabold text-amber-700">
-                  {reviewRating === 5 && '🌟 ประทับใจมากที่สุด (5 ดาว)'}
-                  {reviewRating === 4 && '👍 ดีมาก (4 ดาว)'}
-                  {reviewRating === 3 && '👌 ปานกลาง (3 ดาว)'}
-                  {reviewRating === 2 && '👎 พอใช้ (2 ดาว)'}
-                  {reviewRating === 1 && '💔 ปรับปรุง (1 ดาว)'}
-                </div>
-              </div>
-
-              {/* Comment Textarea */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 block">ข้อความรีวิวสินค้าเพิ่มเติม (ถ้ามี):</label>
-                <textarea
-                  value={reviewComment}
-                  onChange={(e) => setReviewComment(e.target.value)}
-                  placeholder="เขียนความประทับใจเกี่ยวกับสินค้า คุณภาพ ความเร็วในการจัดส่ง..."
-                  rows={3}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
-                />
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowReviewModal(false)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 rounded-xl transition cursor-pointer"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const res = await fetch('/api/order/review', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          orderId: reviewingOrder.id,
-                          userId: currentUser?.userId,
-                          rating: reviewRating,
-                          comment: reviewComment
-                        })
-                      });
-                      const data = await res.json();
-                      if (data.success) {
-                        showNotif(data.message, 'success');
-                        setShowReviewModal(false);
-                        fetchUserData();
-                      } else {
-                        showNotif(data.message || 'เกิดข้อผิดพลาดในการบันทึกรีวิว', 'error');
-                      }
-                    } catch (e) {
-                      showNotif('เกิดข้อผิดพลาดในการส่งข้อมูลรีวิว', 'error');
-                    }
-                  }}
-                  className="flex-1 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-extrabold py-2.5 rounded-xl transition shadow-md cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  ⭐ ส่งรีวิวเรียบร้อย
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <ReviewModal 
+          isOpen={showReviewModal && !!reviewingOrder}
+          onClose={() => setShowReviewModal(false)}
+          reviewingOrder={reviewingOrder}
+          rating={reviewRating}
+          setRating={setReviewRating}
+          comment={reviewComment}
+          setComment={setReviewComment}
+          onSubmit={async () => {
+            if (!reviewingOrder) return;
+            try {
+              const res = await fetch('/api/order/review', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  orderId: reviewingOrder.id,
+                  userId: currentUser?.userId,
+                  rating: reviewRating,
+                  comment: reviewComment
+                })
+              });
+              const data = await res.json();
+              if (data.success) {
+                showNotif(data.message, 'success');
+                setShowReviewModal(false);
+                fetchUserData();
+              } else {
+                showNotif(data.message || 'เกิดข้อผิดพลาดในการบันทึกรีวิว', 'error');
+              }
+            } catch (e) {
+              showNotif('เกิดข้อผิดพลาดในการส่งข้อมูลรีวิว', 'error');
+            }
+          }}
+        />
 
         {/* FULL SIZE IMAGE PREVIEW MODAL */}
         {Boolean(previewImageUrl) && typeof previewImageUrl === 'string' && (
@@ -26880,20 +26805,12 @@ export default function App() {
                       <span className="font-mono font-bold text-slate-900">฿ {txnConfirm.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
                     </div>
                     <div className="flex justify-between text-rose-600">
-                      <span className="font-semibold">หักเข้าระบบ (15%):</span>
-                      <span className="font-mono font-bold">- ฿ {(txnConfirm.autoReserve || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
-                    </div>
-                    <div className="flex justify-between text-rose-600">
-                      <span className="font-semibold">หักภาษี 5% (3%+2%):</span>
+                      <span className="font-semibold">หักภาษี ณ ที่จ่าย (3%):</span>
                       <span className="font-mono font-bold">- ฿ {(txnConfirm.withholdingTax || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
                     </div>
-                    <div className="flex justify-between border-t border-slate-100 pt-1 text-slate-700">
-                      <span className="font-semibold">ยอดคงเหลือหลังหัก 20%:</span>
-                      <span className="font-mono font-bold">฿ {(txnConfirm.taxableAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
-                    </div>
                     <div className="flex justify-between text-rose-600">
-                      <span className="font-semibold">หักค่าธรรมเนียมธุรกรรม:</span>
-                      <span className="font-mono font-bold">- ฿ {(txnConfirm.transferFee || 25).toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
+                      <span className="font-semibold">หักค่าธรรมเนียมการถอน:</span>
+                      <span className="font-mono font-bold">- ฿ {(txnConfirm.feeAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท</span>
                     </div>
                   </>
                 ) : (
@@ -27927,209 +27844,20 @@ export default function App() {
         )}
 
         {/* MODAL: MARKET CHECKOUT / CART SUMMARY WITH CANCEL / CLEAR CART OPTION */}
-        {showMarketCheckoutModal && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto space-y-5 animate-fadeIn">
-              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">🛒</span>
-                  <div>
-                    <h3 className="text-base font-extrabold text-slate-900">รถเข็นของฉัน (Order Summary)</h3>
-                    <p className="text-[11px] text-slate-400">
-                      {checkoutMarketProduct ? `ร้านค้า: ${checkoutMarketProduct.sellerStoreName || checkoutMarketProduct.sellerId || 'นที พลัส มาร์เก็ต'}` : 'นที พลัส มาร์เก็ต'}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowMarketCheckoutModal(false)}
-                  className="text-slate-400 hover:text-slate-600 font-bold p-1.5 rounded-full hover:bg-slate-100 text-sm cursor-pointer"
-                  title="ปิด"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {!checkoutMarketProduct ? (
-                <div className="text-center py-6 space-y-3">
-                  <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto text-3xl border border-amber-100">
-                    🛒
-                  </div>
-                  <h4 className="font-extrabold text-slate-800 text-sm">รถเข็นของคุณยังไม่มีสินค้า</h4>
-                  <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
-                    ขณะนี้ไม่มีรายการสินค้าค้างในรถเข็น คุณสามารถเลือกชมและกดสั่งซื้อสินค้าใน นที พลัส มาร์เก็ต ได้เลยค่ะ
-                  </p>
-                  <div className="flex gap-2 pt-2 justify-center">
-                    <button
-                      type="button"
-                      onClick={() => setShowMarketCheckoutModal(false)}
-                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-2xl font-bold text-xs transition cursor-pointer"
-                    >
-                      ยกเลิก / ปิด
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowMarketCheckoutModal(false);
-                        setShopSubTab('all');
-                      }}
-                      className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-2xl font-bold text-xs transition shadow-md cursor-pointer"
-                    >
-                      🛍️ เลือกดูสินค้า
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {/* Order Item Details & Financial Breakdown */}
-                  {(() => {
-                    const isSellerFreeShipping = 
-                      checkoutMarketProduct.isFreeShipping === true ||
-                      checkoutMarketProduct.sellerPaysShipping === true ||
-                      checkoutMarketProduct.freeShipping === true ||
-                      checkoutMarketProduct.shippingFee === 0 ||
-                      checkoutMarketProduct.shippingFee === '0' ||
-                      checkoutMarketProduct.shippingFeeBase === '0' ||
-                      checkoutMarketProduct.shippingFeeBase === 0;
-
-                    const itemShippingFee = isSellerFreeShipping 
-                      ? 0 
-                      : (checkoutMarketProduct.shippingFee !== undefined && checkoutMarketProduct.shippingFee !== null 
-                          ? Number(checkoutMarketProduct.shippingFee) 
-                          : (checkoutMarketProduct.shippingFeeBase !== undefined && checkoutMarketProduct.shippingFeeBase !== null 
-                              ? Number(checkoutMarketProduct.shippingFeeBase) 
-                              : 35));
-
-                    const totalShippingFee = itemShippingFee * marketProductQty;
-                    const itemsTotalPrice = (checkoutMarketProduct.price || 0) * marketProductQty;
-                    const grandTotal = itemsTotalPrice + totalShippingFee;
-
-                    const productPv = checkoutMarketProduct.pv || Math.floor(parseFloat(checkoutMarketProduct.price || 0) * 0.5);
-                    const totalPvEarned = productPv * marketProductQty;
-                    const canSeePv = ['S','M','L','XL','XXL'].includes(profile?.rank || '') || profile?.role === 'Admin' || profile?.role === 'Manager';
-
-                    return (
-                      <>
-                        <div className="flex gap-4 bg-slate-50 p-3.5 rounded-2xl border border-slate-100 items-center">
-                          <img
-                            src={checkoutMarketProduct.image}
-                            className="w-16 h-16 object-cover rounded-xl border border-slate-200 shrink-0"
-                            alt={checkoutMarketProduct.name}
-                            referrerPolicy="no-referrer"
-                          />
-                          <div className="flex-1 space-y-1">
-                            <h4 className="font-extrabold text-slate-900 text-xs leading-snug">{checkoutMarketProduct.name}</h4>
-                            <p className="text-[11px] text-slate-500 font-medium">ราคาต่อชิ้น: ฿{(checkoutMarketProduct.price || 0).toLocaleString()} | จำนวน: {marketProductQty} ชิ้น</p>
-                            <p className="text-[10px] text-emerald-700 font-bold">
-                              ค่าจัดส่งต่อชิ้น: {isSellerFreeShipping || itemShippingFee === 0 ? '฿0 (ร้านค้าออกค่าขนส่งให้ค่ะ)' : `฿${itemShippingFee}`}
-                            </p>
-                            {canSeePv && (
-                              <p className="text-[10px] text-indigo-600 font-bold">
-                                คะแนน PV ที่ได้รับ: +{totalPvEarned.toLocaleString()} PV
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Financial Breakdown */}
-                        <div className="bg-slate-900 text-white p-4 rounded-2xl space-y-2 font-sans text-xs">
-                          <div className="flex justify-between text-slate-300">
-                            <span>ราคาสินค้ารวม ({marketProductQty} ชิ้น):</span>
-                            <span className="font-mono font-bold">฿ {itemsTotalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                          <div className="flex justify-between text-slate-300">
-                            <span>ค่าจัดส่งรวม:</span>
-                            <span className="font-mono font-bold text-emerald-400">
-                              {isSellerFreeShipping || itemShippingFee === 0 ? '฿ 0.00 (ร้านค้าออกค่าขนส่งให้)' : `฿ ${totalShippingFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                            </span>
-                          </div>
-                          {canSeePv && (
-                            <div className="flex justify-between text-emerald-300 pt-1 border-t border-slate-800 font-bold">
-                              <span>รวมคะแนน PV ที่จะได้รับ (ตำแหน่ง {profile?.rank || 'S'} ขึ้นไป):</span>
-                              <span className="font-mono font-extrabold">+{totalPvEarned.toLocaleString()} PV</span>
-                            </div>
-                          )}
-                          <div className="border-t border-slate-800 pt-2 flex justify-between items-baseline font-black">
-                            <span className="text-amber-400 text-sm">ยอดชำระสุทธิ (Total Amount):</span>
-                            <span className="text-emerald-400 text-lg font-mono">฿ {grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                        </div>
-                      </>
-                    );
-                  })()}
-
-                  {/* 7-Day Money Back Guarantee Notice */}
-                  <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl text-center space-y-1">
-                    <span className="text-amber-800 font-extrabold text-xs block">🛡️ การรับประกันความพึงพอใจ 100%</span>
-                    <p className="text-[11px] font-bold text-amber-900 leading-tight">
-                      สินค้ารับประกัน หากไม่พอใจยินดีคืนเงิน 7 วัน นับจากวันรับสินค้า
-                    </p>
-                  </div>
-
-                  {/* Action Buttons: Cancel/Clear, Back, Confirm */}
-                  <div className="space-y-2 pt-2 border-t border-slate-100">
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCheckoutMarketProduct(null);
-                          setShowMarketCheckoutModal(false);
-                          showNotif('ยกเลิกรายการในรถเข็นเรียบร้อยแล้วค่ะ', 'info');
-                        }}
-                        className="flex-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 py-2.5 rounded-2xl font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
-                      >
-                        <span>🗑️</span>
-                        <span>ยกเลิกสั่งซื้อ / ล้างรถเข็น</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setShowMarketCheckoutModal(false)}
-                        className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-2xl font-bold text-xs transition cursor-pointer"
-                      >
-                        ปิดหน้าต่าง (เลือกดูต่อ)
-                      </button>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          const res = await fetch('/api/shop/purchase', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              userId: currentUser?.userId || profile?.userId,
-                              productId: checkoutMarketProduct.id,
-                              quantity: marketProductQty
-                            })
-                          });
-                          const data = await res.json();
-                          if (data.success) {
-                            setCheckoutMarketProduct(null);
-                            setShowMarketCheckoutModal(false);
-                            playOrderAlertSound();
-                            showNotif(`สั่งซื้อสินค้าสำเร็จแล้ว! ${data.message || ''}`, 'success');
-                            if (currentUser) {
-                              fetchProfile(currentUser.userId);
-                            }
-                          } else {
-                            showNotif(data.message || 'เกิดข้อผิดพลาดในการสั่งซื้อสินค้า', 'error');
-                          }
-                        } catch (err) {
-                          showNotif('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์สั่งซื้อสินค้าได้', 'error');
-                        }
-                      }}
-                      className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-2xl font-black text-xs transition shadow-lg cursor-pointer flex items-center justify-center gap-1"
-                    >
-                      <span>✓</span>
-                      <span>ยืนยันการสั่งซื้อสินค้า (ส่งคำสั่งซื้อไปยังร้านค้า)</span>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        )}
+        <MarketCheckoutModal
+          isOpen={showMarketCheckoutModal}
+          onClose={() => setShowMarketCheckoutModal(false)}
+          product={checkoutMarketProduct}
+          quantity={marketProductQty}
+          setShopSubTab={setShopSubTab}
+          setProduct={setCheckoutMarketProduct}
+          setShowModal={setShowMarketCheckoutModal}
+          showNotif={showNotif}
+          playOrderAlertSound={playOrderAlertSound}
+          currentUser={currentUser}
+          profile={profile}
+          fetchProfile={fetchProfile}
+        />
 
         {/* MODAL: ORDER TRACKING DETAILS FOR CUSTOMER */}
         {activeTrackingOrder && (
@@ -29215,98 +28943,14 @@ export default function App() {
         </div>
 
         {/* MODAL: Cancel Order & Generate Credit Note */}
-        {cancelOrderModalData && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fadeIn">
-            <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-lg w-full p-6 space-y-4">
-              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2 text-rose-600 font-extrabold text-base">
-                  <span>🚫</span>
-                  <h3>ยืนยันการยกเลิกบิลสั่งซื้อ (Void Order & Issue Credit Note)</h3>
-                </div>
-                <button
-                  onClick={() => setCancelOrderModalData(null)}
-                  className="text-slate-400 hover:text-slate-600 font-bold text-lg cursor-pointer"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-xs text-rose-900 space-y-1.5">
-                <div className="font-black text-rose-800 flex items-center gap-1 text-sm">
-                  <span>⚠️</span>
-                  <span>คำเตือนทางภาษีและสิทธิ์สมาชิก</span>
-                </div>
-                <p className="leading-relaxed">
-                  การยกเลิกบิลนี้จะส่งผลให้ระบบสร้าง <strong>"ใบลดหนี้ (Credit Note)"</strong> สำหรับนำแสดงต่อกรมสรรพากรโดยอัตโนมัติ เพื่อขอลดหย่อนภาษีขาย และจะทำการคำนวณสิทธิ์และยอด PV สะสมของผู้ใช้รหัส <strong className="font-mono">{cancelOrderModalData.userId}</strong> ใหม่ทันที
-                </p>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-xs space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">เลขที่บิลสั่งซื้อ:</span>
-                  <span className="font-mono font-bold text-indigo-600">{cancelOrderModalData.orderId}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">รหัสสมาชิกผู้สั่งซื้อ:</span>
-                  <span className="font-bold text-slate-800">{cancelOrderModalData.userId}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">รายการสินค้า:</span>
-                  <span className="font-bold text-slate-800">{cancelOrderModalData.productName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">มูลค่ารวมบิล:</span>
-                  <span className="font-black text-emerald-600 font-mono">฿ {cancelOrderModalData.totalPrice?.toLocaleString()}</span>
-                </div>
-              </div>
-
-              <form onSubmit={handleCancelOrderSubmit} className="space-y-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    เหตุผลการยกเลิกบิล (ระบุสำหรับสรรพากรและใบลดหนี้) <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    value={cancelOrderReason}
-                    onChange={(e) => setCancelOrderReason(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-rose-500 mb-2"
-                  >
-                    <option value="ออกบิลซ้ำเนื่องจากข้อผิดพลาดของระบบ">ออกบิลซ้ำเนื่องจากข้อผิดพลาดของระบบ (Duplicate Billing Error)</option>
-                    <option value="คำนวณราคาหรือแพ็กเกจผิดพลาดทางเทคนิค">คำนวณราคาหรือแพ็กเกจผิดพลาดทางเทคนิค (System Pricing Calculation Error)</option>
-                    <option value="ลูกค้าขอยกเลิกและคืนเงินเต็มจำนวน">ลูกค้าขอยกเลิกและคืนเงินเต็มจำนวน (Customer Cancellation & Full Refund)</option>
-                    <option value="ออกใบกำกับภาษีผิดรหัสสมาชิก/ที่อยู่">ออกใบกำกับภาษีผิดรหัสสมาชิก/ที่อยู่ (Incorrect Tax Invoice Credentials)</option>
-                    <option value="custom">ระบุเหตุผลอื่นๆ...</option>
-                  </select>
-                  {cancelOrderReason === 'custom' && (
-                    <input
-                      type="text"
-                      placeholder="กรอกเหตุผลการยกเลิกบิล..."
-                      onChange={(e) => setCancelOrderReason(e.target.value)}
-                      required
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-rose-500"
-                    />
-                  )}
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setCancelOrderModalData(null)}
-                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs transition cursor-pointer"
-                  >
-                    ยกเลิก / ถอยกลับ
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-extrabold py-2.5 rounded-xl text-xs transition shadow-md cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <span>🚫</span>
-                    <span>ยืนยันยกเลิกและออกใบลดหนี้</span>
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+        <CancelOrderModal 
+          isOpen={!!cancelOrderModalData}
+          data={cancelOrderModalData}
+          onClose={() => setCancelOrderModalData(null)}
+          reason={cancelOrderReason}
+          setReason={setCancelOrderReason}
+          onSubmit={handleCancelOrderSubmit}
+        />
 
         {/* MODAL: Printable Official Thai Tax Credit Note / Void Document */}
         {selectedCreditNoteForView && (
@@ -29458,16 +29102,14 @@ export default function App() {
                     alert('รหัส OTP ไม่ถูกต้อง');
                   }
                 }}
-                className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl"
+                className="w-full bg-indigo-600 text-white rounded-xl p-3 font-bold"
               >
                 ยืนยัน
               </button>
             </div>
           </div>
         )}
-        {renderLoginModal()}
-        {renderMissingSponsorModal()}
-      </main>
-    </div>
-  );
-}
+        </main>
+      </div>
+    );
+  }

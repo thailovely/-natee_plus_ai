@@ -4001,6 +4001,12 @@ app.post('/api/member/verify-shipping-pin-otp', (req, res) => {
   return res.status(400).json({ success: false, message: 'รหัส OTP ไม่ถูกต้อง' });
 });
 
+app.post('/api/member/withdraw-shop-earnings', (req, res) => {
+  const { userId, amount } = req.body;
+  // TODO: Implement shop earnings withdrawal logic, separate from MLM system.
+  return res.json({ success: true, message: 'บันทึกคำขอถอนรายได้ร้านค้าเรียบร้อยแล้ว' });
+});
+
 app.post('/api/member/transfer-e-cash', (req, res) => {
   const { senderId, receiverPhoneOrUser, amount, pin } = req.body;
   const db = readDb();
