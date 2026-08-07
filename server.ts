@@ -3085,13 +3085,45 @@ app.get('/api/mlm/plan-b/:userId', (req, res) => {
   const db = readDb();
   const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
   
+  if (!member) {
+    return res.status(404).json({ success: false, message: 'ไม่พบสมาชิก' });
+  }
+
+  const responsePlanB: any = {
+    points: member.planBPoints || 0,
+    currentLevel: 1,
+    history: []
+  };
+
+  if (!db.planB_Tree) db.planB_Tree = {};
+
+  for (let t = 1; t <= 15; t++) {
+    const tierKey = 'b' + t;
+    const allNodesInTier = db.planB_Tree[tierKey] || [];
+    
+    // Find all nodes in this tier belonging to the user
+    const userNodesInTier = allNodesInTier
+      .map((node: any, globalIndex: number) => {
+        if (node.userId !== member.userId) return null;
+        
+        // Calculate progress based on the count of descendants out of 62
+        const descCount = countDescendants(allNodesInTier, globalIndex);
+        const progress = Math.min(100, Math.round((descCount / 62) * 100 * 100) / 100);
+        
+        return {
+          ...node,
+          progress,
+          descendantsCount: descCount
+        };
+      })
+      .filter((n: any) => n !== null);
+
+    responsePlanB[`b${t}Nodes`] = userNodesInTier;
+  }
+
   return res.json({
     success: true,
-    planB: {
-      points: member?.planBPoints || 0,
-      currentLevel: 1,
-      history: []
-    }
+    planB: responsePlanB
   });
 });
 
@@ -3151,6 +3183,281 @@ app.get('/api/shop/package-choices', (req, res) => {
   return res.json({ success: true, choices: db.packageProductChoices || [] });
 });
 
+// HELPER FUNCTIONS FOR MLM SYSTEM (ALL-SHARE, PLAN B AUTO-RUN & CSR)
+function countDescendants(treeNodes: any[], index: number): number {
+  let count = 0;
+  const queue = [index];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const left = 2 * current + 1;
+    if (left < treeNodes.length) {
+      count++;
+      queue.push(left);
+    }
+    const right = 2 * current + 2;
+    if (right < treeNodes.length) {
+      count++;
+      queue.push(right);
+    }
+  }
+  return count;
+}
+
+function getPlanBDetailsForTier(tier: number) {
+  let nodeValue = 100.00;
+  let totalPayout = 840.00; // Tier 1 total payout is 840 Baht
+  let partsCount = 6;
+  let partValue = totalPayout / partsCount; // 140 Baht
+  
+  if (tier > 1) {
+    for (let t = 2; t <= tier; t++) {
+      nodeValue = partValue; // nodeValue of next tier is the partValue of previous tier
+      totalPayout = 62 * (nodeValue / 5); // 62 codes under 5 layers
+      partsCount = t === 15 ? 5 : 6;
+      partValue = totalPayout / partsCount;
+    }
+  }
+
+  return {
+    nodeValue,
+    totalPayout,
+    partsCount,
+    partValue,
+    eMoneyValue: partValue,
+    coupon: partValue,
+    spawnReserve: tier === 15 ? 0 : partValue,
+    allShare: partValue,
+    csr: partValue,
+    company: partValue
+  };
+}
+
+function distributeAllShareRealTime(db: any, totalAmount: number, sourceDetails: string) {
+  if (!db || totalAmount <= 0) return;
+
+  const activeMembers = (db.members || []).filter((m: any) => {
+    recalculateMemberEligibleRights(db, m);
+    return Number(m.eligibleRights || 0) > 0;
+  });
+
+  if (activeMembers.length === 0) {
+    db.systemStats.totalAllShareReserves = (db.systemStats.totalAllShareReserves || 0) + totalAmount;
+    return;
+  }
+
+  const shareAmount = Math.round((totalAmount / activeMembers.length) * 1000000) / 1000000;
+  if (shareAmount <= 0) return;
+
+  for (const m of activeMembers) {
+    const halfShare = Math.round((shareAmount * 0.50) * 100) / 100;
+    
+    m.balanceEShare = Number(m.balanceEShare || 0) + shareAmount;
+    
+    m.balanceEMoney = Number(m.balanceEMoney || 0) + halfShare;
+    m.totalEMoneyEarnedSoFar = Number(m.totalEMoneyEarnedSoFar || 0) + halfShare;
+    m.totalEarnings = Number(m.totalEarnings || 0) + halfShare;
+    
+    addPlanBPoints(db, m, halfShare);
+
+    if (!Array.isArray(db.transactions)) db.transactions = [];
+    db.transactions.push({
+      id: "TXN_ES_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+      userId: m.userId,
+      type: "EShare",
+      amount: shareAmount,
+      currency: "E-Share",
+      details: `รับส่วนแบ่งปันผล All-Share (${sourceDetails}) - ยอดสุทธิ ฿${shareAmount.toFixed(4)} (จ่าย 50% เข้า E-Money ฿${halfShare.toFixed(2)} + 50% สะสม Plan B Points ฿${halfShare.toFixed(4)})`,
+      status: "Approved",
+      createdAt: new Date().toISOString()
+    });
+
+    recalculateMemberEligibleRights(db, m);
+  }
+}
+
+function checkPlanBCycleCompletions(db: any, tierKey: string) {
+  const treeNodes = db.planB_Tree[tierKey];
+  if (!Array.isArray(treeNodes)) return;
+
+  const tierNum = parseInt(tierKey.replace('b', ''), 10) || 1;
+
+  for (let i = 0; i < treeNodes.length; i++) {
+    const node = treeNodes[i];
+    if (node.cycleCompleted) continue;
+
+    const descendantsCount = countDescendants(treeNodes, i);
+    if (descendantsCount >= 62) {
+      node.cycleCompleted = true;
+      node.status = "Success"; // Compatibility with frontend
+
+      const member = (db.members || []).find((m: any) => m.userId === node.userId);
+      if (member) {
+        const details = getPlanBDetailsForTier(tierNum);
+
+        // 1. E-Money (with 20% flat split)
+        const grossEMoney = details.partValue;
+        const eMoneyNet = Math.round((grossEMoney * 0.80) * 100) / 100;
+        const eCouponSplit = Math.round((grossEMoney * 0.10) * 100) / 100;
+        const allShareSplit = Math.round((grossEMoney * 0.03) * 100) / 100;
+        const planBSplit = Math.round((grossEMoney * 0.05) * 100) / 100;
+        const csrSplit = Math.round((grossEMoney * 0.01) * 100) / 100;
+        const companySplit = Math.round((grossEMoney * 0.01) * 100) / 100;
+
+        member.balanceEMoney = Number(member.balanceEMoney || 0) + eMoneyNet;
+        member.totalEMoneyEarnedSoFar = Number(member.totalEMoneyEarnedSoFar || 0) + eMoneyNet;
+        member.totalEarnings = Number(member.totalEarnings || 0) + eMoneyNet;
+
+        member.balanceECoupon = Number(member.balanceECoupon || 0) + eCouponSplit;
+        addPlanBPoints(db, member, planBSplit);
+        db.systemStats.totalCompanyProfits = (db.systemStats.totalCompanyProfits || 0) + companySplit;
+        
+        if (allShareSplit > 0) {
+          distributeAllShareRealTime(db, allShareSplit, `ส่วนแบ่ง 3% จากรอบสำเร็จ Plan B${tierNum} ของ ${member.name}`);
+        }
+        if (csrSplit > 0) {
+          db.csrFund.balance = Number(db.csrFund.balance || 0) + csrSplit;
+          db.csrFund.history.push({
+            id: "CSR_SP_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+            type: "Donation",
+            amount: csrSplit,
+            name: `${member.name} ${member.surname || ''}`.trim(),
+            username: member.username || member.name,
+            userId: member.userId,
+            details: `หักปันสุข 1% จากรอบสำเร็จ Plan B${tierNum} ของ ${member.name}`,
+            description: `หักปันสุข 1% จากรอบสำเร็จ Plan B${tierNum} สมาชิก ${member.name} (${member.userId})`,
+            createdAt: new Date().toISOString()
+          });
+        }
+
+        if (!Array.isArray(db.transactions)) db.transactions = [];
+        db.transactions.push({
+          id: "TXN_PB_EM_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+          userId: member.userId,
+          type: "Commission",
+          amount: eMoneyNet,
+          currency: "E-Money",
+          details: `ผลปันผลรอบสำเร็จ Plan B${tierNum} (#${node.id}) - เข้า E-Money สุทธิ ฿${eMoneyNet} (จัดสรรระบบ 20%)`,
+          status: "Approved",
+          createdAt: new Date().toISOString()
+        });
+
+        // 2. E-Coupon Direct Part (from parts)
+        const couponGross = details.coupon;
+        const couponPlanBPoints = couponGross * 0.10;
+        const couponNet = couponGross - couponPlanBPoints;
+
+        member.balanceECoupon = Number(member.balanceECoupon || 0) + couponNet;
+        member.totalCouponsEarned = Number(member.totalCouponsEarned || 0) + couponNet;
+        addPlanBPoints(db, member, couponPlanBPoints);
+
+        db.transactions.push({
+          id: "TXN_PB_EC_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+          userId: member.userId,
+          type: "Commission",
+          amount: couponNet,
+          currency: "E-Coupon",
+          details: `ผลปันผล E-Coupon รอบสำเร็จ Plan B${tierNum} (#${node.id}) - สุทธิ ฿${couponNet} (หัก 10% สะสม Plan B ฿${couponPlanBPoints})`,
+          status: "Approved",
+          createdAt: new Date().toISOString()
+        });
+
+        // 3. Next Tier Spawn (escalation to tierNum + 1)
+        if (tierNum < 15 && details.spawnReserve > 0) {
+          placeInPlanBTree(db, member.userId, tierNum + 1);
+        }
+
+        // 4. All-Share direct part
+        if (details.allShare > 0) {
+          distributeAllShareRealTime(db, details.allShare, `ปันส่วน All-Share จากรอบสำเร็จ Plan B${tierNum} ของ ${member.name}`);
+        }
+
+        // 5. CSR direct part
+        if (details.csr > 0) {
+          db.csrFund.balance = Number(db.csrFund.balance || 0) + details.csr;
+          db.csrFund.history.push({
+            id: "CSR_PB_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+            type: "Donation",
+            amount: details.csr,
+            name: `${member.name} ${member.surname || ''}`.trim(),
+            username: member.username || member.name,
+            userId: member.userId,
+            details: `เงินปันส่วนกองทุนปันสุข 1/6 ส่วนจากวงรอบความสำเร็จ Plan B${tierNum} ของ ${member.name}`,
+            description: `เงินสมทบความสำเร็จ Plan B${tierNum} สมาชิก ${member.name} (${member.userId})`,
+            createdAt: new Date().toISOString()
+          });
+        }
+
+        // 6. Company Profit direct part
+        if (details.company > 0) {
+          db.systemStats.totalCompanyProfits = (db.systemStats.totalCompanyProfits || 0) + details.company;
+        }
+
+        recalculateMemberEligibleRights(db, member);
+      }
+    }
+  }
+}
+
+function placeInPlanBTree(db: any, userId: string, tier: number) {
+  const member = (db.members || []).find((m: any) => m.userId === userId || m.username === userId);
+  if (!member) return;
+
+  if (!db.planB_Tree) db.planB_Tree = {};
+  const tierKey = 'b' + tier;
+  if (!Array.isArray(db.planB_Tree[tierKey])) {
+    db.planB_Tree[tierKey] = [];
+  }
+
+  const treeNodes = db.planB_Tree[tierKey];
+  const n = treeNodes.length;
+
+  const parentIndex = n > 0 ? Math.floor((n - 1) / 2) : -1;
+  const parentNode = parentIndex >= 0 ? treeNodes[parentIndex] : null;
+
+  const newNodeId = `B${tier}_${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+  const newNode = {
+    id: newNodeId,
+    userId: member.userId,
+    username: member.username,
+    name: `${member.name} ${member.surname || ''}`.trim(),
+    parentId: parentNode ? parentNode.id : null,
+    childIds: [],
+    cycleCompleted: false,
+    createdAt: new Date().toISOString()
+  };
+
+  treeNodes.push(newNode);
+
+  if (parentNode) {
+    if (!Array.isArray(parentNode.childIds)) parentNode.childIds = [];
+    parentNode.childIds.push(newNodeId);
+  }
+
+  if (!Array.isArray(db.transactions)) db.transactions = [];
+  db.transactions.push({
+    id: "TXN_B_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+    userId: member.userId,
+    type: "PlanBCodeCreated",
+    amount: 100,
+    currency: "PlanBPoints",
+    details: `สร้างรหัสเสริม Plan B${tier} ใหม่ (#${newNodeId}) จากคะแนนสะสมครบ 100 pt`,
+    status: "Approved",
+    createdAt: new Date().toISOString()
+  });
+
+  checkPlanBCycleCompletions(db, tierKey);
+}
+
+function addPlanBPoints(db: any, member: any, points: number) {
+  if (!member || points <= 0) return;
+  member.planBPoints = Number(member.planBPoints || 0) + points;
+
+  while (member.planBPoints >= 100) {
+    member.planBPoints -= 100;
+    placeInPlanBTree(db, member.userId, 1);
+  }
+}
+
 function processMLMCommission(db: any, order: any, purchaser: any) {
   if (!db || !order || !purchaser) return;
 
@@ -3179,45 +3486,70 @@ function processMLMCommission(db: any, order: any, purchaser: any) {
     const sponsor = (db.members || []).find((m: any) => m.userId === sponsorId || m.username === sponsorId);
 
     if (sponsor && sponsor.userId !== purchaser.userId) {
-      const grossEMoney = 40 * (order.quantity || 1);
+      const grossSponsorBonus = 50 * (order.quantity || 1);
       recalculateMemberEligibleRights(db, sponsor);
 
       const remainingRights = Number(sponsor.eligibleRights || 0);
       const isSpecialRole = sponsor.role === 'Manager' || sponsor.role === 'Admin' || sponsor.userId === 'A260600001' || sponsor.username === 'nateeplus';
-      const payableEMoney = isSpecialRole ? grossEMoney : Math.min(grossEMoney, remainingRights);
+      const payableSponsorBonus = isSpecialRole ? grossSponsorBonus : Math.min(grossSponsorBonus, remainingRights);
 
-      if (payableEMoney > 0) {
-        const scaleRatio = grossEMoney > 0 ? (payableEMoney / grossEMoney) : 1;
-        const eCouponAmt = Math.round((10 * (order.quantity || 1) * scaleRatio) * 100) / 100;
+      if (payableSponsorBonus > 0) {
+        // Flat 20% Split:
+        const eMoneyNet = Math.round((payableSponsorBonus * 0.80) * 100) / 100;
+        const eCouponNet = Math.round((payableSponsorBonus * 0.10 * 0.90) * 100) / 100;
+        const planBSplitPoints = Math.round((payableSponsorBonus * 0.05 + payableSponsorBonus * 0.10 * 0.10) * 100) / 100;
+        const allShareNet = Math.round((payableSponsorBonus * 0.03) * 100) / 100;
+        const csrNet = Math.round((payableSponsorBonus * 0.01) * 100) / 100;
+        const companyNet = Math.round((payableSponsorBonus * 0.01) * 100) / 100;
 
-        sponsor.balanceEMoney = Number(sponsor.balanceEMoney || 0) + payableEMoney;
-        sponsor.totalEMoneyEarnedSoFar = Number(sponsor.totalEMoneyEarnedSoFar || 0) + payableEMoney;
-        sponsor.totalEarnings = Number(sponsor.totalEarnings || 0) + payableEMoney;
+        sponsor.balanceEMoney = Number(sponsor.balanceEMoney || 0) + eMoneyNet;
+        sponsor.totalEMoneyEarnedSoFar = Number(sponsor.totalEMoneyEarnedSoFar || 0) + eMoneyNet;
+        sponsor.totalEarnings = Number(sponsor.totalEarnings || 0) + eMoneyNet;
 
-        if (eCouponAmt > 0) {
-          sponsor.balanceECoupon = Number(sponsor.balanceECoupon || 0) + eCouponAmt;
-          sponsor.totalCouponsEarned = Number(sponsor.totalCouponsEarned || 0) + eCouponAmt;
+        sponsor.balanceECoupon = Number(sponsor.balanceECoupon || 0) + eCouponNet;
+        sponsor.totalCouponsEarned = Number(sponsor.totalCouponsEarned || 0) + eCouponNet;
+
+        addPlanBPoints(db, sponsor, planBSplitPoints);
+        db.systemStats.totalCompanyProfits = (db.systemStats.totalCompanyProfits || 0) + companyNet;
+        
+        if (allShareNet > 0) {
+          distributeAllShareRealTime(db, allShareNet, `ส่วนแบ่ง 3% Plan A จากค่าแนะนำ Package S ของ ${purchaser.name}`);
+        }
+
+        if (csrNet > 0) {
+          db.csrFund.balance = Number(db.csrFund.balance || 0) + csrNet;
+          db.csrFund.history.push({
+            id: "CSR_SP_S_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+            type: "Donation",
+            amount: csrNet,
+            name: `${sponsor.name} ${sponsor.surname || ''}`.trim(),
+            username: sponsor.username || sponsor.name,
+            userId: sponsor.userId,
+            details: `หักปันสุข 1% จากค่าแนะนำ Package S ของ ${purchaser.name} (${purchaser.userId})`,
+            description: `หักปันสุข 1% จากค่าแนะนำ Package S สมาชิก ${purchaser.name} (${purchaser.userId})`,
+            createdAt: new Date().toISOString()
+          });
         }
 
         db.transactions.push({
           id: "TXN_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
           userId: sponsor.userId,
           type: "Commission",
-          amount: payableEMoney,
+          amount: eMoneyNet,
           currency: "E-Money",
-          details: `ค่าแนะนำโปรโมชั่น Package S จากสมาชิก ${purchaser.name} (${purchaser.userId}) - เข้า E-Money ฿${payableEMoney}`,
+          details: `ค่าแนะนำโปรโมชั่น Package S จากสมาชิก ${purchaser.name} (${purchaser.userId}) - เข้า E-Money สุทธิ ฿${eMoneyNet} (จัดสรรระบบ 20%)`,
           status: "Approved",
           createdAt: new Date().toISOString()
         });
 
-        if (eCouponAmt > 0) {
+        if (eCouponNet > 0) {
           db.transactions.push({
             id: "TXN_" + (Date.now() + 1) + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
             userId: sponsor.userId,
             type: "Commission",
-            amount: eCouponAmt,
+            amount: eCouponNet,
             currency: "E-Coupon",
-            details: `คูปอง 10% จากค่าแนะนำ Package S สมาชิก ${purchaser.name} (${purchaser.userId}) - เข้า E-Coupon ฿${eCouponAmt}`,
+            details: `คูปอง 10% จากค่าแนะนำ Package S สมาชิก ${purchaser.name} (${purchaser.userId}) - สุทธิ ฿${eCouponNet} (หัก 10% สะสม Plan B ฿${(payableSponsorBonus * 0.10 * 0.10).toFixed(2)})`,
             status: "Approved",
             createdAt: new Date().toISOString()
           });
@@ -3227,24 +3559,48 @@ function processMLMCommission(db: any, order: any, purchaser: any) {
       }
     }
 
+    // 1.3 Purchaser direct coupon allocation (10 THB gross, net of 10% to Plan B)
+    const purchaserCouponGross = 10 * (order.quantity || 1);
+    const purchaserPlanBPoints = purchaserCouponGross * 0.10;
+    const purchaserCouponNet = purchaserCouponGross - purchaserPlanBPoints;
+
+    purchaser.balanceECoupon = Number(purchaser.balanceECoupon || 0) + purchaserCouponNet;
+    purchaser.totalCouponsEarned = Number(purchaser.totalCouponsEarned || 0) + purchaserCouponNet;
+    addPlanBPoints(db, purchaser, purchaserPlanBPoints);
+
+    db.transactions.push({
+      id: "TXN_" + (Date.now() + 2) + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+      userId: purchaser.userId,
+      type: "Commission",
+      amount: purchaserCouponNet,
+      currency: "E-Coupon",
+      details: `สิทธิ์คูปองผู้สมัคร Package S - เข้า E-Coupon ฿${purchaserCouponNet} (หัก 10% เข้าสะสม Plan B ฿${purchaserPlanBPoints})`,
+      status: "Approved",
+      createdAt: new Date().toISOString()
+    });
+
     const planBFund = 5 * (order.quantity || 1);
     db.systemStats.totalPlanBReserves = (db.systemStats.totalPlanBReserves || 0) + planBFund;
 
-    const allShareFund = 20 * (order.quantity || 1);
-    db.systemStats.totalAllShareReserves = (db.systemStats.totalAllShareReserves || 0) + allShareFund;
+    const allShareFund = 10 * (order.quantity || 1);
+    distributeAllShareRealTime(db, allShareFund, `ซื้อ Package S สมาชิก ${purchaser.name} (${purchaser.userId})`);
 
     const csrFundAmt = 5 * (order.quantity || 1);
     db.csrFund.balance = Number(db.csrFund.balance || 0) + csrFundAmt;
     if (!Array.isArray(db.csrFund.history)) db.csrFund.history = [];
     db.csrFund.history.push({
       id: "CSR_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
-      type: "Package S Contribution",
+      type: "Donation",
       amount: csrFundAmt,
+      name: `${purchaser.name} ${purchaser.surname || ''}`.trim(),
+      username: purchaser.username || purchaser.name,
+      userId: purchaser.userId,
+      details: `เงินกองทุนปันสุข จ่ายในนามสมาชิกใหม่รหัส ${purchaser.userId} จากการสมัครแพ็กเกจ S`,
       description: `เงินสมทบจาก Package S สมาชิก ${purchaser.name} (${purchaser.userId})`,
       createdAt: new Date().toISOString()
     });
 
-    const companyProfit = Math.max(0, pkgPrice - vat7 - 50 * (order.quantity || 1) - planBFund - allShareFund - csrFundAmt);
+    const companyProfit = Math.max(0, pkgPrice - vat7 - 50 * (order.quantity || 1) - purchaserCouponGross - planBFund - allShareFund - csrFundAmt);
     db.systemStats.totalCompanyProfits = (db.systemStats.totalCompanyProfits || 0) + companyProfit;
     return;
   }
@@ -3285,14 +3641,17 @@ function processMLMCommission(db: any, order: any, purchaser: any) {
 
         sponsor.balanceEMoney = Number(sponsor.balanceEMoney || 0) + eMoneyNet;
         sponsor.balanceECoupon = Number(sponsor.balanceECoupon || 0) + eCouponNet;
-        sponsor.planBPoints = Number(sponsor.planBPoints || 0) + planBNet;
+        addPlanBPoints(db, sponsor, planBNet);
         sponsor.totalEMoneyEarnedSoFar = Number(sponsor.totalEMoneyEarnedSoFar || 0) + eMoneyNet;
         sponsor.totalEarnings = Number(sponsor.totalEarnings || 0) + eMoneyNet;
         sponsor.totalCouponsEarned = Number(sponsor.totalCouponsEarned || 0) + eCouponNet;
 
-        db.systemStats.totalAllShareReserves = (db.systemStats.totalAllShareReserves || 0) + allShareNet;
         db.systemStats.totalCompanyProfits = (db.systemStats.totalCompanyProfits || 0) + companyNet;
         db.csrFund.balance = Number(db.csrFund.balance || 0) + csrNet;
+        
+        if (allShareNet > 0) {
+          distributeAllShareRealTime(db, allShareNet, `ส่วนแบ่ง 3% Plan A จากค่าแนะนำของ ${sponsor.name}`);
+        }
 
         db.transactions.push({
           id: "TXN_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
@@ -3365,14 +3724,17 @@ function processMLMCommission(db: any, order: any, purchaser: any) {
 
           upline.balanceEMoney = Number(upline.balanceEMoney || 0) + eMoneyNet;
           upline.balanceECoupon = Number(upline.balanceECoupon || 0) + eCouponNet;
-          upline.planBPoints = Number(upline.planBPoints || 0) + planBNet;
+          addPlanBPoints(db, upline, planBNet);
           upline.totalEMoneyEarnedSoFar = Number(upline.totalEMoneyEarnedSoFar || 0) + eMoneyNet;
           upline.totalEarnings = Number(upline.totalEarnings || 0) + eMoneyNet;
           upline.totalCouponsEarned = Number(upline.totalCouponsEarned || 0) + eCouponNet;
 
-          db.systemStats.totalAllShareReserves = (db.systemStats.totalAllShareReserves || 0) + allShareNet;
           db.systemStats.totalCompanyProfits = (db.systemStats.totalCompanyProfits || 0) + companyNet;
           db.csrFund.balance = Number(db.csrFund.balance || 0) + csrNet;
+
+          if (allShareNet > 0) {
+            distributeAllShareRealTime(db, allShareNet, `ส่วนแบ่ง 3% Plan A จากคอมมิชชั่นยูนิลีเวอร์ชั้นที่ ${depth} ของ ${upline.name}`);
+          }
 
           db.transactions.push({
             id: "TXN_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
@@ -3782,11 +4144,17 @@ app.post('/api/member/transfer-ecash-to-emoney', (req, res) => {
   const currentCash = Number(member.balanceECash || 0);
   if (currentCash < amt) return res.status(400).json({ success: false, message: 'ยอด E-Cash ไม่เพียงพอ' });
 
-  const fee = amt * 0.10; // 10% All-Share allocation fee
+  const fee = amt * 0.10; // 10% conversion fee
   const net = amt - fee;
+
+  const companyShare = amt * 0.05;
+  const allSharePoolShare = amt * 0.05;
 
   member.balanceECash = currentCash - amt;
   member.balanceEMoney = Number(member.balanceEMoney || 0) + net;
+
+  db.systemStats.totalCompanyProfits = (db.systemStats.totalCompanyProfits || 0) + companyShare;
+  distributeAllShareRealTime(db, allSharePoolShare, `ค่าธรรมเนียมโอน E-Cash เป็น E-Money ของสมาชิก ${member.name} (${member.userId})`);
 
   if (!Array.isArray(db.transactions)) db.transactions = [];
   db.transactions.push({
