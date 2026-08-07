@@ -427,7 +427,7 @@ export default function App() {
   const [regUseSameAddress, setRegUseSameAddress] = useState(false);
 
   // Registration Package States
-  const [regSelectedPackageId, setRegSelectedPackageId] = useState('pack_s');
+  const [regSelectedPackageId, setRegSelectedPackageId] = useState('none');
   const [regSelectedTrialItems, setRegSelectedTrialItems] = useState<string[]>([]);
   
   // Forgot Password States
@@ -504,7 +504,7 @@ export default function App() {
     setRegShipZip('');
     setRegShipDetails('');
     setRegUseSameAddress(false);
-    setRegSelectedPackageId('pack_s');
+    setRegSelectedPackageId('none');
     setRegSelectedTrialItems([]);
   };
 
@@ -534,6 +534,14 @@ export default function App() {
 
   // Member Profile States
   const [profile, setProfile] = useState<any>(null);
+  const [activationPackageId, setActivationPackageId] = useState('pack_s');
+
+  useEffect(() => {
+    if (profile?.selectedPackageId && profile?.selectedPackageId !== 'none') {
+      setActivationPackageId(profile.selectedPackageId);
+    }
+  }, [profile?.selectedPackageId]);
+
   const [isSandboxActive, setIsSandboxActive] = useState(false);
   const [togglingSandbox, setTogglingSandbox] = useState(false);
 
@@ -1195,6 +1203,23 @@ export default function App() {
   // Expense category input
   const [newExpenseCategoryInput, setNewExpenseCategoryInput] = useState<string>('');
   const [accountingViewTab, setAccountingViewTab] = useState<'overview' | 'planb' | 'shop_payouts' | 'general_expenses' | 'package_audit'>('overview');
+
+  const [fixedExpenses, setFixedExpenses] = useState<any[]>(() => {
+    try {
+      const stored = localStorage.getItem('company_fixed_expenses');
+      return stored ? JSON.parse(stored) : [
+        { id: 'FX_1', title: 'ค่าดูแลเซิร์ฟเวอร์/IT (Cloud Systems)', category: 'ค่าเซิร์ฟเวอร์/ระบบ', amount: 15000, frequency: 'รายเดือน' },
+        { id: 'FX_2', title: 'ค่าแรงพนักงาน / Admin Staff', category: 'ค่าจ้าง/สวัสดิการ', amount: 45000, frequency: 'รายเดือน' },
+        { id: 'FX_3', title: 'ค่าเอกสารและกฎหมาย (Consulting)', category: 'ค่าเอกสาร/กฎหมาย', amount: 5000, frequency: 'รายเดือน' },
+      ];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('company_fixed_expenses', JSON.stringify(fixedExpenses));
+  }, [fixedExpenses]);
 
   // System Version & Force Update States
   const APP_VERSION = "2.1.0";
@@ -3683,6 +3708,34 @@ export default function App() {
     const payload = { categoryName: catName };
     const actionDesc = `ลบหมวดหมู่ค่าใช้จ่าย "${catName}" ออกจากตัวเลือกของระบบ`;
     executeFinancialActionWithOtpCheck('category_delete', payload, actionDesc);
+  };
+
+  const handleRemoveManualExpense = async (expenseId: string) => {
+    if (!window.confirm("คุณแน่ใจหรือไม่ว่าต้องการลบรายการค่าใช้จ่ายนี้? การกระทำนี้จะคืนยอดจำนวนเงินเข้าสู่กำไรสะสมบริษัท")) {
+      return;
+    }
+    try {
+      const currentUser = JSON.parse(localStorage.getItem('natee_user') || '{}');
+      const res = await fetch('/api/admin/remove-expense', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminUserId: currentUser.userId,
+          expenseId: expenseId
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(data.message, 'success');
+        setManualExpenses(prev => prev.filter(e => e.id !== expenseId));
+        fetchAccountingLedger();
+      } else {
+        showNotif(data.message || 'ลบค่าใช้จ่ายไม่สำเร็จ', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showNotif('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
+    }
   };
 
   // Handle Username Check
@@ -8905,38 +8958,66 @@ export default function App() {
 
               {/* Activation Package Reminder for new Member rank */}
               {profile?.rank === 'Member' && (
-                <div className="bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-indigo-500/5 border border-amber-500/30 rounded-3xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-sm animate-fadeIn">
-                  <div className="space-y-1.5 flex-1 text-left">
-                    <span className="bg-amber-50 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider inline-block">
+                <div className="bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-indigo-500/5 border border-amber-500/30 rounded-3xl p-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 shadow-sm animate-fadeIn">
+                  <div className="space-y-3 flex-1 text-left">
+                    <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider inline-block">
                       รหัสสมาชิกยังไม่เปิดใช้งาน (ยังไม่ได้ชำระค่าแพ็กเกจ)
                     </span>
-                    <h4 className="text-base font-bold text-slate-900">
-                      แพ็กเกจที่เลือกไว้ตอนสมัคร: <span className="text-indigo-600">{
-                        products.find(p => p.id === profile?.selectedPackageId)?.name || 'กำลังโหลดข้อมูล...'
-                      }</span>
-                    </h4>
-                    <p className="text-xs text-slate-500 leading-relaxed">
-                      ราคาแพ็กเกจ: <b className="text-slate-800 font-extrabold">฿{products.find(p => p.id === profile?.selectedPackageId)?.price?.toLocaleString() || '...'}</b> | ได้รับคะแนนสะสม: <b className="text-indigo-600 font-extrabold">{products.find(p => p.id === profile?.selectedPackageId)?.pv || '...'} PV</b>
-                    </p>
-                    {profile?.selectedPackageItems?.length > 0 && (
-                      <p className="text-xs text-indigo-600 font-medium">
-                        🎁 รายการของสมนาคุณที่คุณเลือก: <span className="text-slate-700">{profile.selectedPackageItems.join(', ')}</span>
-                      </p>
-                    )}
+                    <div>
+                      <h4 className="text-base font-bold text-slate-900">
+                        เลือกแพ็กเกจเริ่มต้นเพื่อเปิดใช้งานรหัสและเริ่มทำธุรกิจ:
+                      </h4>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {products.filter(p => p.category === 'Package').map(pkg => (
+                          <button
+                            key={pkg.id}
+                            type="button"
+                            onClick={() => setActivationPackageId(pkg.id)}
+                            className={`px-3 py-2 rounded-xl text-xs font-bold transition flex flex-col items-start ${
+                              activationPackageId === pkg.id
+                                ? 'bg-indigo-600 text-white shadow-md'
+                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                            }`}
+                          >
+                            <span>{pkg.name.split(' - ')[0]}</span>
+                            <span className={`text-[10px] font-medium ${activationPackageId === pkg.id ? 'text-indigo-100' : 'text-slate-500'}`}>
+                              ฿{pkg.price.toLocaleString()}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {(() => {
+                      const selectedPkg = products.find(p => p.id === activationPackageId);
+                      if (!selectedPkg) return null;
+                      return (
+                        <div className="bg-white/50 border border-slate-200 rounded-2xl p-4 mt-2 space-y-1">
+                          <p className="text-xs text-slate-700 font-semibold">
+                            🎁 {selectedPkg.name}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            {selectedPkg.description}
+                          </p>
+                          <p className="text-xs text-indigo-600 font-extrabold">
+                            ราคา: ฿{selectedPkg.price.toLocaleString()} | ได้รับคะแนนสะสม: {selectedPkg.pv.toLocaleString()} PV | ได้รับสิทธิ์ปันผลสูงสุด: ฿{(selectedPkg.price * 10).toLocaleString()} (สิทธิ์รับรายได้ 10 เท่า)
+                          </p>
+                        </div>
+                      );
+                    })()}
                     <p className="text-[10px] text-slate-400">
-                      *กรุณาเติมเงิน E-Cash ในกระเป๋าให้เพียงพอ จากนั้นกดปุ่มชำระเงินเพื่อเริ่มต้นสิทธิ์แนะนำสมาชิกและขยายสายงานทันทีค่ะ
+                      *กรุณาเติมเงิน E-Cash ในกระเป๋าให้เพียงพอ จากนั้นกดปุ่มชำระเงินเพื่อเริ่มต้นสิทธิ์แนะนำสมาชิกและเข้าร่วมสายงานในผังต้นไม้ทันทีค่ะ
                     </p>
                   </div>
-                  <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
+                  <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto self-stretch lg:self-center items-stretch justify-center">
                     <button 
                       onClick={() => setActiveTab('txn')}
-                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-2xl text-xs transition text-center shrink-0 cursor-pointer"
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-3 rounded-2xl text-xs transition text-center shrink-0 cursor-pointer flex items-center justify-center"
                     >
                       เติมเงิน E-Cash
                     </button>
                     <button 
-                      onClick={() => handlePurchaseProduct(profile?.selectedPackageId || 'pack_s')}
-                      className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-5 py-2.5 rounded-2xl text-xs shadow-lg shadow-indigo-600/20 active:scale-[0.98] transition text-center shrink-0 cursor-pointer"
+                      onClick={() => handlePurchaseProduct(activationPackageId)}
+                      className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-5 py-3 rounded-2xl text-xs shadow-lg shadow-indigo-600/20 active:scale-[0.98] transition text-center shrink-0 cursor-pointer flex items-center justify-center"
                     >
                       💳 ชำระค่าแพ็กเกจเพื่อเริ่มธุรกิจ
                     </button>

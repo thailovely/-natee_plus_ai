@@ -2728,6 +2728,15 @@ app.post('/api/auth/register', (req, res) => {
   else if (selectedPackageId === "pack_xl") { rank = "XL"; eligibleRights = 30000; }
   else if (selectedPackageId === "pack_xxl") { rank = "XXL"; eligibleRights = 50000; }
 
+  // Find appropriate binary tree placement
+  let parentIdVal = "";
+  let sideVal = "";
+  if (rank !== "Member") {
+    const placement = findAndPlaceBinaryMember(db, sponsorId || "A260600001");
+    parentIdVal = placement.parentId;
+    sideVal = placement.side;
+  }
+
   // Get sponsor name
   const sponsor = (db.members || []).find((m: any) => m.userId === sponsorId || m.username === sponsorId);
   const sponsorName = sponsor ? `${sponsor.name} ${sponsor.surname || ''}`.trim() : 'บริษัท นที พลัส มาร์เก็ต จำกัด';
@@ -2746,8 +2755,8 @@ app.post('/api/auth/register', (req, res) => {
     bankAccount: "",
     bankAccountName: "",
     sponsorId: sponsorId || "SYSTEM",
-    parentId: sponsorId || "SYSTEM",
-    side: "Left",
+    parentId: parentIdVal,
+    side: sideVal,
     rank: rank,
     statusKyc: "NotVerified",
     kycImgUrl: "",
@@ -5181,6 +5190,41 @@ app.post('/api/admin/add-expense', (req, res) => {
     success: true,
     message: `บันทึกค่าใช้จ่ายหมวด ${category} จำนวน ฿${expAmount.toLocaleString()} และหักยอดกำไรสะสมบริษัทเรียบร้อยแล้วค่ะ`,
     expense: newExpense
+  });
+});
+
+// 3.5 REMOVE EXPENSE
+app.post('/api/admin/remove-expense', (req, res) => {
+  const { adminUserId, expenseId } = req.body;
+  if (!adminUserId || !expenseId) {
+    return res.status(400).json({ success: false, message: "กรุณาระบุรหัสผู้ทำรายการและรหัสค่าใช้จ่าย" });
+  }
+
+  const db = readDb();
+  const user = db.members.find((m: any) => m.userId === adminUserId);
+  if (!user || (user.role !== 'Admin' && user.role !== 'Manager')) {
+    return res.status(403).json({ success: false, message: "ไม่มีสิทธิ์ลบรายการค่าใช้จ่ายบริษัท" });
+  }
+
+  if (!Array.isArray(db.expenses)) db.expenses = [];
+  const idx = db.expenses.findIndex((exp: any) => exp.id === expenseId);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: "ไม่พบรายการค่าใช้จ่ายที่ต้องการลบ" });
+  }
+
+  const expAmount = Number(db.expenses[idx].amount || 0);
+  // Add back to total company profits
+  if (!db.systemStats) db.systemStats = { totalPlanBReserves: 0, totalTaxReserves: 0, totalCompanyProfits: 0 };
+  db.systemStats.totalCompanyProfits = Number(db.systemStats.totalCompanyProfits || 0) + expAmount;
+
+  // Remove
+  db.expenses.splice(idx, 1);
+
+  writeDb(db);
+
+  res.json({
+    success: true,
+    message: "ลบรายการค่าใช้จ่ายเรียบร้อยแล้วค่ะ และคืนยอดจำนวนเงินเข้ากำไรสะสมบริษัท"
   });
 });
 
