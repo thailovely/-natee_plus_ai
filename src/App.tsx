@@ -9145,18 +9145,21 @@ export default function App() {
                         <div 
                           className="animate-scroll-up space-y-2"
                           style={{
-                            animationDuration: `${Math.max(15, Math.min(20, csrFeed.slice(0, 20).length) * 2.5)}s`
+                            animationDuration: `${Math.max(15, Math.min(20, csrFeed.length) * 2.5)}s`
                           }}
                         >
-                          {[...csrFeed.slice(0, 20), ...csrFeed.slice(0, 20)].map((item, idx) => (
-                            <div key={idx} className="h-[38px] flex justify-between items-center text-[11px] text-slate-600 bg-white px-3.5 rounded-xl border border-slate-100 shadow-sm transition hover:scale-[1.01] hover:border-rose-100">
-                              <span className="font-semibold flex items-center gap-1.5 min-w-0">
-                                <span className="text-rose-500 shrink-0">💖</span>
-                                <span className="truncate">คุณ {(item.name && item.name !== 'undefined undefined') ? item.name : (item.username && item.username !== 'undefined undefined' ? item.username : 'ผู้ใหญ่ใจดี')}</span>
-                              </span>
-                              <span className="text-rose-500 font-extrabold shrink-0 bg-rose-50/50 px-2 py-0.5 rounded-lg border border-rose-100/30">฿{(typeof item.amount === 'number' && !isNaN(item.amount) ? item.amount : (parseFloat(item.amount || '0') || 0)).toFixed(2)}</span>
-                            </div>
-                          ))}
+                          {(() => {
+                            const sortedFeed = [...csrFeed].reverse().slice(0, 20);
+                            return [...sortedFeed, ...sortedFeed].map((item, idx) => (
+                              <div key={idx} className="h-[38px] flex justify-between items-center text-[11px] text-slate-600 bg-white px-3.5 rounded-xl border border-slate-100 shadow-sm transition hover:scale-[1.01] hover:border-rose-100">
+                                <span className="font-semibold flex items-center gap-1.5 min-w-0">
+                                  <span className="text-rose-500 shrink-0">💖</span>
+                                  <span className="truncate">คุณ {(item.name && item.name !== 'undefined undefined') ? item.name : (item.username && item.username !== 'undefined undefined' ? item.username : 'ผู้ใหญ่ใจดี')}</span>
+                                </span>
+                                <span className="text-rose-500 font-extrabold shrink-0 bg-rose-50/50 px-2 py-0.5 rounded-lg border border-rose-100/30">฿{(typeof item.amount === 'number' && !isNaN(item.amount) ? item.amount : (parseFloat(item.amount || '0') || 0)).toFixed(2)}</span>
+                              </div>
+                            ));
+                          })()}
                         </div>
                       </div>
                     ) : (
