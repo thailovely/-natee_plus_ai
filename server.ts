@@ -2720,9 +2720,9 @@ app.post('/api/auth/register', (req, res) => {
   const newUserId = `${currentPrefix}${String(nextSeq).padStart(5, '0')}`;
 
   // Package rank mapping
-  let rank = "member";
+  let rank = "Member";
   let eligibleRights = 0;
-  if (selectedPackageId === "pack_s") { rank = "member"; eligibleRights = 1000; }
+  if (selectedPackageId === "pack_s") { rank = "S"; eligibleRights = 1000; }
   else if (selectedPackageId === "pack_m") { rank = "M"; eligibleRights = 5000; }
   else if (selectedPackageId === "pack_l") { rank = "L"; eligibleRights = 10000; }
   else if (selectedPackageId === "pack_xl") { rank = "XL"; eligibleRights = 30000; }
@@ -3178,35 +3178,53 @@ function processMLMCommission(db: any, order: any, purchaser: any) {
     const sponsorId = purchaser.sponsorId;
     const sponsor = (db.members || []).find((m: any) => m.userId === sponsorId || m.username === sponsorId);
 
-    if (sponsor && sponsor.userId !== purchaser.userId && !purchaser.justRegistered) {
-      const eCouponAmt = 40 * (order.quantity || 1);
-      const planBAmt = 10 * (order.quantity || 1);
+    if (sponsor && sponsor.userId !== purchaser.userId) {
+      const grossEMoney = 40 * (order.quantity || 1);
+      recalculateMemberEligibleRights(db, sponsor);
 
-      sponsor.balanceECoupon = Number(sponsor.balanceECoupon || 0) + eCouponAmt;
-      sponsor.totalCouponsEarned = Number(sponsor.totalCouponsEarned || 0) + eCouponAmt;
-      sponsor.planBPoints = Number(sponsor.planBPoints || 0) + planBAmt;
+      const remainingRights = Number(sponsor.eligibleRights || 0);
+      const isSpecialRole = sponsor.role === 'Manager' || sponsor.role === 'Admin' || sponsor.userId === 'A260600001' || sponsor.username === 'nateeplus';
+      const payableEMoney = isSpecialRole ? grossEMoney : Math.min(grossEMoney, remainingRights);
 
-      db.transactions.push({
-        id: "TXN_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
-        userId: sponsor.userId,
-        type: "PackageS_Referral",
-        amount: eCouponAmt,
-        currency: "E-Coupon",
-        details: `ค่าแนะนำโปรโมชั่น Package S จากสมาชิก ${purchaser.name} (${purchaser.userId}) - รับ E-Coupon ฿${eCouponAmt}`,
-        status: "Approved",
-        createdAt: new Date().toISOString()
-      });
+      if (payableEMoney > 0) {
+        const scaleRatio = grossEMoney > 0 ? (payableEMoney / grossEMoney) : 1;
+        const eCouponAmt = Math.round((10 * (order.quantity || 1) * scaleRatio) * 100) / 100;
 
-      db.transactions.push({
-        id: "TXN_" + (Date.now() + 1) + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
-        userId: sponsor.userId,
-        type: "Bonus",
-        amount: planBAmt,
-        currency: "PlanBPoints",
-        details: `คะแนนสะสมผังเดี่ยว Plan B จากการแนะนำ Package S สมาชิก ${purchaser.name} (${purchaser.userId}) - รับ ${planBAmt} คะแนน`,
-        status: "Approved",
-        createdAt: new Date().toISOString()
-      });
+        sponsor.balanceEMoney = Number(sponsor.balanceEMoney || 0) + payableEMoney;
+        sponsor.totalEMoneyEarnedSoFar = Number(sponsor.totalEMoneyEarnedSoFar || 0) + payableEMoney;
+        sponsor.totalEarnings = Number(sponsor.totalEarnings || 0) + payableEMoney;
+
+        if (eCouponAmt > 0) {
+          sponsor.balanceECoupon = Number(sponsor.balanceECoupon || 0) + eCouponAmt;
+          sponsor.totalCouponsEarned = Number(sponsor.totalCouponsEarned || 0) + eCouponAmt;
+        }
+
+        db.transactions.push({
+          id: "TXN_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+          userId: sponsor.userId,
+          type: "Commission",
+          amount: payableEMoney,
+          currency: "E-Money",
+          details: `ค่าแนะนำโปรโมชั่น Package S จากสมาชิก ${purchaser.name} (${purchaser.userId}) - เข้า E-Money ฿${payableEMoney}`,
+          status: "Approved",
+          createdAt: new Date().toISOString()
+        });
+
+        if (eCouponAmt > 0) {
+          db.transactions.push({
+            id: "TXN_" + (Date.now() + 1) + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+            userId: sponsor.userId,
+            type: "Commission",
+            amount: eCouponAmt,
+            currency: "E-Coupon",
+            details: `คูปอง 10% จากค่าแนะนำ Package S สมาชิก ${purchaser.name} (${purchaser.userId}) - เข้า E-Coupon ฿${eCouponAmt}`,
+            status: "Approved",
+            createdAt: new Date().toISOString()
+          });
+        }
+
+        recalculateMemberEligibleRights(db, sponsor);
+      }
     }
 
     const planBFund = 5 * (order.quantity || 1);
@@ -3248,7 +3266,7 @@ function processMLMCommission(db: any, order: any, purchaser: any) {
     const sponsorId = purchaser.sponsorId;
     const sponsor = (db.members || []).find((m: any) => m.userId === sponsorId || m.username === sponsorId);
 
-    if (sponsor && sponsor.userId !== purchaser.userId && !purchaser.justRegistered) {
+    if (sponsor && sponsor.userId !== purchaser.userId) {
       const grossSponsorBonus = totalPV * 0.50; // 50% of PV
       recalculateMemberEligibleRights(db, sponsor);
 
@@ -3302,11 +3320,6 @@ function processMLMCommission(db: any, order: any, purchaser: any) {
 
         recalculateMemberEligibleRights(db, sponsor);
       }
-    }
-
-    if (sponsor && sponsor.userId !== purchaser.userId && purchaser.justRegistered) {
-      const allShareNet = Math.round((totalPV * 0.50 * 0.03) * 100) / 100;
-      db.systemStats.totalAllShareReserves = (db.systemStats.totalAllShareReserves || 0) + allShareNet;
     }
 
     // B. PLAN A UNILEVEL 20 LEVELS (2.0% of PV per level)
