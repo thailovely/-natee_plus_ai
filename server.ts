@@ -3985,6 +3985,22 @@ app.post('/api/member/update-shipping-pin', (req, res) => {
   return res.json({ success: true, message: 'บันทึกข้อมูลเรียบร้อยแล้วค่ะ', profile: member });
 });
 
+app.post('/api/member/request-shipping-pin-otp', (req, res) => {
+  return res.json({
+    success: true,
+    otpSimulated: '123456',
+    message: 'ส่งรหัส OTP (123456) ไปยังอีเมลของท่านเรียบร้อยแล้ว'
+  });
+});
+
+app.post('/api/member/verify-shipping-pin-otp', (req, res) => {
+  const { otp } = req.body;
+  if (otp === '123456') {
+    return res.json({ success: true, message: 'ยืนยัน OTP สำเร็จ' });
+  }
+  return res.status(400).json({ success: false, message: 'รหัส OTP ไม่ถูกต้อง' });
+});
+
 app.post('/api/member/transfer-e-cash', (req, res) => {
   const { senderId, receiverPhoneOrUser, amount, pin } = req.body;
   const db = readDb();

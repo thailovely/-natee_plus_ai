@@ -574,7 +574,9 @@ export default function App() {
   };
 
   const [importingDb, setImportingDb] = useState(false);
-  const [showImportConfirmModal, setShowImportConfirmModal] = useState(false);
+  const [isWarehouseMapEditable, setIsWarehouseMapEditable] = useState(false);
+  const [showWarehouseOtpModal, setShowWarehouseOtpModal] = useState(false);
+  const [warehouseOtp, setWarehouseOtp] = useState('');
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
@@ -15192,7 +15194,7 @@ export default function App() {
                                   setWarehouseLat(lat);
                                   setWarehouseLng(lng);
                                 }}
-                                isEditable={true}
+                                isEditable={!(profile?.shippingPinStatus === 'Confirmed' && profile?.role !== 'admin')}
                               />
                             </div>
 
@@ -29434,6 +29436,35 @@ export default function App() {
 
         {featureToggles.enableAiChatbot !== false && <NateeBotWidget currentUser={currentUser} />}
 
+        {showWarehouseOtpModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-sm space-y-4">
+              <h3 className="font-bold text-lg">ยืนยันการแก้ไขพิกัด</h3>
+              <p className="text-sm text-slate-600">กรุณากรอกรหัส OTP ที่ได้รับจากอีเมลเพื่อยืนยันการแก้ไขหมุดคลังสินค้า</p>
+              <input
+                type="text"
+                value={warehouseOtp}
+                onChange={(e) => setWarehouseOtp(e.target.value)}
+                placeholder="กรอกรหัส OTP 6 หลัก"
+                className="w-full border rounded-xl p-3"
+              />
+              <button
+                onClick={() => {
+                  if (warehouseOtp === '123456') {
+                    setIsWarehouseMapEditable(true);
+                    setShowWarehouseOtpModal(false);
+                    setWarehouseOtp('');
+                  } else {
+                    alert('รหัส OTP ไม่ถูกต้อง');
+                  }
+                }}
+                className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl"
+              >
+                ยืนยัน
+              </button>
+            </div>
+          </div>
+        )}
         {renderLoginModal()}
         {renderMissingSponsorModal()}
       </main>
