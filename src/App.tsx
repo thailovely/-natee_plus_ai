@@ -552,6 +552,7 @@ export default function App() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const [showImportConfirmModal, setShowImportConfirmModal] = useState<boolean>(false);
 
   const handleExportDatabase = async () => {
     try {
