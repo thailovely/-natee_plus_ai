@@ -1166,6 +1166,36 @@ export default function App() {
   const [adminEditingChoiceId, setAdminEditingChoiceId] = useState<string | null>(null);
   const [withDeductions, setWithDeductions] = useState<{[key: string]: string}>({});
 
+  // Corporate Financial Ledger & Accounting System States
+  const [accountingLedger, setAccountingLedger] = useState<any>(null);
+  const [ledgerLoading, setLedgerLoading] = useState<boolean>(false);
+  const [expenseCategories, setExpenseCategories] = useState<string[]>(["ค่าดูแลเซิร์ฟเวอร์/IT", "ค่าการตลาด", "ค่าแรงพนักงาน", "ค่าเอกสาร/กฎหมาย"]);
+  const [availableManagers, setAvailableManagers] = useState<any[]>([]);
+  const [selectedManagerIdForOtp, setSelectedManagerIdForOtp] = useState<string>('');
+  
+  // Financial OTP states
+  const [showAccountingOtpModal, setShowAccountingOtpModal] = useState<boolean>(false);
+  const [accountingOtpInput, setAccountingOtpInput] = useState<string>('');
+  const [otpActionDetails, setOtpActionDetails] = useState<string>('');
+  const [otpActionType, setOtpActionType] = useState<'expense' | 'csr_withdraw' | 'planb_adjust' | 'category_delete' | null>(null);
+  const [otpActionPayload, setOtpActionPayload] = useState<any>(null);
+  const [otpSimulatedCode, setOtpSimulatedCode] = useState<string>('');
+
+  // CSR Withdraw modal states
+  const [showCsrWithdrawModal, setShowCsrWithdrawModal] = useState<boolean>(false);
+  const [csrWithdrawAmountInput, setCsrWithdrawAmountInput] = useState<string>('');
+  const [csrWithdrawDetailsInput, setCsrWithdrawDetailsInput] = useState<string>('');
+
+  // Plan B Reserve adjust states
+  const [showPlanBAdjustModal, setShowPlanBAdjustModal] = useState<boolean>(false);
+  const [planBAdjustTier, setPlanBAdjustTier] = useState<string>('b1');
+  const [planBAdjustAmount, setPlanBAdjustAmount] = useState<string>('');
+  const [planBAdjustType, setPlanBAdjustType] = useState<'add' | 'subtract'>('add');
+
+  // Expense category input
+  const [newExpenseCategoryInput, setNewExpenseCategoryInput] = useState<string>('');
+  const [accountingViewTab, setAccountingViewTab] = useState<'overview' | 'planb' | 'shop_payouts' | 'general_expenses' | 'package_audit'>('overview');
+
   // System Version & Force Update States
   const APP_VERSION = "2.1.0";
   const [serverVersion, setServerVersion] = useState<string | null>(null);
@@ -3163,6 +3193,32 @@ export default function App() {
     } catch (err) {}
   };
 
+  const fetchAccountingLedger = async () => {
+    setLedgerLoading(true);
+    try {
+      const res = await fetch('/api/admin/accounting-ledger');
+      const data = await res.json();
+      if (data.success) {
+        setAccountingLedger(data.ledger);
+        setExpenseCategories(data.expenseCategories || []);
+        setAvailableManagers(data.managers || []);
+        if (data.managers && data.managers.length > 0 && !selectedManagerIdForOtp) {
+          setSelectedManagerIdForOtp(data.managers[0].userId);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching accounting ledger:", err);
+    } finally {
+      setLedgerLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'admin' && adminSubTab === 'companyAccountingReport') {
+      fetchAccountingLedger();
+    }
+  }, [activeTab, adminSubTab]);
+
   // 15-DAY ESCROW & DISPUTE MANAGER STATES AND HANDLERS
   const [escrowOrdersList, setEscrowOrdersList] = useState<any[]>([]);
   const [escrowSummaryStats, setEscrowSummaryStats] = useState<any>({});
@@ -3408,45 +3464,225 @@ export default function App() {
     }
   };
 
-  const handleAddManualExpenseSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!manualExpenseTitle || !manualExpenseAmount) {
-      showNotif("กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน", "error");
-      return;
+  // --- Corporate Ledger Financial Handlers ---
+
+  // 1. Helper to submit backend operation with optional OTP
+  const executeFinancialActionWithOtpCheck = async (
+    actionType: 'expense' | 'csr_withdraw' | 'planb_adjust' | 'category_delete',
+    payload: any,
+    actionDesc: string
+  ) => {
+    // If Admin, they must request an OTP from a selected Manager
+    if (currentUser?.role === 'Admin') {
+      if (!selectedManagerIdForOtp) {
+        showNotif("กรุณาเลือกผู้จัดการเพื่อรับรหัสอนุมัติ OTP ก่อนทำรายการค่ะ", "warning");
+        return;
+      }
+      
+      try {
+        const res = await fetch('/api/admin/request-accounting-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            adminUserId: currentUser?.userId,
+            managerUserId: selectedManagerIdForOtp,
+            actionDetails: actionDesc
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setOtpActionType(actionType);
+          setOtpActionPayload(payload);
+          setOtpActionDetails(actionDesc);
+          setOtpSimulatedCode(data.otpSimulated || ''); // To show in toast/dialog for sandbox testing
+          setShowAccountingOtpModal(true);
+          showNotif(`🚀 ส่งรหัสอนุมัติ OTP ไปที่อีเมลผู้จัดการเรียบร้อยแล้วค่ะ`, 'success');
+        } else {
+          showNotif(data.message || "ไม่สามารถขอรหัสอนุมัติได้", "error");
+        }
+      } catch (err) {
+        showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์เพื่อขอ OTP", "error");
+      }
+    } else {
+      // If Manager, they can proceed directly without OTP check
+      await commitFinancialAction(actionType, payload, '');
     }
-    const amountVal = parseFloat(manualExpenseAmount) || 0;
-    if (amountVal <= 0) {
-      showNotif("จำนวนเงินต้องมากกว่า 0 บาท", "error");
-      return;
-    }
-    
-    const newExpense = {
-      id: "EXP_" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-      title: manualExpenseTitle,
-      amount: amountVal,
-      category: manualExpenseCategory,
-      date: manualExpenseDate,
-      notes: manualExpenseNotes,
-      createdAt: new Date().toISOString()
-    };
-    
-    const updated = [newExpense, ...manualExpenses];
-    setManualExpenses(updated);
-    localStorage.setItem('company_manual_expenses', JSON.stringify(updated));
-    showNotif("💾 บันทึกค่าใช้จ่ายบริษัทเรียบร้อยแล้ว", "success");
-    
-    setManualExpenseTitle('');
-    setManualExpenseAmount('');
-    setManualExpenseCategory('อื่นๆ');
-    setManualExpenseNotes('');
-    setShowAddManualExpenseModal(false);
   };
 
-  const handleRemoveManualExpense = (id: string) => {
-    const updated = manualExpenses.filter(e => e.id !== id);
-    setManualExpenses(updated);
-    localStorage.setItem('company_manual_expenses', JSON.stringify(updated));
-    showNotif("ลบรายการค่าใช้จ่ายสำเร็จ", "success");
+  // 2. Commit the financial action to the backend
+  const commitFinancialAction = async (
+    actionType: 'expense' | 'csr_withdraw' | 'planb_adjust' | 'category_delete',
+    payload: any,
+    otpCode: string
+  ) => {
+    try {
+      let url = '';
+      let body: any = { adminUserId: currentUser?.userId, otp: otpCode };
+
+      if (actionType === 'expense') {
+        url = '/api/admin/add-expense';
+        body = { ...body, ...payload };
+      } else if (actionType === 'csr_withdraw') {
+        url = '/api/admin/withdraw-csr';
+        body = { ...body, ...payload };
+      } else if (actionType === 'planb_adjust') {
+        url = '/api/admin/adjust-planb-reserve';
+        body = { ...body, ...payload };
+      } else if (actionType === 'category_delete') {
+        url = '/api/admin/remove-expense-category';
+        body = { userId: currentUser?.userId, categoryName: payload.categoryName };
+      }
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        showNotif(data.message || "ทำรายการสำเร็จเรียบร้อยแล้วค่ะ! ✨", "success");
+        setShowAccountingOtpModal(false);
+        setAccountingOtpInput('');
+        fetchAccountingLedger(); // Refresh stats!
+        
+        // Reset modals
+        if (actionType === 'expense') {
+          setShowAddManualExpenseModal(false);
+          setManualExpenseTitle('');
+          setManualExpenseAmount('');
+          setManualExpenseCategory('อื่นๆ');
+          setManualExpenseNotes('');
+        } else if (actionType === 'csr_withdraw') {
+          setShowCsrWithdrawModal(false);
+          setCsrWithdrawAmountInput('');
+          setCsrWithdrawDetailsInput('');
+        } else if (actionType === 'planb_adjust') {
+          setShowPlanBAdjustModal(false);
+          setPlanBAdjustAmount('');
+        }
+      } else {
+        showNotif(data.message || "เกิดข้อผิดพลาดในการตรวจสอบข้อมูล", "error");
+      }
+    } catch (err) {
+      console.error("Error committing financial action:", err);
+      showNotif("เกิดข้อผิดพลาดทางเทคนิคในการเชื่อมต่อระบบการเงิน", "error");
+    }
+  };
+
+  // OTP Dialog verify button clicked
+  const handleVerifyAccountingOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!accountingOtpInput) {
+      showNotif("กรุณากรอกรหัส OTP 6 หลัก", "warning");
+      return;
+    }
+    if (otpActionType) {
+      await commitFinancialAction(otpActionType, otpActionPayload, accountingOtpInput);
+    }
+  };
+
+  // 3. Category Add Action
+  const handleAddExpenseCategorySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newExpenseCategoryInput.trim()) {
+      showNotif("กรุณากรอกชื่อหมวดหมู่ค่าใช้จ่ายใหม่", "warning");
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/add-expense-category', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser?.userId,
+          categoryName: newExpenseCategoryInput.trim()
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotif(data.message, "success");
+        setNewExpenseCategoryInput('');
+        fetchAccountingLedger();
+      } else {
+        showNotif(data.message, "error");
+      }
+    } catch (err) {
+      showNotif("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์", "error");
+    }
+  };
+
+  // 4. Record Corporate Expense Submit (Triggers OTP check if Admin)
+  const handleCorporateExpenseFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualExpenseTitle || !manualExpenseAmount) {
+      showNotif("กรุณากรอกหัวข้อใช้จ่ายและจำนวนเงิน", "warning");
+      return;
+    }
+    const amt = parseFloat(manualExpenseAmount);
+    if (isNaN(amt) || amt <= 0) {
+      showNotif("จำนวนเงินต้องเป็นตัวเลขที่มากกว่าศูนย์", "warning");
+      return;
+    }
+
+    const payload = {
+      category: manualExpenseCategory,
+      amount: amt,
+      description: `[${manualExpenseCategory}] ${manualExpenseTitle}. ${manualExpenseNotes}`
+    };
+
+    const actionDesc = `บันทึกค่าใช้จ่ายบริษัท ฿${amt.toLocaleString()} หมวดหมู่ ${manualExpenseCategory} (${manualExpenseTitle})`;
+    executeFinancialActionWithOtpCheck('expense', payload, actionDesc);
+  };
+
+  // 5. Withdraw CSR Submit (Triggers OTP check if Admin)
+  const handleCsrWithdrawFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!csrWithdrawAmountInput || !csrWithdrawDetailsInput) {
+      showNotif("กรุณากรอกจำนวนเงินเบิกถอนและจุดประสงค์การเบิก", "warning");
+      return;
+    }
+    const amt = parseFloat(csrWithdrawAmountInput);
+    if (isNaN(amt) || amt <= 0) {
+      showNotif("จำนวนเงินต้องมากกว่าศูนย์", "warning");
+      return;
+    }
+
+    const payload = {
+      amount: amt,
+      details: csrWithdrawDetailsInput
+    };
+
+    const actionDesc = `ถอนเงินทุนปันสุข CSR จำนวน ฿${amt.toLocaleString()} ไปที่: ${csrWithdrawDetailsInput}`;
+    executeFinancialActionWithOtpCheck('csr_withdraw', payload, actionDesc);
+  };
+
+  // 6. Adjust Plan B Reserve Submit (Triggers OTP check if Admin)
+  const handlePlanBAdjustFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!planBAdjustAmount) {
+      showNotif("กรุณาระบุจำนวนเงินปรับปรุงทุนสำรอง", "warning");
+      return;
+    }
+    const amt = parseFloat(planBAdjustAmount);
+    if (isNaN(amt) || amt <= 0) {
+      showNotif("จำนวนเงินต้องเป็นตัวเลขที่มากกว่าศูนย์", "warning");
+      return;
+    }
+
+    const payload = {
+      tier: planBAdjustTier,
+      amount: amt,
+      type: planBAdjustType
+    };
+
+    const actionDesc = `ปรับปรุงกองทุนสำรอง Plan B Tier ${planBAdjustTier.toUpperCase()} ${planBAdjustType === 'add' ? 'เพิ่มขึ้น' : 'ปรับลดลง'} ฿${amt.toLocaleString()}`;
+    executeFinancialActionWithOtpCheck('planb_adjust', payload, actionDesc);
+  };
+
+  const handleRemoveExpenseCategory = async (catName: string) => {
+    const payload = { categoryName: catName };
+    const actionDesc = `ลบหมวดหมู่ค่าใช้จ่าย "${catName}" ออกจากตัวเลือกของระบบ`;
+    executeFinancialActionWithOtpCheck('category_delete', payload, actionDesc);
   };
 
   // Handle Username Check

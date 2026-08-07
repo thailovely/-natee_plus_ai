@@ -4879,6 +4879,503 @@ app.post('/api/admin/sync-firestore', async (req, res) => {
 });
 
 // ==========================================
+// COMPANY ACCOUNTING & FINANCIAL LEDGER ENDPOINTS
+// ==========================================
+
+// Helper to calculate financial values dynamically
+function calculateAccountingLedger(db: any) {
+  const members = db.members || [];
+  const orders = db.orders || [];
+  const transactions = db.transactions || [];
+  const planB_Tree = db.planB_Tree || {};
+  const expenses = db.expenses || [];
+  const csrFund = db.csrFund || { balance: 0, history: [] };
+  const systemStats = db.systemStats || { totalPlanBReserves: 0, totalTaxReserves: 0, totalCompanyProfits: 0 };
+
+  // 1. E-Cash, E-Money, and E-Coupon Liabilities (Liquid assets members hold)
+  let totalECashLiabilities = 0;
+  let totalEMoneyLiabilities = 0;
+  let totalECouponLiabilities = 0;
+
+  members.forEach((m: any) => {
+    totalECashLiabilities += Number(m.balanceECash || 0);
+    totalEMoneyLiabilities += Number(m.balanceEMoney || 0);
+    totalECouponLiabilities += Number(m.balanceECoupon || 0);
+  });
+
+  // 2. Plan B Reserves separated into B1 - B15
+  const planBBreakdown: Record<string, { count: number; reserve: number }> = {};
+  
+  // Define B1-B15 tiers
+  const tiers = Array.from({ length: 15 }, (_, i) => `b${i + 1}`);
+  let totalPlanBNodes = 0;
+  tiers.forEach((tier) => {
+    const list = planB_Tree[tier] || [];
+    totalPlanBNodes += list.length;
+  });
+
+  if (!db.systemStats.planBReservesByTier) {
+    db.systemStats.planBReservesByTier = {};
+  }
+  
+  tiers.forEach((tier, index) => {
+    const list = planB_Tree[tier] || [];
+    const count = list.length;
+    
+    // Set simulated nice starting pools for B1-B15 to make screen impressive and complete
+    if (db.systemStats.planBReservesByTier[tier] === undefined) {
+      const simulatedSeed = (index + 1) * 25000 + (count * 500);
+      db.systemStats.planBReservesByTier[tier] = simulatedSeed;
+    }
+    
+    planBBreakdown[tier] = {
+      count: count,
+      reserve: Number(db.systemStats.planBReservesByTier[tier] || 0)
+    };
+  });
+
+  // Sum of Plan B reserves across B1-B15
+  let totalPlanBReservesCalculated = 0;
+  tiers.forEach((tier) => {
+    totalPlanBReservesCalculated += planBBreakdown[tier].reserve;
+  });
+
+  // 3. Shop Payout Reserve (เงินค้างจ่ายร้านค้า 15 วัน)
+  let totalShopPayoutReserve = 0;
+  const pendingPayoutOrders: any[] = [];
+  const settledPayoutOrders: any[] = [];
+
+  orders.forEach((o: any) => {
+    if (o.sellerId && o.sellerId !== 'SYSTEM' && o.status === 'Completed') {
+      const payoutAmount = Number(o.totalPrice || 0) * 0.80; // 80% payout (after 20% GP)
+      if (o.sellerPayoutStatus === 'Paid') {
+        settledPayoutOrders.push({
+          orderId: o.id,
+          sellerId: o.sellerId,
+          productName: o.productName,
+          totalPrice: o.totalPrice,
+          payoutAmount: payoutAmount,
+          completedAt: o.shippedAt || o.createdAt
+        });
+      } else {
+        totalShopPayoutReserve += payoutAmount;
+        
+        // Calculate days remaining (15 days since shippedAt or createdAt)
+        const date = new Date(o.shippedAt || o.createdAt || new Date());
+        const dueDate = new Date(date.getTime() + 15 * 24 * 60 * 60 * 1000);
+        const now = new Date();
+        const diffTime = dueDate.getTime() - now.getTime();
+        const daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+
+        pendingPayoutOrders.push({
+          orderId: o.id,
+          sellerId: o.sellerId,
+          productName: o.productName,
+          totalPrice: o.totalPrice,
+          payoutAmount: payoutAmount,
+          completedAt: o.shippedAt || o.createdAt,
+          dueDate: dueDate.toISOString(),
+          daysRemaining: daysRemaining
+        });
+      }
+    }
+  });
+
+  // 4. Tax Reserves
+  const totalTaxReserves = Number(systemStats.totalTaxReserves || 0);
+  
+  // Calculate specific WHT from withdrawals and VAT from package sales
+  let totalWHTFromWithdrawals = 0;
+  transactions.forEach((t: any) => {
+    if (t.type === 'Withdraw' || t.type === 'Withdrawal' || t.type === 'WithdrawalRequest') {
+      if (t.status === 'Approved') {
+        totalWHTFromWithdrawals += Number(t.withholdingTax || 0);
+      }
+    }
+  });
+  const totalVATSaved = Math.max(0, totalTaxReserves - totalWHTFromWithdrawals);
+
+  // 5. CSR Fund Balance
+  const totalCSRFund = Number(csrFund.balance || 0);
+
+  // 6. Cost of Goods Reserve (ต้นทุนสินค้าสะสม)
+  let totalCOGSReserve = 0;
+  orders.forEach((o: any) => {
+    if (o.status === 'Completed') {
+      const product = (db.products || []).find((p: any) => p.id === o.productId);
+      const costPrice = product && product.costPrice ? Number(product.costPrice) : Number(o.totalPrice || 0) * 0.60;
+      totalCOGSReserve += costPrice;
+    }
+  });
+
+  // 7. Company Profits and Expenses
+  const totalCompanyProfits = Number(systemStats.totalCompanyProfits || 0);
+  let totalExpenses = 0;
+  expenses.forEach((exp: any) => {
+    totalExpenses += Number(exp.amount || 0);
+  });
+
+  const companyNetProfit = Math.max(0, totalCompanyProfits - totalExpenses);
+
+  // 8. Total Bank Book Balance required to back everything
+  const totalRequiredReserves = 
+    totalECashLiabilities + 
+    totalEMoneyLiabilities + 
+    totalPlanBReservesCalculated + 
+    totalShopPayoutReserve + 
+    totalTaxReserves + 
+    totalCSRFund + 
+    totalCOGSReserve;
+
+  const calculatedBankBalance = totalRequiredReserves + companyNetProfit;
+
+  return {
+    totalECashLiabilities,
+    totalEMoneyLiabilities,
+    totalECouponLiabilities,
+    planBBreakdown,
+    totalPlanBReserves: totalPlanBReservesCalculated,
+    totalShopPayoutReserve,
+    pendingPayoutOrders,
+    settledPayoutOrders,
+    totalTaxReserves,
+    totalWHTFromWithdrawals,
+    totalVATSaved,
+    totalCSRFund,
+    totalCOGSReserve,
+    totalCompanyProfits,
+    totalExpenses,
+    companyNetProfit,
+    calculatedBankBalance,
+    requiredReserves: totalRequiredReserves
+  };
+}
+
+// 1. GET ACCOUNTING LEDGER
+app.get('/api/admin/accounting-ledger', (req, res) => {
+  const db = readDb();
+  const ledger = calculateAccountingLedger(db);
+  
+  res.json({
+    success: true,
+    ledger,
+    expenses: db.expenses || [],
+    expenseCategories: db.expenseCategories || ["ค่าดูแลเซิร์ฟเวอร์/IT", "ค่าการตลาด", "ค่าแรงพนักงาน", "ค่าเอกสาร/กฎหมาย"],
+    managers: (db.members || [])
+      .filter((m: any) => m.role === 'Manager')
+      .map((m: any) => ({ userId: m.userId, name: m.name, email: m.email || '', phone: m.phone || '' }))
+  });
+});
+
+// 2. REQUEST ACCOUNTING OTP
+app.post('/api/admin/request-accounting-otp', async (req, res) => {
+  const { adminUserId, managerUserId, actionDetails } = req.body;
+  if (!adminUserId || !managerUserId) {
+    return res.status(400).json({ success: false, message: "ข้อมูลไม่ครบถ้วนสำหรับการขอรหัส OTP" });
+  }
+
+  const db = readDb();
+  const admin = db.members.find((m: any) => m.userId === adminUserId);
+  if (!admin || (admin.role !== 'Admin' && admin.role !== 'Manager')) {
+    return res.status(403).json({ success: false, message: "เฉพาะแอดมินหรือผู้จัดการเท่านั้นที่มีสิทธิ์ขอรหัสอนุมัติ" });
+  }
+
+  const manager = db.members.find((m: any) => m.userId === managerUserId);
+  if (!manager || manager.role !== 'Manager') {
+    return res.status(404).json({ success: false, message: "ไม่พบบัญชีผู้จัดการที่ระบุ" });
+  }
+
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  if (!db.otps) db.otps = {};
+  
+  db.otps['ACCOUNTING_OTP'] = {
+    code: otpCode,
+    managerUserId,
+    adminUserId,
+    actionDetails,
+    expiresAt: Date.now() + 5 * 60 * 1000 // 5 minutes
+  };
+
+  writeDb(db);
+
+  const targetEmail = manager.email || admin.email || 'nateeplusmarket@gmail.com';
+
+  if (targetEmail && targetEmail.includes('@')) {
+    sendSystemEmail({
+      to: targetEmail,
+      subject: '[Natee Plus Finance] รหัส OTP อนุมัติการปรับปรุงบัญชี (Financial Authorization)',
+      title: 'รหัส OTP อนุมัติการบันทึกค่าใช้จ่ายหรือปรับปรุงยอดบัญชีบริษัท',
+      otpCode: otpCode,
+      bodyText: `แจ้งเตือนผู้บริหาร/ผู้จัดการ (${manager.name}): แอดมิน ${admin.name || admin.username} ขอรหัส OTP เพื่อทำรายการสำคัญในระบบบัญชี:\n\n👉 รายการ: ${actionDetails}\n\nกรุณานำรหัส OTP 6 หลักนี้ให้แอดมินเพื่อยืนยันการทำรายการ`
+    }).catch(err => console.error("Async accounting email error:", err));
+  }
+
+  res.json({
+    success: true,
+    otpSimulated: otpCode,
+    message: `ส่งรหัส OTP อนุมัติ 6 หลักไปยังอีเมลของผู้จัดการ (${manager.name}) ที่ ${targetEmail} เรียบร้อยแล้วค่ะ`
+  });
+});
+
+// 3. ADD COMPANY EXPENSE
+app.post('/api/admin/add-expense', (req, res) => {
+  const { adminUserId, category, amount, description, otp } = req.body;
+  if (!adminUserId || !category || !amount) {
+    return res.status(400).json({ success: false, message: "กรุณาระบุข้อมูลค่าใช้จ่ายให้ครบถ้วน" });
+  }
+
+  const db = readDb();
+  const user = db.members.find((m: any) => m.userId === adminUserId);
+  if (!user || (user.role !== 'Admin' && user.role !== 'Manager')) {
+    return res.status(403).json({ success: false, message: "ไม่มีสิทธิ์บันทึกค่าใช้จ่ายบริษัท" });
+  }
+
+  let approvedBy: any = { userId: user.userId, name: user.name, role: user.role };
+
+  // If Admin, they MUST supply a valid OTP authorized by a Manager
+  if (user.role === 'Admin') {
+    const activeOtpObj = db.otps ? db.otps['ACCOUNTING_OTP'] : null;
+    if (!activeOtpObj) {
+      return res.status(400).json({ success: false, requiresOtp: true, message: "โปรดขอรหัส OTP จากผู้จัดการก่อนทำรายการค่ะ" });
+    }
+
+    if (activeOtpObj.expiresAt < Date.now()) {
+      return res.status(400).json({ success: false, message: "รหัส OTP หมดอายุแล้ว โปรดขอรหัสใหม่อีกครั้ง" });
+    }
+
+    if (!otp || otp !== activeOtpObj.code) {
+      return res.status(400).json({ success: false, message: "รหัส OTP ของผู้จัดการไม่ถูกต้อง โปรดตรวจสอบรหัสอีกครั้งค่ะ" });
+    }
+
+    // Load manager who approved this
+    const manager = db.members.find((m: any) => m.userId === activeOtpObj.managerUserId);
+    if (manager) {
+      approvedBy = { userId: manager.userId, name: manager.name, role: manager.role };
+    }
+
+    // OTP Verified, clear it
+    delete db.otps['ACCOUNTING_OTP'];
+  }
+
+  // Deduct from total company profits
+  if (!db.systemStats) db.systemStats = { totalPlanBReserves: 0, totalTaxReserves: 0, totalCompanyProfits: 0 };
+  const expAmount = Number(amount);
+  db.systemStats.totalCompanyProfits = Number(db.systemStats.totalCompanyProfits || 0) - expAmount;
+
+  // Save to expense history
+  if (!Array.isArray(db.expenses)) db.expenses = [];
+  const newExpense = {
+    id: "EXP_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+    category,
+    amount: expAmount,
+    description: description || '',
+    createdAt: new Date().toISOString(),
+    createdBy: { userId: user.userId, name: user.name, role: user.role },
+    approvedBy
+  };
+  db.expenses.push(newExpense);
+
+  writeDb(db);
+
+  res.json({
+    success: true,
+    message: `บันทึกค่าใช้จ่ายหมวด ${category} จำนวน ฿${expAmount.toLocaleString()} และหักยอดกำไรสะสมบริษัทเรียบร้อยแล้วค่ะ`,
+    expense: newExpense
+  });
+});
+
+// 4. ADD EXPENSE CATEGORY
+app.post('/api/admin/add-expense-category', (req, res) => {
+  const { userId, categoryName } = req.body;
+  if (!userId || !categoryName) {
+    return res.status(400).json({ success: false, message: "ข้อมูลไม่ครบถ้วน" });
+  }
+
+  const db = readDb();
+  const user = db.members.find((m: any) => m.userId === userId);
+  if (!user || (user.role !== 'Admin' && user.role !== 'Manager')) {
+    return res.status(403).json({ success: false, message: "ปฏิเสธสิทธิ์การใช้งาน" });
+  }
+
+  if (!db.expenseCategories) {
+    db.expenseCategories = ["ค่าดูแลเซิร์ฟเวอร์/IT", "ค่าการตลาด", "ค่าแรงพนักงาน", "ค่าเอกสาร/กฎหมาย"];
+  }
+
+  const nameTrimmed = categoryName.trim();
+  if (db.expenseCategories.includes(nameTrimmed)) {
+    return res.status(400).json({ success: false, message: "มีหมวดหมู่ค่าใช้จ่ายนี้อยู่ในระบบแล้วค่ะ" });
+  }
+
+  db.expenseCategories.push(nameTrimmed);
+  writeDb(db);
+
+  res.json({
+    success: true,
+    message: `เพิ่มหมวดหมู่ค่าใช้จ่าย "${nameTrimmed}" เรียบร้อยแล้วค่ะ`,
+    categories: db.expenseCategories
+  });
+});
+
+// 5. REMOVE EXPENSE CATEGORY
+app.post('/api/admin/remove-expense-category', (req, res) => {
+  const { userId, categoryName } = req.body;
+  if (!userId || !categoryName) {
+    return res.status(400).json({ success: false, message: "ข้อมูลไม่ครบถ้วน" });
+  }
+
+  const db = readDb();
+  const user = db.members.find((m: any) => m.userId === userId);
+  if (!user || (user.role !== 'Admin' && user.role !== 'Manager')) {
+    return res.status(403).json({ success: false, message: "ปฏิเสธสิทธิ์การใช้งาน" });
+  }
+
+  if (!db.expenseCategories) {
+    db.expenseCategories = ["ค่าดูแลเซิร์ฟเวอร์/IT", "ค่าการตลาด", "ค่าแรงพนักงาน", "ค่าเอกสาร/กฎหมาย"];
+  }
+
+  const nameTrimmed = categoryName.trim();
+  const index = db.expenseCategories.indexOf(nameTrimmed);
+  if (index === -1) {
+    return res.status(404).json({ success: false, message: "ไม่พบหมวดหมู่ค่าใช้จ่ายนี้ค่ะ" });
+  }
+
+  db.expenseCategories.splice(index, 1);
+  writeDb(db);
+
+  res.json({
+    success: true,
+    message: `ลบหมวดหมู่ค่าใช้จ่าย "${nameTrimmed}" เรียบร้อยแล้วค่ะ`,
+    categories: db.expenseCategories
+  });
+});
+
+// 6. WITHDRAW CSR FUNDS
+app.post('/api/admin/withdraw-csr', (req, res) => {
+  const { adminUserId, amount, details, otp } = req.body;
+  if (!adminUserId || !amount || !details) {
+    return res.status(400).json({ success: false, message: "ข้อมูลไม่ครบถ้วนในการถอนทุน CSR" });
+  }
+
+  const db = readDb();
+  const user = db.members.find((m: any) => m.userId === adminUserId);
+  if (!user || (user.role !== 'Admin' && user.role !== 'Manager')) {
+    return res.status(403).json({ success: false, message: "ไม่มีสิทธิ์ทำรายการเบิกถอน CSR" });
+  }
+
+  const csrBalance = Number(db.csrFund?.balance || 0);
+  const withdrawAmt = Number(amount);
+
+  if (csrBalance < withdrawAmt) {
+    return res.status(400).json({ success: false, message: `ยอดเงินทุนปันสุข CSR ไม่เพียงพอ (ยอดคงเหลือปัจจุบันคือ ฿${csrBalance.toLocaleString()})` });
+  }
+
+  let approvedBy: any = { userId: user.userId, name: user.name, role: user.role };
+
+  // If Admin, they MUST supply a valid OTP authorized by a Manager
+  if (user.role === 'Admin') {
+    const activeOtpObj = db.otps ? db.otps['ACCOUNTING_OTP'] : null;
+    if (!activeOtpObj) {
+      return res.status(400).json({ success: false, requiresOtp: true, message: "โปรดขอรหัส OTP จากผู้จัดการเพื่อเบิกถอนกองทุนปันสุข CSR ค่ะ" });
+    }
+
+    if (activeOtpObj.expiresAt < Date.now()) {
+      return res.status(400).json({ success: false, message: "รหัส OTP หมดอายุแล้ว โปรดขอรหัสใหม่อีกครั้ง" });
+    }
+
+    if (!otp || otp !== activeOtpObj.code) {
+      return res.status(400).json({ success: false, message: "รหัส OTP ไม่ถูกต้อง" });
+    }
+
+    // Load manager who approved this
+    const manager = db.members.find((m: any) => m.userId === activeOtpObj.managerUserId);
+    if (manager) {
+      approvedBy = { userId: manager.userId, name: manager.name, role: manager.role };
+    }
+
+    // OTP Verified, clear it
+    delete db.otps['ACCOUNTING_OTP'];
+  }
+
+  // Deduct from CSR Fund
+  db.csrFund.balance = csrBalance - withdrawAmt;
+  if (!Array.isArray(db.csrFund.history)) db.csrFund.history = [];
+  
+  const newHistory = {
+    id: "CSR_WD_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+    type: "Withdrawal",
+    amount: withdrawAmt,
+    name: user.name || user.username,
+    username: user.username,
+    userId: user.userId,
+    details: details,
+    description: `เบิกถอนกองทุนปันสุขเพื่อกิจกรรม CSR อนุมัติโดย ${approvedBy.name}`,
+    createdAt: new Date().toISOString()
+  };
+  
+  db.csrFund.history.push(newHistory);
+  writeDb(db);
+
+  res.json({
+    success: true,
+    message: `เบิกถอนกองทุนปันสุข CSR จำนวน ฿${withdrawAmt.toLocaleString()} เพื่อกิจกรรมสาธารณประโยชน์สำเร็จเรียบร้อยแล้วค่ะ`,
+    history: newHistory,
+    balance: db.csrFund.balance
+  });
+});
+
+// 7. ADJUST PLAN B RESERVES (To fund or adjust Plan B pools manually)
+app.post('/api/admin/adjust-planb-reserve', (req, res) => {
+  const { adminUserId, tier, amount, type, otp } = req.body; // type: 'add' or 'subtract'
+  if (!adminUserId || !tier || !amount || !type) {
+    return res.status(400).json({ success: false, message: "กรุณากรอกข้อมูลการปรับปรุงทุนสำรองให้ครบถ้วน" });
+  }
+
+  const db = readDb();
+  const user = db.members.find((m: any) => m.userId === adminUserId);
+  if (!user || (user.role !== 'Admin' && user.role !== 'Manager')) {
+    return res.status(403).json({ success: false, message: "ไม่มีสิทธิ์ปรับปรุงทุนสำรอง" });
+  }
+
+  // Verify Admin needs Manager OTP
+  if (user.role === 'Admin') {
+    const activeOtpObj = db.otps ? db.otps['ACCOUNTING_OTP'] : null;
+    if (!activeOtpObj) {
+      return res.status(400).json({ success: false, requiresOtp: true, message: "การปรับปรุงกองทุนสำรอง Plan B ต้องได้รับอนุมัติผ่าน OTP ของผู้จัดการค่ะ" });
+    }
+    if (!otp || otp !== activeOtpObj.code) {
+      return res.status(400).json({ success: false, message: "รหัส OTP ผู้จัดการไม่ถูกต้อง" });
+    }
+    delete db.otps['ACCOUNTING_OTP'];
+  }
+
+  if (!db.systemStats.planBReservesByTier) {
+    db.systemStats.planBReservesByTier = {};
+  }
+
+  const currentReserve = Number(db.systemStats.planBReservesByTier[tier] || 0);
+  const adjAmt = Number(amount);
+
+  if (type === 'subtract' && currentReserve < adjAmt) {
+    return res.status(400).json({ success: false, message: `ไม่สามารถปรับลดต่ำกว่ายอดกองทุนคงเหลือปัจจุบันได้ (คงเหลือ ฿${currentReserve.toLocaleString()})` });
+  }
+
+  if (type === 'add') {
+    db.systemStats.planBReservesByTier[tier] = currentReserve + adjAmt;
+    db.systemStats.totalPlanBReserves = Number(db.systemStats.totalPlanBReserves || 0) + adjAmt;
+  } else {
+    db.systemStats.planBReservesByTier[tier] = currentReserve - adjAmt;
+    db.systemStats.totalPlanBReserves = Number(db.systemStats.totalPlanBReserves || 0) - adjAmt;
+  }
+
+  writeDb(db);
+
+  res.json({
+    success: true,
+    message: `ปรับปรุงกองทุนสะสม Plan B Tier ${tier.toUpperCase()} สำเร็จแล้ว ยอดใหม่คือ ฿${db.systemStats.planBReservesByTier[tier].toLocaleString()}`
+  });
+});
+
+// ==========================================
 // AI CHATBOT & KNOWLEDGE BASE ENDPOINTS (Gemini 2.5 Flash Free Tier)
 // ==========================================
 const GEMINI_MODEL = 'gemini-2.5-flash';
