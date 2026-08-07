@@ -2234,6 +2234,16 @@ app.post('/api/admin/toggle-banner', (req, res) => {
   res.json({ success: true, bannerVisible: db.bannerVisible, message: db.bannerVisible ? "เปิดแสดงแบนเนอร์ข่าวสารแล้วค่ะ" : "ซ่อนแบนเนอร์ข่าวสารเรียบร้อยแล้วค่ะ" });
 });
 
+// SAVE FEATURE TOGGLES
+app.post('/api/admin/feature-toggles', (req, res) => {
+  const { featureToggles, editorUserId } = req.body;
+  const db = readDb();
+  if (!db.bankSettings) db.bankSettings = {};
+  db.bankSettings.featureToggles = featureToggles;
+  writeDb(db);
+  res.json({ success: true, featureToggles: db.bankSettings.featureToggles });
+});
+
 // UNIFIED SYNC STATE API (Fallback when Firestore Quota is exceeded or fails)
 app.get('/api/sync-state', (req, res) => {
   try {
@@ -3948,6 +3958,31 @@ app.post('/api/member/verify-recipient', (req, res) => {
       phone: recipient.phone
     }
   });
+});
+
+app.post('/api/member/update-shipping-pin', (req, res) => {
+  const { userId, lat, lng, warehouseAddress, warehouseHouseNo, warehouseMoo, warehouseRoad, warehouseProvince, warehouseDistrict, warehouseSubdistrict, warehouseZipcode } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId);
+  
+  if (!member) {
+    return res.status(404).json({ success: false, message: 'ไม่พบสมาชิก' });
+  }
+
+  member.shippingLat = lat;
+  member.shippingLng = lng;
+  member.warehouseAddress = warehouseAddress;
+  member.warehouseHouseNo = warehouseHouseNo;
+  member.warehouseMoo = warehouseMoo;
+  member.warehouseRoad = warehouseRoad;
+  member.warehouseProvince = warehouseProvince;
+  member.warehouseDistrict = warehouseDistrict;
+  member.warehouseSubdistrict = warehouseSubdistrict;
+  member.warehouseZipcode = warehouseZipcode;
+  member.shippingPinStatus = 'Confirmed';
+  
+  writeDb(db);
+  return res.json({ success: true, message: 'บันทึกข้อมูลเรียบร้อยแล้วค่ะ', profile: member });
 });
 
 app.post('/api/member/transfer-e-cash', (req, res) => {

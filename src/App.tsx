@@ -18234,7 +18234,7 @@ export default function App() {
                                               setOriginalAdmin(currentUser);
                                               const targetMember = member;
                                               setCurrentUser(targetMember);
-                                              setProfile(targetMember);
+                                              // setProfile(targetMember);
                                               if (sellerSessionUser && sellerSessionUser.userId !== targetMember.userId) {
                                                 setSellerSessionUser(null);
                                               }
@@ -18538,7 +18538,7 @@ export default function App() {
                                                 setOriginalAdmin(currentUser);
                                                 const targetMember = member;
                                                 setCurrentUser(targetMember);
-                                                setProfile(targetMember);
+                                                // setProfile(targetMember);
                                                 if (sellerSessionUser && sellerSessionUser.userId !== targetMember.userId) {
                                                   setSellerSessionUser(null);
                                                 }
