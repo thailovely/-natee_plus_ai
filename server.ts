@@ -3141,25 +3141,79 @@ function processMLMCommission(db: any, order: any, purchaser: any) {
   if (!db || !order || !purchaser) return;
 
   const productId = order.productId;
-  const product = (db.products || []).find((p: any) => p.id === productId) || {
-    pack_s: { price: 100, category: 'Package' },
-    pack_m: { price: 500, category: 'Package' },
-    pack_l: { price: 1000, category: 'Package' },
-    pack_xl: { price: 3000, category: 'Package' },
-    pack_xxl: { price: 5000, category: 'Package' }
-  }[productId];
+  const isPackageS = (productId === 'pack_s' || (order.productName && order.productName.includes('Package S')));
 
-  const isPackage = product?.category === 'Package' || productId?.startsWith('pack_');
+  const product = (db.products || []).find((p: any) => p.id === productId) || {
+    pack_s: { price: 100, category: 'Package', pv: 0 },
+    pack_m: { price: 500, category: 'Package', pv: 250 },
+    pack_l: { price: 1000, category: 'Package', pv: 500 },
+    pack_xl: { price: 3000, category: 'Package', pv: 1500 },
+    pack_xxl: { price: 5000, category: 'Package', pv: 2500 }
+  }[productId];
 
   if (!Array.isArray(db.transactions)) db.transactions = [];
   if (!db.csrFund) db.csrFund = { balance: 0, history: [] };
   if (!db.systemStats) db.systemStats = { totalPlanBReserves: 0, totalTaxReserves: 0, totalCompanyProfits: 0, totalAllShareReserves: 0 };
 
-  // When purchasing any package (Package S up to XXL), do not pay referral or any commissions/bonuses, ONLY All Share
-  if (isPackage) {
-    const pkgPrice = (product?.price || 100) * (order.quantity || 1);
-    const allShareFund = pkgPrice * 0.20; // 20% to All Share Pool
+  // 1. SPECIAL DISTRIBUTION FOR PACKAGE S (100 THB)
+  if (isPackageS) {
+    const pkgPrice = 100 * (order.quantity || 1);
+    const vat7 = Math.round((pkgPrice / 1.07 * 0.07) * 100) / 100;
+    db.systemStats.totalTaxReserves = (db.systemStats.totalTaxReserves || 0) + vat7;
+
+    const sponsorId = purchaser.sponsorId;
+    const sponsor = (db.members || []).find((m: any) => m.userId === sponsorId || m.username === sponsorId);
+
+    if (sponsor && sponsor.userId !== purchaser.userId && !purchaser.justRegistered) {
+      const eCouponAmt = 40 * (order.quantity || 1);
+      const planBAmt = 10 * (order.quantity || 1);
+
+      sponsor.balanceECoupon = Number(sponsor.balanceECoupon || 0) + eCouponAmt;
+      sponsor.totalCouponsEarned = Number(sponsor.totalCouponsEarned || 0) + eCouponAmt;
+      sponsor.planBPoints = Number(sponsor.planBPoints || 0) + planBAmt;
+
+      db.transactions.push({
+        id: "TXN_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+        userId: sponsor.userId,
+        type: "PackageS_Referral",
+        amount: eCouponAmt,
+        currency: "E-Coupon",
+        details: `ค่าแนะนำโปรโมชั่น Package S จากสมาชิก ${purchaser.name} (${purchaser.userId}) - รับ E-Coupon ฿${eCouponAmt}`,
+        status: "Approved",
+        createdAt: new Date().toISOString()
+      });
+
+      db.transactions.push({
+        id: "TXN_" + (Date.now() + 1) + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+        userId: sponsor.userId,
+        type: "Bonus",
+        amount: planBAmt,
+        currency: "PlanBPoints",
+        details: `คะแนนสะสมผังเดี่ยว Plan B จากการแนะนำ Package S สมาชิก ${purchaser.name} (${purchaser.userId}) - รับ ${planBAmt} คะแนน`,
+        status: "Approved",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const planBFund = 5 * (order.quantity || 1);
+    db.systemStats.totalPlanBReserves = (db.systemStats.totalPlanBReserves || 0) + planBFund;
+
+    const allShareFund = 20 * (order.quantity || 1);
     db.systemStats.totalAllShareReserves = (db.systemStats.totalAllShareReserves || 0) + allShareFund;
+
+    const csrFundAmt = 5 * (order.quantity || 1);
+    db.csrFund.balance = Number(db.csrFund.balance || 0) + csrFundAmt;
+    if (!Array.isArray(db.csrFund.history)) db.csrFund.history = [];
+    db.csrFund.history.push({
+      id: "CSR_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5).toUpperCase(),
+      type: "Package S Contribution",
+      amount: csrFundAmt,
+      description: `เงินสมทบจาก Package S สมาชิก ${purchaser.name} (${purchaser.userId})`,
+      createdAt: new Date().toISOString()
+    });
+
+    const companyProfit = Math.max(0, pkgPrice - vat7 - 50 * (order.quantity || 1) - planBFund - allShareFund - csrFundAmt);
+    db.systemStats.totalCompanyProfits = (db.systemStats.totalCompanyProfits || 0) + companyProfit;
     return;
   }
 
