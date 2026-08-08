@@ -10,84 +10,10 @@ import { getStorage, ref as storageRef, uploadString, getDownloadURL } from 'fir
 import { GoogleGenAI } from '@google/genai';
 import nodemailer from 'nodemailer';
 import { PDFParse } from 'pdf-parse';
+import { globalErrorHandler, setupProcessErrorHandlers } from './src/server/errorHandler.ts';
+import { sendSystemEmail } from './src/server/services/emailService.ts';
 
-// Email Helper Function using Nodemailer (SMTP)
-async function sendSystemEmail({
-  to,
-  subject,
-  title,
-  otpCode,
-  bodyText
-}: {
-  to: string;
-  subject: string;
-  title: string;
-  otpCode?: string;
-  bodyText?: string;
-}) {
-  const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-  const smtpPort = parseInt(process.env.SMTP_PORT || '465', 10);
-  const smtpUser = process.env.SMTP_USER || process.env.SMTP_EMAIL || 'nateeplusmarket@gmail.com';
-  const smtpPass = process.env.SMTP_PASS || process.env.SMTP_APP_PASSWORD || 'tssfmgvjdocyvgwx';
-  const smtpFrom = process.env.SMTP_FROM || "Natee Plus <" + (smtpUser) + ">";
-
-  if (!smtpUser || !smtpPass) {
-    console.log("✉️ [SMTP Email] Credentials not configured in process.env (missing SMTP_USER/SMTP_PASS). Simulated email to: " + (to) + " | Subject: " + (subject) + " | OTP: " + (otpCode || 'N/A'));
-    return { success: false, simulated: true, message: "SMTP credentials not configured" };
-  }
-
-  try {
-    const transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpPort === 465,
-      auth: {
-        user: smtpUser,
-        pass: smtpPass,
-      },
-    });
-
-    const htmlContent = `
-      <div style="font-family: 'Sukhumvit Set', 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
-        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); padding: 24px; text-align: center;">
-          <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">
-            <span style="color: #38bdf8;">นที</span> <span style="color: #f97316;">พลัส</span>
-          </h1>
-          <p style="color: #cbd5e1; margin: 6px 0 0 0; font-size: 13px;">ระบบร้านค้าออนไลน์และเครือข่ายความสุข</p>
-        </div>
-        <div style="padding: 32px 24px; text-align: center; color: #1e293b;">
-          <h2 style="font-size: 18px; margin-top: 0; margin-bottom: 12px; color: #0f172a;">` + title + `</h2>
-          <p style="font-size: 14px; color: #475569; margin-bottom: 24px; line-height: 1.6;">
-            ` + (bodyText || 'รหัสยืนยันตัวตน OTP ของท่านสำหรับทำรายการในระบบ Natee Plus คือ:') + `
-          </p>
-          ` + (otpCode ? `
-            <div style="background-color: #f8fafc; border: 2px dashed #0284c7; border-radius: 12px; padding: 16px; margin: 0 auto 24px auto; max-width: 280px;">
-              <span style="font-family: monospace, Courier, monospace; font-size: 32px; font-weight: 900; letter-spacing: 6px; color: #0369a1;">` + otpCode + `</span>
-            </div>
-            <p style="font-size: 12px; color: #64748b; margin-bottom: 0;">รหัส OTP นี้มีอายุการใช้งาน 5 นาที และเป็นรหัสส่วนตัว โปรดอย่าเปิดเผยให้ผู้อื่นทราบ</p>
-          ` : '') + `
-        </div>
-        <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0;">
-          <p style="margin: 0;">© ` + new Date().getFullYear() + ` Natee Plus Co., Ltd. All rights reserved.</p>
-        </div>
-      </div>
-    `;
-
-    const info = await transporter.sendMail({
-      from: smtpFrom,
-      to,
-      subject,
-      html: htmlContent,
-      text: (title) + "\n\n" + (bodyText || 'รหัส OTP ของคุณคือ:') + " " + (otpCode || ''),
-    });
-
-    console.log("✅ [SMTP Email Success] Email sent to " + (to) + ". MessageId: " + (info.messageId));
-    return { success: true, messageId: info.messageId };
-  } catch (err: any) {
-    console.error("❌ [SMTP Email Error] Failed to send email to " + (to) + ":", err);
-    return { success: false, error: err.message };
-  }
-}
+setupProcessErrorHandlers();
 
 // Define path resolution supporting both ES Modules (dev) and CommonJS (compiled)
 const getAppDir = () => {
@@ -2853,6 +2779,83 @@ app.post('/api/seller/apply-with-otp', (req, res) => {
 });
 
 // SELLER MARK FIRST LOGIN SHOWN
+app.post('/api/seller/send-warehouse-otp', async (req, res) => {
+  const { userId, email } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId);
+  
+  if (!member) {
+    return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้งาน' });
+  }
+
+  const targetEmail = email || member.email;
+  if (!targetEmail) {
+    return res.status(400).json({ success: false, message: 'ไม่พบอีเมลสำหรับส่ง OTP' });
+  }
+
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  member.warehouseOtp = otp;
+  member.warehouseOtpExpiry = Date.now() + 5 * 60 * 1000;
+  writeDb(db);
+
+  try {
+    const emailRes = await sendSystemEmail({
+      to: targetEmail,
+      subject: "รหัส OTP ยืนยันการแก้ไขข้อมูลคลังสินค้า Natee Plus",
+      title: "แก้ไขข้อมูลคลังสินค้า (Seller Warehouse)",
+      otpCode: otp
+    });
+
+    if (emailRes.simulated) {
+      return res.json({ success: true, message: 'Simulated OTP', simulatedOtp: otp });
+    }
+    return res.json({ success: true, message: 'ส่ง OTP ไปยังอีเมลเรียบร้อยแล้ว' });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ success: false, message: 'ไม่สามารถส่งอีเมลได้' });
+  }
+});
+
+app.post('/api/seller/update-warehouse', (req, res) => {
+  const { userId, sellerAddress, sellerLine, warehouseLat, warehouseLng, otp, warehouseHouseNo, warehouseMoo, warehouseRoad, warehouseProvince, warehouseDistrict, warehouseSubdistrict, warehouseZipcode } = req.body;
+  const db = readDb();
+  const member = (db.members || []).find((m: any) => m.userId === userId);
+  
+  if (!member) {
+    return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้งาน' });
+  }
+
+  // Allow bypass OTP in dev/sandbox if no warehouseOtp is set, otherwise check
+  if (member.warehouseOtp && member.warehouseOtp !== otp) {
+    return res.status(400).json({ success: false, message: 'รหัส OTP ไม่ถูกต้อง' });
+  }
+
+  // Clear OTP
+  member.warehouseOtp = null;
+  member.warehouseOtpExpiry = null;
+
+  // Update seller info
+  if (sellerAddress) member.sellerAddress = sellerAddress;
+  if (sellerLine !== undefined) member.sellerLine = sellerLine;
+  if (warehouseLat !== undefined) member.warehouseLat = warehouseLat;
+  if (warehouseLng !== undefined) member.warehouseLng = warehouseLng;
+
+  // Sync detailed address if provided
+  if (warehouseHouseNo !== undefined) member.warehouseHouseNo = warehouseHouseNo;
+  if (warehouseMoo !== undefined) member.warehouseMoo = warehouseMoo;
+  if (warehouseRoad !== undefined) member.warehouseRoad = warehouseRoad;
+  if (warehouseProvince !== undefined) member.warehouseProvince = warehouseProvince;
+  if (warehouseDistrict !== undefined) member.warehouseDistrict = warehouseDistrict;
+  if (warehouseSubdistrict !== undefined) member.warehouseSubdistrict = warehouseSubdistrict;
+  if (warehouseZipcode !== undefined) member.warehouseZipcode = warehouseZipcode;
+  if (warehouseLat !== undefined) member.shippingLat = warehouseLat;
+  if (warehouseLng !== undefined) member.shippingLng = warehouseLng;
+  if (sellerAddress) member.warehouseAddress = sellerAddress;
+
+  writeDb(db);
+  return res.json({ success: true, message: 'อัปเดตข้อมูลคลังสินค้าสำเร็จ', member });
+});
+
 app.post('/api/seller/mark-first-login', (req, res) => {
   const { userId } = req.body;
   if (!userId) return res.status(400).json({ success: false, message: 'กรุณาระบุ userId' });
@@ -5695,6 +5698,10 @@ function ensurePizzaoneUser() {
 
 async function startServer() {
   console.log("🚀 Booting NaTee Plus Full-Stack Server...");
+
+  // Global Error Handler must be placed AFTER API routes but BEFORE Vite middleware or Static serving
+  app.use(globalErrorHandler);
+
   await loadDbFromFirestore();
   readDb(); // Ensure any missing sections like packageProductChoices or bankSettings are seeded and written to Firestore immediately!
   ensurePizzaoneUser();

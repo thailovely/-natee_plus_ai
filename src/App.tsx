@@ -6162,7 +6162,8 @@ export default function App() {
       showNotif("กรุณากรอกรหัส OTP จากอีเมลเพื่อยืนยันค่ะ", "error");
       return;
     }
-    if (!sellerWarehouseEditAddress.trim()) {
+    const fullWarehouseAddr = `${warehouseHouseNo ? 'บ้านเลขที่ ' + warehouseHouseNo + ' ' : ''}${warehouseMoo ? 'หมู่/ซอย ' + warehouseMoo + ' ' : ''}${warehouseRoad ? 'ถนน ' + warehouseRoad + ' ' : ''}ต.${warehouseSubdistrict || ''} อ.${warehouseDistrict || ''} จ.${warehouseProvince || ''} ${warehouseZipcode || ''}`.trim();
+    if (!fullWarehouseAddr.trim()) {
       showNotif("กรุณากรอกที่อยู่คลังสินค้าปลายทางให้ครบถ้วนค่ะ", "error");
       return;
     }
@@ -6173,10 +6174,17 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: sellerSessionUser.userId,
-          sellerAddress: sellerWarehouseEditAddress,
+          sellerAddress: fullWarehouseAddr,
           sellerLine: sellerWarehouseEditLine,
-          warehouseLat: sellerWarehouseEditLat,
-          warehouseLng: sellerWarehouseEditLng,
+          warehouseLat: warehouseLat,
+          warehouseLng: warehouseLng,
+          warehouseHouseNo,
+          warehouseMoo,
+          warehouseRoad,
+          warehouseProvince,
+          warehouseDistrict,
+          warehouseSubdistrict,
+          warehouseZipcode,
           otp: sellerWarehouseOtp
         })
       });
