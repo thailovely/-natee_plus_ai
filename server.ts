@@ -3,7 +3,7 @@ import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { db } from './src/db/index.ts';
+import { pool } from './src/db/index.ts';
 import { initializeApp } from 'firebase/app';
 import { initializeFirestore, memoryLocalCache, doc, getDoc, writeBatch, onSnapshot } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadString, getDownloadURL } from 'firebase/storage';
@@ -413,7 +413,19 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
                 }
               }
               await batch.commit();
-              console.log("✅ [Background Reset] Sandbox Firestore successfully overwritten with live production data.");
+              
+              if (pool) {
+                for (const key of keys) {
+                  if (cacheDb[key] !== undefined) {
+                    await pool.query(
+                      `INSERT INTO "app_sections_sandbox" (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data`,
+                      [key, JSON.stringify(cacheDb[key])]
+                    ).catch(e => console.error("Cloud SQL Reset Error:", e));
+                  }
+                }
+              }
+              
+              console.log("✅ [Background Reset] Sandbox successfully overwritten with live production data.");
               setupServerRealTimeSync();
             }
           } catch (bgErr: any) {
@@ -425,13 +437,35 @@ async function loadDbFromFirestore(forceResetFromProduction: boolean = false) {
       }
     }
 
-    console.log("📥 Loading app sections from Firestore (" + (collectionName) + ")...");
-    for (const key of keys) {
-      const docRef = doc(dbFirestore, collectionName, key);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        loadedData[key] = snap.data().data;
-        hasData = true;
+    console.log("📥 Loading app sections from Firestore/Cloud SQL (" + (collectionName) + ")...");
+    let hasSqlData = false;
+    try {
+      if (pool) {
+        for (const key of keys) {
+          const result = await pool.query(`SELECT data FROM "${collectionName}" WHERE id = $1`, [key]);
+          if (result.rows.length > 0) {
+            loadedData[key] = result.rows[0].data;
+            hasData = true;
+            hasSqlData = true;
+          }
+        }
+        if (hasSqlData) {
+           console.log("✅ Successfully loaded database from Cloud SQL JSONB!");
+        }
+      }
+    } catch (sqlErr) {
+      console.error("❌ Error loading from Cloud SQL:", sqlErr);
+    }
+    
+    // Fallback to Firestore if SQL is empty
+    if (!hasSqlData) {
+      for (const key of keys) {
+        const docRef = doc(dbFirestore, collectionName, key);
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          loadedData[key] = snap.data().data;
+          hasData = true;
+        }
       }
     }
     
@@ -936,6 +970,24 @@ async function processFirestoreSave() {
     }
     await batch.commit();
     console.log("📤 Successfully saved database to Firestore batch (" + (collectionName) + ")");
+    
+    // Save to Cloud SQL JSONB
+    try {
+      if (pool) {
+        for (const key of keys) {
+          if (dataToSave[key] !== undefined) {
+            await pool.query(
+              `INSERT INTO "${collectionName}" (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data`,
+              [key, JSON.stringify(dataToSave[key])]
+            );
+          }
+        }
+        console.log("📤 Successfully saved database to Cloud SQL JSONB (" + (collectionName) + ")");
+      }
+    } catch (sqlErr) {
+      console.error("❌ Error saving database to Cloud SQL:", sqlErr);
+    }
+
     retryCount = 0; // Reset retry count on success
     isFirestoreQuotaExceeded = false;
   } catch (err: any) {
