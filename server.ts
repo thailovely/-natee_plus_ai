@@ -3,6 +3,7 @@ import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { db } from './src/db/index.ts';
 import { initializeApp } from 'firebase/app';
 import { initializeFirestore, memoryLocalCache, doc, getDoc, writeBatch, onSnapshot } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadString, getDownloadURL } from 'firebase/storage';
@@ -1421,9 +1422,14 @@ function recalculateMemberEligibleRights(db: any, member: any) {
     }
   }
 
-  // Support custom granted rights override if explicitly modified by admin
+  // Backwards compatibility for old customGrantedRights
   if (member.customGrantedRights !== undefined && member.customGrantedRights > 0) {
     grantedRights = Math.max(grantedRights, member.customGrantedRights);
+  }
+
+  // Apply new rightsAdjustment (can be positive or negative) to allow admin absolute manual overrides
+  if (member.rightsAdjustment !== undefined) {
+    grantedRights += member.rightsAdjustment;
   }
 
   if (grantedRights <= 0) {
@@ -4626,13 +4632,10 @@ app.post('/api/admin/member-update', (req, res) => {
   if (sellerStatus !== undefined) member.sellerStatus = sellerStatus;
   if (eligibleRights !== undefined) {
     const targetRights = Number(eligibleRights);
+    const currentRights = Number(member.eligibleRights || 0);
+    const difference = targetRights - currentRights;
+    member.rightsAdjustment = (member.rightsAdjustment || 0) + difference;
     member.eligibleRights = targetRights;
-    const txns = (db && db.transactions) ? db.transactions : [];
-    const withdrawnOrSpentEMoney = txns
-      .filter((t: any) => t.userId === member.userId && t.currency === "E-Money" && (t.type === "Withdraw" || t.type === "WithdrawalRequest" || t.type === "Withdrawal") && t.status !== "Rejected" && t.status !== "Cancelled")
-      .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
-    const currentEMoney = Number(member.balanceEMoney || 0);
-    member.customGrantedRights = targetRights + currentEMoney + withdrawnOrSpentEMoney;
   }
   if (parentId !== undefined) member.parentId = parentId;
   if (side !== undefined) member.side = side;

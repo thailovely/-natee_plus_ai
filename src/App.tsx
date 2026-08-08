@@ -455,7 +455,7 @@ export default function App() {
     const targetSponsor = keepSponsorId || localStorage.getItem('natee_ref') || '';
     if (targetSponsor) {
       setSponsorId(targetSponsor.toUpperCase());
-      verifySponsor(targetSponsor.toUpperCase());
+      verifySponsor(targetSponsor.toUpperCase(), true);
     } else {
       setSponsorId('');
       setSponsorName('');
@@ -1644,12 +1644,12 @@ export default function App() {
       const cleanRef = refParam.toUpperCase().trim();
       localStorage.setItem('natee_ref', cleanRef);
       setSponsorId(cleanRef);
-      verifySponsor(cleanRef);
+      verifySponsor(cleanRef, true);
     } else {
       const savedRef = localStorage.getItem('natee_ref');
       if (savedRef) {
         setSponsorId(savedRef.toUpperCase());
-        verifySponsor(savedRef.toUpperCase());
+        verifySponsor(savedRef.toUpperCase(), true);
       }
     }
 
@@ -3748,9 +3748,9 @@ export default function App() {
   };
 
   // Handle Sponsor Verification
-  const verifySponsor = async (s: string) => {
+  const verifySponsor = async (s: string, silent: boolean = false) => {
     if (!s) {
-      showNotif('กรุณากรอกรหัสผู้แนะนำ', 'error');
+      if (!silent) showNotif('กรุณากรอกรหัสผู้แนะนำ', 'error');
       return;
     }
     try {
@@ -3764,16 +3764,16 @@ export default function App() {
         setSponsorName(d.name);
         setSponsorError('');
         setCheckedSponsor(true);
-        showNotif(`พบผู้แนะนำ: ${d.name}`, 'success');
+        if (!silent) showNotif(`พบผู้แนะนำ: ${d.name}`, 'success');
       } else {
         setSponsorName('');
         setSponsorError('ไม่พบผู้แนะนำในระบบ');
         setCheckedSponsor(false);
-        showNotif('ไม่พบผู้แนะนำในระบบ กรุณาตรวจสอบรหัสแนะนำอีกครั้ง', 'error');
+        if (!silent) showNotif('ไม่พบผู้แนะนำในระบบ กรุณาตรวจสอบรหัสแนะนำอีกครั้ง', 'error');
       }
     } catch (err) {
       setCheckedSponsor(false);
-      showNotif('เกิดข้อผิดพลาดในการตรวจสอบผู้แนะนำ', 'error');
+      if (!silent) showNotif('เกิดข้อผิดพลาดในการตรวจสอบผู้แนะนำ', 'error');
     }
   };
 
